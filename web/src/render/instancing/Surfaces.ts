@@ -61,8 +61,12 @@ import { loadTexture } from '../../assets/Loaders.js';
 // this type, so an unlisted family is a compile error at the table rather than
 // an untextured surface in the game, which is the failure mode this file's
 // three-way manifest check exists to make loud.
+// RN-1780: `masonry` (look audit R3, the ruin/foundation/launch-pad world
+// scale split off `stone`) and `ember` (look audit R6, the firebox peep and
+// sight strip's emissive map) join the union for the same reason paintchip
+// and rust did above.
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
-  | 'paintchip' | 'rust'
+  | 'paintchip' | 'rust' | 'masonry' | 'ember'
   | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'flat';
 
 /**
@@ -151,6 +155,16 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   // Moves in the same commit as texgen's table (RN-100's rule:
   // verifyAgainstManifest makes a one-sided move a failed smoke run).
   Rock: 'stone', RockDark: 'stone',
+  // RN-1780 (look audit R3): `Masonry`/`MasonryDark`, NOT a re-point of
+  // `Rock`/`RockDark`. Measured off the shipped bytes, `stone`'s consumers
+  // span 0.14 m (an item-atlas chunk) to 35.2 m (the ruin), and RN-953
+  // already refused retiling `stone` itself: a tile that reads on the ruin
+  // puts a 1.4 m boulder at 0.78 repeats. `Masonry`/`MasonryDark` are worn
+  // by exactly the ruin, the foundation deck and the launch pad (all
+  // `structures`/`rocket` scale); every boulder, the spire, the scree and
+  // the smelter's hearth surround stay on `Rock`/`RockDark` -> `stone`.
+  // Moves in the same commit as texgen's table (RN-100's rule).
+  Masonry: 'masonry', MasonryDark: 'masonry',
   // RN-157: the ore SEAM roles (Admin's ruling: ore-in-rock and refined-item
   // are different substances that coincidentally shared a colour; OF_Iron and
   // friends stay untouched on the items). The `ore` family is vein banding
@@ -176,6 +190,16 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   Fang: 'fur',
   EmissiveState: 'flat', EyeDark: 'flat', EyeGlow: 'flat', Glass: 'flat',
   Ice: 'flat', Oil: 'flat', Skin: 'flat', Water: 'flat',
+  // RN-1780 (look audit R6): the firebox peep and sight strip. A role of its
+  // own rather than a re-point of `EmissiveState` (which stays `flat` for
+  // every status chip in the game, 23 other build scripts' worth), because
+  // `MachineFx.ts` and `MachineGeometry.roleOf` both match material names by
+  // the `EmissiveState` SUFFIX, which this role name preserves on purpose so
+  // `MachineGlow`'s per-instance colour, intensity and flicker keep driving
+  // it unchanged. `ember`'s emissive map supplies only the spatial variation
+  // that was missing (peep iqr 0.93, strip iqr 4.15 against 40.54/72.68 for
+  // the plate beside them).
+  EmberEmissiveState: 'ember',
 };
 
 const FOLIAGE_TONE_FAMILIES = new Set(Object.keys(FOLIAGE_TONE));

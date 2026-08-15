@@ -351,6 +351,13 @@ def rail_run(mb, a, b, z_deck, role="Steel", spacing=4.0, mid_rail=True):
 
 # ---------------------------------------------------------------------------
 # The ground: apron, deck banks, trench, deflector
+#
+# RN-1780 (look audit R3): every stone surface below wears `Masonry`/
+# `MasonryDark`, not `Rock`/`RockDark`. Same colour, metalness and roughness
+# (of_lib.PALETTE copies the two constants verbatim); only the tiling family
+# differs, at a 1.8 m world scale authored for a 24 m pad instead of a
+# 1.0-1.5 m boulder. See texgen.py's ROLE_FAMILY comment for the measured
+# consumer range this split answers.
 # ---------------------------------------------------------------------------
 
 def ground(mb, detail=True):
@@ -362,13 +369,13 @@ def ground(mb, detail=True):
     matter what the normal map does to it."""
     # Trench floor, which is also the only thing standing on z = 0 under the
     # channel, so the asset's base plane is the ground and not the deck.
-    mb.box((2 * TR_HW, W, TR_FLOOR), (0.0, 0.0, TR_FLOOR * 0.5), "RockDark")
+    mb.box((2 * TR_HW, W, TR_FLOOR), (0.0, 0.0, TR_FLOOR * 0.5), "MasonryDark")
 
     # West bank: full 24 m of Y. East bank stops short of the stair notch.
     for sx, y0, y1 in ((-1.0, -HALF, HALF), (1.0, -HALF, STAIR_S)):
         cy, dy = (y0 + y1) * 0.5, y1 - y0
         mb.box((HALF - TR_HW, dy, CAP_Z),
-               (sx * (HALF + TR_HW) * 0.5, cy, CAP_Z * 0.5), "RockDark")
+               (sx * (HALF + TR_HW) * 0.5, cy, CAP_Z * 0.5), "MasonryDark")
         # The cap is inset on the OUTER and END faces only. Its trench face
         # stays flush at |x| = TR_HW so the mount can abut it exactly: two
         # coincident faces with opposite normals are invisible under backface
@@ -377,7 +384,7 @@ def ground(mb, detail=True):
         cap_y1 = y1 - (INSET if y1 >= HALF - 1e-9 else 0.0)
         mb.box((HALF - INSET - TR_HW, cap_y1 - cap_y0, DECK_CAP),
                (sx * (HALF - INSET + TR_HW) * 0.5, (cap_y0 + cap_y1) * 0.5,
-                CAP_Z + DECK_CAP * 0.5), "Rock")
+                CAP_Z + DECK_CAP * 0.5), "Masonry")
 
     if detail:
         # Steel liner standing 0.22 m proud of each trench wall, IN TWO BANDS
@@ -408,7 +415,7 @@ def ground(mb, detail=True):
     # SteelDark is `panel`, so it now wears plate seams instead of gravel.
     # It also runs 9.20 m against the mount's 6.80, so it reaches out past
     # the table and into the light rather than hiding under it.
-    mb.box((7.40, 9.80, 0.22), (0.0, 0.0, TR_FLOOR + 0.11), "RockDark")
+    mb.box((7.40, 9.80, 0.22), (0.0, 0.0, TR_FLOOR + 0.11), "MasonryDark")
     dz = TR_FLOOR + 0.22
     hx, hy = 3.50, 4.60
     v = [(-hx, -hy, dz), (hx, -hy, dz), (hx, hy, dz), (-hx, hy, dz),
@@ -805,7 +812,7 @@ def deck_joints(mb):
         while -HALF + INSET + BAY * k < y1 - 0.6:
             y = -HALF + INSET + BAY * k
             mb.box((jx1 - jx0, JOINT_W, JOINT_UP + JOINT_DOWN),
-                   (sx * (jx0 + jx1) * 0.5, y, zc), "RockDark")
+                   (sx * (jx0 + jx1) * 0.5, y, zc), "MasonryDark")
             k += 1
         # ...and one longitudinal joint per bank, halving its 8.05 m width.
         # It runs the bank's full length less PAINT_MARGIN at each end, for
@@ -813,7 +820,7 @@ def deck_joints(mb):
         # end face on the concrete's end face, same-facing, over its full
         # section.
         mb.box((JOINT_W, y1 - y0 - 2.0 * PAINT_MARGIN, JOINT_UP + JOINT_DOWN),
-               ((x0 + x1) * 0.5, (y0 + y1) * 0.5, zc), "RockDark")
+               ((x0 + x1) * 0.5, (y0 + y1) * 0.5, zc), "MasonryDark")
     return mb
 
 
@@ -924,10 +931,10 @@ def scorch(mb):
             inner = sx * (TR_HW + 0.06)
             mb.box((du, dv, SCORCH_UP + 0.010),
                    (inner + sx * du * 0.5, y,
-                    DECK_Z + (SCORCH_UP - 0.010) * 0.5), "RockDark")
+                    DECK_Z + (SCORCH_UP - 0.010) * 0.5), "MasonryDark")
             mb.box((du * 0.55, dv * 0.42, SOOT_UP + 0.007),
                    (inner + sx * du * 0.82, y + dv * 0.24,
-                    DECK_Z + (SOOT_UP - 0.007) * 0.5), "RockDark")
+                    DECK_Z + (SOOT_UP - 0.007) * 0.5), "MasonryDark")
     return mb
 
 
@@ -971,7 +978,7 @@ def stair(mb, detail=True):
     only route up that a player on foot can take, and the second scale cue
     after the rails: a 0.25 m riser is a riser at any distance."""
     for size, loc in stair_treads():
-        mb.box(size, loc, "RockDark")
+        mb.box(size, loc, "MasonryDark")
     if not detail:
         return mb
     run = STEPS * TREAD
@@ -1039,7 +1046,7 @@ def furniture(mb):
                role="Steel")
     # Control bunker, with the standard four-colour state chip for a window.
     bx, by = 8.40, -8.00
-    mb.box((4.00, 2.60, 1.70), (bx, by, DECK_Z + 0.85), "Rock")
+    mb.box((4.00, 2.60, 1.70), (bx, by, DECK_Z + 0.85), "Masonry")
     mb.box((4.30, 2.90, 0.20), (bx, by, DECK_Z + 1.80), "SteelDark")
     mb.box((4.05, 0.12, 0.14), (bx, by - 1.34, DECK_Z + 1.56), "Accent")
     mb.box((3.20, 0.10, 0.55), (bx, by - 1.33, DECK_Z + 1.10),
@@ -1250,7 +1257,7 @@ def shadow_proxies(mb):
     # -- the control bunker: its parapet is 0.15 m wider than its walls, so
     # one box on the parapet buries the wall corners by 150 mm and one on the
     # walls leaves the parapet 150 mm out. Two boxes, each hugging its own.
-    mb.box((4.00, 2.60, 1.70), (8.40, -8.00, DECK_Z + 0.85), "Rock")
+    mb.box((4.00, 2.60, 1.70), (8.40, -8.00, DECK_Z + 0.85), "Masonry")
     mb.box((4.30, 2.90, 0.20), (8.40, -8.00, DECK_Z + 1.80), "SteelDark")
     mb.box((4.05, 0.12, 0.14), (8.40, -9.40, DECK_Z + 1.56), "Accent")
     mb.box((3.20, 0.10, 0.55), (8.40, -9.33, DECK_Z + 1.10), "Accent")
@@ -1465,7 +1472,7 @@ def lod2_verticals(mb):
     for x, y in ((-11.00, -10.60), (11.00, -11.40)):
         mb.box((0.60, 0.60, 6.92), (x, y, DECK_Z + 3.46), "Steel")
     mb.box((3.00, 3.00, 5.91), (8.60, 3.60, DECK_Z + 2.955), "Steel")
-    mb.box((4.30, 2.90, 1.90), (8.40, -8.00, DECK_Z + 0.95), "Rock")
+    mb.box((4.30, 2.90, 1.90), (8.40, -8.00, DECK_Z + 0.95), "Masonry")
     mb.box((0.62, 0.62, T0_H), T0 + (DECK_Z + T0_H * 0.5,), "Steel")
     return mb
 
@@ -1518,11 +1525,11 @@ def lod2_geometry(mb):
     what says 'launch site' from orbit-adjacent altitude, so it is the one
     thing LOD2 keeps at full height. The trench stays too, because a slot of
     shadow down the middle is the whole silhouette."""
-    mb.box((2 * TR_HW, W, TR_FLOOR), (0.0, 0.0, TR_FLOOR * 0.5), "RockDark")
+    mb.box((2 * TR_HW, W, TR_FLOOR), (0.0, 0.0, TR_FLOOR * 0.5), "MasonryDark")
     for sx, y0, y1 in ((-1.0, -HALF, HALF), (1.0, -HALF, STAIR_S)):
         cy, dy = (y0 + y1) * 0.5, y1 - y0
         mb.box((HALF - TR_HW, dy, DECK_Z),
-               (sx * (HALF + TR_HW) * 0.5, cy, DECK_Z * 0.5), "Rock")
+               (sx * (HALF + TR_HW) * 0.5, cy, DECK_Z * 0.5), "Masonry")
     mb.box((2 * MT_HW, 2 * MT_HY, DECK_Z - MT_UNDER),
            (0.0, 0.0, (MT_UNDER + DECK_Z) * 0.5), "SteelDark")
     tx, ty = TOWER
@@ -1707,11 +1714,11 @@ def main():
     # single slab there would be a player walking on air over a 1.70 m drop.
     of.add_collision_box("col_LaunchPad", (HALF - TR_HW, W, DECK_Z),
                          (-(HALF + TR_HW) * 0.5, 0.0, DECK_Z * 0.5), root,
-                         role="Rock")
+                         role="Masonry")
     of.add_collision_box("col_LaunchTrench",
                          (HALF - TR_HW, STAIR_S + HALF, DECK_Z),
                          ((HALF + TR_HW) * 0.5, (STAIR_S - HALF) * 0.5,
-                          DECK_Z * 0.5), root, role="Rock")
+                          DECK_Z * 0.5), root, role="Masonry")
     of.add_collision_box("col_LaunchMount",
                          (2 * MT_HW, 2 * MT_HY, DECK_Z - MT_UNDER),
                          (0.0, 0.0, (MT_UNDER + DECK_Z) * 0.5), root,
@@ -1735,7 +1742,7 @@ def main():
     # quieter version of exactly the bug being fixed here.
     for i, (size, loc) in enumerate(stair_treads()):
         of.add_collision_box("col_LaunchStep%d" % (i + 1), size, loc, root,
-                             role="Rock")
+                             role="Masonry")
 
     of.add_socket("socket_vessel", (0.0, 0.0, DECK_Z), UP, root,
                   {"of_role": "vessel_mate"})

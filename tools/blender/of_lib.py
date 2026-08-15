@@ -490,6 +490,32 @@ PALETTE = {
     # base is near-black so an unlit chip reads as "off"; emission is white and
     # three.js recolours material.emissive per FFactoryEntityState.VisualState.
     "EmissiveState": ("101216", 0.00, 0.30, 1.0, "FFFFFF"),
+    # RN-1780. THE MASONRY FAMILY SPLIT (look audit R3). `stone`'s consumers
+    # measure 0.14 m to 35.2 m across the shipped bytes (an item-atlas chunk to
+    # the ruin), and RN-953 already refused retiling `stone` itself: a tile
+    # that reads on the ruin puts a 1.4 m boulder at 0.78 repeats. `Masonry`
+    # and `MasonryDark` are the SAME two constants as `Rock`/`RockDark` byte
+    # for byte (colour, metalness, roughness are unchanged; only the tiling
+    # surface family they point at differs, via ROLE_FAMILY), so this row
+    # changes nothing about how the ruin, the foundation or the launch pad
+    # look up close per-facet - it only lets them wear a texture whose world
+    # scale is authored for architecture instead of for a boulder.
+    "Masonry":      ("7A756C", 0.00, 0.94, 1.0, None),
+    "MasonryDark":  ("57534C", 0.00, 0.80, 1.0, None),
+    # RN-1780. THE FIREBOX PEEP AND SIGHT STRIP (look audit R6). A role of its
+    # own, not a re-point of `EmissiveState`: the name still ENDS WITH
+    # "EmissiveState" on purpose, because `MachineFx.ts` (`mat.name.endsWith(
+    # 'EmissiveState')`) and `MachineGeometry.roleOf` both match on that
+    # suffix, and re-pointing the bare `EmissiveState` role itself would put a
+    # coal-glow texture on every status chip in the game (23 other build
+    # scripts use it). This role is worn by NOTHING except `build_smelter.py`'s
+    # peep and sight strip, so `MachineGlow`'s per-instance fire colour,
+    # intensity and flicker keep driving it exactly as before, and only the
+    # SPATIAL variation is new (the `ember` family's emissive map). Base and
+    # emit are copied from `EmissiveState` for the same reason: the runtime
+    # clones the material and overwrites `emissive`/`emissiveIntensity`
+    # itself, so nothing here is a visible default, only a well-formed one.
+    "EmberEmissiveState": ("101216", 0.00, 0.55, 1.0, "FFFFFF"),
 }
 
 # Roles that must render double-sided. Everything else is backface-culled,

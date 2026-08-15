@@ -75,6 +75,26 @@
       "texels_per_m": 512.0,
       "albedo_mean_linear": 0.1806
     },
+    "ember": {
+      "normal": {
+        "file": "of_ember_n.png",
+        "bytes": 19737,
+        "sha256": "e12a1dac740f6d1e14e32e33e556253aa192752b59199ea2d56a6255439c43b4"
+      },
+      "orm": {
+        "file": "of_ember_orm.png",
+        "bytes": 12138,
+        "sha256": "e3c834174edbf376d036e6e5140227508801e0ec3810fca1675759604c9af03b"
+      },
+      "emissive": {
+        "file": "of_ember_e.png",
+        "bytes": 8226,
+        "sha256": "65b621cafd60810cf7b734d381df8075b83c0c113573c8aedcd1c5ab945be404"
+      },
+      "tile_m": 0.28,
+      "size_px": 128,
+      "texels_per_m": 457.1428571428571
+    },
     "fur": {
       "normal": {
         "file": "of_fur_n.png",
@@ -95,6 +115,27 @@
       "size_px": 384,
       "texels_per_m": 1280.0,
       "albedo_mean_linear": 0.3183
+    },
+    "masonry": {
+      "normal": {
+        "file": "of_masonry_n.png",
+        "bytes": 475321,
+        "sha256": "cee2bf6a2db2372e4a498f0fb0210913ef646def119b1a6c10e6f330ff2702d8"
+      },
+      "orm": {
+        "file": "of_masonry_orm.png",
+        "bytes": 304316,
+        "sha256": "2a69b03925570a59267cdf8323f81365f46d69b46811253c5b6545f195bd155d"
+      },
+      "albedo": {
+        "file": "of_masonry_a.png",
+        "bytes": 57898,
+        "sha256": "1b06115462fb16c0c8df2c98b56d4851e0c4ca07890d0e3eba131d421343647f"
+      },
+      "tile_m": 1.8,
+      "size_px": 512,
+      "texels_per_m": 284.44444444444446,
+      "albedo_mean_linear": 0.2124
     },
     "ore": {
       "normal": {
@@ -279,6 +320,7 @@
     "CoalSeam": "ore",
     "Copper": "coarse",
     "CopperOre": "ore",
+    "EmberEmissiveState": "ember",
     "Fang": "fur",
     "Grass": "grass",
     "Hazard": "panel",
@@ -288,6 +330,8 @@
     "LeafDeep": "leaf",
     "LeafDry": "leaf",
     "LeafLight": "leaf",
+    "Masonry": "masonry",
+    "MasonryDark": "masonry",
     "Plate": "suitplate",
     "Regolith": "coarse",
     "Rock": "stone",

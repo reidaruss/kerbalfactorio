@@ -789,11 +789,21 @@ def build_lod0(root):
     # to be walked outward one layer at a time; `Face.part` returns the outer
     # coordinate for exactly this reason.
     door_p = FRONT.out(mf.layer("plate"))
+    # RN-1780 (look audit R6): the peep and the sight strip wear
+    # `EmberEmissiveState`, not the bare `EmissiveState` the +X status chip
+    # below keeps. It is a role of its own rather than a re-point, and the
+    # name still ENDS WITH "EmissiveState" on purpose - see of_lib.PALETTE's
+    # comment on the role for why that suffix is load-bearing for
+    # `MachineFx.ts` and `MachineGeometry.roleOf`. These were the two
+    # brightest and most untextured surfaces on the machine (peep iqr 0.93,
+    # strip iqr 4.15 against 40.54/72.68 for the plate beside them); the
+    # `ember` family gives them an emissive map with real variation, still
+    # multiplied by `MachineGlow`'s own per-instance colour and flicker.
     peep = mf.Face("Y", -1, door_p - mf.layer("boss"), limit=-HALF,
                    name="firebox peep")
-    peep.part(mb, 0.30, 0.22, 0.0, PEEP_Z, "scribe", "EmissiveState")
+    peep.part(mb, 0.30, 0.22, 0.0, PEEP_Z, "scribe", "EmberEmissiveState")
     sight = mf.Face("Y", -1, door_p, limit=-HALF, name="firebox sight strip")
-    sight.part(mb, 0.86, 0.05, 0.0, DOOR_Z - 0.26, "scribe", "EmissiveState")
+    sight.part(mb, 0.86, 0.05, 0.0, DOOR_Z - 0.26, "scribe", "EmberEmissiveState")
     mb.box((0.05, 0.44, 0.18), (1.845, 0.0, STATUS_Z), "EmissiveState")
 
     # THE DECLARED BOX IS ASSERTED WHERE IT IS CAUSED. contracts.json says
