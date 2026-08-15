@@ -7,12 +7,12 @@
 //
 // Nothing in this file computes anything. If a number here disagrees with
 // core/tests/test_flight.cpp, this file is wrong and /core is right.
-import { scratchF64, scratchI32 } from './wasm/heap.js';
+import { scratchF64, scratchI32, scratchU8 } from './wasm/heap.js';
 import type { OfCoreModule } from './wasm/heap.js';
 import {
   vesselAbi, FLIGHT_STATE_WORDS, SAS_MODE_UNKNOWN, TELEMETRY_WORDS, ORBIT_WORDS,
   PART_ROW_WORDS, TRANSFORM_WORDS, RCS_WORDS, DOCK_STATUS_WORDS,
-  DOCK_CANDIDATE_WORDS, PORT_POSE_WORDS,
+  DOCK_CANDIDATE_WORDS, PORT_POSE_WORDS, APPROACH_WORDS,
 } from './wasm/vesselabi.js';
 import type { OfVesselModule } from './wasm/vesselabi.js';
 
@@ -348,6 +348,69 @@ export function portAt(M: OfCoreModule, originM: Vec3, forward: Vec3,
     faceAxis: [a[3] ?? 0, a[4] ?? 1, a[5] ?? 0],
     rollAxis: [a[6] ?? 1, a[7] ?? 0, a[8] ?? 0],
   };
+}
+
+/**
+ * PH-382 (R99). ONE EVALUATION OF `of::approach::guide`, TYPED.
+ *
+ * Field names are the header's own, in the header's own order, because a field
+ * called one thing in `approach.h` and another here is a field two people
+ * describe differently in the same bug report (`AutopilotRun.ts`'s rule).
+ *
+ * NOTHING IN THIS INTERFACE IS COMPUTED ON THIS SIDE. In particular `sasCommand`
+ * and `rcsTranslate` are the law's own output vectors and are applied verbatim:
+ * the client is a wire, not a second pilot.
+ */
+export interface ApproachRow {
+  /** `approach::Leg`, or -1 for "no rig is armed", which is a fact about the
+   *  bridge rather than a leg (`of_dk_candidate`'s verdict 6, same argument). */
+  leg: number;
+  /** False when the wasm predates `of_dk_approach`. `FlightApproach.apprMissing`
+   *  is what names the symbols; this is the flag every reader branches on. */
+  answered: boolean;
+  sasCommand: Vec3;
+  rcsTranslate: Vec3;
+  rangeM: number;
+  /** Along the target port's face axis. Positive is IN FRONT of the port;
+   *  negative means the hull is between the vessel and the port. */
+  alongM: number;
+  lateralM: number;
+  /** Positive is closing. */
+  closingMS: number;
+  aimErrorDeg: number;
+}
+
+/** `approach::Leg`, verbatim, plus the bridge's own "nothing armed". */
+export const LEG = {
+  None: -1, Align: 0, Corridor: 1, Final: 2, Contact: 3, Aborted: 4,
+} as const;
+
+const NO_APPROACH: ApproachRow = {
+  leg: LEG.None, answered: false, sasCommand: [0, 1, 0], rcsTranslate: [0, 0, 0],
+  rangeM: 0, alongM: 0, lateralM: 0, closingMS: 0, aimErrorDeg: 180,
+};
+
+export function approachGuidance(M: OfCoreModule, f: number): ApproachRow {
+  const n = vesselAbi(M)._of_dk_approach?.(f) ?? 0;
+  if (n < APPROACH_WORDS) return { ...NO_APPROACH };
+  const a = scratchF64(M, APPROACH_WORDS);
+  const at = (i: number): number => a[i] ?? 0;
+  return {
+    leg: at(0), answered: true,
+    sasCommand: [at(1), at(2), at(3)],
+    rcsTranslate: [at(4), at(5), at(6)],
+    rangeM: at(7), alongM: at(8), lateralM: at(9),
+    closingMS: at(10), aimErrorDeg: at(11),
+  };
+}
+
+const approachDecoder = new TextDecoder();
+
+/** PH-382. The program's own sentence. Printed verbatim, never branched on:
+ *  same discipline as `AutopilotRun.runNote`, and for the same reason. */
+export function approachNote(M: OfCoreModule, f: number): string {
+  const n = vesselAbi(M)._of_dk_approach_note?.(f) ?? 0;
+  return n > 0 ? approachDecoder.decode(scratchU8(M, n).slice()) : '';
 }
 
 /**

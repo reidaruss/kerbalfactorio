@@ -43,6 +43,7 @@ export function registerSystems(s: Services, loop: Loop): void {
   let boardHeld = false;
   let recoverHeld = false;
   let dockHeld = false;
+  let approachHeld = false;
   let mapHeld = false;
   let holdHeld = false;
   // GP-530. THE MILESTONE EDGE. A rising edge only, read here beside the
@@ -118,6 +119,13 @@ export function registerSystems(s: Services, loop: Loop): void {
     const dk = s.input.act('dock');
     if (dk && !dockHeld) s.flight?.dock();
     dockHeld = dk;
+    // PH-382. THE AUTO KEY, beside the latch key it belongs to. Like `dock` it
+    // is NOT gated here: `toggleApproach` refuses in FlightMode's own voice and
+    // counts the refusal, so a press before the station milestone says what
+    // would unlock it instead of doing nothing.
+    const ak = s.input.act('autoApproach');
+    if (ak && !approachHeld) s.flight?.approach();
+    approachHeld = ak;
     // W12. The MAP, on M. Same shape and same reason as the two above: it owns
     // its own pointer, and it refuses OUT LOUD off the vessel rather than doing
     // nothing, which is GP-54's lesson applied before it can bite again.

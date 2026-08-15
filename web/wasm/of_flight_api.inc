@@ -18,12 +18,14 @@
 // on the pad is not a blueprint - and means the assembly view and a live flight
 // can coexist without either aliasing the other.
 // =============================================================================
+#include "of/approach.h"    // PH-382: D-015 layer two, the auto-approach law
 #include "of/ascent.h"      // R87: the ribbon's airless schedule, one source
 #include "of/atmosphere.h"
 #include "of/docking.h"     // PH-303: the capture test, inside the step (R77)
 #include "of/flight.h"
 #include "of/landing.h"     // SurfaceFrame, the ground the ribbon is handed
 
+namespace ah = of::approach;
 namespace at = of::atmo;
 namespace dk = of::docking;
 namespace fl = of::flight;
@@ -668,6 +670,103 @@ OF_API int of_dk_candidate(int f, int selfId, int targetId) {
   };
   for (double x : a) g_f64.push_back(x);
   return 9;
+}
+
+// =============================================================================
+// PH-382 / R99. THE AUTO-APPROACH GUIDANCE, EXPORTED. (D-015 layer two.)
+//
+// WHY THIS EXPORT EXISTS AT ALL, WHICH IS THE WHOLE FINDING OF THE R99 LANE.
+//
+// `core/include/of/approach.h` has held the complete auto-approach control law
+// since PH-174, it is pinned by `core/tests/test_approach.cpp`, and its own
+// header says it "picks up where `transfer.h` and `autopilot.h` put the vehicle
+// down". NOTHING CALLED IT. There was no `of_ap_approach`/`of_dk_approach`
+// symbol in the wasm, so the client could not reach the law even to ask -- the
+// exact shape R93 found one layer down for `of_dk_*` ("there is no `of_dk_*`
+// symbol in the wasm at all, so the client cannot even ask"), and the exact
+// shape `flight.h`'s guidance ribbon was in before R87.
+//
+// The alternative was a TypeScript transcription of `approach::guide`, and it
+// was refused: it would put a SECOND corridor law in the repo, one of them
+// ctest-pinned and dead and the other live and unpinned. That is D-014's and
+// CE-83's failure with a new name.
+//
+// NO ABI BUMP, DELIBERATELY, on `of_ap_api.inc`'s own precedent (§21's header):
+// these two are purely ADDITIVE, no existing row moves, no stride changes, and
+// the client detects them BY SYMBOL PRESENCE (`FlightApproach.ts::apprMissing`)
+// rather than by version. A bundle built against a wasm without them boots,
+// docks by hand, and says on screen exactly which C names its auto-approach
+// button is waiting for. ABI stays 26.
+//
+// IT TAKES NO POSE ARGUMENTS, AND THAT IS THE POINT. Everything `guide` needs
+// is already in the rig `of_fl_dock_arm`/`of_fl_dock_target` maintain: the
+// limits, the vessel's own port in the vessel frame, and the target port's pose
+// and velocity, re-aimed every frame by `FlightDock.armDock`. A signature that
+// took them again would let the guidance and the capture test be handed two
+// different targets, which is the one disagreement that would be invisible
+// until a vessel flew into a hull.
+//
+// f64 scratch, EXACTLY 12:
+//   [0]  leg            `approach::Leg`: 0 Align, 1 Corridor, 2 Final,
+//                       3 Contact, 4 Aborted. -1 when there is no rig, which is
+//                       NOT a Leg member for `of_dk_candidate`'s verdict-6
+//                       reason: "nothing is armed" is a fact about the bridge.
+//   [1..3] sasCommand   where the nose must point, inertial unit
+//   [4..6] rcsTranslate inertial, magnitude 0..1 of RCS thrust
+//   [7]  rangeM         port to port
+//   [8]  alongM         along the target port's face axis, + is in front of it
+//   [9]  lateralM       off that axis
+//   [10] closingMS      + is closing
+//   [11] aimErrorDeg    how far the nose is from the docking attitude
+OF_API int of_dk_approach(int f) {
+  resetF64(12);
+  fl::FlightSim* s = g_flights.get(f);
+  auto it = g_docks.find(f);
+  const bool armed = s != nullptr && it != g_docks.end() && it->second.armed;
+  if (!armed) {
+    const double none[12] = {-1.0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 180.0};
+    for (double x : none) g_f64.push_back(x);
+    return 12;
+  }
+  const DockRig& d = it->second;
+  const ah::Guidance g =
+      ah::guide(d.target, d.targetVelMS, s->state.posM, s->state.velMS,
+                s->state.forward, s->state.right, d.portLocal, d.lim,
+                ah::Corridor());
+  const double a[12] = {
+    static_cast<double>(static_cast<int>(g.leg)),
+    g.sasCommand.x, g.sasCommand.y, g.sasCommand.z,
+    g.rcsTranslate.x, g.rcsTranslate.y, g.rcsTranslate.z,
+    g.rangeM, g.alongM, g.lateralM, g.closingMS, g.aimErrorDeg,
+  };
+  for (double x : a) g_f64.push_back(x);
+  return 12;
+}
+
+// PH-382. WHAT THE PROGRAM IS DOING, IN `approach.h`'s OWN WORDS.
+//
+// A SECOND CALL RATHER THAN A CODE, and `guide` is re-run rather than cached,
+// because it is pure and stateless by design (its header: "Nothing is stored
+// between calls, so it cannot drift out of step with the vehicle"). A cached
+// note would be the one piece of state that header refuses to keep. The two
+// calls in one frame are handed identical inputs and therefore return the same
+// leg, so the sentence and the numbers cannot disagree.
+//
+// The client prints it VERBATIM and branches only on `leg`, which is
+// `AutopilotRun.ts`'s standing rule for a sentence crossing this bridge.
+// -> UTF-8 byte count in the u8 scratch.
+OF_API int of_dk_approach_note(int f) {
+  fl::FlightSim* s = g_flights.get(f);
+  auto it = g_docks.find(f);
+  if (s == nullptr || it == g_docks.end() || !it->second.armed) {
+    return textOut("no docking target");
+  }
+  const DockRig& d = it->second;
+  const ah::Guidance g =
+      ah::guide(d.target, d.targetVelMS, s->state.posM, s->state.velMS,
+                s->state.forward, s->state.right, d.portLocal, d.lim,
+                ah::Corridor());
+  return textOut(g.note);
 }
 
 // PH-364. DOCK. The command behind the button.

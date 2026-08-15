@@ -209,7 +209,7 @@ export class Navball {
     // The warp and SAS terms join the diff key, or the chip row would keep
     // drawing a stale warp factor until the status happened to change.
     const key = `${r.status}|${r.sas}|${r.message}|${warn}|${step}`
-      + `|${sasErr(r)}|${warpChip(r)}|${dockChip(r)}`;
+      + `|${sasErr(r)}|${warpChip(r)}|${dockChip(r)}|${approachChip(r)}`;
     if (key === this.last[4]) return;
     this.last[4] = key;
     this.chipsEl.innerHTML = `<span class="chip st">${esc(r.status)}</span>`
@@ -234,6 +234,7 @@ export class Navball {
       // cannot push it off the end of the row on a narrow window.
       + (warn === '' ? '' : `<span class="chip warn">${esc(warn)}</span>`)
       + dockChip(r)
+      + approachChip(r)
       + (r.message === '' ? '' : `<span class="chip msg">${esc(r.message)}</span>`);
   }
 
@@ -541,6 +542,37 @@ function dockChip(r: NavballFullReadout): string {
   }
   return `<span class="chip dock off">DOCK  ${esc(d.why)}`
     + `  ${range}${rate}</span>`;
+}
+
+/**
+ * PH-382. THE AUTO-APPROACH CHIP, and it is drawn WHENEVER THERE IS A TARGET,
+ * including while the feature is still locked.
+ *
+ * That last part is the decision. The dock chip's rule is that silence is
+ * honest when there is nothing to dock to, and this inherits it. But a LOCKED
+ * control is the opposite case: the whole point of Reid's task-39 ordering is
+ * that the player flies the first station mission by hand, and a player who is
+ * never told the automation exists cannot look forward to earning it. So the
+ * locked state draws, dim, carrying the sentence that names what would open it,
+ * which is GP-56's rule applied to a progression gate rather than to a range.
+ *
+ * It does not draw the range or the closing rate: the dock chip beside it
+ * already carries both, from the same tick, and two copies of one measurement
+ * on one row is how they come to disagree.
+ */
+function approachChip(r: NavballFullReadout): string {
+  const a = r.approach;
+  const d = r.dock;
+  if (a === undefined || d === undefined || !d.hasTarget) return '';
+  if (a.running) {
+    return `<span class="chip appr running">AUTO ${esc(a.legWord)}`
+      + `  ${esc(a.why)}  ${esc(labelOf('autoApproach'))} to stop</span>`;
+  }
+  if (a.available) {
+    return `<span class="chip appr ready">AUTO ${esc(labelOf('autoApproach'))}`
+      + `  ${esc(a.why)}</span>`;
+  }
+  return `<span class="chip appr">AUTO  ${esc(a.why)}</span>`;
 }
 
 function sasErr(r: NavballFullReadout): string {

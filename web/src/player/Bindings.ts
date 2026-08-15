@@ -38,6 +38,13 @@ export type Action =
   // (one key, several meanings, decided by where you are). Two keys would
   // have been two things to learn for a control that is never ambiguous.
   | 'dock'
+  // PH-382. `autoApproach` is the same shape one rung up: arm the program when
+  // it is off, take the vehicle back when it is on. It is a SEPARATE key from
+  // `dock` rather than a third meaning on it, because the two are opposite
+  // kinds of verb -- `dock` is an instant with a 0.60 m window and this one
+  // runs for minutes -- and a key whose meaning depends on a window that
+  // narrow is a key that will be pressed at the wrong moment.
+  | 'autoApproach'
   | 'board' | 'recover' | 'stage' | 'throttleUp' | 'throttleDown' | 'throttleFull'
   | 'throttleCut' | 'pitchUp' | 'pitchDown' | 'yawLeft' | 'yawRight'
   | 'rollLeft' | 'rollRight' | 'sasToggle' | 'sasMode' | 'warpUp' | 'warpDown'
@@ -189,6 +196,11 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   // bracket pair is free, adjacent to nothing destructive, and reachable
   // without leaving the right hand's home position on the translation keys.
   dock: ['BracketRight'],
+  // PH-382. `[`, the other half of the pair `dock` took and for the same
+  // reason: every letter on the board is bound already. Adjacent to the latch
+  // key on purpose -- they are the two halves of one arrival, and a player who
+  // has found one has found the other.
+  autoApproach: ['BracketLeft'],
   stage: ['Space', 'KeyN'],
   throttleUp: ['ShiftLeft', 'ShiftRight', 'KeyI'],
   throttleDown: ['KeyK'],
@@ -317,7 +329,7 @@ export const UI_ALLOWED: readonly Action[] =
  * would change nothing except to imply they might work.
  */
 export const MAP_ALLOWED: readonly Action[] = [
-  'map', 'board', 'recover', 'stage', 'dock',
+  'map', 'board', 'recover', 'stage', 'dock', 'autoApproach',
   'throttleUp', 'throttleDown', 'throttleFull', 'throttleCut',
   'pitchUp', 'pitchDown', 'yawLeft', 'yawRight', 'rollLeft', 'rollRight',
   'sasToggle', 'sasMode', 'warpUp', 'warpDown',

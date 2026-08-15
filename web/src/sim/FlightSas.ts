@@ -48,6 +48,29 @@ export function slew(s: FlightSession, pitchRad: number, yawRad: number,
   }
 }
 
+/**
+ * PH-382. TAKE THE VEHICLE BACK FROM THE AUTO-APPROACH, SILENTLY.
+ *
+ * It lives in THIS file, beside the other four transitions, because this file's
+ * header says why: "each of them can silently undo another", and the auto-
+ * approach is a fifth thing in that set. Every deliberate aim below calls it.
+ *
+ * THE THRUSTER ZERO IS THE LOAD-BEARING HALF, not the flag. `rcsTranslate` is
+ * STATE on the far side (FlightRcs.ts), so a cancel that only cleared a boolean
+ * would leave the program's last push firing until something else happened to
+ * write the axis. That is `cancelRun`'s (b) in a smaller form and it would look
+ * exactly like a sim that will not stop.
+ *
+ * It says nothing: these callers are the player already taking control, and a
+ * flash on every SAS keypress would be noise. `stopApproach` is the one that
+ * speaks, because it is reached from a verb and from a refusal.
+ */
+export function releaseApproach(s: FlightSession): void {
+  if (!s.approachArmed) return;
+  s.approachArmed = false;
+  if (s.handle > 0) s.V._of_fl_rcs_translate(s.handle, 0, 0, 0);
+}
+
 /** Every mode change goes through here, and every one SAYS SO. */
 export function setSas(s: FlightSession, mode: number): void {
   if (s.handle <= 0) return;
@@ -55,6 +78,9 @@ export function setSas(s: FlightSession, mode: number): void {
   s.V._of_fl_set_sas(s.handle, mode);
   if (mode === SAS_COMMAND) commandDirection(s, norm(s.st.forward));
   s.followGuidance = false;
+  // The seven mode keys do NOT go through `commandDirection`, so the interlock
+  // has to be repeated here or `SAS PRO` would leave the program flying.
+  releaseApproach(s);
   s.flash(`SAS ${s.sasName}`);
 }
 
@@ -74,6 +100,12 @@ export function commandDirection(s: FlightSession, dir: Vec3): void {
   if (s.handle <= 0) return;
   s.command = norm(dir);
   s.followGuidance = false;
+  // PH-382. AND THE AUTO-APPROACH, under the identical rule and on the identical
+  // line, which is the point of stating the interlock here rather than in each
+  // aimer. `approachTick` re-arms itself on the next tick exactly as the ribbon
+  // follower does, so a hold-node or a nudge of the stick takes the vehicle back
+  // from the program without either caller knowing it runs.
+  releaseApproach(s);
   if (s.sasMode !== SAS_COMMAND) {
     s.sasMode = SAS_COMMAND;
     s.V._of_fl_set_sas(s.handle, SAS_COMMAND);

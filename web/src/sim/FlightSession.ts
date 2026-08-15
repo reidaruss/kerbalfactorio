@@ -19,6 +19,7 @@ import { flightReport, propellantAboardKg, readStagePerformance }
 import { commandDirection, cycleSas, followRibbon, guidanceDir, guidanceTick,
   levelWings, setSas, slew }
   from './FlightSas.js';
+import { approachTick, armApproach, stopApproach } from './FlightApproach.js';
 import { horizonFrame } from './FlightAttitude.js';
 import { WARP_STEPS, warpDecision } from './FlightWarp.js';
 import type { WarpLimit } from './FlightWarp.js';
@@ -134,6 +135,20 @@ export class FlightSession {
    *  17, deliberately, and that disagreement is the truth: the mode is a client
    *  aimer over /core's Command. */
   followGuidance = false;
+  /**
+   * PH-382 / R99. The auto-approach program is running.
+   *
+   * A SINGLE BOOLEAN IS THE WHOLE OF THIS CLIENT'S STATE, because
+   * `approach::guide` is stateless by design and re-derives everything from the
+   * live geometry each tick (approach.h: "Nothing is stored between calls, so
+   * it cannot drift out of step with the vehicle"). A leg, a countdown or a
+   * cached aim point kept here would be exactly the second authority that
+   * header refuses to have.
+   *
+   * Cleared by `commandDirection`, like `followGuidance` and for PH-44's
+   * reason; re-armed by `approachTick`, which is the one thing that may.
+   */
+  approachArmed = false;
   /** R87 / PH-250. The orbit the ascent ribbon aims at, datum-relative metres,
    *  0 for "not set" and deliberately not defaulted. Why there is no default,
    *  and why a body with air does not need one, is beside the only reader:
@@ -262,6 +277,11 @@ export class FlightSession {
   commandDirection(dir: Vec3): void { commandDirection(this, dir); }
   cycleSas(): void { cycleSas(this); }
   followRibbon(): void { followRibbon(this); }
+  /** PH-382. R99's auto-approach. Every decision behind these two is in
+   *  FlightApproach.ts; they are here because `FlightControls` and the flight
+   *  verb reach the program through the session and must not import past it. */
+  armApproach(): string { return armApproach(this); }
+  stopApproach(why: string): boolean { return stopApproach(this, why); }
 
   setWarp(i: number): void {
     this.warpIndex = Math.max(0, Math.min(WARP_STEPS.length - 1, i));
@@ -335,6 +355,13 @@ export class FlightSession {
     // The ribbon-follow re-aims BEFORE the step, so the nose chases this tick's
     // guidance rather than last tick's. It is a no-op unless the ninth key is on.
     guidanceTick(this);
+    // PH-382. AND THE AUTO-APPROACH, on the same seam and for the same reason:
+    // it aims at THIS tick's port pose, and it must run after
+    // `FlightControls.step` has written its own translation zero. It is a
+    // no-op unless armed. Second, so that a player who arms both gets the
+    // approach: `commandDirection` inside each one cancels the other, so the
+    // pair is mutually exclusive by construction rather than by a check.
+    approachTick(this);
     const wd = warpDecision(this.warpFactor, this.tm.inSpace, this.altitudeAglM,
                             -dot(this.st.vel, this.up), dt);
     const n = wd.steps;
