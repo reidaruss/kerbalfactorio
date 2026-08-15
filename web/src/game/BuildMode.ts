@@ -21,6 +21,7 @@
 
 import { addressIn } from './MachinePlacement.js';
 import { MachineDrag } from './BuildDrag.js';
+import { DragTrace } from './DragTrace.js';
 import type { BuildRay, BuildTarget } from './FactoryGhost.js';
 import { FOOTPRINT, type BuildKind, type Factory } from './Factory.js';
 import { commitTarget, resolveTarget, type StructureTarget }
@@ -218,6 +219,23 @@ export class BuildMode {
     this.dragLength = use ? this.dragLength + n : 0;
     if (this.dragLength > this.longestDrag) this.longestDrag = this.dragLength;
     return n;
+  }
+
+  /**
+   * FS-99. Arm, read or disarm the machine drag's per-tick decision trace.
+   *
+   * A pass-through rather than a public `drag` field: `MachineDrag` is this
+   * file's own state and the reason it was split out (see BuildDrag.ts) is that
+   * exactly one object knows whether a run is in progress. Handing the object
+   * itself to the debug surface would make that two.
+   */
+  dragTrace(on?: boolean): DragTrace | null {
+    if (on === false) { this.drag.trace = null; return null; }
+    if (on === true) {
+      if (this.drag.trace === null) this.drag.trace = new DragTrace();
+      this.drag.trace.reset();
+    }
+    return this.drag.trace;
   }
 
   private endDrag(): void {

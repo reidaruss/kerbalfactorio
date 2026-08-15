@@ -264,6 +264,24 @@ export function gameplayApi(s: Services, loop: Loop) {
      *  0.55, so retuning the walker retunes the assertion with it. */
     voxelStepUpM: VOXEL_STEP_UP_M,
 
+    /**
+     * FS-99. The per-TICK machine-drag decision trace (game/DragTrace.ts).
+     * `dragTrace(true)` arms and clears it, `dragTrace()` dumps it oldest-first
+     * as one diffable line per tick, `dragTrace(false)` disarms.
+     *
+     * It answers the question a tile count cannot: WHICH of a drag's several
+     * hundred per-tick choices differed between two same-seed runs. `lines` is
+     * what a probe writes to a file and diffs; `samples` is the same data for a
+     * probe that wants to assert on a field.
+     */
+    dragTrace(on?: boolean) {
+      const b = s.gameplay?.build;
+      if (b === undefined) return null;
+      const t = b.dragTrace(on);
+      return { armed: t !== null, total: t?.total ?? 0,
+        lines: t?.lines() ?? [], samples: t?.dump() ?? [] };
+    },
+
     stand(on?: boolean) {
       const b = s.player?.body;
       if (b === undefined || b === null) return null;
