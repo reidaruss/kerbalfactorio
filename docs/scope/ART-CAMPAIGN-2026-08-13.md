@@ -67,17 +67,28 @@ A0 to A6 have all landed. All seven canonical shots were re-captured at current
 against the SE bar. **The full ranked list, with the measurement, the frame
 share and the costed fix for each item, is §2.8 of
 [rendering.md](../controllers/rendering.md); it is the source of truth and this
-is the index into it.** Ranked by impression-per-unit-work, not by severity:
+is the index into it.** Ranked by impression-per-unit-work, not by severity.
 
-| # | What still reads unfinished | The measurement | Cost |
-|---|---|---|---|
-| R1 | Ground material at walking distance | terrain `iqr` 22.13 / 16.06 vs the smelter plate's 53.66 in the same light; largest element in 5 of 7 shots | LARGE, and A3 already refused tangent-frame terrain with a reason |
-| R2 | The understorey is flat cards, and the near-shadow budget is spent on them | 46 subtrees at the full 4.0x multiplier; `tree_conifer` LOD1 1250.89 mm vs a 56.25 mm cascade texel | MEDIUM-LARGE; geometry, not resolution (A5 already did 1024 px) |
-| R3 | Masonry tiles at 0.6 m on a 35.2 m ruin | ~59 repeats across the cella; `?tile=stone:1.8` fixes it with bit-identical `panel` controls | MEDIUM: a `masonry` family split. **The global knob is REFUSED**, see below |
-| R4 | The first-person view model | in 5 of 5 ground frames, ~7.8 per cent of the frame as an upper bound | MEDIUM, and **A7 put it out of scope**, so it needs Reid's ruling first |
-| R5 | The station shot is not reproducible | box luma 21.78 / 3.73 / 5.69 at an identical pin, a 5.8x spread | SMALL-MEDIUM, and it is a harness item: needs an orbital-position pin |
-| R6 | The two brightest surfaces on the hero machine are untextured | peep `iqr` 0.93, sight strip 4.15, against 40.54 and 72.68 beside them | SMALL-MEDIUM: one `ember` emissive tile; the client slot already exists |
-| R7 | The dusk frame reads as midday | sky `warm` -87.69 high, -20.09 low; **§2b's own target sanctions this** | SMALL, but frozen by Early Decision 1 (hold the grade) |
+**CORRECTED by `lane/audit-corrections` (RN-1727), 2026-08-15: the table
+below originally listed R1 first, but R1's own entry concedes it is ranked on
+AREA alone and is the last item on this list that could ever be cheap --
+the opposite of what the stated impression-per-unit-work metric would put
+first. Re-ordered to match the metric; the `#` column keeps each item's
+original label since RN-1730..1814's own allocation rows and rendering.md
+§2.8 both cite them by that label. R1 is not dropped: it stays worked under
+RN-1730..1759 ahead of cheaper items, because Reid's directive is that the
+game should look close to done and area matters to him even where the work
+is large.**
+
+| Rank | # | What still reads unfinished | The measurement | Cost |
+|---|---|---|---|---|
+| 1 | R3 | Masonry tiles at 0.6 m on a 35.2 m ruin | ~59 repeats across the cella; `?tile=stone:1.8` fixes it with bit-identical `panel` controls | MEDIUM: a `masonry` family split. **The global knob is REFUSED**, see below |
+| 2 | R6 | The two brightest surfaces on the hero machine are untextured | peep `iqr` 0.93, sight strip 4.15, against 40.54 and 63.69 beside them (**CORRECTED, RN-1727: was 72.68, wrong by 14 per cent**) | SMALL-MEDIUM: one `ember` emissive tile; the client slot already exists |
+| 3 | R2 | The understorey is flat cards, and the near-shadow budget is spent on them | 46 subtrees at the full 4.0x multiplier at audit time, **45 going forward** (RN-1727: the launch pad was one of the 46 and RN-1690..1696's form pass has since moved it to 2.0x); `tree_conifer` LOD1 1250.89 mm vs a 56.25 mm cascade texel | MEDIUM-LARGE; geometry, not resolution (A5 already did 1024 px) |
+| 4 | R5 | The station shot is not reproducible | box luma 21.78 / 3.73 / 5.69 at an identical pin, a 5.8x spread | SMALL-MEDIUM, and it is a harness item: needs an orbital-position pin |
+| 5 | R4 | The first-person view model | in 5 of 5 ground frames, ~7.8 per cent of the frame as an upper bound | MEDIUM, and **A7 put it out of scope**, so it needs Reid's ruling first |
+| 6 | R7 | The dusk frame reads as midday | sky `warm` -87.69 high, -20.09 low; **§2b's own target sanctions this** | SMALL, but frozen by Early Decision 1 (hold the grade) |
+| 7 | R1 | Ground material at walking distance | terrain `iqr` 22.13 / 16.06 vs the smelter plate's 53.66 in the same light; largest element in 5 of 7 shots | LARGE, and A3 already refused tangent-frame terrain with a reason. **Worked anyway under RN-1730..1759**: Reid's directive is that the game should look close to done, so area matters even here. |
 
 **This lane landed no art change, and that is the finding rather than a
 shortfall.** Two items looked cheap enough to land inside the block and each was
