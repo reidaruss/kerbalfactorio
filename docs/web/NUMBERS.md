@@ -148,7 +148,7 @@ is that the numbers are handed out by one writer before the work starts.
 | GP-920 to GP-934 | gameplay/probes, the residual reds: moonsite.js standalone (GP-907 correction: intermittent "the sim advanced", the driven-clock fix FS-101 may have changed its behavior, re-measure first), cantilever.js negative-control re-aim (2 of 2 red on the desktop), pad.js socket-snap enclosed-gap cell (GP-905's candidate game defect, diagnose which address is right) | allocated by Admin 2026-08-16 at dispatch |
 | PH-382 to PH-394 | physics+gameplay, R99 the autopilot follow-through (the progression spine's next rung: auto-approach deliberately BEHIND the hand-flown station visit per Reid's task-39 ruling; docking R93 and the of_dk_* surface shipped at ABI 26, so the autopilot has a real capture envelope to fly to; design the unlock, the verb, and the flight law; diagnosis of what exists first: maneuver planning, R99 notes in physics.md) | re-issued from the PH-381 block's free tail by Admin 2026-08-16 at dispatch |
 | GP-935 to GP-949 | gameplay/probes, the two placement residuals: basesnap.js "a wall needs a deck under it" on the minimal test platform (GP-915) and pad.js second-pad overlap-refusal misresolve (GP-924, suspected march-tolerance class triggered by the placed 28 m pad's own geometry); diagnose whether the support/overlap rules or the probes are wrong, fix at the cause | allocated by Admin 2026-08-16 at dispatch. **GP-935 to GP-938 USED, `lane/placement-residuals`. BOTH RULES ARE RIGHT, BOTH PROBES WERE SHORT, BOTH NOW GREEN.** Full per-item account in `docs/controllers/gameplay.md`'s GP-935 to GP-938 row; short form: **`basesnap.js` (GP-935 to GP-936):** `supported()` (StructurePlacement.ts) counted correctly; the wall-end run continuation lands on a NEW cell (measured `addr:[-1,1,0,1]`, needing a deck at (-1,1) or (-2,1)) that this file's two-deck (`deckA`/`deckB`, one line of cells) platform never laid. Fixed by computing that missing cell's exact world centre from the site's own frame (`site.o/east/north/up`, the same arithmetic `anchorOf` uses) and placing it there, standing BACK first (an early attempt that teleported almost directly above the target hit the ill-conditioned near-vertical aim class and landed a deck 5+ m away); a second, previously-unreachable bug (the code teleported home and reset the look BEFORE the second wall's own placement press, dead code until the first fix made the ghost `ok:true`) was fixed by placing from the wall-end standpoint before restoring it. `valid:true`, 3/3 runs identical. **`pad.js` (GP-937 to GP-938):** GP-924's "march-tolerance" guess did not hold; `padBlockAt` only ever reads the aim hit point's (east, north), never height, and pad #1's own 28 m body is registered in the SAME `StructureBodies` `aimHit` marches against, so any aim across pad #1's own footprint hits ITS geometry before the flat registry-truth ground, landing on a real but un-aimed-at cell (reproduced identically, `[-3,-2,0]`, across every vantage tried, including the flame trench and the block's bare corner). Fixed by re-aiming the negative control at a SECOND, fully-decked block offset 3 cells north (`overlapping()`'s own rule counts any offset under `cells=6` as too close, and this offset clears pad #1's tall geometry for an honest, unobstructed aim); the control still proves overlap fires against a genuinely intersecting block, not weakened. `fails:[]`, 3/3 runs identical, full probe unregressed through save/reload/rollout/clamps/liftoff. **Verification:** `basesnap.js`, `pad.js`, `buildghost.js`, `factoryshot.js`, `level.js` all green on a locally built (`npm ci`, `sync-wasm`, `sync-assets`, `vite build`) and LAN-served (`vite preview --port 4931 --host 0.0.0.0 --strictPort`) tree, real D3D11 headless Chrome (ANGLE/NVIDIA/D3D11), killed by PID. `tsc --noEmit` clean, `vite build` clean, `node --check` clean on both touched files. **GP-939 to GP-949 free, unused.** Recorded by the lane per rule 5. |
-| RN-1730 to RN-1759 | rendering, LOOK AUDIT R1, the ground material at walking distance: terrain iqr 22.13 and 16.06 against the smelter plate's 53.66 in the same light, and it is the biggest element in five of the seven canonical shots; A3 refused tangent-frame terrain this campaign, so find what CAN be done (detail albedo, per-chunk phase already shipped, blend masks, a near-field detail layer) and land the honest best | allocated by Admin 2026-08-16 at dispatch |
+| RN-1730 to RN-1759 | rendering, LOOK AUDIT R1, the ground material at walking distance | allocated by Admin 2026-08-16 at dispatch. **RN-1730 to RN-1738 USED, 2026-08-15, `lane/terrain-material`. RN-1739 to RN-1759 SURRENDERED UNUSED (abandoned per rule 4, never reuse).** RN-1730 the diagnosis (with the scatter hidden the section 2.1 rectangle reads iqr 9.56 at 2.19 m, not 22.13, and the whole normal-derived share of it is 1.28); RN-1731 `probes/groundnear.js`, the instrument, plus the two defects it had before it was trusted; RN-1732 the negative result that ruled out more amplitude (`?groundtexamp` 3x reaches iqr 26.26 and photographs as dark marbling); RN-1733 the near-field analytic detail layer, landed; RN-1734 two shipped fade constants a factor of two past Nyquist since WG-186, measured and reported, NOT fixed; RN-1735 the per-biome luminance weight on the layer; RN-1736 the interleaved frame cost, +0.33 +/- 0.33 ms at high and unresolvable at med and low; RN-1737 the frequency-versus-strength confound (iqr is nearly blind to which frequency band detail sits in); RN-1738 the two nulls, Plains and `basedusk`. |
 | RN-1760 to RN-1779 | rendering/art, LOOK AUDIT R2, the understorey is flat cards and the whole near-shadow budget draws them at LOD0: 46 subtrees at the full 4.0x multiplier, tree_conifer LOD1 1250.89 mm against a 56.25 mm cascade texel; this is geometry and shadow proxies, not texture resolution | allocated by Admin 2026-08-16 at dispatch |
 | RN-1780 to RN-1799 | rendering/art, LOOK AUDIT R3 and R6: the masonry tile repeats about 59 times across a 35.2 m ruin at 0.6 m (a masonry family split, since stone's consumers span 0.18 m to 35.2 m and RN-953 already failed the naive retile), and the two BRIGHTEST surfaces on the hero machine are untextured (peep iqr 0.93 and strip 4.15 against 40.54 and 72.68 beside them; one ember tile, the client slot exists) | allocated by Admin 2026-08-16 at dispatch |
 | RN-1800 to RN-1814 | rendering/harness, LOOK AUDIT R5 plus the audit's two process findings: the station shot is not reproducible (box luma 21.78, 3.73, 5.69 at an identical pin, because setTime moves the sun and not the 7.67 km/s station), A0's commissioned per-shot written target grades were never actually written (so audits have no baseline), and artframe.js's station comment claims phase 0.35 while the code has shipped 0.60 since A0's own commit | allocated by Admin 2026-08-16 at dispatch |
@@ -1760,3 +1760,80 @@ Three transferable parts:
   nobody had cause to cross them until the red was triaged. Prefer the
   conserved, downstream quantity (what the player is HOLDING) over any record of
   what was meant to be handed over.
+
+### Comparing frequencies at a FIXED amplitude is not a comparison of frequencies
+
+RN-1733 needed to know which frequency band the near ground was missing. A sweep
+of four analytic-noise triples at a fixed bump amplitude read the section 2.1
+rectangle's iqr at **15.91 / 18.42 / 19.77 / 24.56** as the octaves got finer.
+That is a clean monotone win for the finest rung, it is what the pictures
+loosely suggested, and it is not a frequency result at all.
+
+A surface-gradient bump's strength is **sum(weight / wavelength)**, not the sum
+of the weights (RN-1258 states this and it was read and then not applied). So
+raising the frequencies at a fixed amplitude raises the SLOPE by the same
+factor, and every rung was being scored on gain. Re-run with the amplitude
+scaled to hold that sum at 0.981 in all four arms, the same four triples read
+**15.91 / 15.35 / 14.35 / 13.84**: flat to slightly falling, the opposite sign.
+
+Two things generalise past this term.
+
+- **When a sweep's independent variable also moves a second quantity the metric
+  responds to, hold the second one fixed and re-run before believing the first.**
+  The tell here was available before the measurement: the strength formula was
+  in a docstring one file away.
+- **The interquartile range is nearly blind to which frequency band detail sits
+  in.** It sees how hard the normal is turned and very little else. The four
+  matched-strength pictures are not close to each other and only one of them
+  reads as soil. A metric that cannot separate the arms is not a reason to skip
+  looking; it is the reason looking is the deciding instrument, and the numbers'
+  job is then to bound the cost and catch a regression elsewhere.
+
+### An autocorrelation's global maximum measures smoothness, never a repeat
+
+The tiling instrument in `probes/groundnear.js` first reported the largest
+autocorrelation over a lag window. It came back at **lag 6 with a height of
+0.73 in all twelve arms of a sweep that changed the picture completely**, which
+is the flat-in-its-own-variable signature this file already catalogues.
+
+The reason is structural rather than a tuning miss: an ordinary surface's
+autocorrelation decays monotonically from the smallest lag, so the maximum over
+`[minLag, maxLag]` is ALWAYS at `minLag` and its height is a blur measure. A
+repeat can only ever show as a **local** maximum after the first local minimum.
+The fixed instrument reports both and names them differently (`corr6` and
+`lag`/`peak`), because the accidental first version was measuring something
+real and useful; it was simply not the thing on the label.
+
+### The scratchpad is shared between lanes, and another lane will overwrite your tools
+
+Mid-pass, `scratchpad/crop.py` stopped being a crop utility and became a
+different lane's three-way screenshot montage pointed at
+`agent-ad9221a6ea04b4ce2`'s worktree. Nothing warned; the next invocation simply
+did the wrong thing with a plausible-looking traceback.
+
+The session scratchpad path is per-session, not per-lane, and concurrent lanes
+in the same session share it. It is the same collision surface as the shared
+git index and the shared working tree, one directory over.
+
+**Put lane tooling in `scratchpad/lane-<name>/` and never write a bare filename
+into the scratchpad root.** A second instance of the same class in the same
+pass: a leftover `numbers.py` in that root SHADOWED the Python standard
+library's `numbers` module, so `from decimal import Decimal` failed inside PIL
+and a crop reported a missing `docs/web/NUMBERS.md`. A scratch file with a
+stdlib name is an import-path landmine for every tool run from that directory.
+
+### A gate that is already red on main cannot tell you what your change did
+
+`npm run check` chains six gates with `&&`, and `check:limits` (the 400-line
+file cap) is **red on main**: 40-odd files are over, including the three this
+pass edits. So the chain stops there and `check:boot`, the gate that actually
+proves the client boots, never runs at all unless it is invoked directly.
+
+Two consequences worth carrying:
+
+- **Run the gates past the red one by hand, and say which you ran.** `npm run
+  check:boot` on its own is what proves the boot; a lane that reports "check is
+  red, pre-existing" without doing that has skipped the important one.
+- **Establish that a red gate is pre-existing by STASHING and re-running, not by
+  reading the file list and reasoning about it.** That takes ten seconds and it
+  is the difference between an inherited debt and one you just added.

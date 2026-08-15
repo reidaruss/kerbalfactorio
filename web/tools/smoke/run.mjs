@@ -179,6 +179,22 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // them.
   'terrainspec', 'terrainspecsun', 'terrainspecsky',
   'terrainspecamp', 'terrainspecskyamp',
+  // RN-1733, the near-field analytic detail layer. `groundfine=0` restores the
+  // pre-RN-1733 ground exactly and is the BEFORE half of every pair this term
+  // is judged by, one flag apart on one build under one light;
+  // `groundfinebump=0` and `groundfinealb=0` isolate the normal half from the
+  // albedo half, which is the split that matters because they fail differently
+  // (too much bump reads as gravel, too much albedo as speckle).
+  // `groundfinebumpamp=` and `groundfinealbamp=` sweep them, and
+  // `groundfinefreq=a,r,b` / `groundfinew=a,r,b` sweep the three repeats and
+  // the three height weights. Registered in the same commit that introduces
+  // them, per this list's own rule.
+  'groundfine', 'groundfinebump', 'groundfinealb',
+  'groundfinebumpamp', 'groundfinealbamp', 'groundfinefreq', 'groundfinew',
+  // RN-1735, the per-biome luminance weight on that layer. `groundfinelum=0`
+  // restores the flat amplitude across every biome exactly, which is the
+  // control that makes the rule falsifiable rather than assumed.
+  'groundfinelum',
   // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
   // night exactly); `starlightamp=` sweeps it.
   // RN-952, the DAYLIGHT floor underneath it, which had no control at all and

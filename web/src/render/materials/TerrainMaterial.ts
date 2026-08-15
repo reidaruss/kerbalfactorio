@@ -22,7 +22,10 @@ import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 // rather than a `#define`. Imported from where it is derived and documented,
 // so there is still one authority for the number and the sweep cannot drift
 // from the value the sweep is measured against.
-import { RELIEF_GRAD_UV, REL_SWING_DEFAULT, REL_CELL, REL_CELL_NOISE } from './TerrainArt.glsl.js';
+import { RELIEF_GRAD_UV, REL_SWING_DEFAULT, REL_CELL, REL_CELL_NOISE,
+  FINE_BUMP, FINE_ALB, FINE_A, FINE_R, FINE_B, FINE_W, FINE_CHUNK_M,
+  FINE_LUM_REF }
+  from './TerrainArt.glsl.js';
 import { FAR_SCALE } from '../Scenes.js';
 
 // ?side= overrides this for a one-off diagnosis; the committed default is what
@@ -277,6 +280,29 @@ function horizonOccFromQuery(): number | null {
   return Number.isFinite(n) ? Math.min(0.45, Math.max(0, n)) : null;
 }
 
+/**
+ * RN-1733. The near-field detail layer's two amplitudes, on `specAmpFromQuery`'s
+ * pattern exactly, including RN-150's dead-default guard: `Number(null)` is 0
+ * and 0 is finite, so a missing parameter must read as MISSING and never as an
+ * amplitude of zero. This file has shipped that bug twice already
+ * (`groundtexamp` and the wet-sand band) and the failure is silent in the worst
+ * direction: the feature is simply absent while every filename claims it is on.
+ *
+ * `?groundfine=0` is the WHOLE-TERM control and is what the before half of
+ * every RN-1733 pair is taken with; `?groundfinebump=0` and `?groundfinealb=0`
+ * isolate the two halves, because a bump that is too strong and an albedo that
+ * is too strong are different failures and a single switch could not tell them
+ * apart.
+ */
+function fineAmpFromQuery(): THREE.Vector2 {
+  const p = new URLSearchParams(self.location.search);
+  const all = p.get('groundfine') === '0' ? 0 : 1;
+  return new THREE.Vector2(
+    all * (p.get('groundfinebump') === '0' ? 0 : ampParam(p, 'groundfinebumpamp', FINE_BUMP)),
+    all * (p.get('groundfinealb') === '0' ? 0 : ampParam(p, 'groundfinealbamp', FINE_ALB)),
+  );
+}
+
 function specAmpFromQuery(): THREE.Vector2 {
   const p = new URLSearchParams(self.location.search);
   const all = p.get('terrainspec') === '0' ? 0 : 1;
@@ -386,6 +412,36 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   // toggle that reached the near material and not the far one would be a
   // second opinion about how the ground responds to light.
   const specAmp = specAmpFromQuery();
+  // RN-1733. One shared holder for the near-field detail layer, by reference
+  // into both materials for the one-authority reason artAmp is: a runtime
+  // toggle that reached the near material and not the far one would be a
+  // second opinion about what the ground is made of. (The far material
+  // compiles the term out entirely, so the share is belt and braces there and
+  // the reason to keep it is that the pattern must not have an exception.)
+  const fineAmp = fineAmpFromQuery();
+  // RN-1733. The layer's three repeats and three weights, shared by reference
+  // for the one-authority reason artAmp is. `?groundfinefreq=61,109,191` and
+  // `?groundfinew=0.55,0.35,0.30` override them; a malformed or non-positive
+  // triple takes the boot default rather than being clamped into a state
+  // nothing documents (reliefCellFromQuery's rule).
+  const triple = (key: string, d: readonly [number, number, number],
+    positive: boolean): THREE.Vector3 => {
+    const v = new URLSearchParams(self.location.search).get(key);
+    const n = (v ?? '').split(',').map(Number);
+    const ok = n.length === 3 && n.every((x) => Number.isFinite(x)
+      && (!positive || x > 0));
+    return ok ? new THREE.Vector3(n[0], n[1], n[2])
+      : new THREE.Vector3(d[0], d[1], d[2]);
+  };
+  const fineFreq = triple('groundfinefreq', [FINE_A, FINE_R, FINE_B], true);
+  const fineW = triple('groundfinew', FINE_W, false);
+  // RN-1735. `?groundfinelum=0` restores the FLAT amplitude across every biome
+  // exactly, which is what makes the luminance rule falsifiable on one build
+  // rather than two commits apart. A hard 0 or 1, on reliefGrad's precedent.
+  const fineLum: THREE.IUniform<number> = {
+    value: new URLSearchParams(self.location.search).get('groundfinelum') === '0'
+      ? 0 : 1,
+  };
   // RN-741, shared by reference into both materials for the one-authority
   // reason artAmp is: a control that reached the near material and not the far
   // one would make the negative control a statement about one scene only.
@@ -460,6 +516,10 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uWetBand: { value: wetBand },
       uWetDir: { value: wetDir },
       uSpecAmp: { value: specAmp },
+      uFineAmp: { value: fineAmp },
+      uFineFreq: { value: fineFreq },
+      uFineW: { value: fineW },
+      uFineLum: fineLum,
       uReliefGrad: reliefGrad,
       uReliefGradUv: reliefGradUv,
       uReliefSwing: reliefSwing,
@@ -637,6 +697,85 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       return [specAmp.x, specAmp.y];
     },
     getSpec(): [number, number] { return [specAmp.x, specAmp.y]; },
+    /** RN-1733. The near-field detail layer, at runtime, on setSpec's precedent
+     *  and for RN-1000's sharper version of its reason: this term is judged by
+     *  LOOKING at a pair, and two page loads is not a pair (two streamed chunk
+     *  sets, two scatter draws, two sun solves). Written into the SHARED vector,
+     *  so the near and far materials cannot disagree, and no push is needed
+     *  because three uploads a ShaderMaterial's uniforms every frame.
+     *
+     *  Negatives are refused rather than clamped, on setReliefSwing's rule: a
+     *  negative amplitude is a caller error and reading it as its own magnitude
+     *  would make a mistyped sweep look like a working one. */
+    setFine(bump: number, alb?: number): [number, number] {
+      if (Number.isFinite(bump) && bump >= 0) fineAmp.x = bump;
+      const a = alb === undefined ? bump : alb;
+      if (Number.isFinite(a) && a >= 0) fineAmp.y = a;
+      return [fineAmp.x, fineAmp.y];
+    },
+    getFine(): [number, number] { return [fineAmp.x, fineAmp.y]; },
+    /** RN-1733. The boot DEFAULT as its own fixture, separate from the live
+     *  value, so a probe that always passes an explicit flag still exercises
+     *  what ships (RN-150: two features have shipped dark because every probe
+     *  passed one). `shipped` is the authored constant, `bump`/`alb` are what
+     *  this boot actually resolved, and `present` says whether a URL moved it. */
+    fineDefault(): { present: boolean; bump: number; alb: number;
+      shippedBump: number; shippedAlb: number;
+      freq: [number, number, number]; w: [number, number, number];
+      chunkM: number; lambdaM: [number, number, number]; integerFreq: boolean;
+      lum: number; lumRef: number } {
+      const p = new URLSearchParams(self.location.search);
+      const boot = fineAmpFromQuery();
+      const keys = ['groundfine', 'groundfinebump', 'groundfinebumpamp',
+        'groundfinealb', 'groundfinealbamp', 'groundfinefreq', 'groundfinew',
+        'groundfinelum'];
+      const f: [number, number, number] = [fineFreq.x, fineFreq.y, fineFreq.z];
+      return {
+        present: keys.some((k) => p.get(k) !== null),
+        bump: boot.x, alb: boot.y,
+        shippedBump: FINE_BUMP, shippedAlb: FINE_ALB,
+        freq: f, w: [fineW.x, fineW.y, fineW.z], chunkM: FINE_CHUNK_M,
+        lum: fineLum.value, lumRef: FINE_LUM_REF,
+        // The WAVELENGTHS, published beside the repeats, because a repeat count
+        // is not a thing anyone can judge and a wavelength in metres is. This
+        // is where a reader sees that the finest octave is a decimetre and not
+        // a metre without doing the division themselves.
+        lambdaM: [FINE_CHUNK_M / f[0], FINE_CHUNK_M / f[1], FINE_CHUNK_M / f[2]],
+        // The chunk-edge seam holds only for INTEGER repeats (ofArtVnoise2P
+        // reduces the lattice index modulo this number). A sweep is allowed to
+        // break it; what is not allowed is breaking it without the report
+        // saying so, which is how a fractional rung's seam gets attributed to
+        // the frequency rather than to the sweep.
+        integerFreq: f.every((x) => Number.isInteger(x)),
+      };
+    },
+    /** RN-1733. The frequency triple, at runtime, so which BAND the near ground
+     *  is missing can be swept inside one page. Positive and finite or the call
+     *  is refused, on setReliefCell's rule: a sweep that silently ignored a bad
+     *  rung would report the PREVIOUS rung's frame under the new rung's label. */
+    setFineFreq(a: number, r: number, b: number): [number, number, number] {
+      if ([a, r, b].every((x) => Number.isFinite(x) && x > 0)) fineFreq.set(a, r, b);
+      return [fineFreq.x, fineFreq.y, fineFreq.z];
+    },
+    getFineFreq(): [number, number, number] {
+      return [fineFreq.x, fineFreq.y, fineFreq.z];
+    },
+    /** RN-1733. The three height weights at runtime. Negatives ARE allowed here
+     *  and that is deliberate rather than sloppy: a negative weight inverts one
+     *  octave's sense, which is a legitimate question about a crease field
+     *  (creased highs against creased lows), and it is the ridge term where the
+     *  answer is not obvious. */
+    setFineW(a: number, r: number, b: number): [number, number, number] {
+      if ([a, r, b].every((x) => Number.isFinite(x))) fineW.set(a, r, b);
+      return [fineW.x, fineW.y, fineW.z];
+    },
+    getFineW(): [number, number, number] { return [fineW.x, fineW.y, fineW.z]; },
+    /** RN-1735. The per-biome luminance weight, at runtime, so the rule can be
+     *  turned off between two SETTLED FRAMES rather than two page loads. */
+    setFineLum(v: number): number {
+      fineLum.value = v > 0.5 ? 1 : 0; return fineLum.value;
+    },
+    getFineLum(): number { return fineLum.value; },
     /** The boot DEFAULT as its own fixture, separate from the live value, so a
      *  probe that always passes an explicit flag still exercises what ships
      *  (RN-150: `Number(null)` is 0 and 0 is finite). */
