@@ -655,8 +655,19 @@ def stain_run(panel, mb, u, v_top, v_bot, width, role, seed=0, n=4):
 # The shallower layer a satellite fragment sits on, per main layer. Both are
 # at or under `hinge` (0.052), so a satellite can never raise the tier's worst
 # deviation above what the main mark already costs.
+#
+# RN-1660. FOUR ENTRIES AND TWO DISJOINT PAIRS, NOT ONE PAIR SHARED BY TWO
+# ROLES. `spall`'s kick/boss pair is used by STONE_L alone, so a main mark on
+# `kick` and a satellite on `boss` are always the same material and the
+# checker does not count them. `growth_patch` used to put MOSS's satellite on
+# `plate` and LICHEN's main on `plate` too - the two roles sharing the same
+# layer PAIR, just with main and satellite swapped - so a moss patch's
+# satellite and a nearby lichen patch's main sat on the identical plane in
+# different materials, which is exactly what `check_coplanar` gates on. MOSS
+# keeps shim/plate; LICHEN moves to stain/grime, RN-1543's own two-part-mark
+# pair, so the two species can never land on the same depth.
 _SATELLITE = {"kick": "boss", "boss": "kick", "shim": "plate",
-              "plate": "shim"}
+              "plate": "shim", "stain": "grime", "grime": "stain"}
 
 
 def _ragged(panel, mb, u, v, du, dv, kind, role, seed):
@@ -694,8 +705,21 @@ def _band(lo, hi, span, t):
 
     The one-dimensional half of `_fit`, and it exists for the same measured
     reason. Returns (span, centre) or (0, 0) when the band is too short for a
-    mark worth emitting."""
-    span = min(span, hi - lo)
+    mark worth emitting.
+
+    RN-1660. `span` USED TO CLAMP TO THE FULL BAND, WHICH IS A DIFFERENT BUG
+    THAN THE ONE THIS FUNCTION'S DOCSTRING DESCRIBES. Shrinking to `hi - lo`
+    exactly is correct for keeping the mark on the face; it is NOT correct for
+    `t`, because at that clamp `(hi - lo - span)` is zero and `t` is multiplied
+    against nothing, so EVERY caller that asks for a span at or over the band's
+    own length lands on the identical centre regardless of `t`. On the ruin's
+    course-2 silt band that made every one of a facet's silt wedges and moss
+    scatters share one exact top and bottom edge, which is what `check_coplanar`
+    was reading as 306 painted-band pairs on one plane. Reserving 30% of the
+    band for `t` to move inside costs nothing when the natural span already
+    fits (the `min` below only bites in the saturating case) and guarantees the
+    degenerate zero-slack case can no longer happen."""
+    span = min(span, (hi - lo) * 0.70)
     if span < 0.06:
         return 0.0, 0.0
     return span, lo + span * 0.5 + (hi - lo - span) * min(1.0, max(0.0, t))
@@ -714,12 +738,19 @@ def _fit(u0, u1, v0, v1, du, dv, seed, i):
 
     The part is SHRUNK to fit rather than nudged, because nudging a part that
     is bigger than its host just moves the overhang to the other edge; a face
-    too small for the smallest useful mark gets no mark, which is correct."""
-    # 1.5x, because `_ragged` hangs a satellite up to 0.48 * du off the main
-    # box's centre and half of it beyond that: the window has to hold the whole
-    # mark, not just the box the caller asked for.
-    du = min(du, (u1 - u0) / 1.5)
-    dv = min(dv, (v1 - v0) / 1.5)
+    too small for the smallest useful mark gets no mark, which is correct.
+
+    RN-1660. THE OLD 1.5x WAS THE EXACT BOUNDARY OF ITS OWN ARGUMENT, WHICH IS
+    WHY IT DID NOT WORK. `lo_u, hi_u = u0 + du*0.75, u1 - du*0.75` needs
+    `du <= (u1-u0)/1.5` to leave `lo_u <= hi_u` AT ALL, but at exactly 1.5x it
+    leaves `lo_u == hi_u`: zero room for the two `_rng` draws below to differ,
+    so every oversized mark on one face lands at the identical (u, v) and is
+    identical in size, and two independently-drawn oversized marks of
+    different materials are then not just coplanar but coincident. 2.2x keeps
+    the same shrink-to-fit contract and leaves 0.318 of the window for the
+    draws to actually use."""
+    du = min(du, (u1 - u0) / 2.2)
+    dv = min(dv, (v1 - v0) / 2.2)
     if du < 0.05 or dv < 0.05:
         return None
     lo_u, hi_u = u0 + du * 0.75, u1 - du * 0.75
@@ -737,9 +768,12 @@ def growth_patch(panel, mb, u0, u1, v0, v1, density, role_deep, role_light,
     damp centre and the tolerant one rings it. The split is by the patch's own
     hash, so a patch is not a checkerboard.
 
-    Layer `shim` (19 mm) for the body and `plate` (24 mm) for the crust, both
-    dropped by LOD1, which is right: growth is a colour event at any distance a
-    shadow cascade cares about."""
+    Layer `shim` (19 mm) for the deep-shade body and its `plate` satellite;
+    `stain` (16 mm) for the tolerant crust and its `grime` satellite - a
+    SEPARATE pair from the deep species' own, per RN-1660, and see
+    `_SATELLITE` for why sharing one pair between the two roles was the
+    defect. Both pairs are dropped by LOD1, which is right: growth is a
+    colour event at any distance a shadow cascade cares about."""
     if density <= 0.02:
         return
     for i in range(n):
@@ -754,7 +788,7 @@ def growth_patch(panel, mb, u0, u1, v0, v1, density, role_deep, role_light,
         if hosted is not None and not hosted(u, v):
             continue
         deep = _rng(seed, i, 15) < 0.55
-        _ragged(panel, mb, u, v, du, dv, "shim" if deep else "plate",
+        _ragged(panel, mb, u, v, du, dv, "shim" if deep else "stain",
                 role_deep if deep else role_light, seed * 13 + i)
 
 
@@ -931,23 +965,43 @@ def _plinth_skin(mb, tier):
                 # banks unevenly against a wall and its top edge is what says
                 # so, so each facet gets two pieces at different heights and
                 # different widths and the line breaks at every joint.
+                # RN-1660. THROUGH `_band` NOW, NOT A RAW CLAMP. Both wedges'
+                # natural height (0.30 to 0.72 m) is bigger than the 0.26 m
+                # band on every course this runs on, so the raw `min(...,
+                # hi - lo)` this used to be saturated on EVERY call: `hh` was
+                # always exactly `hi - lo` and `lo + hh * 0.5` was always the
+                # band's exact centre, so the two wedges - meant to read as
+                # "different heights" per the comment above - were identical,
+                # and every facet's wedges shared one exact top and bottom edge
+                # with every other facet's, which is what check_coplanar was
+                # counting. `_band` still shrinks to fit but reserves slack for
+                # `t` to place the centre, so the two wedges differ from each
+                # other and from the moss/lichen scatter below.
                 for w in range(2):
-                    hh = min((0.30 + _rng(9, i, w, 1) * 0.42), hi - lo)
+                    hh, at = _band(lo, hi, 0.30 + _rng(9, i, w, 1) * 0.42,
+                                   _rng(9, i, w, 10))
+                    if not hh:
+                        continue
                     sh.part(mb, hh, chord * (0.30 + _rng(9, i, w, 2) * 0.22),
-                            lo + hh * 0.5, deg + (w - 0.5) * 5.4, "shim",
-                            EARTH)
+                            at, deg + (w - 0.5) * 5.4, "shim", EARTH)
             for j in range(3):
                 if _rng(9, ci, i, j, 4) > sh_v:
                     continue
-                sz = min(0.30 + _rng(9, ci, i, j, 5) * 0.5, hi - lo)
+                # Same fix, same cause: `sz` saturated to `hi - lo` on every
+                # draw whose natural size (0.30 to 0.80 m) exceeded the 0.26 m
+                # band, which is most of them, so the `+ (hi-lo-sz)*rng` term
+                # right below multiplied a zero and every scatter mark landed
+                # on the band's exact centre regardless of the draw.
+                sz, at = _band(lo, hi, 0.30 + _rng(9, ci, i, j, 5) * 0.5,
+                               _rng(9, ci, i, j, 7))
+                if not sz:
+                    continue
                 # Arc capped at 1.20 m and the bearing jitter at 1 degree, so
                 # half-arc plus offset never exceeds 3 degrees off the facet
                 # centre and the worst burial is facet_r(1 - cos 3) = 24 mm,
                 # inside cascade 1's 56.25.
                 sh.part(mb, sz, min(1.20, 0.35 + _rng(9, ci, i, j, 6) * 0.9),
-                        lo + sz * 0.5
-                        + (hi - lo - sz) * _rng(9, ci, i, j, 7),
-                        deg + sf.jitter(1.0, 9, ci, i, j, 8), "shim",
+                        at, deg + sf.jitter(1.0, 9, ci, i, j, 8), "shim",
                         MOSS if _rng(9, ci, i, j, 9) < 0.6 else LICHEN)
 
     # The paving. Flagstone joints on the deck, on the deepest cheap layer that
@@ -964,6 +1018,17 @@ def _plinth_skin(mb, tier):
         x = sf.jitter(15.0, 11, i, 1)
         y = sf.jitter(15.0, 11, i, 2)
         if x * x + y * y > (r_pave - 0.8) ** 2:
+            continue
+        # RN-1660. NOT INSIDE THE CELLA. This scatter is the OPEN platform's
+        # own debris and never checked whether its draw landed under the roof;
+        # `cella_skin`'s interior floor is a separate `Panel` at this same
+        # DECK_Z and, whenever both draws pick the same shallow layer ("shim"
+        # is one of two both use), an open-platform fragment and an indoor one
+        # were exactly coplanar with no relationship between them at all - two
+        # unrelated emitters landing on one shared depth is the same property
+        # as (b) in the header, just from two scatters instead of one mark and
+        # its satellite. An enclosed room does not get outdoor paving debris.
+        if CELLA_X0 - 0.5 < x < CELLA_X1 + 0.5 and CELLA_Y0 < y < CELLA_Y1:
             continue
         d = damage(x, y)
         deck.part(mb, 0.30 + _rng(11, i, 3) * 0.9, 0.25 + _rng(11, i, 4) * 0.8,
@@ -1426,8 +1491,17 @@ def cella_skin(mb, tier, screen=False):
     for s in (1, -1):
         east.part(mb, 0.16, DOOR_Z1 - DECK_Z - 0.2, s * (DOOR_HW + 0.10),
                   DECK_Z + (DOOR_Z1 - DECK_Z) * 0.5, "coaming", STONE_D)
-    east.part(mb, DOOR_HW * 2.0 + 0.4, 0.20, 0.0, DOOR_Z1 + 0.13, "coaming",
-              STONE_D)
+    # RN-1660. INSET BY THE COAMING RAIL, NOT THE LINTEL'S OWN FULL WIDTH. This
+    # used to be `DOOR_HW * 2.0 + 0.4` - the lintel box's own width in
+    # `cella_shell`, copied rather than derived - so the accent's own end caps
+    # landed exactly on the lintel box's own side-cut planes, one property (a)
+    # in the header for a wall-and-lintel pair instead of a machine-and-mount
+    # one. `Face.coaming`'s own rail (0.075 m, doubled for both ends) is
+    # already the project's unit for "how far a proud accent sits inside the
+    # thing it decorates"; reusing it here keeps the accent visibly inside the
+    # lintel rather than flush with its edge.
+    east.part(mb, DOOR_HW * 2.0 + 0.4 - 0.15, 0.20, 0.0, DOOR_Z1 + 0.13,
+              "coaming", STONE_D)
     floor = sf.Panel("Z", 1, DECK_Z, min_layer=tier)
     floor.part(mb, 0.55, DOOR_HW * 2.0 - 0.1, IN_X1 - 0.28, 0.0, "shim",
                STONE_L)
@@ -1567,12 +1641,23 @@ def collapse(mb, tier, table, screen=False):
         if dmg > 0.75:
             # Blackened stone, and it is ONLY where the fire was hottest. A
             # ruin that is uniformly sooty has no event in it.
+            #
+            # RN-1660. "seam", NOT "shim". This scorch scatter and
+            # `_plinth_skin`'s paving-debris scatter are two unrelated
+            # emitters that both anchor a fresh `Panel` at this same DECK_Z,
+            # and a collapsed pier's blast-driven rubble position can land
+            # anywhere on the open deck, same as the paving debris can - so
+            # whenever both drew "shim" for a spot that happened to overlap,
+            # a blackened patch and a stray paving fragment were on the exact
+            # same plane with no relationship between them. Off the debris
+            # scatter's two layers (shim, plate) removes the possibility
+            # rather than the occurrence.
             deck = sf.Panel("Z", 1, DECK_Z, min_layer=tier)
             for k in range(4):
                 deck.part(mb, 1.1 + _rng(101, i, k, 7) * 1.5,
                           0.9 + _rng(101, i, k, 8) * 1.4,
                           cx + sf.jitter(1.5, 101, i, k, 9),
-                          cy + sf.jitter(1.5, 101, i, k, 10), "shim", BURNT)
+                          cy + sf.jitter(1.5, 101, i, k, 10), "seam", BURNT)
 
     # THE ONE FALLEN ARCHITRAVE THAT LANDED IN ONE PIECE, and it is the piece of
     # storytelling the debris fields cannot do: a 4 m beam lying across the deck
