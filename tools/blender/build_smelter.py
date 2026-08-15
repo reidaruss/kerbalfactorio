@@ -909,6 +909,88 @@ def build_lod1(root):
                        "SteelDark")
 
     mb.box((0.05, 0.44, 0.18), (1.845, 0.0, STATUS_Z), "EmissiveState")
+
+    # --- RN-1675: THE SECOND SHADOW-PROXY PASS, RN-1623's METHOD APPLIED ---
+    # RN-1623 (the miner's LOD1) named this tier still owed and gave the
+    # method: block in every LOD0 feature standing over one shadow texel
+    # (56.25 mm, cascade 1) proud of what this tier already has, at the
+    # feature's own MEASURED envelope rather than an eyeballed one. "Measured"
+    # here means literally traced: `of_lib.MeshBuilder._add` was instrumented
+    # to record, for every primitive LOD0 adds, the source line that caused it
+    # and its exact vertex bounds, then each group was checked against this
+    # tier's own surface with the client's nearest-surface metric
+    # (`check_shadow_lod.deviation`, offline, on the same geometry). Every box
+    # below is that measured envelope, not a guess at one.
+    #
+    # THE ONE CASE THAT BREAKS A SINGLE BOX, EXACTLY AS RN-1623 PREDICTED: the
+    # roof junction box's own four lid bolts sit deep inside the combined
+    # housing+plate+bolt envelope below, because that envelope is tall (the
+    # housing's own foot is buried at DECK_TOP - EMBED, the bolts stand at the
+    # very top) and the bolts themselves are a small cluster at one corner of
+    # it in every axis - "interior in all three axes", the miner's junction
+    # box lid bolts again. The fix is the same: a second thin plate at the
+    # bolts' own layer, sized to just the four of them.
+    #
+    # -- the roof: the flared stack foot and the cleanout, neither of which
+    # this tier had at all --
+    mb.box((0.92, 0.92, 0.14), (0.0, 1.00, 2.99), "SteelDark")     # flared foot
+    mb.box((0.26, 0.06, 0.24), (0.0, 0.64, 3.16), "SteelDark")     # cleanout door
+    mb.box((0.09, 0.05, 0.09), (0.10, 0.61, 3.16), "SteelDark")    # cleanout dog
+    # the junction box (housing + lid + bolts, combined) and its bolts' own
+    # second plate, per the note above
+    mb.box((0.44, 0.52, 0.4796), (-1.10, -1.06, 3.0052), "SteelDark")
+    mb.box((0.378, 0.458, 0.0682), (-1.10, -1.06, 3.2109), "SteelDark")
+
+    # -- the rear (+Y) face: hood mounting brackets, the finned drum's shaft
+    # end and the cable tray, none of which the hood's own stand-in box (above)
+    # reaches --
+    mb.box((2.19, 0.22, 0.30), (0.0, 1.6824, 1.19), "SteelDark")    # hood brackets
+    mb.box((0.3202, 0.3060, 0.3060), (-1.06, 1.82, 2.16), "SteelDark")  # drum shaft
+    mb.box((0.18, 0.1147, 1.39), (1.33, 1.7167, 1.645), "SteelDark")    # cable tray
+
+    # -- the front (-Y) face: the firebox coaming, door hinges/latch and peep
+    # boss/sight strip stand proud of the door block above, and the intake and
+    # outlet throat plates are recessed BEHIND this tier's mouth blocks --
+    mb.box((1.51, 0.1674, 1.11), (0.0, -1.7243, 1.70), "SteelDark")    # coaming
+    mb.box((0.10, 0.0806, 0.84), (-0.60, -1.7357, 1.70), "SteelDark")  # hinges
+    mb.box((0.895, 0.0682, 0.055), (0.0, -1.7339, 1.32), "SteelDark")  # latch
+    mb.box((0.40, 0.0574, 0.32), (0.0, -1.7323, 1.84), "SteelDark")    # peep boss
+    mb.box((0.30, 0.0093, 0.22), (0.0, -1.7623, 1.84), "SteelDark")    # sight strip
+    mb.box((0.17, 0.1147, 0.88), (-1.24, -1.7167, 1.42), "SteelDark")  # cable tray
+    # Both throat plates sit entirely INSIDE `_mouth_block`'s own solid frame
+    # box (Y 1.70 to 1.94), so their inner face lands exactly on the frame's
+    # own inner face at Y = +/-1.70. Same plane, same role ("Steel", matching
+    # the frame rather than the LOD0 throat's "SteelDark") so check_coplanar's
+    # same-material skip applies and it is not a new pair - a role match, not
+    # a geometry change, since this tier is never painted (RN-561).
+    mb.box((1.40, 0.10, 0.70), (0.0, 1.75, 0.90), "Steel")   # intake throat
+    mb.box((1.40, 0.10, 0.50), (0.0, -1.75, 0.45), "Steel")  # outlet throat
+
+    # -- the service (-X) face: the louvre, the step tread, the ladder's own
+    # rungs (the block above only carries the stringers and the landing) and
+    # the duct + its mounting brackets --
+    mb.box((0.1674, 1.25, 1.01), (-1.7243, 0.86, 1.32), "SteelDark")    # louvre
+    mb.box((0.3596, 0.54, 0.3275), (-1.7522, -0.96, 0.5237), "SteelDark")  # tread
+    mb.box((0.2155, 0.475, 1.76), (-1.7313, -0.96, 1.84), "SteelDark")  # rungs
+    mb.box((0.3038, 0.84, 0.07), (-1.7441, -0.96, 2.46), "SteelDark")   # duct
+    mb.box((0.20, 0.67, 0.26), (-1.6724, -0.96, 2.29), "SteelDark")     # brackets
+
+    # -- the status (+X) face: the bezel (both layers), the gauge/hatch group
+    # and the cable tray --
+    mb.box((0.10, 0.72, 0.40), (1.75, 0.0, STATUS_Z), "SteelDark")     # bezel outer
+    mb.box((0.06, 0.56, 0.26), (1.81, 0.0, STATUS_Z), "SteelDark")     # bezel inner
+    mb.box((0.1674, 1.03, 1.13), (1.7243, 0.72, 1.46), "SteelDark")    # gauge+hatch
+    mb.box((0.1147, 0.17, 1.57), (1.7167, -1.34, 1.735), "SteelDark")  # cable tray
+
+    # -- the base: the anchor pads and their bolts, and the body ribs on the
+    # +Y/-Y faces (this tier's shell has none) --
+    mb.box((3.96, 3.96, 0.0682), (0.0, 0.0, 0.4069), "SteelDark")      # anchors
+    # "Steel" and not "SteelDark": the measured envelope's top face lands
+    # exactly on Z = 2.50, which is also the -X ladder stringer block's own
+    # top (the block above, "Steel"). Matching its role keeps them the same
+    # material rather than moving either box off a plane both need.
+    mb.box((3.54, 2.98, 2.10), (0.0, 0.0, 1.45), "Steel")               # body ribs
+
     return mb, mb.build(NAME + "_LOD1", root)
 
 
