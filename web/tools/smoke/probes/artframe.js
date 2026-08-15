@@ -147,6 +147,40 @@
       sunDot: 0.88, sunTol: 0.06,
       strikes: 26, props: false,
       box: [0.3200, 0.4400, 0.6800, 0.8600],
+      // RN-1727 (audit-corrections). §2.8 R1's two UNTOUCHED-TERRAIN
+      // rectangles, committed rather than left for the next reader to
+      // grid-search back out of the PNG, which is what this correction's own
+      // verifier had to do. `groundA`/`groundB` are the two patches of
+      // untouched ground R1 measured (iqr 22.13, 16.06); R1's third figure,
+      // "the dug cut face reads iqr 36.78", is this shot's own canonical
+      // `box` above (that IS the dug face by construction, see `why` below),
+      // so no separate rectangle for it is committed here.
+      //
+      // Verified against a real D3D11 capture on this build: `groundA`
+      // reproduces iqr 22.13 to the digit; `groundB` lands at 15.99, within
+      // 0.1 of R1's published 16.06.
+      //
+      // FOUND WHILE VERIFYING, AND IT IS WHY NO `cutFace` RECTANGLE IS
+      // COMMITTED: the pit's own SHAPE is not bit-reproducible page load to
+      // page load, even though `box.iqr` itself reads 37.40 identically on
+      // two separate loads. A small rectangle fully inside `box` (px
+      // 1060,720-1200,860) read 36.76 on one load and 33.55 on another --
+      // three points of scatter on a window the whole-box average does not
+      // show. `groundA`/`groundB`, both outside the pit, are stable across
+      // the same loads. So the untouched terrain is deterministic and the
+      // dig pattern is not: the strikes land on slightly different voxel
+      // cells each load, which redistributes local contrast inside the pit
+      // without moving the box-wide statistic much. R1's own 36.78 sits
+      // inside that scatter band, consistent with one honest sample of a
+      // quantity nobody had previously shown to be noisy. Not chased further
+      // within this correction's scope; the next lane that wants a STABLE
+      // sub-rectangle inside the dug face should expect to need one anchored
+      // to the pit's own geometry (e.g. `of.voxels()`) rather than to fixed
+      // screen pixels.
+      extra: {
+        groundA: [0.1250000, 0.3944444444444444, 0.1875000, 0.5055555555555555],
+        groundB: [0.0437500, 0.1055555555555556, 0.1000000, 0.2055555555555556],
+      },
       why: 'the dug voxel face at arm\'s length, RN-1258\'s subject',
     },
     machine: {
@@ -286,6 +320,16 @@
         plate: [0.6781, 0.2833, 0.7469, 0.6833],
         hearthL: [0.1719, 0.2222, 0.2188, 0.9111],
         hearthR: [0.8094, 0.2222, 0.8438, 0.9111],
+        // RN-1727 (audit-corrections). THE TWO FLAT SURFACES §2.8 R6 NAMED,
+        // committed so the next reader does not grid-search the PNG the way
+        // this correction's own verifier had to. `peep` is the port and
+        // `strip` is the sight band inside the firebox, both untextured
+        // (`OF_EmissiveState`, `build_smelter.py:794-797`). Verified against a
+        // real D3D11 capture on this build, bit-identical to R6's own
+        // published figures: `peep` iqr 0.93, p50 190.33, p95 191.98; `strip`
+        // iqr 4.15.
+        peep: [0.483750, 0.4288888888888889, 0.536875, 0.4977777777777778],
+        strip: [0.436250, 0.5766666666666667, 0.582500, 0.5922222222222222],
       },
       why: 'the smelter at arm-reach: the proof-shot framing, plate and brick',
     },
@@ -318,6 +362,18 @@
       // ground plane all in one frame.
       bearingDeg: 260, standoffM: 19, aimUpM: 1.6,
       box: [0.2500, 0.3800, 0.7500, 0.7200],
+      // RN-1727 (audit-corrections). §2.8 R7's two sky rectangles, committed
+      // for the same reason as the other shots in this pass: the audit read
+      // them and never wrote down where. `skyHigh` is near the zenith,
+      // `skyLow` a clean unobstructed patch just above the horizon haze
+      // (chosen off the frame's own right edge to dodge the mountain and tree
+      // silhouettes that intrude on every other candidate at this height).
+      // Verified against a real D3D11 capture on this build, bit-identical to
+      // R7's own published `warm`: `skyHigh` -87.69, `skyLow` -20.09.
+      extra: {
+        skyHigh: [0.3750, 0.0366666666666667, 0.6875, 0.0644444444444444],
+        skyLow: [0.9312500, 0.3666666666666667, 0.9812500, 0.3777777777777778],
+      },
       why: 'foundations, walls and machines under a low sun: §2b has no picture',
     },
     station: {
