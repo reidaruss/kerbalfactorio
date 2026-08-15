@@ -4,7 +4,23 @@ machine_form.py - the vocabulary a factory MACHINE is detailed with.
 Not a build script. Imported by build_assembler.py, build_smelter.py,
 build_miner.py, build_box.py and build_generator.py, by the structural set
 (build_wall.py, build_door.py, build_floor.py, build_foundation.py and
-build_pillar.py), plus station_form.py which extends it.
+build_pillar.py), by build_launch_pad.py, plus station_form.py which extends
+it.
+
+RN-1690 ADDED THE LAUNCH PAD, AND IT IS THE FIRST CONSUMER THAT IS TOO BIG
+RATHER THAN TOO SMALL. Every refusal recorded below is a part whose features
+are SMALLER than the range this table was derived against - a 1 m belt tile, a
+0.70 m inserter, an 0.08 m pole leg - and the pad is 24 x 24 m with a 23.3 m
+deck bay. A 13 mm `seam` on that bay is 0.06 per cent of the face it is meant
+to divide against the same strap's 0.33 per cent on a 4 m wall panel, and a
+44 mm `bolt` on it is a pebble. So the import is real but it is DELIBERATELY
+PARTIAL: the vocabulary is applied to the pad's sub-assemblies, every one of
+which is inside the 4 to 8 m range (the launch table at 7.2 x 6.8 m, the clamp
+at 1.6 x 0.7 m, the control bunker at 4.0 x 2.6 m, the T-0 mast, the tower
+legs, the swing arm), and the DECK is detailed with hand-authored geometry at
+its own scale under constants that live in build_launch_pad.py and say why.
+Adding the name here without that caveat would be the same defect as adding it
+without the import.
 
 RN-1591 PUT THE STRUCTURAL SET ON THAT LIST, AND THE ARGUMENT IS THE SAME ONE
 THE BELT LOSES. What this vocabulary is safe on is a PLATE ASSEMBLY AT
