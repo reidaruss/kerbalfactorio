@@ -20,6 +20,7 @@
 // are streamed in and how the depletion diff is keyed.
 
 import { NODE_KIND, type GameCore } from './GameCore.js';
+import { inheritDepletion, type KnownNode } from './NodeMemory.js';
 import type { NodeField } from './NodeField.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { WaterOracle } from '../world/WaterOracle.js';
@@ -40,13 +41,6 @@ interface CellRec {
   placed: number[];   // /core node indices presented from this cell
 }
 
-/** A rock this session materialised, kept after it streams out: its /core
- *  node entry (and so its depletion) lives for the whole session. */
-interface Known {
-  index: number;
-  initial: number;
-}
-
 /** Cells built per update. A cell BUILD enters WASM, and building a whole
  *  154-cell ring in one frame measured 0.8 to 3.3 ms: a hitch every 12 m of
  *  sprint. 24 cells is ~0.5 ms worst and fills a teleported ring in 7 frames;
@@ -65,8 +59,9 @@ export class RockField {
   /** Cells inside the ring not yet built, drained on a per-update budget. */
   private readonly queue: PendingCell[] = [];
   private readonly queued = new Set<string>();
-  /** rockKey -> /core index, for every rock ever materialised this session. */
-  private readonly known = new Map<string, Known>();
+  /** rockKey -> /core index, for every rock ever materialised this session.
+   *  CE-70 is what finally READS it back at re-materialisation. */
+  private readonly known = new Map<string, KnownNode>();
   /** rockKey -> saved remaining, restored but not yet materialised. */
   private readonly pending = new Map<string, number>();
   private lastScan: { x: number; y: number; z: number } | null = null;
@@ -83,6 +78,9 @@ export class RockField {
   wetCells = 0;
   refusedWater = 0;
   drainedOnRestore = 0;
+  /** CE-70. Re-materialised into a cell this session already mined, and
+   *  re-drained. Published because a regrow is silent in every other row. */
+  regrowsPrevented = 0;
   scans = 0;
   lastScanMs = 0;
   private wantedE = 0;
@@ -274,16 +272,13 @@ export class RockField {
       NODE_KIND.Rock, dx, dy, dz);
     if (index < 0) return;
     const rockKey = `${cellKey}:${k}`;
-    const st = this.game.node(index);
-    this.known.set(rockKey, { index, initial: st?.initial ?? 0 });
-    // A rock harvested in a saved session comes back harvested, through the
-    // one call that can deplete a node, at the moment it materialises.
-    const saved = this.pending.get(rockKey);
-    if (saved !== undefined && st !== null && st.remaining > saved) {
-      this.M._of_gp_node_drain(index, st.remaining - saved);
-      this.pending.delete(rockKey);
-      this.drainedOnRestore++;
-    }
+    // CE-70. A rock comes back as the player left it, whether that was a saved
+    // session or a walk out of the ring. The rule lives in NodeMemory.ts so
+    // this file and TreeField.ts cannot drift apart on it.
+    const from = inheritDepletion(this.game, this.M, this.known, this.pending,
+      rockKey, index);
+    if (from === 'saved') this.drainedOnRestore++;
+    else if (from === 'live') this.regrowsPrevented++;
     const scale = ROCK_SCALE_MIN
       + frac(rockHash(hk, 11, k, 3)) * (ROCK_SCALE_MAX - ROCK_SCALE_MIN);
     // THE BIOME IS CARRIED INTO THE ART (WG-94). The cell already knows it (it
@@ -377,8 +372,8 @@ export class RockField {
     pending: number; wanted: number; delivered: number;
     deliveredFraction: number; offeredCells: number; biomeZeroCells: number;
     refusedSlope: number; wetCells: number; refusedWater: number;
-    drainedOnRestore: number; scans: number; lastScanMs: number;
-    backlog: number;
+    drainedOnRestore: number; regrowsPrevented: number; scans: number;
+    lastScanMs: number; backlog: number;
   } {
     return {
       enabled: this.enabled,
@@ -398,6 +393,7 @@ export class RockField {
       wetCells: this.wetCells,
       refusedWater: this.refusedWater,
       drainedOnRestore: this.drainedOnRestore,
+      regrowsPrevented: this.regrowsPrevented,
       scans: this.scans,
       lastScanMs: Math.round(this.lastScanMs * 100) / 100,
       backlog: this.queue.length,
