@@ -20,6 +20,7 @@
 // second cluster table, the ring edge wanders, and the clearing is kept out.
 
 import { NODE_KIND, type GameCore } from './GameCore.js';
+import { inheritDepletion, type KnownNode } from './NodeMemory.js';
 import type { NodeField } from './NodeField.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { WaterOracle } from '../world/WaterOracle.js';
@@ -42,7 +43,6 @@ const RESCAN_MOVE_M = TREE_CELL_M / 2;
 const CELL_BUILDS_PER_UPDATE = 12;
 
 interface CellRec { expected: number; placed: number[] }
-interface Known { index: number; initial: number }
 
 interface PendingCell {
   key: string; i: number; jw: number; latC: number; lonC: number;
@@ -55,7 +55,7 @@ export class TreeField {
   private readonly queued = new Set<string>();
   /** treeKey -> /core index, for trees STANDING or HARVESTED. A full tree is
    *  dropped when its cell streams out (see `forget`). */
-  private readonly known = new Map<string, Known>();
+  private readonly known = new Map<string, KnownNode>();
   /** treeKey -> saved remaining, restored but not yet materialised. */
   private readonly pending = new Map<string, number>();
   /** The spawn clearing's own trees as UNIT DIRECTIONS, snapshotted at reset.
@@ -76,6 +76,8 @@ export class TreeField {
   refusedClearing = 0;
   cellsCapped = 0;
   drainedOnRestore = 0;
+  /** CE-70. Re-drained on re-entry; a regrow is silent in every other row. */
+  regrowsPrevented = 0;
   forgotten = 0;
   scans = 0;
   lastScanMs = 0;
@@ -306,13 +308,11 @@ export class TreeField {
     if (index < 0) return;
     const treeKey = `${c.key}:${k}`;
     const st = this.game.node(index);
-    this.known.set(treeKey, { index, initial: st?.initial ?? 0 });
-    const saved = this.pending.get(treeKey);
-    if (saved !== undefined && st !== null && st.remaining > saved) {
-      this.M._of_gp_node_drain(index, st.remaining - saved);
-      this.pending.delete(treeKey);
-      this.drainedOnRestore++;
-    }
+    // CE-70. THE CHOP SURVIVES THE WALK. Why, and why here: NodeMemory.ts.
+    const from = inheritDepletion(this.game, this.M, this.known, this.pending,
+      treeKey, index);
+    if (from === 'saved') this.drainedOnRestore++;
+    else if (from === 'live') this.regrowsPrevented++;
     // SIZE IS YIELD (TreeTuning.treeScaleFor): the scale is /core's own grade,
     // the same number `InitialAmount` is multiplied by, so a tree that looks
     // twice the size holds twice the wood. Nothing here invents a size.
@@ -389,6 +389,7 @@ export class TreeField {
       refusedClearing: this.refusedClearing,
       cellsCapped: this.cellsCapped,
       drainedOnRestore: this.drainedOnRestore,
+      regrowsPrevented: this.regrowsPrevented,
       forgotten: this.forgotten,
       scans: this.scans,
       lastScanMs: Math.round(this.lastScanMs * 100) / 100,

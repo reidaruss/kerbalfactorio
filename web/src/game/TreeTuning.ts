@@ -241,8 +241,8 @@ export interface TreeStats {
   deliveredFraction: number; offeredCells: number; biomeZeroCells: number;
   treelineCells: number; refusedSlope: number; wetCells: number;
   refusedWater: number; refusedClearing: number; cellsCapped: number;
-  drainedOnRestore: number; forgotten: number; scans: number;
-  lastScanMs: number; backlog: number;
+  drainedOnRestore: number; regrowsPrevented: number; forgotten: number;
+  scans: number; lastScanMs: number; backlog: number;
 }
 
 /** Smootherstep. */
