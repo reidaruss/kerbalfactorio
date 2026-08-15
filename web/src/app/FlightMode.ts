@@ -32,6 +32,7 @@ import { allowSave } from '../sim/SaveInhibit.js';
 import { readout as computeReadout } from './FlightReadout.js';
 import type { NavPublication, NavTarget, NodeBurn } from './FlightNav.js';
 import { armDock, dockReport, dockTargetOf, toggleDock } from './FlightDock.js';
+import { syncAutoDock, toggleApproach } from './FlightAuto.js';
 import type { DockTarget } from './FlightDock.js';
 import { choosePad, padReport, rollOutOnPad, stepPadClamps as stepPad }
   from './FlightPad.js';
@@ -79,6 +80,15 @@ export interface FlightDeps {
   /** GP-57: the world's launch pads, or null in a boot with no gameplay. A
    *  THUNK, so a world reloaded from a save hands back the RESTORED pads. */
   pads?(): LaunchPads | null;
+  /**
+   * PH-383. HAS THE PLAYER EARNED THIS MILESTONE? A PREDICATE AND NOT THE
+   * RESEARCH TREE, on `pads`'s own precedent and for a stronger reason: flight
+   * needs to ask one yes/no question (R99's auto-approach is gated on
+   * `StationBoarded`), and handing it the tree would let it grow opinions about
+   * progression that belong to gameplay. Absent in a boot with no gameplay, in
+   * which case the gate reads SHUT -- see `approachUnlocked`.
+   */
+  milestone?(id: number): boolean;
   /** Hide the on-foot HUD and the build ghost while strapped in. */
   setWorldUi(visible: boolean): void;
 }
@@ -117,6 +127,10 @@ export class FlightMode {
    *  on a surface of their own, so the report can tell the doors apart. */
   docks = 0;
   undocks = 0;
+  /** PH-382. Auto-approach programs ARMED, beside `docks` for the same reason
+   *  those sit beside `boardings`: a counter is how a probe proves a press
+   *  arrived rather than inferring it from a vessel that happened to move. */
+  approaches = 0;
   rollouts = 0;
   /** PH-110: spacewalks begun. Beside `boardings` and `disembarks`, so the
    *  report can tell the three doors apart. */
@@ -478,6 +492,12 @@ export class FlightMode {
    *  Every decision behind it is in FlightDock.ts. */
   dock(): boolean { return toggleDock(this); }
 
+  /** PH-382 / R99. THE AUTO KEY: arm the auto-approach when it is off, hand the
+   *  vehicle back when it is on. One verb, two meanings decided by state, on
+   *  `dock`'s precedent. Every decision behind it is in FlightDock.ts, and the
+   *  flight law itself is `of::approach::guide` in /core. */
+  approach(): boolean { return toggleApproach(this); }
+
   /** The catalogue row for a part id, or undefined. Published because
    *  FlightDock.ts needs a port's class and height and must not build a second
    *  catalogue index to get them. */
@@ -566,6 +586,12 @@ export class FlightMode {
     // told the truth while visible would be a chip nothing could measure.
     this.dockTarget = dockTargetOf(this, this.session.fixedTick);
     armDock(this, this.dockTarget);
+    // PH-385. AND BOOK A JOIN THE STEP MADE ON ITS OWN. Under the auto-approach
+    // the latch happens inside `of_fl_step` with nothing on this side told, so
+    // without this a completed auto-dock would be latched in /core and undocked
+    // in the registry, the save and the census -- one vessel with two answers.
+    // Outside the `aboard` guard for the same reason `armDock` is.
+    syncAutoDock(this);
     if (this.aboard) this.navball.render(this.readout());
   }
 

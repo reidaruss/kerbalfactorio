@@ -108,6 +108,11 @@ export function flightApi(s: Services): FlightDebugApi {
         // call returns: `probes/docking.js` has to prove the out-of-range
         // refusal fired rather than infer it from nothing having happened.
         case 'dock': return { ok: f.dock(), report: f.report() };
+        // PH-382. THE AUTO KEY, through the same method the key calls, and it
+        // returns `ok` for `dock`'s own reason: `probes/autoapproach.js` has to
+        // prove the LOCKED refusal fired before the station milestone rather
+        // than infer it from a vessel that did not move.
+        case 'approach': return { ok: f.approach(), report: f.report() };
         case 'counters': return counters(s);
         // PH-84. PER-TANK PROPELLANT, RE-READ FROM /core ON EVERY CALL.
         //

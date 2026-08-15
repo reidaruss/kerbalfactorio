@@ -69,6 +69,9 @@ export const DOCK_STATUS_WORDS = 11;
 export const DOCK_CANDIDATE_WORDS = 9;
 /** PH-360 (ABI 26). `[posX,Y,Z, faceX,Y,Z, rollX,Y,Z]`. */
 export const PORT_POSE_WORDS = 9;
+/** PH-382 (additive at ABI 26). `[leg, sasX,Y,Z, rcsX,Y,Z, rangeM, alongM,
+ *  lateralM, closingMS, aimErrorDeg]`, `of::approach::guide` verbatim. */
+export const APPROACH_WORDS = 12;
 export const ORBIT_META_WORDS = 18;
 export const NODE_PLAN_WORDS = 26;
 /** ABI 18: [a, e, i, lan, argp, nu, m0, epoch, mu]. */
@@ -395,6 +398,20 @@ export interface VesselAbi {
   /** PH-363. UNDOCK, pushing straight out of the vessel's own port face at
    *  `sepMS` (0 takes `docking::kReleaseSepMS`, 0.20 m/s). -> 1 or 0. */
   _of_dk_release?(f: number, sepMS: number): number;
+
+  // --- §13.2c THE AUTO-APPROACH (PH-382, R99, additive at ABI 26). ----------
+  //
+  // `of::approach::guide`, which has existed and been ctest-pinned since PH-174
+  // with no caller in the wasm at all. Additive and symbol-detected for exactly
+  // the reason §21's `of_ap_*` block is: a bundle built against an older wasm
+  // must boot, dock by hand, and NAME the symbols its auto-approach is waiting
+  // for rather than throw. See `sim/FlightApproach.ts`.
+  /** PH-382. One guidance evaluation off the ARMED DOCK RIG: no pose arguments,
+   *  because the rig already carries the only target the capture test will use.
+   *  f64 scratch, APPROACH_WORDS. Word 0 is -1 when nothing is armed. */
+  _of_dk_approach?(f: number): number;
+  /** PH-382. `approach::Guidance::note`, printed verbatim. -> UTF-8 bytes. */
+  _of_dk_approach_note?(f: number): number;
 
   // --- §13.3 ON RAILS (ABI 18). Pure, handle-free; nothing is stored. --------
   /** Fit a conic to a state vector. f64 scratch, ORBIT_ELEMENT_WORDS:

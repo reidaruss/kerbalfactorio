@@ -52,6 +52,8 @@ import * as THREE from 'three';
 import { dockCandidate, dockVerdictText, dockCaptureText, len }
   from '../sim/FlightAbi.js';
 import type { DockCandidateRow, Vec3 } from '../sim/FlightAbi.js';
+import { approachPublication } from './FlightAuto.js';
+import { approachReport } from '../sim/FlightApproach.js';
 import { registry, stateOf } from '../sim/VesselRegistry.js';
 import type { VesselDock, VesselRecord, Vec3n } from '../sim/VesselRegistry.js';
 import { vesselAbi } from '../sim/wasm/vesselabi.js';
@@ -239,8 +241,15 @@ export function dockTargetOf(m: FlightMode, tick: number): DockTarget | null {
  * shipped auto-latch the step would join the instant the ports touched and the
  * DOCK control would never once be pressable: the game would dock itself the
  * tick before the player could. `of_dk_latch(f, 0)` leaves the identical swept
- * test running and publishing every tick and makes the JOIN a command. The
- * auto-approach autopilot, when it arrives, arms with 1 and needs nothing else.
+ * test running and publishing every tick and makes the JOIN a command.
+ *
+ * PH-382: THE AUTO-APPROACH AUTOPILOT HAS ARRIVED, and it does exactly what
+ * this comment predicted -- it arms with 1 and needs nothing else. The mode is
+ * therefore no longer a constant: it is `session.approachArmed`, written below
+ * on every frame rather than once at arm time. Which of the two is right is not
+ * a judgement made here; it was settled at PH-361/PH-364 and the argument lives
+ * in `DockRig::latch` (a program that flies the last metre has no hand to press
+ * anything, and a player who has one must be allowed to).
  */
 export function armDock(m: FlightMode, t: DockTarget | null): void {
   const V = vesselAbi(m.d.M);
@@ -265,6 +274,15 @@ export function armDock(m: FlightMode, t: DockTarget | null): void {
   // all. Measured: the whole control read `no docking target` in orbit while
   // `dockTarget` published a perfectly good port pose 1879 m/s away, which is
   // the two-authority shape wearing a memo.
+  // PH-382. THE LATCH MODE FOLLOWS THE PROGRAM, EVERY FRAME.
+  //
+  // `of_fl_dock_arm` does `d = DockRig()`, so a re-arm resets `latch` to its
+  // default of TRUE and this write is what makes the manual rung manual. It has
+  // to be re-asserted on the re-arm path and on the steady path both, because a
+  // re-arm can happen mid-approach (a new /core handle, a recover, a promote)
+  // and a program that lost its auto-latch there would fly the last 0.60 m and
+  // then sit in the port for ever waiting for a hand that is not on the keys.
+  const wantLatch = m.session.approachArmed ? 1 : 0;
   if (m.dockArmedFor !== t.hostId || m.dockArmedHandle !== f) {
     // 0,0,0 for the three limits takes the PART'S own numbers through
     // `docking::Limits`'s defaults, which `test_docking.cpp` pins equal to the
@@ -274,10 +292,10 @@ export function armDock(m: FlightMode, t: DockTarget | null): void {
                       local.posM[0], local.posM[1], local.posM[2],
                       local.faceAxis[0], local.faceAxis[1], local.faceAxis[2],
                       local.rollAxis[0], local.rollAxis[1], local.rollAxis[2]);
-    V._of_dk_latch?.(f, 0);
     m.dockArmedFor = t.hostId;
     m.dockArmedHandle = f;
   }
+  V._of_dk_latch?.(f, wantLatch);
   V._of_fl_dock_target(f, t.posM[0], t.posM[1], t.posM[2],
                        t.faceAxis[0], t.faceAxis[1], t.faceAxis[2],
                        t.rollAxis[0], t.rollAxis[1], t.rollAxis[2],
@@ -357,8 +375,14 @@ function dock(m: FlightMode, rec: VesselRecord): boolean {
 }
 
 /** The guest's pose expressed in the HOST'S local frame. See `VesselDock`:
- *  this is what stops the two records propagating apart. */
-function latchFrom(m: FlightMode, t: DockTarget): VesselDock {
+ *  this is what stops the two records propagating apart.
+ *
+ *  EXPORTED for `FlightAuto.syncAutoDock` (PH-385), which books the join the
+ *  auto-latching step made. It is deliberately the SAME function and not a
+ *  second derivation: "where a docked vessel sits relative to its host" must
+ *  have exactly one answer whichever door the latch came through, which is the
+ *  same argument `dkJoin` makes for the two doors on /core's side. */
+export function latchFrom(m: FlightMode, t: DockTarget): VesselDock {
   const solid = lastStationSolid();
   const st = m.session.state;
   const inv = solid === null ? new THREE.Quaternion()
@@ -402,6 +426,13 @@ export function dockReport(m: FlightMode): Record<string, unknown> {
     ...p,
     docks: m.docks, undocks: m.undocks,
     armedFor: m.dockArmedFor,
+    // PH-386. THE AUTO-APPROACH, on the dock report rather than on a surface of
+    // its own, because it is the same control's second half and a probe that
+    // had to fetch two objects could compare them at two different instants.
+    // `raw` is the guidance row verbatim so an assertion can be made against
+    // /core's numbers and not against this file's summary of them.
+    approach: { ...approachPublication(m), approaches: m.approaches,
+                raw: approachReport(m.session) },
     hasPort: m.session.live ? vesselPortLocal(m) !== null : false,
     hostId: rec?.docked?.hostId ?? 0,
     hostPort: rec?.docked?.hostPort ?? '',

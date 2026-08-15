@@ -36,6 +36,8 @@ import { EMPTY_META, orbitMeta } from '../sim/ManeuverAbi.js';
 import type { FlightMode } from './FlightMode.js';
 import { dockPublication } from './FlightDock.js';
 import type { DockPublication } from './FlightDock.js';
+import { approachPublication } from './FlightAuto.js';
+import type { ApproachPublication } from './FlightAuto.js';
 
 /**
  * THE MANEUVER NODE AS A CLOCK AND A COUNTDOWN, which is what a hand pilot
@@ -185,6 +187,14 @@ export interface NavPublication {
    * is a promise; a missing one is a feature nobody can find").
    */
   dock: DockPublication;
+  /**
+   * PH-382. THE AUTO-APPROACH'S STATE, BESIDE THE LATCH'S AND ON THE SAME
+   * RULES. Never null and `why` is never '', so the chip can always say what
+   * would make the control usable -- which for a control whose first refusal is
+   * a PROGRESSION gate ("dock with the station by hand first") is the only way
+   * a player learns the feature exists at all.
+   */
+  approach: ApproachPublication;
 }
 
 const DEG = 180 / Math.PI;
@@ -224,5 +234,6 @@ export function navPublication(m: FlightMode): NavPublication {
     burn: m.nodeBurn,
     target: m.navTarget,
     dock: dockPublication(m),
+    approach: approachPublication(m),
   };
 }

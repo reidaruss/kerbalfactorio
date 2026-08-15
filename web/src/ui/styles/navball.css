@@ -69,6 +69,28 @@
   border-color: #35566b;
   border-left: 3px solid #6fc9ff;
 }
+/* PH-382. THE AUTO-APPROACH CHIP, on the dock chip's own three states and
+   deliberately NOT green when it is available. Green on this row means "one
+   thing to do, right now" and belongs to the 0.60 m latch window; a program a
+   player may arm is an offer, not a prompt. `running` is amber-cyan and steady
+   so the row reads differently when the ship is flying itself, which is the one
+   fact a player must never have to infer. */
+#of-navball .chip.appr {
+  letter-spacing: 0.1em;
+  text-transform: none;
+  color: var(--of-dim);
+  border-color: var(--of-edge);
+}
+#of-navball .chip.appr.ready {
+  color: var(--of-ink);
+  border-color: #4a6070;
+}
+#of-navball .chip.appr.running {
+  color: #ffd479;
+  background: rgba(44, 33, 12, 0.9);
+  border-color: #7a6534;
+  border-left: 3px solid #ffd479;
+}
 #of-navball .chip.msg {
   letter-spacing: 0;
   text-transform: none;

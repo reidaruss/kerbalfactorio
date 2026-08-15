@@ -133,6 +133,16 @@ export class FlightControls {
       const why = rcsRefusal(f);
       if (why !== '') f.flash(`RCS: ${why}`);
     }
+    // PH-382. A TRANSLATION KEY TAKES THE VEHICLE BACK FROM THE AUTO-APPROACH.
+    //
+    // Every OTHER manual input already does, through `commandDirection`'s own
+    // interlock (FlightSas.ts). These six are the one set that cannot: they
+    // never aim anything, they write the same axis the program writes, and
+    // `approachTick` runs AFTER this in the tick, so without this line a player
+    // pressing a thruster key would watch the program overwrite it and would
+    // have six keys that silently do nothing. That is R15's shape exactly, and
+    // it is the shape `rcsRefusal` two lines up exists to prevent.
+    if (asked) f.stopApproach('auto-approach off: you have the thrusters');
     this.rcsAsked = asked;
     applyRcs(f, want);
 

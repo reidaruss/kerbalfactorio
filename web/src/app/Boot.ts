@@ -646,6 +646,11 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       // thunk keeps the pad's LIFETIME out of flight's hands, so a world
       // reloaded from a save hands back the RESTORED pads and not a stale list.
       pads: () => g.pads,
+      // PH-383. ONE YES/NO QUESTION, not the research tree. R99's auto-approach
+      // is gated on `StationBoarded`, which `StationReveal.ts` grants from the
+      // hand-flown station mission itself, so Reid's task-39 ordering ("the
+      // autopilot moves BEHIND the station visit") holds by construction.
+      milestone: (id) => g.progress.research.earned(id),
       setWorldUi: (on) => {
         g.hud.setVisible(on);
         g.hotbarBar.setVisible(on);
