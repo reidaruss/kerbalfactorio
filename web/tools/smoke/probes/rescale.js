@@ -1,8 +1,20 @@
 // FS-78 / FS-80: A FACTORY BUILT WHEN THE MACHINES WERE SMALLER SURVIVES THE
 // LOAD, AND THE THING THAT MAKES IT SURVIVE IS LOAD BEARING.
 //
-//   node tools/smoke/run.mjs --scenario=walk \
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
 //        --evalfile=tools/smoke/probes/rescale.js
+//
+// GP-905 to GP-919: `--sandbox=1` IS NOT OPTIONAL, and this line used to omit
+// it. `KEY` below is hardcoded to `'auto-sandbox'`, `SaveGame.ts`'s own name
+// for the sandbox slot; `--scenario=walk` alone boots SURVIVAL, which
+// `of.save()` writes under `'auto'` instead. The probe's own `readSlot()` then
+// reads an empty key and every field on `base` is `undefined`, which is
+// exactly what "the slot did not come back with two belts" says once `!base`
+// is true. Measured, not guessed: the identical scene, run with `--sandbox=1`,
+// passes clean (`valid: true, pass: true, fails: []`) with the migration
+// itself performing correctly (`moved: 1`, `tooCloseAfter: 0`, the backup
+// written and holding the pre-migration cell, idempotent on a second load).
+// This was a documentation-invocation mismatch, not a rescale defect.
 //
 // WHAT THIS IS ACTUALLY PROTECTING. Reid has a roughly 140-structure base he has
 // been playing for days. FS-73 took the smelter, the electric smelter and the
@@ -117,6 +129,13 @@
   const rescueGet = (k) => rescue('readonly', (s) => s.get(k));
 
   await sleep(0.6);
+  // FAIL FAST AND NAME IT, rather than 60 lines later as an empty `base`: this
+  // probe's `KEY` below is the sandbox slot specifically, so any invocation
+  // that is not sandboxed is testing nothing.
+  if (of.game().mode.sandbox !== true) {
+    return { valid: false, why: 'must run with --sandbox=1 (this probe writes '
+      + 'and reads the "auto-sandbox" slot key)', mode: of.game().mode };
+  }
   const fp = of.game().factory.footprint;
   if (!fp) return { valid: false, why: 'the report publishes no footprint table' };
   log.push(`footprint table: ${Object.entries(fp).map(([k, v]) => `${k} ${v}`).join(', ')}`);

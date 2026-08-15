@@ -71,6 +71,7 @@
   of.input.tape([{ hold: 3, actions: ['use'] }, { hold: 6, keys: [] }]);
   await sleep(0.25);
   const placed = of.game().factory.buildings - before;
+  const placedCell = of.game().factory.list[of.game().factory.list.length - 1]?.cell ?? '';
   await sleep(0.15);
   const taken = of.build();
 
@@ -85,7 +86,18 @@
   // one module: two cells a pitch step apart may be a diagonal, and a diagonal
   // is 1.414 modules and not 1. Comparing against |(di,dj)| * module is what
   // makes the assertion exact instead of a band.
-  const module = of.game().structures.module.cellM;
+  // GP-905 to GP-919: NOT `structures.module.cellM`, MEASURED WRONG. That is
+  // the 4 m FOUNDATION module, and `MachinePlacement.ts` names the exact
+  // mistake of reusing it for a machine: "DW-32 took the structural module
+  // from 1 m to 4 m, and machines went with it because this file was reading
+  // `cellM`... belt tiles ended up 4 m apart". `MACHINE_TILE_M` (1.0, that
+  // file's own dedicated constant) is what a belt actually snaps to, and a
+  // site's tangent frame is shared but the cell SIZE is not. It is not
+  // published through `of.game()`, so this reads the live footprint table's
+  // own `belt` entry instead of typing `1.0` in twice: the file's comment
+  // ties them together explicitly ("the belt mesh is a 1.00 m tile... 1.00
+  // is what this is"), so footprint.belt IS the tile pitch, not a coincidence.
+  const module = of.game().factory.footprint.belt;
   // `m<siteId>:<i>,<j>` (MachinePlacement.machineCellKey).
   const addrOf = (c) => {
     const k = c.indexOf(':');
@@ -94,12 +106,30 @@
   };
   of.look(yaw, -38);
   await sleep(0.12);
-  const cellA = of.build().ghost.cell;
-  const posA = of.build().ghost.pos;
-  of.look(yaw, -46);
-  await sleep(0.12);
-  const cellB = of.build().ghost.cell;
-  const posB = of.build().ghost.pos;
+  const gA = of.build().ghost;
+  const cellA = gA.cell;
+  const posA = gA.pos;
+  // GP-905 to GP-919: -46 WAS A FIXED 8 DEGREE STEP FROM -38, AND THE GRID
+  // GOT FINER. Measured: at -46 the ghost lands on the exact same cell as
+  // -38 (`snapped: ""`, but the raw grid answer for that pitch is STILL the
+  // cell beside the belt just placed, `pos` identical to the metre), so an
+  // 8 degree step at this eye height and range no longer crosses a cell
+  // boundary now that the machine grid is the metric site grid rather than
+  // the coarser body-frame lattice this constant was tuned against. Sweep
+  // pitch outward in the SAME direction until a genuinely different cell
+  // turns up, capped so a real regression (the ghost stuck on one cell no
+  // matter how far you look) still fails loudly instead of looping forever.
+  let cellB = cellA;
+  let posB = posA;
+  let pB = -46;
+  for (; pB >= -74 && cellB === cellA; pB -= 4) {
+    of.look(yaw, pB);
+    await sleep(0.12);
+    const g = of.build().ghost;
+    if (g === null) continue;
+    cellB = g.cell;
+    posB = g.pos;
+  }
   const moved = Math.hypot(posA[0] - posB[0], posA[1] - posB[1], posA[2] - posB[2]);
   const gridStep = (() => {
     const a = addrOf(cellA);
@@ -128,8 +158,17 @@
     + `rise ${gridStep.riseM.toFixed(3)} m)`);
 
   // --- a MINER off a deposit is refused, and says why, in red --------------
+  // GP-905 to GP-919: TURNED 90 DEGREES OFF THE BELT'S OWN YAW, MEASURED
+  // NECESSARY. `FactoryGhost.ts` checks `f.clash` (proximity to another
+  // machine) BEFORE the miner-specific "no ore" check, correctly and by
+  // design (GP-49: a machine half inside another is worse than a refusal).
+  // Every look in this file shares one `yaw`, so a miner aimed at the same
+  // yaw as the belt just placed, merely a steeper pitch, lands close enough
+  // to trip THAT refusal ("too close to #1 belt") first, and the ore check
+  // this line means to exercise is never reached. Turning away puts the
+  // miner over bare ground the belt run cannot be close to.
   of.build(1);
-  of.look(yaw, -50);
+  of.look(yaw + 90, -50);
   await sleep(0.15);
   const noOre = of.build();
 
@@ -159,7 +198,15 @@
     },
     refusals: {
       minerOffDeposit: { ok: noOre.ghost.ok, reason: noOre.ghost.reason },
-      cellTaken: { ok: taken.ghost.ok, reason: taken.ghost.reason },
+      // GP-905 to GP-919: NOT A REFUSAL ANY MORE, AND THAT IS THE FIX THIS
+      // FIELD NOW NAMES. `FactoryGhost.ts` resolves the just-placed belt's
+      // own socket before it ever checks `f.occupied`, so aiming back at the
+      // tile that was just placed proposes the ADJACENT free cell that
+      // extends the run (`ok: true, "snapped to ..."`) instead of refusing
+      // with "cell taken" the way GP-37 stopped doing for foundations. Same
+      // class, same fix, one file over.
+      cellExtendsInsteadOfRefusing: { ok: taken.ghost.ok, reason: taken.ghost.reason,
+        placedCell, proposedCell: taken.ghost.cell },
     },
     valid:
       offGhost.ghost === null && offGhost.visible === false
@@ -180,7 +227,12 @@
       // as text and not as a boolean.
       && noOre.ghost.ok === false
       && noOre.ghost.reason === 'you cannot place a drill here, there is no ore'
-      && taken.ghost.ok === false && taken.ghost.reason === 'cell taken',
+      // Re-aiming at the tile just placed EXTENDS the run rather than
+      // refusing (see the comment on `cellExtendsInsteadOfRefusing` above):
+      // it must propose a real, different, free cell, not silently accept
+      // the occupied one.
+      && taken.ghost.ok === true && taken.ghost.reason.startsWith('snapped to')
+      && placedCell !== '' && taken.ghost.cell !== placedCell,
     build: of.build(),
     view: of.game().view,
     cost: { drawCalls: of.stats().draw.calls, budget: of.stats().budget.drawCalls },

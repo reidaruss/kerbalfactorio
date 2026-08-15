@@ -47,6 +47,12 @@
   };
   const r6 = (v) => +v.toFixed(6);
   const D = 180 / Math.PI;
+  // Same clamp as `pitchOf` below, same reason: `y / r` is mathematically in
+  // [-1, 1] but at this body's 600 km scale double precision lands it a few
+  // ULPs outside that range often enough to matter, and every `of.teleport`
+  // call in this file derives its latitude from exactly this asin. Shared so
+  // the fix lives in one place rather than three.
+  const latDeg = (y, r) => Math.asin(Math.max(-1, Math.min(1, y / (r || 1)))) * D;
 
   await sleep(1.0);
   check('this run is SANDBOX', of.game().mode.sandbox === true,
@@ -81,7 +87,21 @@
   };
   const pitchOf = (o, d) => {
     const r = Math.hypot(o[0], o[1], o[2]) || 1;
-    return Math.asin((d[0] * o[0] + d[1] * o[1] + d[2] * o[2]) / r) * D;
+    // CLAMP BEFORE asin, NOT AFTER (CE-53's class: asin near +-1 is an
+    // amplifier). `d` is already a unit vector and `o` a large-radius position,
+    // so their dot product over r is nominally cos(theta) in [-1, 1], but a
+    // near-vertical aim (repair-pass cell 0,-3 on the 6x6 block, measured) lands
+    // the ratio a few ULPs past 1 in double precision. `Math.asin` of anything
+    // outside [-1, 1] is NaN, which then survives the pitch clamp two lines
+    // below unchanged (`Math.max(-82, Math.min(82, NaN))` is NaN, not -82), so
+    // `of.look` was called with a NaN pitch and the aim ray came back
+    // `dir: [null, null, null]` for the rest of the run: exactly the site:-1
+    // "no base here" failure this file's own comment above already diagnosed
+    // once for the straight-down case, recurring here from float error rather
+    // than from true verticality.
+    const ratio = Math.max(-1, Math.min(1,
+      (d[0] * o[0] + d[1] * o[1] + d[2] * o[2]) / r));
+    return Math.asin(ratio) * D;
   };
   {
     const a = aimRay();
@@ -223,14 +243,26 @@
     if (gap === null) break;
     const c = cellPoint(gap[0], gap[1]);
     const cr = Math.hypot(c.x, c.y, c.z) || 1;
-    of.teleport(Math.asin(c.y / cr) * D, Math.atan2(c.z, c.x) * D, 0);
+    of.teleport(latDeg(c.y, cr), Math.atan2(c.z, c.x) * D, 0);
     await sleep(0.35);
     await aimAt(c);
+    const preGhost = of.game().build.structGhost;
     of.input.act(['use'], 3);
     await sleep(1 / 20);
     if (!laidAt(gap[0], gap[1])) {
-      log.push(`cell ${gap} would not take a foundation: `
-        + `${of.game().build.structGhost?.reason}`);
+      // GP-905 to GP-919: measured, not guessed. The ghost aimed AT the gap
+      // (0,-3) resolved to a DIFFERENT address before the key was even
+      // pressed, and pressing it still placed something (a foundation landed,
+      // parts count rose), just not at the cell that was aimed at. That is
+      // GP-37's socket snap (`SNAP_FRACTION = 0.75`, a 3 m capture radius on a
+      // 4 m cell) catching a neighbour's socket instead of the bare-grid
+      // answer for a cell enclosed on multiple sides, where every point in the
+      // cell's interior is within capture range of some already-built
+      // neighbour. Recorded as a candidate game defect, not fixed here (see
+      // controller log): the raw grid target and the ghost's resolved target
+      // diverge by a full cell.
+      log.push(`cell ${gap} would not take a foundation, ghost resolved to `
+        + `${JSON.stringify(preGhost?.addr)} instead: ${preGhost?.reason}`);
       break;
     }
     placed++;
@@ -255,7 +287,7 @@
   {
     const c = cellPoint(base[0], base[1]);
     const cr = Math.hypot(c.x, c.y, c.z) || 1;
-    of.teleport(Math.asin(c.y / cr) * D, Math.atan2(c.z, c.x) * D, 0);
+    of.teleport(latDeg(c.y, cr), Math.atan2(c.z, c.x) * D, 0);
     await sleep(0.6);
     of.look(of.world().observer.yawDeg, -82);
     await sleep(0.2);
@@ -394,7 +426,7 @@
   // 7. THE ROLL-OUT, ONTO THE PAD, AT THE PUBLISHED SOCKET.
   // ======================================================================
   const r = Math.hypot(live.pos.x, live.pos.y, live.pos.z) || 1;
-  of.teleport(Math.asin(live.pos.y / r) * D,
+  of.teleport(latDeg(live.pos.y, r),
     Math.atan2(live.pos.z, live.pos.x) * D, 0);
   await sleep(1.0);
   const f0 = of.flight('report');
