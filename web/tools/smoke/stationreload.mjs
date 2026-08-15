@@ -86,6 +86,7 @@ const wrap = (file, argsJson) =>
   `((OF_ARGS) => (\n${readFileSync(resolve(here, file), 'utf8')}\n))(${argsJson})`;
 
 const fails = [];
+const log = [];
 const check = (name, ok, detail) => {
   if (!ok) fails.push(detail === undefined ? name : `${name}: ${detail}`);
 };
@@ -154,15 +155,61 @@ try {
         check(`element ${k} is bit-identical across the reload`,
           before.el?.[k] === after.el?.[k], `${before.el?.[k]} -> ${after.el?.[k]}`);
       }
+
+      // GP-835 RE-AIM. `of.station()`'s pos/deckR used to be FROZEN (GP-805/806:
+      // `DebugGameplay.ts` passed a literal tick `0` into `stateOf`), so two calls
+      // always agreed by construction and "unmoved" was really "uncomputed twice".
+      // Fixed to `loop.tickIndex`, `pos` is now the station's REAL position AT
+      // THE INSTANT OF THE CALL, and `before` and `after` are two different
+      // instants: `before` is read AFTER `walkBefore` has already run the whole
+      // of `stationwalk.js` (P6 alone is 24 headings x 8.8 s of travel), and
+      // `after` is read moments past a fresh boot. Measured on an unmodified
+      // checkout, one run: `before` and `after` disagreed by **437,555.92 m**
+      // (matching 1879.2552 m/s x roughly the elapsed walk time, not a defect),
+      // and `stampedTick` read **0, not -1**, on BOTH sides, because
+      // `SpaceStation.installStation` re-stamps the record at `tick 0` of EVERY
+      // boot (adopted or minted alike; see its own comment, "the loop clock
+      // restarts at zero on every page load"), so a freshly booted record is
+      // never `-1` by the time this debug op can see it. Neither number is a
+      // regression: `pos`/`deckR` sampled live at two different real instants
+      // SHOULD disagree by however far the station travelled in between, and
+      // `stampedTick === 0` is what CE-54's boot path always produces now.
+      //
+      // WHAT ACTUALLY HAS TO SURVIVE A RELOAD, and it is narrower: the ORBIT
+      // (asserted above, bit-exact, unaffected by when either side is sampled)
+      // and the DECK RADIUS staying on that same orbit's own periapsis/apoapsis
+      // band, `a*(1 - e)` to `a*(1 + e)`, regardless of anomaly. On this world
+      // (`a` = 1,000,000 m, `e` = 5.27e-16, i.e. authored circular) that band is
+      // about 5.27e-10 m wide, and the measured before/after deckR difference
+      // (1e-10 m) sits inside it; a bound of a few micrometres leaves three
+      // orders of magnitude of headroom for numerical noise while still catching
+      // a station that came back on a genuinely different orbit (a torn conic,
+      // a unit error, a wrong body) at any anomaly, not only the two this run
+      // happened to sample.
       const dPos = Math.hypot(after.pos[0] - before.pos[0],
         after.pos[1] - before.pos[1], after.pos[2] - before.pos[2]);
-      check('the derived position is unmoved', dPos === 0, `${dPos} m`);
-      check('the deck radius is unmoved', after.deckR === before.deckR,
-        `${before.deckR} -> ${after.deckR}`);
-      check('the clock did not advance', after.clockS === before.clockS,
+      log.push(`position sampled live before/after: ${dPos.toFixed(3)} m apart `
+        + '(not asserted: the two samples are different real instants, see GP-835)');
+      const a = after.el?.a ?? NaN;
+      const e = after.el?.e ?? NaN;
+      const orbitBoundM = Math.abs(a) * Math.abs(e) + 1e-6;
+      const periBandCheck = (label, deckR) => check(
+        `${label} deck radius is on the saved orbit's own periapsis/apoapsis band`,
+        Number.isFinite(deckR) && Math.abs(deckR - Math.abs(a)) <= orbitBoundM,
+        `|${deckR} - ${a}| = ${Math.abs(deckR - Math.abs(a))} m, `
+        + `bound ${orbitBoundM} m`);
+      periBandCheck('before:', before.deckR);
+      periBandCheck('after:', after.deckR);
+      // Still a real round-trip check: `clockS` is the anchor `adoptSaved`
+      // carries verbatim (`stashVessels` drops only `stampedTick`), so this
+      // proves serialisation fidelity of the field, not that elapsed session
+      // time survived the reload -- `installStation`'s boot-time re-stamp is
+      // what supplies "now" on each side, via `loop.tickIndex`, not `clockS`.
+      check('the saved clockS round-tripped bit-exact', after.clockS === before.clockS,
         `${before.clockS} -> ${after.clockS}`);
-      check('the record is still unstamped, so it never drifts along its conic',
-        after.stampedTick === -1, `stampedTick=${after.stampedTick}`);
+      check("the record is re-stamped at this boot's own tick zero (CE-54's "
+        + 'installStation, not stashVessels\' -1)', after.stampedTick === 0,
+        `stampedTick=${after.stampedTick}`);
     }
     check('the interior was rebuilt from the record',
       after.proxies === before.proxies, `${before.proxies} -> ${after.proxies}`);
@@ -199,6 +246,7 @@ const out = {
   walkableAfter: walkAfter?.ok === true,
   standBeforeR: walkBefore?.P1?.feetR?.min ?? null,
   standAfterR: walkAfter?.P1?.feetR?.min ?? null,
+  log,
   fails,
 };
 console.log(JSON.stringify(out, null, 2));
