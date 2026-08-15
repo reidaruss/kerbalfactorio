@@ -294,6 +294,13 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // colour, i.e. the pre-RN-102 bytes exactly; the runtime pair lives on
   // `__ofProps.setLeafVar` because a reload cannot hold the frame equal.
   'leafvar',
+  // RN-1766, standing rule 7. `foliagenormal=<0..1>` sets how far a prop's
+  // foliage normals are bent outward from the part's own base centre;
+  // `foliagenormal=0` is the pre-change bytes exactly and is the negative
+  // control for every claim about the understorey's shading. It is read at
+  // REGISTRATION (Boot loads the atlases once), so it needs a page load and
+  // cannot have a runtime pair.
+  'foliagenormal',
   // RN-121, standing rule 7. `anim=0` freezes every skeletal AnimationMixer
   // (player body, FP arms, rigged creatures): rigs draw their rest pose and
   // nothing ticks. The negative control for every clip-playback claim and the
