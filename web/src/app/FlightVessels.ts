@@ -16,7 +16,7 @@
 // presses reproduces exactly the hardware k presses produced, and a setter would
 // have let a save claim a stage index the tree does not agree with.
 import { flightParts } from '../sim/FlightAbi.js';
-import { RAILS_DT, fitConic, poseFrom, registry, stateOf, v3 } from '../sim/VesselRegistry.js';
+import { RAILS_DT, fitConic, poseFrom, registry, v3 } from '../sim/VesselRegistry.js';
 import type { VesselRecord, VesselWhere } from '../sim/VesselRegistry.js';
 import { VesselDesign } from '../game/VesselDesign.js';
 import type { DesignJson } from '../game/VesselDesign.js';
@@ -32,7 +32,7 @@ import { mayLeave, whyNotLeave } from './ResumeBoot.js';
 // PH-380. See `promoteVessel`: the station's un-flyability used to be a side
 // effect of `SpaceStation.emptyDesign()` and is a stated rule now that the
 // station carries a real design.
-import { isStation } from '../game/SpaceStation.js';
+import { isStation, stateOfDocked } from '../game/SpaceStation.js';
 
 /** The scratch designs promoted vessels are flying, one per promoted record.
  *  Held here because `FlightSession.refreshParts` reads the per-stage table off
@@ -348,7 +348,15 @@ export function promoteVessel(m: FlightMode, id: number, tick: number): boolean 
   s.design = d.handle;
   for (let i = 0; i < rec.fired; ++i) V._of_fl_stage(h);
 
-  const st = stateOf(M, registry, rec, tick);
+  // PH-381, GP-866. A DOCKED RECORD'S POSE COMES FROM ITS HOST, NOT FROM ITS
+  // OWN CONIC. `stateOf` alone Kepler-propagates `rec.where`, which for a
+  // docked guest is the conic it had at the INSTANT of capture and which has
+  // since walked away from the host's (`VesselDock`'s own header: "two conics
+  // 30 m apart... walk apart, slowly and invisibly"). `stateOfDocked` is the
+  // one place that reads `rec.docked` and derives host + local offset instead,
+  // exactly as `FlightDock.ts`'s `latchFrom` captured it; for an undocked
+  // record it is `stateOf` unchanged. See its own header in SpaceStation.ts.
+  const st = stateOfDocked(M, registry, rec, tick);
   V._of_fl_set_pos_vel(h, st.pos[0], st.pos[1], st.pos[2],
                        st.vel[0], st.vel[1], st.vel[2]);
   const p = rec.pose;

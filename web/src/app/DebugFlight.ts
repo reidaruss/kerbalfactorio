@@ -17,7 +17,8 @@ import { flightParts } from '../sim/FlightAbi.js';
 import { mayLeave, resumeReport, whyNotLeave } from './ResumeBoot.js';
 import { playerAnchorReport } from './PlayerAnchor.js';
 import { vesselSaveReport } from '../game/VesselSave.js';
-import { registry, stateOf } from '../sim/VesselRegistry.js';
+import { registry } from '../sim/VesselRegistry.js';
+import { stateOfDocked } from '../game/SpaceStation.js';
 import { vesselAbi } from '../sim/wasm/vesselabi.js';
 import { evaActive, lastVesselGravity } from '../game/VesselGravity.js';
 import type { Services } from './Services.js';
@@ -211,7 +212,9 @@ export function flightApi(s: Services): FlightDebugApi {
           const t = typeof o?.tick === 'number' ? o.tick : currentVesselTick();
           return { id: rec.id, mode: rec.mode, tick: t,
                    clockS: registry.clockAt(rec, t),
-                   ...stateOf(s.core, registry, rec, t) };
+                   // PH-381, GP-866. Docked-aware: see `stateOfDocked`'s own
+                   // header (SpaceStation.ts). A no-op for an undocked record.
+                   ...stateOfDocked(s.core, registry, rec, t) };
         }
         // The navball's OWN account of what it drew. A navball that is present
         // but never fed has to be distinguishable from one that is live, so this
