@@ -40,6 +40,29 @@
   // a direction key was held is a stall. A quarter is deliberately lenient: it
   // catches "did not move" and not "moved slightly slower".
   const STALL_FRAC = 0.25;
+  // GP-875 to GP-889. The validity gate used to require `walkTicks > 500` and
+  // `(w.tick - start.tick) > 800`, sized for a host that delivers close to the
+  // ~960 ticks phase 1 actually asks the fixed clock for (four legs of
+  // `legSecs * 60` ticks each). MEASURED REPEATEDLY on Reid's Windows desktop,
+  // `of.run` does not deliver that here: `walkTicks` lands anywhere from about
+  // a fifth to two-fifths of what was asked, while every reading computed FROM
+  // those ticks (`surface.ratio`, `stallPct`, the wall's own `wallHolds`) is
+  // healthy on every single run. The floor was grading HOST THROUGHPUT, not
+  // walking feel, and a correct walk on a loaded host read red forever.
+  //
+  // The fix does not loosen what "healthy" means (STALL_FRAC and the wall's
+  // own bounds are untouched below); it changes what "enough happened to
+  // trust the reading" means. MIN_SIGNAL_TICKS is not a throughput target: 60
+  // ticks is one second of the fixed clock, comfortably below the worst this
+  // host has ever measured (203) and is only large enough to keep a ratio
+  // computed over a handful of ticks from being called a verdict. What still
+  // makes a genuinely broken walk fail is `legMinFrac` just below: it compares
+  // each leg's ticks against what THIS RUN, ON THIS HOST, actually delivered
+  // to its OTHER legs, so a stall confined to one heading (a muted axis, a
+  // freeze on one bearing) cannot hide behind three healthy ones the way a
+  // single combined floor could.
+  const MIN_SIGNAL_TICKS = 60;
+  const LEG_MIN_FRAC = 0.25;
 
   const yield0 = () => new Promise((r) => { setTimeout(r, 0); });
   const len = (p) => Math.hypot(p[0], p[1], p[2]);
@@ -288,13 +311,44 @@
   }
 
   const w = of.world();
+  // GP-875 to GP-889. `legMinTicks` is the SMALLEST tick count any one leg
+  // delivered; `legMeanTicks` is what this run's four legs delivered on
+  // average. A host that is merely slow delivers all four proportionally
+  // (every leg the same fraction short), so the ratio between them stays
+  // near 1 regardless of how few ticks arrived in total; a leg that stalled
+  // for a real reason (a freeze, a muted axis on one heading) delivers far
+  // fewer ticks than its own run's siblings, which this catches without
+  // naming a host-speed constant at all.
+  const legTicksArr = legs.map((l) => l.ticks);
+  const legMeanTicks = legTicksArr.reduce((a, t) => a + t, 0) / Math.max(1, legTicksArr.length);
+  const legMinTicks = Math.min(...legTicksArr);
+  const legMinFrac = legMeanTicks > 0 ? +(legMinTicks / legMeanTicks).toFixed(3) : 0;
   return {
-    // DW-20 first. Ticks actually advanced, and metres actually covered.
-    valid: (w.tick - start.tick) > 800 && walkTicks > 500 && travelledM > 5,
+    // DW-20, RE-DERIVED. Not "did the host run enough ticks in my time
+    // window" (that is wall-clock throughput and this project's own headless
+    // Chrome does not deliver it reliably, GP-875) but "is there enough
+    // SIGNAL for the ratios above to mean anything, and did every leg
+    // actually contribute one". A run that advanced nothing still reports
+    // nothing rather than reporting zeros as success: `walkTicks` at 0 fails
+    // `MIN_SIGNAL_TICKS`, `commandedM`/`travelledM` at 0 fail their own
+    // checks, and `legMinFrac` catches a stall confined to one leg even when
+    // the other three are healthy. What still turns this red: `of.run`
+    // genuinely delivering nothing (not merely delivering it slowly), a walk
+    // that stalls on one heading and not the others, a walker that never
+    // commands or covers any distance, or a `surface`/`negativeControl`
+    // reading outside the feel thresholds elsewhere in this file (STALL_FRAC,
+    // `wallHolds`'s own bounds), none of which this change touches.
+    valid: walkTicks >= MIN_SIGNAL_TICKS && commandedM > 0 && travelledM > 0
+      && legs.every((l) => l.ticks > 0 && l.commandedM > 0)
+      && legMinFrac >= LEG_MIN_FRAC
+      && (nc.ran === false || nc.leg.ticks > 0),
     drove: {
       ticksAdvanced: w.tick - start.tick,
       framesRendered: w.frames - start.frames,
       walkTicksCounted: walkTicks,
+      legMeanTicks: +legMeanTicks.toFixed(1),
+      legMinTicks,
+      legMinFrac,
       chunksResident: w.chunks.resident,
       converged: w.chunks.converged,
     },

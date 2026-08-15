@@ -82,13 +82,22 @@ const wrap = (file, argsJson) =>
 // WHAT IS READ ON BOTH SIDES OF THE RELOAD, as one expression so the two
 // captures cannot drift apart. `before` additionally forces the save; `after`
 // passes 0 and only reads.
-const CAPTURE = (save) => `(async () => {
+//
+// GP-875. `rec` IS THE FLOWN CRAFT, BY ID, NEVER `list[0]`. Anchorage is a
+// permanent registry record (D-015), present at every boot alongside whatever
+// this run flew, so `records` is 2 and index 0 is whichever of the two the
+// registry happens to enumerate first -- on this build, the station. `flownId`
+// is resolved once in the main loop by EXCLUSION (the id that was not there at
+// boot, namedvessel.mjs's PS-43 fix for the identical defect) and threaded
+// through every capture below, so no assertion here has to know the station's
+// id or name to avoid grading it by mistake.
+const CAPTURE = (save, flownId) => `(async () => {
   const of = window.__of;
   // The stamp inside of.save() is synchronous; the capture below deliberately
   // does NOT await, so no fixed tick separates the slot from the reading.
   const pending = ${save ? 'of.save()' : 'null'};
   const v = of.flight('vessels');
-  const rec = (v.list || [])[0] || null;
+  const rec = (v.list || []).find((r) => r.id === ${flownId}) || null;
   const rails = rec === null ? null
     : of.flight('railsAt', { id: rec.id, tick: v.tick });
   const f = of.flight('report');
@@ -130,12 +139,15 @@ const CAPTURE = (save) => `(async () => {
 // two states `on_rails_eligible` says no arithmetic can advance, so `mayLeave`
 // must turn the handoff away. A guard nobody has seen refuse is a guard nobody
 // should trust.
-const LEAVE_IN_ORBIT = `(async () => {
+// GP-875. Takes `flownId` for the same reason CAPTURE does: the registry
+// always has the station in it too, and `row` has to pick the craft this run
+// actually flew, not whichever record enumerates first.
+const LEAVE_IN_ORBIT = (flownId) => `(async () => {
   const of = window.__of;
   const sleep = (n) => of.run(n);
   const F = () => of.flight('report');
   const V = () => of.flight('vessels');
-  const row = (v) => ((v || V()).list || [])[0] || null;
+  const row = (v) => ((v || V()).list || []).find((r) => r.id === ${flownId}) || null;
 
   of.input.act(['throttleFull'], 4);
   await sleep(1.2);
@@ -176,6 +188,9 @@ const LEAVE_IN_ORBIT = `(async () => {
   };
 })()`;
 
+// GP-875. Takes `flownId` for the same reason: `first` used to be `list[0]`,
+// which resolved to the station and made the handoff resume the wrong record
+// entirely.
 // PH-76. THE HANDOFF, BACK IN, on the far side of a real browser reload. The
 // vessel is a few hundred kilometres away, so this cannot go through the board
 // key (BOARD_RANGE_M is 18 m and past ABANDON_RANGE_M that key rolls out a
@@ -185,9 +200,9 @@ const LEAVE_IN_ORBIT = `(async () => {
 // propellant out of /core rather than reporting back the number that was written
 // in. Everything compared is read IMMEDIATELY after it, in the same synchronous
 // turn, so no autosave can re-sync the record underneath the reading.
-const RESUME_AFTER_RELOAD = `(() => {
+const RESUME_AFTER_RELOAD = (flownId) => `(() => {
   const of = window.__of;
-  const first = ((of.flight('vessels').list || [])[0] || null);
+  const first = ((of.flight('vessels').list || []).find((r) => r.id === ${flownId}) || null);
   if (first === null) return { error: 'no record to resume' };
   const resumed = of.flight('resume', first.id);
   const v = of.flight('sync');
@@ -252,6 +267,19 @@ for (const phase of phases) {
     await page.waitForFunction(() => typeof window.__of !== 'undefined', null, { timeout: 60000 });
     await page.evaluate(() => window.__of.ready);
 
+    // GP-875. THE BASELINE, BEFORE ANYTHING IS FLOWN. Anchorage is a permanent
+    // registry record (D-015): it is present at every boot whether or not
+    // anything is ever flown, so `records` is 2 by the time phase 1 is done and
+    // `list[0]` is whichever of the two the registry happens to enumerate first
+    // -- on this build, the station, id 1. Captured here so the flown craft can
+    // be picked by EXCLUSION below (namedvessel.mjs's PS-43 fix for the
+    // identical defect), which needs no knowledge of the station's id or name
+    // and survives a second scenery vessel.
+    const baseIds = await page.evaluate(() =>
+      (window.__of.flight('vessels').list || []).map((r) => r.id));
+    check('boot starts with exactly the permanent station and nothing else',
+          baseIds.length === 1, `${JSON.stringify(baseIds)}`);
+
     // PHASE 1: fly to the cut this run is named after.
     flew = await page.evaluate(wrap(SETUP, JSON.stringify({ phase: flyPhase })));
     if (flew === null || flew.valid !== true) {
@@ -264,13 +292,26 @@ for (const phase of phases) {
     check('phase 1 wrote at least one AUTOSAVE while flying', flew.saves > 0,
           `${flew.saves}`);
 
+    // GP-875. THE FLOWN CRAFT, BY EXCLUSION: the one record that was not there
+    // at boot. Every capture from here on is keyed off this id rather than off
+    // `list[0]` or a bare count, so nothing below can be satisfied by grading
+    // the station instead of the vessel this run actually flew.
+    const idsAfterFly = await page.evaluate(() =>
+      (window.__of.flight('vessels').list || []).map((r) => r.id));
+    const freshIds = idsAfterFly.filter((id) => !baseIds.includes(id));
+    check('phase 1 added exactly ONE vessel record to the ones already there',
+          freshIds.length === 1,
+          `boot had ${JSON.stringify(baseIds)}, after flying ${JSON.stringify(idsAfterFly)}`);
+    if (fails.length > 0) throw new Error('could not identify the flown craft');
+    const flownId = freshIds[0];
+
     // PH-76. LEAVE IT IN ORBIT, BEFORE the save is forced. The order is the
     // point: the slot has to be written with the player OUT of the vessel and
     // the vessel on rails, because that is the world Reid described walking away
     // from. Forcing the save first and leaving afterwards would have saved a
     // different world from the one the reload is asked about.
     if (phase === 'handoff') {
-      handoff = await page.evaluate(LEAVE_IN_ORBIT);
+      handoff = await page.evaluate(LEAVE_IN_ORBIT(flownId));
       // THE THROTTLE IS THE INSTRUMENT HERE, NOT `thrustN`, and the difference is
       // worth writing down because it cost a red row. `onRailsEligible`
       // deliberately RE-EVALUATES propulsion from the COMMANDED throttle rather
@@ -317,28 +358,32 @@ for (const phase of phases) {
             && !/cannot get out in flight/.test(handoff.leftMessage ?? ''),
             `handBacks ${handoff.handBacks}, disembarks ${handoff.disembarks}, `
             + `refusals ${handoff.refusals}, message "${handoff.leftMessage}"`);
-      check('H7 THE VESSEL IS STILL IN THE REGISTRY, on rails, unpromoted',
-            handoff.records === 1 && handoff.promotedId === 0
+      check('H7 THE VESSEL IS STILL IN THE REGISTRY, on rails, unpromoted, '
+            + 'alongside the station (GP-875: the registry is never down to one)',
+            handoff.records === baseIds.length + 1 && handoff.promotedId === 0
             && handoff.rec !== null && handoff.rec.mode === 'rails',
-            `${handoff.records} records, promotedId ${handoff.promotedId}, `
-            + `mode ${handoff.rec?.mode}`);
+            `${handoff.records} records (wanted ${baseIds.length + 1}), `
+            + `promotedId ${handoff.promotedId}, mode ${handoff.rec?.mode}`);
       if (fails.length > 0) {
         throw new Error('the vessel could not be left in orbit, so there is '
           + 'nothing to come back to');
       }
     }
 
-    before = await page.evaluate(CAPTURE(true));
+    before = await page.evaluate(CAPTURE(true, flownId));
     check('the forced save at the cut was WRITTEN, not refused',
           before.saved !== null && before.saved.refused === undefined
           && before.saves > flew.saves,
           `${JSON.stringify(before.saved)}, saves ${flew.saves} -> ${before.saves}`);
     // LOUDLY, AND EARLY. If the per-tick watcher never made a record then
-    // `records` is 0 and every assertion below this line is vacuous
-    // (FlightVessels.watchVessels rides FlightPad.stepPadClamps).
-    check('there IS a vessel record before the reload',
-          before.vessels.records === 1 && before.rec !== null,
-          `${before.vessels.records} records`);
+    // `records` is `baseIds.length` (the station alone) and every assertion
+    // below this line is vacuous (FlightVessels.watchVessels rides
+    // FlightPad.stepPadClamps). GP-875: under the permanent-station registry
+    // that is 2 records total, 1 of them flyable (`before.rec`, the craft
+    // that is not the station).
+    check('there IS a vessel record before the reload, alongside the station',
+          before.vessels.records === baseIds.length + 1 && before.rec !== null,
+          `${before.vessels.records} records (wanted ${baseIds.length + 1})`);
     check('and NO design snapshot was refused, so the record has a design at all',
           before.vessels.refusedSnapshots === 0,
           `refusedSnapshots ${before.vessels.refusedSnapshots}, `
@@ -353,7 +398,7 @@ for (const phase of phases) {
     await page.waitForFunction(() => typeof window.__of !== 'undefined', null, { timeout: 60000 });
     await page.evaluate(() => window.__of.ready);
     await page.evaluate(() => window.__of.run(2));
-    after = await page.evaluate(CAPTURE(false));
+    after = await page.evaluate(CAPTURE(false, flownId));
 
     const b = before.rec; const a = after.rec;
     const WANT_MODE = { pad: 'parked', ascent: 'frozen', orbit: 'rails',
@@ -363,13 +408,23 @@ for (const phase of phases) {
     // what did the reload alone bring back. The resume is measured afterwards.
     const ORBITAL = phase === 'orbit' || phase === 'handoff';
 
-    // --- 1. EXACTLY ONE VESSEL CAME BACK, and it is not a duplicate ----------
-    check('1 exactly ONE vessel came back', after.vessels.records === 1,
-          `${after.vessels.records} records: ${JSON.stringify(
-            (after.vessels.list || []).map((r) => r.id))}`);
-    check('1b and the restore adopted exactly one row from the slot',
-          after.vessels.resume.adopted === 1,
-          `adopted ${after.vessels.resume.adopted}`);
+    // --- 1. THE STATION AND THE FLOWN CRAFT CAME BACK, and no more ----------
+    // GP-875: `records` is `baseIds.length + 1` under the permanent-station
+    // registry (2 today), not 1. The discriminator that actually matters is
+    // 1b/1c below: exactly the flown craft, not a duplicate, not a stray.
+    check('1 the station AND the flown craft came back, no more',
+          after.vessels.records === baseIds.length + 1,
+          `${after.vessels.records} records (wanted ${baseIds.length + 1}): `
+          + `${JSON.stringify((after.vessels.list || []).map((r) => r.id))}`);
+    // GP-875: the station is a permanent registry record and is written into
+    // the slot along with the flown craft (measured: `adopted` is 2, not 1),
+    // so the slot's row count is asserted against `baseIds.length + 1`, not a
+    // literal 1. `1` above already checked the flown craft is the SAME one by
+    // id, which is the discriminator this row cannot lose by widening.
+    check('1b and the restore adopted every row the slot actually held, '
+          + 'station included',
+          after.vessels.resume.adopted === baseIds.length + 1,
+          `adopted ${after.vessels.resume.adopted} (wanted ${baseIds.length + 1})`);
     check('1c refusedSnapshots is still zero after the reload',
           after.vessels.refusedSnapshots === 0,
           `${after.vessels.refusedSnapshots}`);
@@ -489,7 +544,7 @@ for (const phase of phases) {
     // round-trip. `resumed.rec` is read immediately after a `sync`, so it is
     // /core's own answer and not the number that was written into it.
     if (phase === 'handoff') {
-      resumed = await page.evaluate(RESUME_AFTER_RELOAD);
+      resumed = await page.evaluate(RESUME_AFTER_RELOAD(flownId));
       check('10 RESUME PUT THE PLAYER BACK IN IT, across the reload',
             resumed.error === undefined && resumed.ok === true
             && resumed.aboard === true && resumed.live === true
