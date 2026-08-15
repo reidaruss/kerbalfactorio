@@ -128,11 +128,19 @@
     // this one, and pretending one frame covers all three is how a pass ends
     // up judging nothing.
     //
-    // PROP SHADOWS SURVIVE `propsVisible(false)`, measured here and worth
-    // knowing before the next lane loses an hour to it: hiding the scatter
-    // removes the CARDS and leaves their shadows on the ground. `--props=0`
-    // changed nothing either (box luma 29.76 against 29.78). The high sun is
-    // what actually shrinks them.
+    // RN-1650 CORRECTION, so the next lane does not lose an hour to the old
+    // note. This USED to say prop shadows survive `propsVisible(false)` here,
+    // on the strength of `--props=0` "changing nothing" (box luma 29.76
+    // against 29.78). Re-measured (`propshadow.js`, real D3D11): those two
+    // numbers are the runtime toggle and a true `?props=0` boot AGREEING WITH
+    // EACH OTHER, not a comparison against a props-ON control -- the props-ON
+    // reading at this box is 67.58, and BOTH removal methods land on
+    // bit-identical 87.01 (rgb, p05, p50, p95, iqr, loFrac all equal to the
+    // digit). Props are cleanly removed from the shadow pass either way. What
+    // is left in this box after removal is the dug pit's OWN wall
+    // self-shadowing a near-zenith sun barely reaches, unrelated to props,
+    // which is what the next sentence already said: the high sun is what
+    // actually shrinks it.
     voxelface: {
       scenario: 'walk', needsSandbox: false,
       lat: 12, lon: 150, yaw: 300, pitch: -38,
