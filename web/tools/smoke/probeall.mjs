@@ -11,7 +11,10 @@
 //
 // Resumable: one JSON line per probe appended to results.jsonl as it finishes.
 
-import { readFileSync, readdirSync, appendFileSync, existsSync } from 'node:fs';
+import {
+  readFileSync, readdirSync, appendFileSync, existsSync, mkdirSync,
+  createWriteStream,
+} from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -28,6 +31,10 @@ const only = args.get('only');           // comma list of probe basenames
 const limit = Number(args.get('limit') ?? 0);
 const timeoutMs = Number(args.get('timeout') ?? 240000);
 const outFile = args.get('results') ?? join(here, 'results.jsonl');
+// BT-130: where each probe's raw stdout is captured. See the `cap` comment in
+// run() for why this exists instead of an in-memory string.
+const stdoutDir = args.get('stdoutdir') ?? join(here, 'stdout');
+mkdirSync(stdoutDir, { recursive: true });
 // Sharding exists to get the CENSUS quickly. It costs measurement quality:
 // several probes assert frame time or draw cost, and INSTRUMENTS.md is explicit
 // that timings are worthless while other work runs on the machine. Contention
@@ -62,6 +69,39 @@ function excludedReason(src) {
   for (const l of lines) {
     const m = /^\s*\/\/\s*PROBEALL-EXCLUDE:\s*(.+?)\s*$/.exec(l);
     if (m) return m[1];
+  }
+  return null;
+}
+
+// ---- BT-130: a documented PER-PROBE timeout override -----------------------
+// `cantilever.js` and `machineports.js` both hit the shared `timeoutMs`
+// (default 240000) inside the BT-116 sweep and were recorded NO_OUTPUT.
+// Re-run standalone on a quiet machine (2026-08-15, lane/probeall-debts),
+// with NO wrapper timeout at all so the real cost could be measured:
+// `cantilever.js` finished GREEN in 238.2 s, 1.8 s inside the 240 s cap with
+// zero contention; `machineports.js` finished (RED on an unrelated assertion,
+// see its own header) in 298.5 s, which is past the cap even completely
+// alone. Neither is the sweep's parallelism inventing a cost that is not
+// there: `machineports.js` cannot fit the shared budget under any
+// concurrency, and `cantilever.js` has essentially no margin left for GC
+// pauses or a second probe's Chrome instance sharing the CPU, which is
+// exactly the class BT-116's 4-way batch would have induced.
+//
+// The instruction from the brief that fixed this is explicit: do not
+// silently raise the GLOBAL timeout for every probe to cover two outliers.
+// So the override is opt-in, per-probe, and requires the same kind of visible
+// justification `PROBEALL-EXCLUDE` does: a probe's header may carry
+//   // PROBEALL-TIMEOUT: <milliseconds>
+// anywhere in its first 60 lines, read here and applied ONLY to that probe's
+// own run, leaving every other probe (including a probe with no comment at
+// all) on the shared default. `cantilever.js` and `machineports.js` both
+// carry one now, with the measurement that justifies the number recorded in
+// the same comment.
+function timeoutOverrideMs(src) {
+  const lines = src.split(/\r?\n/).slice(0, 60);
+  for (const l of lines) {
+    const m = /^\s*\/\/\s*PROBEALL-TIMEOUT:\s*(\d+)\s*$/.exec(l);
+    if (m) return Number(m[1]);
   }
   return null;
 }
@@ -131,22 +171,81 @@ function verdictOf(ev) {
   return { cls: 'GREEN', fails: [] };
 }
 
-function run(cmd, argv, cwd) {
+// ---- BT-130: the stdout cap that ate a verdict --------------------------
+// The old code capped captured stdout in memory at a fixed 400000 bytes. That
+// looked like a safety limit and was actually a correctness bug: run.mjs's
+// report is ONE `console.log(JSON.stringify(report, null, 2))` call (stats,
+// world, scene, THEN eval), so the verdict-bearing `eval` key sits near the
+// END of the blob, after whatever `scene`/`world` dumped. `propshadow.js`
+// (8.4 MB) and `r17_scout.js` both exited 0 with a real, complete report, and
+// the cap sliced the JSON off mid-string before `eval` ever arrived. The
+// parse then threw ("Unterminated string in JSON..."), and because the code
+// below could not tell "the process printed nothing" from "the process
+// printed plenty and we stopped listening", both collapsed onto the same
+// NO_OUTPUT verdict as a probe that actually crashed. That is the exact
+// failure this audit exists to find, reproduced by the audit's own tool: a
+// uniform verdict standing in for two different facts.
+//
+// THE FIX IS TO STOP CAPPING IN MEMORY, NOT TO PICK A BIGGER NUMBER. Any
+// fixed byte cap is guessable-around by the next probe that dumps a bigger
+// scene, and "keep only head plus tail" was considered and rejected: the
+// object being parsed is a single JSON value, not a line-oriented log, so a
+// head+tail splice almost never reassembles into valid JSON and would trade
+// one silent failure mode for a subtler one. Capping what probes may print
+// was also rejected per the brief: that means auditing and possibly editing
+// every probe that ever grows its report, forever, instead of fixing the one
+// place that reads it.
+//
+// So stdout is streamed straight to a per-probe file on disk (`stdoutDir`)
+// as it arrives, and read back in full after the process closes. Nothing
+// is truncated by construction: the file grows with the process's real
+// output, and disk is not the scarce resource an in-memory accumulator was
+// guarding. The only remaining limit is `SAFETY_CAP_BYTES`, sized two full
+// orders of magnitude above the 8.4 MB report that started this, as a
+// backstop against a genuinely runaway process (an infinite loop spewing
+// text) rather than a normal large report. Hitting it is recorded LOUDLY: a
+// distinct `TRUNCATED_OUTPUT` verdict class with the byte counts in `fails`,
+// never a silent fold into NO_OUTPUT.
+const SAFETY_CAP_BYTES = 800 * 1000 * 1000; // 800 MB; propshadow.js's 8.4 MB report is 0.01x this.
+
+function safeStdoutName(probeFile) {
+  return probeFile.replace(/\.js$/, '').replace(/[^A-Za-z0-9_.-]/g, '_') + '.stdout.json';
+}
+
+function run(cmd, argv, cwd, probeFile, runTimeoutMs) {
   return new Promise((res) => {
     const t0 = Date.now();
+    const soPath = join(stdoutDir, safeStdoutName(probeFile));
+    const soStream = createWriteStream(soPath);
+    let soBytes = 0;
+    let soTruncated = false;
     // NOT shell:true. process.execPath is "C:\Program Files\nodejs\node.exe" and
     // cmd.exe splits it at the space, so every run died before the browser with
     // "'C:\Program' is not recognized" and the harness recorded NO_OUTPUT for a
     // probe it had never actually started. A harness bug that reports a uniform
     // verdict is exactly the class this audit exists to find.
     const p = spawn(cmd, argv, { cwd, shell: false });
-    let so = '', se = '';
-    const cap = 400000;
-    p.stdout.on('data', (d) => { if (so.length < cap) so += d; });
-    p.stderr.on('data', (d) => { if (se.length < cap) se += d; });
-    const timer = setTimeout(() => { p.kill('SIGKILL'); res({ code: null, so, se, ms: Date.now() - t0, timedOut: true }); }, timeoutMs);
-    p.on('close', (code) => { clearTimeout(timer); res({ code, so, se, ms: Date.now() - t0, timedOut: false }); });
-    p.on('error', (e) => { clearTimeout(timer); res({ code: -1, so, se: se + String(e), ms: Date.now() - t0, timedOut: false }); });
+    let se = '';
+    const seCap = 400000; // stderr is only ever grepped for a few tail lines, never JSON-parsed for a verdict, so a cap here does not risk losing one.
+    p.stdout.on('data', (d) => {
+      soBytes += d.length;
+      if (soBytes <= SAFETY_CAP_BYTES) soStream.write(d);
+      else soTruncated = true;
+    });
+    p.stderr.on('data', (d) => { if (se.length < seCap) se += d; });
+    // `se` is read here, not threaded through `partial`, so the error branch's
+    // appended message is never shadowed by a stale copy taken earlier.
+    const finish = (partial) => new Promise((r2) => {
+      soStream.end(() => r2({
+        ...partial, soPath, soBytes, soTruncated, se, ms: Date.now() - t0,
+      }));
+    });
+    const timer = setTimeout(async () => {
+      p.kill('SIGKILL');
+      res(await finish({ code: null, timedOut: true }));
+    }, runTimeoutMs);
+    p.on('close', async (code) => { clearTimeout(timer); res(await finish({ code, timedOut: false })); });
+    p.on('error', async (e) => { clearTimeout(timer); se += String(e); res(await finish({ code: -1, timedOut: false })); });
   });
 }
 
@@ -171,6 +270,7 @@ for (const f of files) {
     if (shard === 0) appendFileSync(outFile, JSON.stringify({ probe: f, cls: 'EXCLUDED', reason: excluded }) + '\n');
     continue;
   }
+  const probeTimeoutMs = timeoutOverrideMs(src) ?? timeoutMs;
   const cmd = extractCmd(src);
   if (!cmd) {
     // --nodocs runs the probes that document NO invocation, at the runner's
@@ -184,14 +284,14 @@ for (const f of files) {
     }
     idx++;
     if (shards > 1 && idx % shards !== shard) continue;
-    queue.push({ f, flags: [], bad: [], cmd: '(defaults; probe documents no invocation)', defaults: true });
+    queue.push({ f, flags: [], bad: [], cmd: '(defaults; probe documents no invocation)', defaults: true, timeoutMs: probeTimeoutMs });
     continue;
   }
   if (args.has('nodocs')) continue;
   idx++;
   if (shards > 1 && idx % shards !== shard) continue;
   const { flags, bad } = flagsOf(cmd);
-  queue.push({ f, flags, bad, cmd });
+  queue.push({ f, flags, bad, cmd, timeoutMs: probeTimeoutMs });
 }
 
 console.error(`probeall: ${queue.length} to run (${done.size} already recorded)`);
@@ -200,10 +300,34 @@ for (const q of queue) {
   if (limit && n >= limit) break;
   n++;
   const argv = [runner, `--url=${url}`, ...q.flags, `--evalfile=${join(probeDir, q.f)}`];
-  const r = await run(process.execPath, argv, webDir);
+  const r = await run(process.execPath, argv, webDir, q.f, q.timeoutMs ?? timeoutMs);
+  // BT-130: stdout is read back from disk, not from a capped in-memory
+  // string, so a big-but-complete report (propshadow.js: 8.4 MB) parses the
+  // same as a small one. `r.soTruncated` is only ever true against
+  // SAFETY_CAP_BYTES (800 MB), a genuinely runaway process, not a normal
+  // report.
+  let so = '', readErr = null;
+  try { so = readFileSync(r.soPath, 'utf8'); } catch (e) { readErr = String(e.message).slice(0, 200); }
   let report = null, parseErr = null;
-  try { report = JSON.parse(r.so); } catch (e) { parseErr = String(e.message).slice(0, 200); }
-  const v = report ? verdictOf(report.eval) : { cls: 'NO_OUTPUT', fails: [] };
+  if (!r.soTruncated) {
+    try { report = JSON.parse(so); } catch (e) { parseErr = String(e.message).slice(0, 200); }
+  }
+  let v;
+  if (r.soTruncated) {
+    // LOUD, not a silent NO_OUTPUT: the process was still producing output
+    // when the safety cap cut it off, which is a fact about the cap, not
+    // about the probe's verdict.
+    v = {
+      cls: 'TRUNCATED_OUTPUT',
+      fails: [`stdout exceeded the ${SAFETY_CAP_BYTES}-byte safety cap `
+        + `(saw ${r.soBytes} bytes and counting); this is NOT a verdict, `
+        + `re-run standalone and inspect ${r.soPath}`],
+    };
+  } else if (report) {
+    v = verdictOf(report.eval);
+  } else {
+    v = { cls: 'NO_OUTPUT', fails: [] };
+  }
   const runnerFails = (r.se.match(/^ {2}(console\.error|pageerror|requestfailed|runner|console\.warn):.*/gm) ?? []).slice(0, 6);
   const rec = {
     probe: q.f,
@@ -218,7 +342,12 @@ for (const q of queue) {
     runnerFails,
     flags: q.flags,
     atDefaults: q.defaults === true,
+    timeoutMs: q.timeoutMs ?? timeoutMs,
     parseErr,
+    stdoutBytes: r.soBytes,
+    stdoutTruncated: r.soTruncated,
+    stdoutFile: r.soPath,
+    readErr,
     stderrTail: r.se.slice(-600),
   };
   appendFileSync(outFile, JSON.stringify(rec) + '\n');

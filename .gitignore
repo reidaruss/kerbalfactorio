@@ -64,3 +64,9 @@ web/dist-*/
 
 # Agent worktrees are ephemeral checkouts, not project state.
 .claude/worktrees/
+
+# probeall.mjs (BT-115/BT-116/BT-130) sweep artifacts: resumable results and,
+# as of BT-130, each probe's raw stdout captured to disk instead of a capped
+# in-memory string. Per-lane debugging data, not project state.
+web/tools/smoke/results.jsonl
+web/tools/smoke/stdout/
