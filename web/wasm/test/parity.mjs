@@ -330,15 +330,21 @@ for (let i = 0; i < SAMPLES.length; ++i) {
   // characterised -- a 1-ULP libm difference in a transcendental (there:
   // Windows mingw-w64 vs Linux g++; here: emscripten/musl vs mingw-w64,
   // same root cause, cubed_sphere.h warp()=tan(s*pi/4) is the sole producer
-  // of every sampled direction) that WG-6's position-hash design AMPLIFIES
-  // on purpose into an unrelated-looking height, invisible in float32 and
-  // only visible because the hash is taken over raw double bits. The proof
-  // this is that mechanism and not a real port defect lives two lines below:
-  // posHash/nrmHash hash the SAME mesh's f32 positions/normals and PASS,
-  // because f32 quantizes the 1-ULP wobble away -- and quadmesh.h0/h544/
-  // h1088 (below) already sit at Tier B for pulling individual raw doubles
-  // out of this exact array. Gating hard on a hash of an array whose own
-  // members are informational-only was the inconsistency; retiered to match.
+  // of every sampled direction) propagating ARITHMETICALLY into a SMALL,
+  // sub-float32-ULP wobble in a handful of this quad's 1089+ heights. NOT
+  // the dramatic "position-hashed into a completely different height"
+  // mechanism this file's Tier B print-out describes for arbitrary lat/lon
+  // sampling (CASE 1 below): that mechanism would move an affected vertex
+  // by kilometres, which f32 (~71 mm at Forge's 600 km radius, see the R1
+  // GATE bench) would show plainly, and posHash/nrmHash -- hashing the SAME
+  // mesh's f32 positions/normals -- PASS. So does quadmesh.h0/h544/h1088
+  // (below, Tier B, individual raw doubles from this exact array): the
+  // handful of differing vertices are not among those three indices. A
+  // wobble too small for f32 to see and too rare to land on three fixed
+  // indices, yet large enough to flip an f64-bit-sensitive hash, is
+  // informational by the same argument BT-101 already made -- gating hard on
+  // a hash of an array whose own members are informational-only was the
+  // inconsistency; retiered to match.
   const hlo = M._of_quadmesh_content_hash_lo(m) >>> 0;
   const hhi = M._of_last_hi() >>> 0;
   eq('quadmesh.contentHashLo', hlo, e.contentHashLo, TIER.B);
@@ -1009,20 +1015,44 @@ function buildChain(deposit) {
     info = recipeInfo(0);
     eq('gp.recipeNotCraftable', info.canCraft, false, TIER.SELF);
 
-    // Stock exactly the recipe's own bill, no more.
-    for (const inp of info.inputs) M._of_gp_add(inp.item, inp.need);
+    // Stock the recipe's own bill, plus ONE EXTRA unit of the first input.
+    // Stocking every input to exactly `need` (as an earlier draft did) leaves
+    // every input reading 0 after the successful craft, which makes a
+    // "consumed nothing on the failed second craft" check trivially true
+    // whether or not of_gp_craft actually left the pack alone: 0 stays 0
+    // either way. The extra unit gives the assertion below TEETH -- it is
+    // the one place a wrong partial deduction on the FAILED craft (of_gp_craft
+    // touching a pack it should have left untouched because some other input
+    // was short) would actually show up.
+    const extraStockItem = info.inputs[0].item;
+    for (const inp of info.inputs) {
+      M._of_gp_add(inp.item, inp.need + (inp.item === extraStockItem ? 1 : 0));
+    }
+    // NOTE: recipeInfo(0) below rebuilds `info.inputs` as fresh objects, so
+    // the "which one is over-stocked" comparison below is keyed on the
+    // ITEM ID (a primitive, stable across that rebuild), never on object
+    // identity against `info.inputs[0]` from before this reassignment.
     info = recipeInfo(0);
     eq('gp.recipeCraftable', info.canCraft, true, TIER.SELF);
 
     eq('gp.craft', M._of_gp_craft(0), 1, TIER.SELF);
     eq('gp.craftMadeTool', invOf(I.pickaxe), 1, TIER.SELF);
-    // Every input the bill named is now gone -- exactly what it said it cost,
-    // no more (the pack held exactly `need` of each going in).
+    // Every input dropped by exactly `need`: the over-stocked one has its
+    // single spare unit left, the rest are at 0.
+    const afterCraft = (inp) => (inp.item === extraStockItem ? 1 : 0);
     eq('gp.craftConsumedInputs',
-       info.inputs.every((inp) => invOf(inp.item) === 0), true, TIER.SELF);
+       info.inputs.every((inp) => invOf(inp.item) === afterCraft(inp)),
+       true, TIER.SELF);
     eq('gp.craftAgainFails', M._of_gp_craft(0), 0, TIER.SELF);
+    // TURNS RED IF: the failed craft above touches the pack at all -- e.g. it
+    // partially deducts inputs before discovering one is short, or it debits
+    // the over-stocked spare unit for any reason. That spare unit sitting at
+    // exactly 1 (not 0, not 2) is the only place in this block a wrong
+    // partial consumption on a REFUSED craft would be visible; every other
+    // input is already at 0 and cannot show a further deduction.
     eq('gp.craftFailConsumedNothing',
-       info.inputs.every((inp) => invOf(inp.item) === 0), true, TIER.SELF);
+       info.inputs.every((inp) => invOf(inp.item) === afterCraft(inp)),
+       true, TIER.SELF);
   }
 
   // --- the furnace: completes on the tick it should, stalls when starved ---
