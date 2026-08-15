@@ -109,6 +109,28 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     // failure mode 1. A single amplitude would only ever have been able to
     // answer "is the specular on", never "which half is doing this".
     uniform vec2 uSpecAmp;
+    // RN-1733. The near-field detail layer. x is the BUMP amplitude and y the
+    // ALBEDO amplitude, two components rather than one for uSpecAmp's reason
+    // exactly: they fail differently (a bump that is too strong reads as
+    // gravel, an albedo that is too strong reads as noise) so they have to be
+    // isolable separately, and a single amplitude could only ever answer "is
+    // the layer on". ?groundfine=0 removes both.
+    uniform vec2 uFineAmp;
+    // RN-1733. The layer's three repeats per quad (x clod, y crease ridge,
+    // z grit) and its three height weights. Uniforms rather than defines for
+    // RN-843's measured reason: which frequency band the near ground is
+    // missing is settled by looking at matched frames one uniform apart, and a
+    // define can only be swept one BUILD per rung, which is not a pair.
+    // Only INTEGER frequencies keep the chunk-edge seam closed; see
+    // ofArtVnoise2P.
+    uniform vec3 uFineFreq;
+    uniform vec3 uFineW;
+    // RN-1735. 1 applies the per-biome luminance weight (ofArtFineLum), 0 is
+    // the flat amplitude this layer shipped with for one afternoon and which
+    // measured +134% of near-ground iqr at Beach against 0% at Plains. A hard
+    // 0 or 1 and not an amplitude, on uReliefGrad's precedent: what 0 restores
+    // is a defect, and an intermediate value would be neither state.
+    uniform float uFineLum;
     uniform float uFadeDur;
     uniform float uMetresPerUnit;
     uniform vec3 uCascadeFar;
@@ -233,6 +255,83 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       // the bump stays RN-50's vnoise exactly); (3) the near boost inside
       // ~20 m, because the feet are where a texture pass is judged and dark
       // biomes photographed nearly flat without it.
+      // RN-1733. THE NEAR-FIELD DETAIL LAYER's field, evaluated ONCE here and
+      // consumed twice: by the albedo a few lines down and by a third
+      // ofArtBump call in the bump block below.
+      //
+      // WHY IT IS HOISTED TO UNIFORM CONTROL FLOW AND NOT GATED ON DISTANCE,
+      // which is the obvious thing and is wrong here. The term only does
+      // anything within about 12 m, so a distance branch looks free; but the
+      // consumer takes SCREEN DERIVATIVES of this height, and a derivative
+      // inside non-uniform control flow is undefined by the same rule that
+      // makes a texture fetch there undefined-LOD (RN-78 paid a full hunt for
+      // the sampled half of that lesson). The branch condition is therefore a
+      // BARE UNIFORM, exactly as bumpW and uGroundReliefAmp already are, and
+      // the DISTANCE confinement is carried by the footprint fade instead,
+      // which is a multiply rather than a jump.
+      //
+      // footM is the pixel's world footprint, and it is the same quantity
+      // ofArtBump computes for itself. It is recomputed rather than plumbed
+      // through because the alternative is widening a published signature that
+      // three call sites use, to save two derivative instructions.
+      vec3 fine3 = vec3(0.0);
+      float fineHc = 0.0;      // the clod octave and the crease ridge
+      float fineHg = 0.0;      // the grit octave
+      float fineA = 0.0;
+      float fineFade = 0.0;
+      float fineMc = 1.0;
+      float fineM = 1.0;
+      // The per-biome weight FOLDS INTO THE FADE rather than being applied
+      // separately at each of the three consumers. One multiply, one place, and
+      // no way for the albedo half and the two bump calls to end up weighted
+      // differently, which is the ofArtWetness rule applied to a scalar.
+      float fineLum = 1.0;
+      #ifndef OF_SCALED
+        // DERIVED HERE, from the live frequency, and not a define. The fade's
+        // whole job is to retire the term before its FINEST octave folds, so a
+        // fade keyed on a stale copy of that frequency is a negative control
+        // made of a constant copied from the thing it watches (standing rule
+        // 11), and this file carries two shipped instances of exactly that
+        // (OF_ART_FINE_M and OF_RELIEF_FINE_M, both derived against a depth-14
+        // quad and neither moved when WG-186 halved it). A swept frequency with
+        // a frozen fade would be a third.
+        fineM = OF_FINE_CHUNK_M / max(uFineFreq.z, 1.0);
+        // The COARSE half is protected by the RIDGE's wavelength, not the clod
+        // octave's, so the pair retires early rather than late; see
+        // ofArtFineHc. Both are derived from the live uniform for the reason
+        // above.
+        fineMc = OF_FINE_CHUNK_M / max(uFineFreq.y, 1.0);
+        if (uFineAmp.x > 0.0 || uFineAmp.y > 0.0) {
+          fineLum = mix(1.0, ofArtFineLum(vBiomeColor), uFineLum);
+          float footM = max(length(dFdx(vWorld)), length(dFdy(vWorld)));
+          // The SAME curve ofArtBump fades on, keyed on the SAME wavelength, so
+          // the albedo half and the normal half retire together and a reader
+          // never has to hold two bands in their head. Nyquist: a feature is
+          // representable while the sample spacing is under half its
+          // wavelength, and this is fully out by a third of it.
+          // The ALBEDO half fades on the COARSE wavelength, because its own
+          // content is the two centred octaves and the coarser of those is what
+          // it has to protect; the grit's contribution to it is subordinate and
+          // the mip-free field it rides has no other guard.
+          fineFade = 1.0 - smoothstep(fineMc * 0.125, fineMc * 0.333, footM);
+          // THE CULL THRESHOLD IS 0.5 AND THE FADE IS DONE AT 0.333, AND THE
+          // GAP BETWEEN THEM IS THE WHOLE POINT. Culling exactly where the fade
+          // reaches zero would put the jump from a live height to a hard 0
+          // inside the same 2x2 quad as pixels whose amplitude is still being
+          // read, and dFdx is a quad difference, so the ring at that radius
+          // would get a derivative of a step function. Past 0.5 both the height
+          // and the amplitude are identically zero, so the garbage derivative
+          // is multiplied by nothing. It costs one band of ground evaluating a
+          // field it will not use, which is cheaper than the ring.
+          if (footM < fineMc * 0.5) {
+            fine3 = ofArtFine3(vChunkUv, uFineFreq);
+            fineHc = ofArtFineHc(fine3, uFineW);
+            fineHg = ofArtFineHg(fine3, uFineW);
+            fineA = ofArtFineA(fine3, uFineW);
+          }
+        }
+      #endif
+
       #ifndef OF_SCALED
         float texW = uGroundTexAmp * (1.0 - smoothstep(35.0, 75.0, dist))
                    * (1.0 + 0.6 * (1.0 - smoothstep(10.0, 22.0, dist)));
@@ -258,6 +357,24 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         // channel and leaves every channel's level alone. That distinction is
         // the macro tint's own scar, forty lines up.
         albedo *= vec3(1.0) + texW * grain * vTint.xyz;
+        // RN-1733. THE DETAIL LAYER'S ALBEDO HALF, on the SAME tint axis the
+        // grain above rides and for RN-1257's reason: a value-only modulation
+        // has one degree of freedom and cannot make the ground warmer where it
+        // is dry and cooler where it is damp, which is most of what reads as
+        // soil rather than as a brown surface. Mean-preserving by the same
+        // construction (the field is centred, so a fixed tint vector moves each
+        // channel's SPREAD and leaves its LEVEL alone).
+        //
+        // IT RIDES THE SAME HEIGHT THE BUMP DOES, deliberately, and that is the
+        // one correlation in this material that is physically right rather than
+        // merely cheap: a crest sheds and dries and a hollow holds dark damp
+        // litter, so height and value genuinely covary on ground. It also means
+        // the two halves cannot drift, which is the reason ofArtWetness exists.
+        //
+        // NOT gated on coverSel. A cliff face wants sub-decimetre break-up at
+        // arm's length exactly as much as a forest floor does, and coverSel
+        // is the cover/rock selector, not a near/far one.
+        albedo *= vec3(1.0) + uFineAmp.y * fineLum * fineFade * fineA * vTint.xyz;
         // RN-148: the relief sample. UNCONDITIONAL like g1/g2 and for the same
         // measured reason (a fetch inside non-uniform control flow has
         // UNDEFINED LOD; RN-78 paid a full hunt for it). One scale, the 16
@@ -432,6 +549,29 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
           // scale is constant, so no LOD step is ever visible in the term.
           float relW = uGroundReliefAmp * (1.0 - smoothstep(30.0, 60.0, dist));
           n = ofArtBumpG(n, vWorld, gx, gy, relW, OF_RELIEF_FINE_M);
+        }
+        // RN-1733. THE DETAIL LAYER'S NORMAL HALF, and it is a THIRD separable
+        // ofArtBump call rather than another octave added to hB, for the reason
+        // TerrainShader already gives forty lines up in the other direction:
+        // separable calls are what let ?groundfine=0, ?terrainbump=0 and
+        // ?groundrelief=0 each isolate their own term. Folding this into hB
+        // would also give the 2.07 m octave this field's much finer fade and
+        // retire it at 12 m, which is a change to a shipped term wearing a new
+        // term's clothes.
+        //
+        // The condition is a bare uniform, so the control flow is uniform and
+        // the derivatives inside ofArtBump are defined; the field itself was
+        // evaluated above under the same condition.
+        //
+        // ORDER: AFTER both existing bumps, so this perturbs the normal they
+        // have already turned. That is correct for a detail layer and it is not
+        // arbitrary: surface-gradient perturbation is not commutative, and the
+        // physically meaningful reading is fine relief sitting ON the coarse
+        // shape rather than the coarse shape sitting on the grit.
+        if (uFineAmp.x > 0.0) {
+          float fw = uFineAmp.x * fineLum;
+          n = ofArtBump(n, vWorld, fineHc, fw, fineMc);
+          n = ofArtBump(n, vWorld, fineHg, fw, fineM);
         }
       #endif
 

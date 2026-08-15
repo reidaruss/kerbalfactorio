@@ -2,6 +2,11 @@
 // rock strata. GLSL text only, no uniforms declared here; TerrainShader.ts
 // declares them and calls these three functions.
 //
+// The EIGHTH term, the near-field detail layer (RN-1730 to RN-1735), lives in
+// TerrainFine.glsl.ts and is imported and re-exported here, so this file stays
+// the one place to look for "what surface-art terms exist" while none of them
+// has to live in a file that is already 2.3x over the line cap.
+//
 // Split out of TerrainShader.ts at the 400-line cap (2.2 rule 1), and worth
 // reading on its own because all three answer the same complaint: the ground is
 // FLAT COLOUR. Every fragment of one biome on one slope is currently the exact
@@ -58,6 +63,9 @@
 //
 // Neither is a substitute for the other: the define stops orbital aliasing, the
 // fade stops the handover seam.
+
+import { TERRAIN_ART_FINE, FINE_CHUNK_M, FINE_LUM_REF }
+  from './TerrainFine.glsl.js';
 
 /**
  * Hash and value noise. Dave Hoskins' hash13, which is float-only (no integer
@@ -716,6 +724,7 @@ export const TERRAIN_ART_RELIEF = /* glsl */`
 
 `;
 
+
 /**
  * THE SPECULAR LOBE (RN-731), the seventh term, and the one that reaches every
  * frame rather than a band of ground.
@@ -908,7 +917,17 @@ export const ROUGH_GRAIN = 3.2;
  */
 export const TEX_FINE_REPEATS = 47.0;
 
+// RN-1733. The near-field detail layer lives in TerrainFine.glsl.ts (2.2 rule
+// 1; this file was already 2.3x over the 400-line cap before it existed).
+// Everything it exports is RE-EXPORTED here so every import site that reaches
+// for a terrain-art constant keeps working and there is still one place to
+// look for "what surface-art terms exist".
+export { TERRAIN_ART_FINE, FINE_A, FINE_R, FINE_B, FINE_W, FINE_CHUNK_M,
+  FINE_M, FINE_BUMP, FINE_ALB, FINE_LUM_REF } from './TerrainFine.glsl.js';
+
 export const TERRAIN_ART_PARS = `#define OF_ART_FINE_M ${ART_FINE_M.toFixed(1)}\n`
+  + `#define OF_FINE_CHUNK_M ${FINE_CHUNK_M.toFixed(2)}\n`
+  + `#define OF_FINE_LUM_REF ${FINE_LUM_REF.toFixed(5)}\n`
   + `#define OF_RELIEF_FINE_M ${RELIEF_FINE_M.toFixed(2)}\n`
   + `#define OF_RELIEF_GRAD_UV ${RELIEF_GRAD_UV.toFixed(4)}\n`
   + `#define OF_TEX_SCALE_GAIN ${TEX_SCALE_GAIN.toFixed(2)}\n`
@@ -920,4 +939,5 @@ export const TERRAIN_ART_PARS = `#define OF_ART_FINE_M ${ART_FINE_M.toFixed(1)}\
   // authority while the shader reads the other. REL_CELL and REL_CELL_NOISE
   // remain the boot defaults, in TypeScript, with one home each.
   + TERRAIN_ART_NOISE + TERRAIN_ART_MACRO + TERRAIN_ART_STRATA + TERRAIN_ART_BUMP
-  + TERRAIN_ART_WET + TERRAIN_ART_TEX + TERRAIN_ART_RELIEF + TERRAIN_ART_SPEC;
+  + TERRAIN_ART_WET + TERRAIN_ART_TEX + TERRAIN_ART_RELIEF + TERRAIN_ART_FINE
+  + TERRAIN_ART_SPEC;
