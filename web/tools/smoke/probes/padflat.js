@@ -1,119 +1,91 @@
-// WG-24 acceptance: after levelling, HOW FLAT IS THE GROUND, measured on each of
-// the three surfaces separately, because they are three different instruments and
-// conflating them is how WG-22 reported a 2.3x win on a tool the user said did
-// nothing.
+// padflat.js: RETIRED, 2026-08-14 (GP-865 to GP-874). Kept as a pointer, not
+// deleted, so nobody reverts the seven-phantom-call version back in blind.
 //
-//   1. THE FIELD, through the oracle (`of.surface`). This is what collision, the
-//      aim ray and the build system read. It is the claim.
-//   2. THE NEAR VOXEL MESH, read straight off the THREE.Mesh named `voxelNear`.
-//      This is the surface-nets extraction of that same field: the geometry that
-//      actually draws the pad, at 1 m.
-//   3. THE STREAMED CHUNK, via `__of.meshVerts`. This is the far-field
-//      heightfield at the shipped 1.8 m LOD (DW-19), which cannot resolve a 6 m
-//      pad no matter how flat the field under it is. WG-23 measured this one and
-//      got 0.973 m; it is reported here so the comparison is like for like, and
-//      so the LOD limit is visible as a separate number rather than blamed on the
-//      tool.
+// WHAT THIS FILE ORIGINALLY CLAIMED (WG-24 acceptance): after levelling, HOW
+// FLAT IS THE GROUND, measured on three surfaces SEPARATELY (the oracle
+// field, the drawn near voxel mesh, and the far streamed chunk at 1.8 m LOD)
+// so a 2.3x "win" on one instrument could never again be reported as a win on
+// the tool, which is what WG-22 did.
 //
-// Every number is the WORST STEP BETWEEN TWO POINTS 4 m APART, because 4 m is the
-// DW-32 structural module and therefore the span a foundation bridges, and
-// because a surface is judged by its worst neighbouring pair rather than by the
-// middle of a distribution (WG-23).
-const of = window.__of;
-const log = [];
-const R = (x, n = 4) => Number(x.toFixed(n));
-
-// --- setup, proven before anything is measured (DW-20) ----------------------
-const t0 = of.stats().ticks;
-of.teleport(2.0, 144.0, 3);
-await of.settle(4.0);
-const ticks0 = of.stats().ticks - t0;
-
-// Find a slope. A levelling tool cannot be proven on flat ground: the spawn
-// clearing is inside the lattice's own old resolution (ARCHITECTURE 15.2 item
-// 99), and WG-26 has now deliberately flattened 150 m around spawn, which makes
-// that doubly true.
-let best = null;
-const step = 0.0009;
-for (let i = -12; i <= 12; ++i) {
-  for (let j = -12; j <= 12; ++j) {
-    const lat = 2.0 + i * step, lon = 144.0 + j * step;
-    const h = [];
-    for (let k = 0; k < 5; ++k) {
-      const a = (k / 5) * Math.PI * 2;
-      h.push(of.surfaceAtLatLon(lat + Math.cos(a) * 0.00006,
-                                lon + Math.sin(a) * 0.00006));
-    }
-    const spread = Math.max(...h) - Math.min(...h);
-    if (spread > 1.5 && spread < 9.0 && (best === null || spread > best.spread))
-      best = { lat, lon, spread };
-  }
-}
-if (best === null) return { ok: false, why: 'no sloped site found', ticks0 };
-log.push(`site: lat ${R(best.lat, 6)} lon ${R(best.lon, 6)}, probe spread ${R(best.spread, 3)} m`);
-
-of.teleport(best.lat, best.lon, 3);
-await of.settle(4.0);
-
-// --- the three measurements, as one function so they cannot drift apart -----
-const worstStep4m = (heightAt) => {
-  // An 11 x 11 grid at 2 m, comparing points exactly 4 m apart, inside a radius
-  // that stays clear of the disc rim: the rim is a wall by design and measuring
-  // it would be measuring the tool's edge rather than its floor.
-  const N = 11, SP = 2.0, KEEP = 4.5;
-  const g = [];
-  for (let j = 0; j < N; ++j)
-    for (let i = 0; i < N; ++i) {
-      const x = (i - (N - 1) / 2) * SP, y = (j - (N - 1) / 2) * SP;
-      g.push({ x, y, h: heightAt(x, y) });
-    }
-  let worst = 0, pairs = 0;
-  const at = (i, j) => g[j * N + i];
-  for (let j = 0; j < N; ++j)
-    for (let i = 0; i < N; ++i) {
-      const a = at(i, j);
-      if (a.h === null || Math.hypot(a.x, a.y) > KEEP) continue;
-      for (const b of [i + 2 < N ? at(i + 2, j) : null, j + 2 < N ? at(i, j + 2) : null]) {
-        if (!b || b.h === null || Math.hypot(b.x, b.y) > KEEP) continue;
-        worst = Math.max(worst, Math.abs(a.h - b.h));
-        ++pairs;
-      }
-    }
-  return { worst, pairs };
-};
-
-const site = of.tangentFrameAt(best.lat, best.lon);
-const oracleH = (x, y) => of.surfaceAtOffset(best.lat, best.lon, x, y);
-
-const before = {
-  oracle: worstStep4m(oracleH),
-  chunk: worstStep4m((x, y) => of.drawnHeightAtOffset(best.lat, best.lon, x, y, 1.2)),
-};
-
-// --- level it, through the real key, at a pitch a player looks from ---------
-of.look(0, -20);
-const pressed = await of.pressLevel(1.2);
-await of.settle(3.0);
-
-const after = {
-  oracle: worstStep4m(oracleH),
-  chunk: worstStep4m((x, y) => of.drawnHeightAtOffset(best.lat, best.lon, x, y, 1.2)),
-  voxel: worstStep4m((x, y) => of.voxelHeightAtOffset(best.lat, best.lon, x, y, 1.2)),
-};
-
-log.push(`FIELD  (oracle):      ${R(before.oracle.worst)} m -> ${R(after.oracle.worst)} m`);
-log.push(`DRAWN  (voxel mesh):  n/a before -> ${R(after.voxel.worst)} m over ${after.voxel.pairs} pairs`);
-log.push(`DRAWN  (chunk, 1.8 m LOD): ${R(before.chunk.worst)} m -> ${R(after.chunk.worst)} m`);
-
-return {
-  ok: true,
-  ticks0,
-  pressed,
-  site: best,
-  threshold: 0.25,
-  before, after,
-  meetsThresholdOnField: after.oracle.worst <= 0.25,
-  meetsThresholdOnVoxelMesh: after.voxel.worst <= 0.25,
-  voxelStats: of.voxelStats ? of.voxelStats() : null,
-  log,
-};
+// WHY IT IS RETIRED RATHER THAN REWRITTEN. WG-193 found it calls
+// `of.surfaceAtLatLon`/`of.surfaceAtOffset`, neither of which exist. That
+// finding undersold it: a repo-wide grep (this lane, 2026-08-14) found the
+// file calls SEVEN functions that exist nowhere in `web/src` --
+// `of.surfaceAtLatLon`, `of.surfaceAtOffset`, `of.tangentFrameAt`,
+// `of.pressLevel`, `of.drawnHeightAtOffset`, `of.voxelHeightAtOffset` and
+// `of.voxelStats` -- confirming INSTRUMENTS.md's own standing-rule-11 entry
+// ("padflat.js has not executed a line of its body since WG-22"). It could
+// not have passed or failed; it could only ever throw before its first
+// assertion.
+//
+// THE CLAIM IS NOT ABANDONED, IT MOVED. `probes/level.js` (WG-22/WG-23)
+// already tests the live claim end to end, against TODAY's real API, in more
+// depth than this file ever ran: a REAL `KeyQ` DOM keypress at a player
+// pitch (not a tape), `of.surface(dx,dy,dz)` for the oracle field and
+// `of.meshVerts(x,y,z,radiusM)` for the drawn near mesh -- the same "worst
+// step over a 4 m span" measure this file wanted, at the same 0.25 m DW-32
+// perceptual threshold this file used -- plus a negative control sized off
+// the tool's own reach, a walk-on check, and a save/reload survival check
+// with the rock put back in between. Re-run live on this lane's own local
+// build (2026-08-14, `node tools/smoke/run.mjs --scenario=walk
+// --evalfile=tools/smoke/probes/level.js`), it is GREEN end to end: `valid:
+// true`, all 13 named checks true, log `"before: oracle spread 1.542 m,
+// DRAWN step within 4 m 1.065 m"` -> `"after: oracle spread 0.000 m, DRAWN
+// step 0 m, outside max delta 0.000000 m over 12 pts"`, `perceptual:
+// {thresholdM: 0.25, drawnStepM: 0, meetsThreshold: true}`, the tool's own
+// quote agreeing with an independent oracle remeasurement to 0 m error, and
+// `padSurvivesReload: true`.
+//
+// THE ONE PIECE THIS FILE HAD THAT `level.js` DOES NOT: the third surface,
+// the far streamed chunk at ~1.8 m LOD. There is no live API for it either.
+// `of.meshVerts` (`TerrainDebug.meshVertsNear`) filters to `v.isNear` chunks
+// only, by construction (`if (!v.isNear || !v.visible) continue`), and no
+// other exposed call samples height at an arbitrary point on a resident far
+// chunk. Rebuilding that comparison honestly would need a new client-side
+// debug hook, which is bigger than an instrument fix and is left as an OWED
+// item rather than faked with a near-mesh number wearing its clothes. It was
+// also never the load-bearing half of the claim: the header above named it a
+// context comparison ("so the LOD limit is visible as a separate number
+// rather than blamed on the tool"), not an acceptance criterion.
+//
+// Building a second live instrument beside `level.js` for the same claim is
+// exactly the collision NUMBERS.md's own registry note warns about ("A probe
+// file has no registry, so creating one can silently destroy another"), so
+// this file stays retired rather than duplicated.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/padflat.js
+(async () => {
+  const of = window.__of;
+  const liveOracle = typeof of?.surface === 'function';
+  const liveMesh = typeof of?.meshVerts === 'function';
+  const PHANTOMS = ['surfaceAtLatLon', 'surfaceAtOffset', 'tangentFrameAt',
+    'pressLevel', 'drawnHeightAtOffset', 'voxelHeightAtOffset', 'voxelStats'];
+  const stillAbsent = PHANTOMS.filter((k) => typeof of?.[k] !== 'function');
+  const reappeared = PHANTOMS.filter((k) => typeof of?.[k] === 'function');
+  return {
+    // Checkable rather than asserted-and-forgotten: if `of.surface` or
+    // `of.meshVerts` (the calls `level.js` now depends on) ever disappear,
+    // or if one of the seven phantom names is ever reintroduced without this
+    // file being revisited, this goes red rather than staying a silent
+    // green pointer.
+    valid: liveOracle && liveMesh && reappeared.length === 0,
+    retired: true,
+    why: 'WG-24 three-surface flatness claim now lives in probes/level.js '
+      + '(WG-22/WG-23), which drives the real levelling tool through a DOM '
+      + 'key and reads of.surface + of.meshVerts. This file could not have '
+      + 'run since WG-22 (seven calls to functions absent from web/src).',
+    successor: 'web/tools/smoke/probes/level.js',
+    successorVerdict2026_08_14: 'valid:true, 13/13 named checks true, '
+      + 'perceptual.meetsThreshold:true at drawnStepM 0 against thresholdM '
+      + '0.25, padSurvivesReload:true',
+    liveApiPresent: { 'of.surface': liveOracle, 'of.meshVerts': liveMesh },
+    phantomCallsStillAbsent: stillAbsent,
+    phantomCallsReappeared: reappeared,
+    owed: 'no live API samples height at an arbitrary point on a resident '
+      + 'FAR (non-isNear) chunk, so the third surface (streamed chunk at '
+      + '~1.8 m LOD) cannot be honestly rebuilt without a new client-side '
+      + 'debug hook; left owed rather than faked.',
+    numbers: 'GP-865 to GP-874',
+  };
+})()
