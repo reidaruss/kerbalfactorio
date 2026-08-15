@@ -29,6 +29,10 @@
 #include <chrono>
 #include <vector>
 #include <string>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 // --- FNV-1a 32-bit over raw bytes. Chosen because JS can reproduce it EXACTLY
 // with Math.imul (a 64-bit hash would force BigInt on the JS side). Doubles are
@@ -236,6 +240,22 @@ static int runDiag() {
 }
 
 int main(int argc, char** argv) {
+  // BT-100 to BT-114: force stdout to BINARY mode on Windows. The Windows CRT
+  // opens stdout in TEXT mode by default, which silently rewrites every '\n'
+  // this program prints to '\r\n' - so a direct `dump_expected.exe > out.json`
+  // diverges from a Linux run in raw line endings alone, before a single float
+  // is ever compared. build.ps1 has always papered over this downstream (it
+  // rewrites the fixture with an explicit LF join before writing
+  // test/expected.json), which is exactly why the bug was invisible: the ONE
+  // path that ever produced the committed fixture already dodged it. Any other
+  // consumer of this tool's raw stdout - a diagnostic script, a future CI step,
+  // a developer diffing two runs by hand - did not. Fixing it here removes a
+  // whole axis of non-reproducibility at the source instead of relying on every
+  // caller to know to paper over it. No-op on Linux/mac, where text mode
+  // already is binary mode.
+#ifdef _WIN32
+  _setmode(_fileno(stdout), _O_BINARY);
+#endif
   if (argc > 1 && std::string(argv[1]) == "--bench") return runBench();
   if (argc > 1 && std::string(argv[1]) == "--diag") return runDiag();
   const uint32_t kSeedLo = 0x0BF00D01u, kSeedHi = 0x00000000u;
