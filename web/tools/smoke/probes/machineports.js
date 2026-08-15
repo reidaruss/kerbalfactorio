@@ -1,6 +1,19 @@
 // FS-43 to FS-47: A BELT CONNECTS TO A PORT, AND A BELT AT THE BARE HOUSING
 // REFUSES OUT LOUD.
 //
+// PROBEALL-TIMEOUT: 420000
+// BT-130: hit the shared sweep's 240 s cap and was recorded NO_OUTPUT under
+// the BT-116 4-way batch. Re-run standalone on a quiet machine, no wrapper
+// timeout (2026-08-15, lane/probeall-debts): finished (its own separate RED,
+// unrelated to this timeout) in 298.5 s -- past the old 240 s cap with ZERO
+// contention, so parallelism was never the cause here. Four real 20 s
+// in-game measurement windows plus the walk/aim/build overhead around them
+// add up to a cost this probe genuinely has; `probeall.mjs` reads this
+// header line and gives THIS probe alone a wider, documented budget instead
+// of raising the shared default for every probe in the sweep.
+// (Marker kept inside the file's first 60 lines on purpose: probeall.mjs
+// only scans that far, same rule as PROBEALL-EXCLUDE.)
+//
 // Reid asked for Satisfactory's model: a machine has specific slots you belt
 // into and a specific slot you belt out of. This probe drives it, on a real
 // world, with real key presses, and measures all three halves of the claim on
