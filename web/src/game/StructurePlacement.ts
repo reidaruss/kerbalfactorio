@@ -152,34 +152,50 @@ export function ghostPrompt(t: StructureTarget | null): HudTarget | null {
  * and let this march see only those, since a pad stands on 36 decks and nothing
  * is ever built on a pad. `Solid.basePart`, one flag, five files.
  *
- * IT MOVES NOTHING, MEASURED. Two dists one line apart, same seed, same
- * standoff, same single aim, real D3D11 headless Chrome: the block resolved is
- * `[-3,-2,0]` in BOTH arms, with the whole ghost JSON identical. Two independent
- * reasons, both of which had to be measured to be believed:
+ * IT MOVES NOTHING AT THE VANTAGE MEASURED. Two dists one line apart, same
+ * seed, same standoff, same single aim, real D3D11 headless Chrome: the block
+ * resolved is `[-3,-2,0]` in BOTH arms, with the whole ghost JSON identical.
  *
- *  1. THE NEAR HIT IS DISCARDED BEFORE THE MARCH RESULT IS USED. `MIN_PLACE_M`
- *     below throws away any hit inside 3.2 m, and on a finished platform the
- *     nearest surface is the deck you are standing on. Measured from pad.js's
- *     own 3 m standoff: first solid on the ray at 0.20 m with the pad placed and
- *     3.00 m without it, and the same block out of both. Whatever the march
- *     found, this function did not use it.
- *  2. THE PAD IS NOT 28 m TO THE AIM. `heightM` 28 is the GEOMETRY BOUND,
- *     "tower and masts included" (LaunchPadModule.ts). The `col_*` proxy set the
- *     march actually sees tops out at the launch table and the deck banks:
- *     measured live by sweeping `solidBuild` up the pad's own vertical, the
- *     collision crown is a small fraction of 28 m, and a real aim from 10 m back
- *     at 15 m up the visual tower meets NO solid within the full 24 m reach.
- *     Every "a 28 m body against a 24 m aim reach, so no vantage clears it"
- *     argument, this lane's included, was reasoning about the mesh.
+ * THE REASON IS `MIN_PLACE_M`, AND IT IS THE ONLY REASON. That clamp below
+ * throws away any hit inside 3.2 m, and on a finished platform the nearest
+ * surface is the deck you are standing on. Measured from pad.js's own 3 m
+ * standoff: first solid on the ray at 0.20 m with the pad placed and 3.00 m
+ * without it, and the same block out of both. Whatever the march found, this
+ * function did not use it, so the arms could not differ.
  *
- * So the pad never was the occluder, and the reported symptom is GP-968 below,
- * one constant away. The ownership rule may still be right in principle -- a
- * ruin wall is genuinely tall and genuinely carries no address -- but it is not
- * shipping on principle alone: a change to this function with no measurable
- * consequence is a liability in the one place every placement in the game goes
- * through. The pair of assertions that would catch it live in `probes/pad.js`
- * (GP-967 and GP-969), so the day a real occluder appears, the arm is already
- * built and the flag is four lines away.
+ * A SECOND REASON WAS PUBLISHED HERE AND IS WITHDRAWN. It said the pad is not
+ * really 28 m to the aim, on the strength of a `solidBuild` sweep that found a
+ * 2.0 m collision crown. A fresh-context verifier falsified it: that sweep
+ * sampled two columns of a 24 m plan, `col_LaunchTower` sits at pad-local x
+ * about -8 (the mirror of the one off-centre column it took) and spans 2.00 to
+ * 28.00 m, and `padProxies` adopts every `col_` node but `col_LaunchClamp`.
+ * **The pad's collider does reach its mesh crown and the pad IS a tall body to
+ * this march.** `probes/pad.js`'s GP-969 block now sweeps the whole plan and
+ * asserts that corrected fact. The withdrawal does not touch the measurement
+ * above or the conclusion below, both of which stand on the clamp alone.
+ *
+ * So the pad never was the occluder -- not because it is short, but because
+ * this function discarded the hit before the block was derived -- and the
+ * reported symptom is GP-968 below, one constant away.
+ *
+ * WHAT IS THEREFORE STILL OPEN, AND IT IS NOW MEASURED RATHER THAN SUSPECTED.
+ * A flank hit that lands BEYOND `MIN_PLACE_M` is not covered by the measurement
+ * above, and with the tower confirmed real that case exists and reproduces.
+ * `probes/pad.js` stands a player 14 m back and aims 16.5 m up the tower column
+ * the crown sweep found: the ray meets the pad at 19.6 m, well past the 3.2 m
+ * clamp, so the march result IS used, and the ghost resolves `[-2,-4,3]`.
+ * That trailing 3 is `padBlockAt` reading the hit's height as a STOREY
+ * (`round(l.z / storey)`, clamped to MAX_LEVEL) off a point on a vertical face,
+ * so the pad is addressed at a storey the platform does not have.
+ *
+ * IT IS A LEGIBILITY DEFECT AND NOT A BAD PLACEMENT, which is why it is routed
+ * rather than rushed: the ghost at that address refuses with its own platform
+ * count ("36 of 36 cells have no foundation"), so nothing can be built up
+ * there. The reading is published in `pad.js` unasserted, with the reason
+ * string, so the next lane inherits a number instead of a hunch. Reinstating
+ * `basePart` is a candidate fix for it and would need its own verification pass
+ * across every placement probe; a change to the one function every placement in
+ * the game goes through does not ship on the side of a correction.
  *
  * The three other candidates, for the same reason: IGNORE ALL PLACED STRUCTURES
  * takes decks out too and deletes multi-storey aiming; RESOLVE THE GROUND BEHIND
