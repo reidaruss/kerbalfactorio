@@ -605,6 +605,26 @@
   await press('research');
   check('the key closes it again', panelOpen() === false);
 
+  // GP-891. AND ESCAPE CLOSES IT, WHICH IS PROVEN HERE BECAUSE THIS IS THE ONLY
+  // PROBE THAT CAN REACH THE PANEL. `probes/controls.js` derives the
+  // Escape-closes-every-modal guarantee from the live `of.modals()` registry
+  // and opens every row itself, but its world has no research station and the
+  // gate (GP-613 to GP-620) is enforced outside sandbox, so its `research`
+  // opener has pressed a refused key ever since that gate landed. It now skips
+  // the row the way its `map` row is skipped and names this check as the place
+  // the guarantee is kept, so the claim moved rather than being dropped.
+  await press('research');
+  check('the panel is up again, ready for the Escape half', panelOpen() === true);
+  const modalRow = () => of.modals().modals.find((m) => m.name === 'research');
+  check('the research panel is a REGISTERED modal, not merely a div',
+    modalRow() !== undefined && modalRow().open === true,
+    JSON.stringify(modalRow() ?? null));
+  of.escape();
+  await sleep(0.35);
+  check('ESCAPE CLOSES THE RESEARCH PANEL',
+    panelOpen() === false && (modalRow()?.open ?? true) === false,
+    `panel ${panelOpen()}, modal ${JSON.stringify(modalRow() ?? null)}`);
+
   // INTERACT AT THE STATION. The crosshair is put back on it and the press is
   // the same `interact` action a player uses.
   of.look(yaw, -18);

@@ -82,18 +82,60 @@
   // ground with the bare hand, where being eaten or digging are both harmless.
   // Measuring the open-on-click assertion with the lock-buying click would call
   // correct behaviour a bug.
+  // GP-890. THE STOCKING SWEEP OBEYS THE PICKAXE GATE, AND IS THEREFORE TWO
+  // SWEEPS WITH A TOOL CRAFTED BETWEEN THEM. GP-506 made coal, iron and copper
+  // `requiresToolFor` (gameplay.h): a bare-hand swing at them is REFUSED by
+  // name, not paid less. The single loop this replaces asked for kinds 0, 3
+  // and 2 (Tree, IronOre, CoalSeam) and deliberately skipped kind 1 (Rock),
+  // which is the only bare-hand road to stone. Measured on this world
+  // 2026-08-15 it landed 183 Wood and nothing else, took 21 ToolRequired
+  // refusals across the seven iron nodes, and `of.craft(2)` (Wood x5 +
+  // Raw iron x2) then refused with InputsShort and cascaded into every
+  // assertion below. Wood and loose stone stay ungated precisely so the
+  // pickaxe (Stone x2 + Wood x1) has a bare-hand path, and that is the order
+  // the storyline states: gather wood, gather stones, craft the pickaxe, THEN
+  // mine.
+  const nodesOnce = of.nodes();     // as expensive as of.game(); walked twice
+  const packCount = (name) =>
+    (of.game().carried.find((c) => c.name === name)?.count ?? 0);
+  const KIND_ITEM = { 0: 'Wood', 1: 'Stone', 2: 'Coal', 3: 'Raw iron' };
   let harvests = 0;
-  for (const n of of.nodes()) {
-    if (n.kind !== 0 && n.kind !== 3 && n.kind !== 2) continue;
-    for (let k = 0; k < 3; ++k) if (of.harvest(n.index).ok) harvests++;
-    if (harvests > 30) break;
-  }
+  // Budgets are per RESOURCE and never per node: a node count is world-gen's
+  // to move and it has moved. A node whose OWN resource is already at budget
+  // is skipped rather than emptied, so a scarce kind cannot keep the walk
+  // paying out every plentiful one on the way (GP-672's pack-pressure rule).
+  const sweep = (kinds, want) => {
+    for (const n of nodesOnce) {
+      if (!kinds.includes(n.kind)) continue;
+      if (kinds.every((k) => packCount(KIND_ITEM[k]) >= want[KIND_ITEM[k]])) break;
+      if (packCount(KIND_ITEM[n.kind]) >= want[KIND_ITEM[n.kind]]) continue;
+      for (let k = 0; k < 3; ++k) if (of.harvest(n.index).ok) harvests++;
+    }
+  };
+  sweep([0, 1], { Wood: 30, Stone: 6 });        // Tree, Rock: always bare-hand
+  const pickaxe = of.craft(0);                  // Stone x2 + Wood x1
+  sweep([2, 3], { Coal: 20, 'Raw iron': 20 });  // CoalSeam, IronOre: gated
   of.hotbar(1);
   of.look(of.world().observer.yawDeg, -70);
   await realClick(0.11);
-  log.push(`stocked with ${harvests} harvests, lock-buying click spent`);
+  log.push(`stocked with ${harvests} harvests over two sweeps, pickaxe `
+    + `${pickaxe}, pack ${of.game().carried.map((c) => `${c.name}=${c.count}`)
+      .join(' ')}, lock-buying click spent`);
 
-  if (!of.craft(2)) return { valid: false, why: 'could not craft the furnace', log };
+  // The gate is witnessed rather than merely obeyed: without the pickaxe there
+  // is no iron, so a probe that crafted the furnace anyway would be measuring a
+  // world where GP-506 had been reverted.
+  if (!pickaxe) {
+    return { valid: false, why: 'could not craft the crude pickaxe, so no ore '
+      + 'could be legally mined', log };
+  }
+  if (!of.craft(2)) {
+    // GP-51's refusal CODE and the bill it was measured against, so a red here
+    // says "short of what" instead of "no" (0 none, 1 no recipe, 2 inputs
+    // short, 3 pack full).
+    return { valid: false, why: 'could not craft the furnace',
+      recipe: of.game().recipes[2] ?? null, carried: of.game().carried, log };
+  }
 
   // ======================================================================
   // 1. A CLICK WITH THE FURNACE IN HAND PLACES IT (and opens nothing)

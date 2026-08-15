@@ -216,13 +216,39 @@
   // D. E OPENS A FURNACE, AND E DOES NOT HARVEST
   // ======================================================================
   // Stock the pack the way a player does, then craft, then place from slot 2.
+  //
+  // GP-890. "THE WAY A PLAYER DOES" IS TWO SWEEPS WITH A TOOL BETWEEN THEM.
+  // GP-506 made coal, iron and copper `requiresToolFor` (gameplay.h): a
+  // bare-hand swing at them is refused by name. The single loop this replaces
+  // asked for kinds 0, 3 and 2 (Tree, IronOre, CoalSeam) and skipped kind 1
+  // (Rock), the only bare-hand road to stone, so it landed wood alone, every
+  // ore swing was refused, `of.craft(2)` (Wood x5 + Raw iron x2) returned
+  // false, nothing was placed, and the seven failures below D were one cause
+  // wearing seven hats -- including the whole Escape cascade in E, which is
+  // out of step for no reason except that the furnace modal it opens with
+  // never existed. Wood and loose stone stay ungated so the pickaxe
+  // (Stone x2 + Wood x1) has a path: gather wood, gather stones, craft the
+  // pickaxe, THEN mine.
+  const nodesOnce = of.nodes();
+  const packCount = (name) =>
+    (of.game().carried.find((c) => c.name === name)?.count ?? 0);
+  const KIND_ITEM = { 0: 'Wood', 1: 'Stone', 2: 'Coal', 3: 'Raw iron' };
   let harvests = 0;
-  for (const n of of.nodes()) {
-    if (n.kind !== 0 && n.kind !== 3 && n.kind !== 2) continue;
-    for (let k = 0; k < 3; ++k) if (of.harvest(n.index).ok) harvests++;
-    if (harvests > 26) break;
-  }
+  const sweep = (kinds, want) => {
+    for (const n of nodesOnce) {
+      if (!kinds.includes(n.kind)) continue;
+      if (kinds.every((k) => packCount(KIND_ITEM[k]) >= want[KIND_ITEM[k]])) break;
+      if (packCount(KIND_ITEM[n.kind]) >= want[KIND_ITEM[n.kind]]) continue;
+      for (let k = 0; k < 3; ++k) if (of.harvest(n.index).ok) harvests++;
+    }
+  };
+  sweep([0, 1], { Wood: 26, Stone: 6 });        // Tree, Rock: always bare-hand
+  const pickaxe = of.craft(0);                  // Stone x2 + Wood x1
+  sweep([2, 3], { Coal: 12, 'Raw iron': 12 });  // CoalSeam, IronOre: gated
+  check('the crude pickaxe crafts from bare-hand resources alone', pickaxe);
   const crafted = of.craft(2);
+  check('the furnace crafts once the gate has been paid', crafted,
+    JSON.stringify(of.game().recipes[2] ?? null));
   await act(['slot2'], 4, 0.25);
   of.look(of.world().observer.yawDeg, -22);
   await sleep(0.2);
@@ -292,7 +318,18 @@
     // Escape shut any of them. That is the whole argument for reading the list
     // instead of writing it (GP-25), and it is the reachability point in
     // miniature: a panel that exists is not a panel a player can get to.
-    research: async () => { await act(['research'], 4, 0.35); },
+    // GP-891. THE RESEARCH KEY IS GATED BEHIND A BUILT RESEARCH STATION
+    // outside sandbox (GP-613 to GP-620, `ProgressUi.toggle` refuses and
+    // counts the refusal), and this probe's world has none: a station is
+    // 20 Iron + 30 Stone + 10 Copper, which is roughly 5400 ticks of smelting
+    // this probe has no business doing. So the row is SKIPPED the way `map` is
+    // skipped, on the gate's own published verdict rather than on a guess, and
+    // `probes/researchstation.js` now carries the Escape half where the panel
+    // is actually reachable. See the note pushed into `escapeRows` below.
+    research: async () => {
+      if (of.game().progress.stationGate.enforced) return;
+      await act(['research'], 4, 0.35);
+    },
     power: async () => { await act(['power'], 4, 0.35); },
     equip: async () => { await act(['equipment'], 4, 0.35); },
     // W12 THE MAP. It is a flight map and REFUSES to open on foot, which is a
@@ -338,7 +375,31 @@
         note: 'needs a vessel; proven in probes/maneuver.js' });
       continue;
     }
+    if (entry.name === 'research'
+        && of.game().progress.stationGate.enforced) {
+      escapeRows.push({ modal: 'research', opened: false, closedByEscape: null,
+        note: 'gated on a built research station; Escape proven in '
+          + 'probes/researchstation.js',
+        gate: of.game().progress.stationGate.refusal });
+      continue;
+    }
     const wasOpen = of.modals().modals.find((m) => m.name === entry.name).open;
+    // GP-892. A ROW THAT DID NOT OPEN MUST NOT BE SENT AN ESCAPE, because with
+    // nothing open Escape OPENS the pause menu (GP-100's
+    // `ModalStack.whenNothingOpen`), and that left every later row measuring a
+    // world with a modal underneath it. One un-openable row therefore produced
+    // three failures: its own, `Escape closes pause` reading `false -> true`
+    // (the pause opener's `cancel` CLOSED the menu the earlier stray Escape had
+    // opened, and the row's own Escape then opened it again), and the
+    // whenNothingOpen check after the loop reading `pause open false`. The row
+    // still fails by name; it just no longer damages its neighbours.
+    if (!wasOpen) {
+      escapeRows.push({ modal: entry.name, opened: false, closedByEscape: null });
+      check(`Escape closes ${entry.name}`, false,
+        'the opener did not open it, so Escape was never sent (sending one '
+        + 'here would open the pause menu and poison every row after this)');
+      continue;
+    }
     of.escape();
     await sleep(0.35);
     const nowOpen = of.modals().modals.find((m) => m.name === entry.name).open;
