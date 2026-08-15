@@ -34,10 +34,12 @@ export interface DragStep {
   j: number;
   /**
    * Why the loop stopped, or 'laid'. `reversal` is `dragRun`'s 180 degree
-   * guard, `refused` is `Factory.stage` declining the cell, `capped` is
-   * `DRAG_FILL_MAX`.
+   * guard, `refused` is `Factory.stage` declining the cell, `capped` is the
+   * fill limit (`DRAG_FILL_MAX`, or FS-130's `DRAG_FILL_UNAIMED_MAX` of one on
+   * a tick whose ghost never met the ground), and `behind` is FS-131: an
+   * unaimed ghost tried to pull the run back toward the player's own eye.
    */
-  how: 'laid' | 'reversal' | 'refused' | 'capped';
+  how: 'laid' | 'reversal' | 'refused' | 'capped' | 'behind';
   /**
    * THE TILE'S ORIENTATION AT THE MOMENT IT IS ASSIGNED, as the site's own
    * tangent axis: `e` and `n` are the heading's components on the site east and

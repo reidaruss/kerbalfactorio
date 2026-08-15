@@ -81,6 +81,29 @@ const TURN_REACH_M = 3.5;
  * frame that dropped a second, from carpeting the planet.
  */
 const DRAG_FILL_MAX = 24;
+/**
+ * FS-130. Cells a drag tick may fill in when the ghost is standing on a
+ * FALLBACK rather than on an aim that met the ground (`BuildTarget.aimed`
+ * false).
+ *
+ * The cap above exists for one stated reason: a crosshair swept fast across
+ * REAL GROUND crossed several cells between two samples, and filling them is
+ * what makes the run continuous instead of dotted. A fallback point is not
+ * ground the crosshair crossed. It is what the ghost says when the aim ran out
+ * of reach, so the strongest claim it can honestly make about the cells between
+ * the tip and itself is "keep going", and the strongest response to that is one
+ * cell. Bridging a gap on its authority is how a run gets flung.
+ *
+ * MEASURED on the `assembler.js` stone haul. 588 of its 915 ticks are unaimed
+ * and they lay 32 of the run's 63 tiles, so the naive guard (lay nothing while
+ * unaimed) deletes half the gesture and was never on the table. But only TWO of
+ * those 588 ticks wanted more than one cell, and with the cap in place the run
+ * picks both up on later ticks: unaimed tiles laid are 32 before and 32 after,
+ * the cap is recorded firing on 5 cells, and the whole haul lays the same 63
+ * tiles over the same 54-cell span. It is bought for nothing, and what it buys
+ * is that the tip provably cannot jump on a tick nobody aimed.
+ */
+const DRAG_FILL_UNAIMED_MAX = 1;
 
 export class MachineDrag {
   private dragLast: { addr: MachineAddr; placed: Placed;
@@ -312,7 +335,50 @@ export class MachineDrag {
     let last: Placed = start.placed;
     let step = start.step;
     let n = 0;
-    for (let i = 0; i < DRAG_FILL_MAX; ++i) {
+    // FS-131: A HELD DRAG EXTENDS A RUN AND NEVER UNWINDS ONE.
+    //
+    // The reversal guard inside the loop compares one step against the step
+    // before it, and that is blind to the shape the reported defect actually
+    // takes. A run that has just turned a corner has a step PERPENDICULAR to
+    // the way it came, so a target six cells behind it is reached by a first
+    // step the guard reads as a legal ninety-degree turn; the loop then keeps
+    // taking that step and walks a second line back down beside the first
+    // (FS-99, tick 614: tip `m1:-27,21`, ghost `m1:-33,17` nine cells behind,
+    // ten tiles laid in a single tick, nine of them heading -1).
+    //
+    // So the test is on the TARGET and not on the step, and its threshold is
+    // derived rather than tuned: the target is refused when it lies behind the
+    // tile BEFORE the tip, which is to say when the run would have to unwind at
+    // least one whole tile it has already laid in order to face it. Reduced to
+    // the site's integer lattice that is `along + 1 < 0`, where `along` is the
+    // target's displacement from the tip resolved onto the run's own last step.
+    //
+    // THE MEASURED CASES SEPARATE EXACTLY, which is why this is the line and not
+    // `along < 0`. The legitimate corner at tick 573 of the same haul (tip
+    // `m1:-37,17` with a north step, ghost two cells east and one south) scores
+    // -1 and is kept, and it is a corner: two east tiles and a lateral settle.
+    // The U-turn's ghost is four cells behind on the north axis and six on the
+    // east one, so it scores -4 or -6 whichever step the tip was carrying, and
+    // is refused either way. A blanket `along < 0` would delete the corner too,
+    // and corners are most of what a drag is for.
+    //
+    // IT APPLIES TO AIMED TICKS TOO, deliberately, because an aim that met the
+    // ground can land behind the tip as well and routinely does: as a walking
+    // player closes on the point they are aiming at, the 9 m march resolves
+    // nearer and nearer, so the ghost walks BACKWARD toward them while the tip
+    // stands still. All 156 of the haul's aimed reversal breaks were that, found
+    // by accident through a guard written for something else. Naming it is the
+    // point, and the split afterwards is 93 reversal and 63 behind on aimed
+    // ticks: the ones that stay are true 180 degree sweeps and the ones that
+    // move are the target sliding back down the run.
+    if (step !== null) {
+      const along = (t.addr.i - from.i) * step.di + (t.addr.j - from.j) * step.dj;
+      if (along + 1 < 0) { this.mark(t.addr, 'behind', null); return 0; }
+    }
+    // FS-130. See `DRAG_FILL_UNAIMED_MAX`: an aim that never met the ground may
+    // extend the run, and may not bridge a gap.
+    const fillMax = t.aimed ? DRAG_FILL_MAX : DRAG_FILL_UNAIMED_MAX;
+    for (let i = 0; i < fillMax; ++i) {
       const next = stepToward(from, t.addr);
       if (next === null) break;
       const now = { di: next.i - from.i, dj: next.j - from.j };
@@ -341,6 +407,14 @@ export class MachineDrag {
       last = made;
       this.host.placements++;
       n++;
+      // FS-130: say out loud that the cap, and not the target, is what stopped
+      // this tick, so "the unaimed cap cost the run a tile" is a number in the
+      // trace rather than an inference from two runs' totals. Trace-only: with
+      // no probe attached this is one null test.
+      if (n === fillMax && this.trace !== null) {
+        const more = stepToward(next, t.addr);
+        if (more !== null) this.mark(more, 'capped', null);
+      }
     }
     if (n > 0) {
       this.factory.commit();
