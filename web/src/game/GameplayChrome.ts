@@ -15,6 +15,9 @@
 import { ProgressUi } from './ProgressUi.js';
 import { ASSETS } from '../assets/Registry.js';
 import { screenView } from './MachineScreen.js';
+// GP-820. Every `setUiCapture` call in this file now names ITS OWN owner
+// token, so releasing one panel's hold can never touch another's (Input.ts).
+import { UI_OWNERS } from '../player/Input.js';
 import type { EquipSlotName } from '../player/Avatar.js';
 import type { Gameplay } from './Gameplay.js';
 import type { Machine } from './Machines.js';
@@ -75,7 +78,7 @@ export function offGridGenerators(g: Gameplay): number {
 export function setPackPanel(g: Gameplay, open: boolean): void {
   g.panel.setOpen(open);
   if (open) g.modals.touch(g.panel);
-  g.input.setUiCapture(open);
+  g.input.setUiCapture(UI_OWNERS.pack, open);
   g.hud.setVisible(!open);
   // The bar STAYS UP behind the pack, and takes the pointer: that is the one
   // moment a player has a cursor to rearrange it with.
@@ -95,7 +98,7 @@ export function openMachinePanel(g: Gameplay, m: Machine | null,
   const open = m !== null || g.openBuild !== null;
   g.furnacePanel.setOpen(open);
   if (open) g.modals.touch(g.furnacePanel);
-  g.input.setUiCapture(open);
+  g.input.setUiCapture(UI_OWNERS.furnace, open);
   g.hud.setVisible(!open);
   g.hotbarBar.setVisible(!open);
   if (open) g.furnacePanel.render(screenView(g));
@@ -121,7 +124,7 @@ export function attachProgress(g: Gameplay): ProgressUi {
     offGrid: () => offGridCount(g),
     offGridGenerators: () => offGridGenerators(g),
     setCapture: (open) => {
-      g.input.setUiCapture(open);
+      g.input.setUiCapture(UI_OWNERS.progress, open);
       g.hud.setVisible(!open);
       g.hotbarBar.setVisible(!open);
     },
