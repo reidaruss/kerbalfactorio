@@ -6,6 +6,24 @@
 //     --width=640 --height=360 \
 //     --evalfile=web/tools/smoke/probes/padgate.js
 //
+// PROBEALL-TIMEOUT: 900000
+//
+// GP-981. MEASURED THREE TIMES ON THE DESKTOP AGAINST A LOCALLY BUILT `vite
+// preview` build and real D3D headless Chrome, with other lanes' probes sharing
+// the box: **1414.2 s** of probe body before the render-rate fix below, then
+// **242.9 s** and **204.2 s** after it (280 s and 253 s of total process wall
+// clock including boot). All three `valid: true, fails: []`, and the first two
+// eval blocks are identical field for field. 900000 ms is 3.5x the measured
+// cost, which is margin for sweep concurrency, not a guess. Before this line
+// the file ran on `probeall.mjs`'s shared 240000 default and could only ever
+// have been recorded NO_OUTPUT.
+//
+// THIS IS THE LONGEST PROBE IN THE SUITE AND IT IS NOT HUNG (GP-981, GP-983).
+// It plays the whole legal path to a launch pad, forty hand-furnace smelts
+// included, and the `PROBEALL-TIMEOUT` line above is the measured cost with
+// margin rather than a guess. Watch it with `run.mjs`'s heartbeat, which
+// quotes this file's own `phase()` lines back every 30 s.
+//
 // THE INVOCATION IS DOCUMENTED HERE FOR THE FIRST TIME (GP-625), and that is a
 // harness repair rather than a comment. `probeall.mjs` derives every probe's
 // flags by parsing the first `run.mjs` line out of its header, so a file without
@@ -55,6 +73,56 @@
   const sleep = (n) => of.run(n);
   const fails = [];
   const log = [];
+
+  // ======================================================================
+  // GP-980. THIS FILE IS THE LONGEST PROBE IN THE SUITE, AND ON 2026-08-15 A
+  // VERIFIER DIAGNOSED IT AS HUNG BECAUSE OF THAT ALONE.
+  //
+  // IT WAS NOT HUNG. Two standalone attempts sat at `run.mjs`'s two boot lines
+  // for over twenty minutes and were killed; the run needs about half an hour,
+  // and `run.mjs` prints nothing between its boot lines and the report JSON at
+  // the very end, so a poll that counts output lines reads "2 lines" for the
+  // whole run whether the process is working or dead. The false diagnosis and
+  // its cost are written up in NUMBERS.md's own catalogue (GP-983), and the
+  // real repair is the runner's HEARTBEAT (GP-982), not anything in this file.
+  //
+  // What this file owes the heartbeat is the half only it can supply: a NAME
+  // for the step it is in. `phase(name)` prints it with its own wall clock
+  // through `console.log`, which `run.mjs` echoes as a `[page]` line AS IT
+  // HAPPENS and then quotes back in every heartbeat. That is what turns
+  // "something is running" into "it is on smelt batch 5 of 22".
+  //
+  // `abandon()` is the LAST-RESORT net, not a performance gate. Over the
+  // budget the file returns a real verdict -- `valid: false`, one fail line
+  // naming the phase and the elapsed time, and the log collected so far --
+  // instead of running until something outside it gives up. The default is
+  // deliberately far above the measured cost plus contention headroom
+  // (5400 s against a measured ~1800 s), and `probeall.mjs`'s own per-probe
+  // timeout above fires first in a sweep. A budget tight enough to fire on a
+  // busy box would only manufacture the red this lane was sent to disprove.
+  // ======================================================================
+  const T0 = Date.now();
+  const els = () => (Date.now() - T0) / 1000;
+  // `OF_ARGS` is the runner's wrapper PARAMETER, not a global (run.mjs builds
+  // `((OF_ARGS) => (...))(...)`), so `globalThis.OF_ARGS` reads undefined and a
+  // `--evalargs` budget would be silently ignored. `typeof` on a name that may
+  // not be declared at all is the one read that cannot throw.
+  const ARGS = typeof OF_ARGS === 'object' && OF_ARGS !== null ? OF_ARGS : {};
+  const BUDGET_S = Number(ARGS.budgetS ?? 5400);
+  let at = 'boot';
+  const phase = (name) => {
+    at = name;
+    console.log(`padgate [${els().toFixed(1)}s] ${name}`);
+    return els() > BUDGET_S;
+  };
+  const abandon = () => {
+    const line = `padgate ABANDONED after ${els().toFixed(1)}s of a ${BUDGET_S}s `
+      + `budget. It was in phase "${at}" and never reached a verdict. `
+      + `Raise --evalargs '{"budgetS":N}' only if the phase log below shows `
+      + `steady progress; a phase that repeats or stops advancing is the defect.`;
+    console.log(line);
+    return { valid: false, abandonedAt: at, elapsedS: els(), fails: [line], log };
+  };
   const check = (name, ok, detail) => {
     if (!ok) fails.push(detail === undefined ? name : `${name}: ${detail}`);
     return ok;
@@ -143,6 +211,7 @@
   const T = { Electrification: 0x0010, LaunchFacilities: 0x0016 };
   const PAD_ITEM = 0x0044;
 
+  if (phase('boot settle')) return abandon();
   await sleep(1.0);
   check('this run is SURVIVAL, so the gate is live',
     of.game().mode.researchGated === true, JSON.stringify(of.game().mode));
@@ -150,6 +219,7 @@
   // ======================================================================
   // 1. THE PAD IS IN HAND AND IS REFUSED BY NAME.
   // ======================================================================
+  if (phase('1. the pad is in hand and refused')) return abandon();
   const bar = () => of.game().hotbar;
   const slotOf = (p) => bar().slots.findIndex((s) => s.part === p);
   const padSlot = slotOf('launchpad');
@@ -201,6 +271,7 @@
   //    cannot yet open the screen it points at. The gate on the PAD and the
   //    gate on the SCREEN are independent, and this is where that shows.
   // ======================================================================
+  if (phase('2. the tree is not reachable yet')) return abandon();
   const cardFor = (id) => document.querySelector(`#of-research [data-tech="${id}"]`);
   const btnFor = (id) => document.querySelector(`#of-research button[data-tech="${id}"]`);
   const stateOf = (id) => cardFor(id)?.getAttribute('data-state') ?? '';
@@ -276,6 +347,7 @@
       for (let k = 0; k < 6; ++k) if (of.harvest(n.index).ok) harvests++;
     }
   };
+  if (phase(`3. bare sweep over ${nodesOnce.length} nodes`)) return abandon();
   sweep(BARE);
   check('the clearing gave up wood and stone to bare hands',
     have('Wood') > 0 && have('Stone') > 0, JSON.stringify(pack()));
@@ -306,12 +378,14 @@
     rawIronBeforePick === 0 && have('Raw iron') === 0,
     `${rawIronBeforePick} -> ${have('Raw iron')}`);
 
+  if (phase('3. tooled sweep')) return abandon();
   sweep(GATED);
   log.push(`stocked in ${harvests} swings: ${JSON.stringify(pack())}`);
   check('the clearing had raw iron and copper', have('Raw iron') > 0
     && have('Raw copper') > 0, JSON.stringify(pack()));
 
   // Furnace, placed and run, exactly as probes/research.js does it.
+  if (phase('3. furnace placed')) return abandon();
   check('the furnace recipe is still index 2', of.craft(2) === true);
   of.look(of.world().observer.yawDeg, -18);
   await sleep(0.2);
@@ -333,19 +407,41 @@
     const b = document.querySelector('#of-furnace button[data-take]');
     if (b !== null) b.click();
   };
+  // GP-981. THE SIM COST IS RIGHT; THE RENDER RATE WAS NOT.
+  //
+  // 16.667 SIM-seconds is 1000 fixed ticks at 60 Hz, and /core's Furnace needs
+  // 900 of them per five-unit batch, so the FIRST number is correct and
+  // irreducible: the batches are what pay for the science and nothing here is
+  // granted. `of.run(seconds, renderHz)` delivers `seconds x 60` fixed ticks
+  // whatever `renderHz` is; `renderHz` only decides how many FRAMES carry them.
+  // At the default 144.3 that is 2406 frames a batch and 96,240 over the forty
+  // batches below, which measured 22 to 35 s EACH and is about 80% of this
+  // file's whole half hour.
+  //
+  // `probes/research.js` has run the identical wait as `of.run(1000 / 60, 15)`
+  // since it was written. 15 Hz is a 66.7 ms dt against `Loop.frame`'s 0.25 s
+  // clamp, four times the margin, so all 1000 ticks still land: 250 frames a
+  // batch instead of 2406, same sim, same assertions.
+  const SMELT_S = 1000 / 60;
+  const SMELT_HZ = 15;
   const smelt = async (ore, batches) => {
     for (let i = 0; i < batches; ++i) {
+      if (phase(`3. smelt ${ore} batch ${i + 1}/${batches}`)) return 'budget';
       if (!load('Coal')) load('Wood');
       await sleep(0.05);
       if (!load(ore)) return false;
-      await sleep(1000 / 60);
+      await of.run(SMELT_S, SMELT_HZ);
       take();
       await sleep(0.2);
     }
     return true;
   };
-  check('iron smelted', await smelt('Raw iron', 22), 'the load button vanished');
-  check('copper smelted', await smelt('Raw copper', 18), 'the load button vanished');
+  const ironSmelt = await smelt('Raw iron', 22);
+  if (ironSmelt === 'budget') return abandon();
+  check('iron smelted', ironSmelt === true, 'the load button vanished');
+  const copperSmelt = await smelt('Raw copper', 18);
+  if (copperSmelt === 'budget') return abandon();
+  check('copper smelted', copperSmelt === true, 'the load button vanished');
   of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 8, keys: [] }]);
   await sleep(0.3);
   log.push(`smelted: ${JSON.stringify(pack())}`);
@@ -358,6 +454,7 @@
   //     crafted and BEFORE anything is bought, which is the condition the
   //     assertions below were always making, moved rather than weakened.
   // ======================================================================
+  if (phase('3b. research station')) return abandon();
   const STATION_TILE = '#of-build .of-btile[data-build="researchstation"]';
   of.input.act(['build'], 4);
   await sleep(0.45);
@@ -424,11 +521,18 @@
       }
       if (!ok) break; // budget expired with no progress: report what landed
       landed++;
+      // Over budget, stop clicking and let the caller's own `phase()` decide.
+      // Reporting the shortfall as an assertion is a better red than silently
+      // clicking on, and `abandon()` catches it on the next line either way.
+      if (els() > BUDGET_S) break;
     }
     return { made: have(label), clicks, landed };
   };
+  if (phase('3b. craft Automation science')) return abandon();
   const autoResult = await craftByClick('Automation science', 32);
+  if (phase('3b. craft Logistic science')) return abandon();
   const logiResult = await craftByClick('Logistic science', 16);
+  if (phase('3b. science crafted')) return abandon();
   const sci = have('Automation science');
   const lsci = have('Logistic science');
   log.push(`science: ${sci} automation from ${autoResult.clicks} clicks `
@@ -444,12 +548,14 @@
   //     real just below, on the way to `Launch Facilities`, so the ruin
   //     milestone it now requires is earned for real first.
   // ======================================================================
+  if (phase('3c. investigate the ruin')) return abandon();
   const ruinOk = await investigateRuin();
   check('L7: the ruin was investigated and the milestone earned before '
     + 'Electrification is bought', ruinOk === true,
     JSON.stringify({ aimed: of.game().aimed.investigate,
       milestones: of.game().progress.research.milestones }));
 
+  if (phase('3c. buy Electrification')) return abandon();
   await press('research');
   await sleep(0.4);
   const bought = click(btnFor(T.Electrification));
@@ -461,6 +567,7 @@
   // ======================================================================
   // 4. THE REFUSAL MOVED. This is the assertion no boolean can express.
   // ======================================================================
+  if (phase('4. the refusal moved')) return abandon();
   const why1 = whyOf(T.LaunchFacilities);
   log.push(`Launch Facilities after: "${why1.trim()}"`);
   check('C3: Launch Facilities is now AVAILABLE rather than blocked',
@@ -485,6 +592,7 @@
   // ======================================================================
   // 5. C4: THE PAD IS STILL REFUSED, and still by name.
   // ======================================================================
+  if (phase('5. C4, the pad is still refused')) return abandon();
   await press('research');
   await sleep(0.3);
   await hold(padSlot);
@@ -507,6 +615,7 @@
   // ======================================================================
   // 6. BUY LAUNCH FACILITIES, AND WATCH THE REFUSAL GO.
   // ======================================================================
+  if (phase('6. buy Launch Facilities')) return abandon();
   await press('research');
   await sleep(0.4);
   const gatesBefore = of.game().progress.research.gatesHeld;
@@ -550,8 +659,10 @@
     g2?.missingCells === (g2?.cells ?? 0) * (g2?.cells ?? 0),
     `${g2?.missingCells} of ${g2?.cells}^2`);
 
+  phase('done');
   return {
     valid: fails.length === 0,
+    elapsedS: Number(els().toFixed(1)),
     fails,
     log,
     padItem: PAD_ITEM,

@@ -167,6 +167,7 @@ is that the numbers are handed out by one writer before the work starts.
 | GP-950 to GP-964 | gameplay/probes, assembler.js's GP-837 stale control window (starvedMakesNothing and exhaustionStops fail on every run precisely BECAUSE the haul now completes; the control was written for a chain that never delivered) | allocated by Admin 2026-08-16 at dispatch. **GP-950 USED, 2026-08-15, `lane/assembler-control`.** Both controls re-established on a DELIBERATE starved condition instead of an inherited one. `starvedMakesNothing` and `exhaustionStops` are now both read from ONE deliberate demolition (`of.demolish({id: rockDrill.id})`, the same call the X key/`demolish.js` reach): after the belt has genuinely proved delivery (unchanged from FS-115/FS-129 to FS-133), the rock drill is destroyed, and `exhaustionStops` is the transition (residue settles, `madeWhileStarved: 0` in the window right after) while `starvedMakesNothing` is the steady state it lands in (a longer window with the hopper unmoving and short of one craft, `socket_item_in_b` still mated so the absence of production is provably about supply and not a vanished link). `made` is read from `producedOfOutput`, /core's own lifetime tally, FS-115's exact discipline. **A FIRST DRAFT MEASURED starvedMakesNothing BEFORE THE STONE CHAIN INSTEAD, AND IT WAS WRONG**, found by running the untouched probe and the modified one back to back against the identical served build: `Loop.run`'s driven accumulator (FS-101) carries its residue across every `of.run()` call in the session for alpha continuity, and the ~60 s that pre-chain window spent before the drag shifted that residue enough to flip this seed's drag outcome from converging (`draggedTiles: 64`, `portsMated: true`) to diverging (46 tiles, `portsMated: false`) — the untouched probe converged every time, the pre-drag-window version did not. Moved both controls to run after the haul instead; nothing before the drag spends any extra `of.run()` time now. **A SECOND DEFECT, FOUND THE SAME WAY**: `placeAssembler`'s recipe consumes 5 stone a craft, so a demolition landing on a residue that is not a multiple of 5 plateaus on the remainder forever, and a `drained = hopB() === 0` wait spun to its cap on exactly that (measured: stuck at 1). Fixed as a settle detector (quiet for several craft cycles, derived from the recipe's own `bill[5]` tick count, not a guessed constant) rather than a literal zero. **A THIRD, MINOR STALE-CONTROL SHAPE surfaced in the same lineage**: the pre-existing hand-load-Load-button check assumed the stone hopper always needs a top-up, which stopped being true the moment genuine belt delivery could fill it first; the assertion is now conditional on the hopper actually having room, so it is skipped rather than falsely failed when the belt already did the job. Verified on a locally built, LAN-served preview (`vite preview --port 4351 --host 0.0.0.0 --strictPort`), real D3D11 headless Chrome (`--use-angle=default`), processes killed by PID: `assembler.js` 3 runs, `valid: true` and `fails: []` all three, bit-identical `draggedTiles: 64`, `dragTicks: 915`, `closedBySnapping: 4`, `tipShortM: -0.01`, `portsMated: true`, `stoneArrivesByBelt: true` across all three; `beltcargo.js` and `factoryshot.js` both `valid: true`, harness PASS, unregressed. `npx tsc --noEmit` clean, `npx vite build` clean, `node --check` clean. **GP-951 to GP-964 free.** Recorded by the lane per rule 5. |
 | GP-965 to GP-979 | gameplay, two design items: the tech tree and the progression spine disagree by one rung (techs::FlightAutopilot requiresMilestone ReachedOrbit while Reid's task-39 ruling puts the autopilot BEHIND the hand-flown station visit, which PH-383 gated on StationBoarded instead), and the pad-occlusion UX finding (a placement ghost aimed across a tall placed structure resolves its target block from that structure's own body hit, so a player gets a misresolved cell from every occluded vantage) | allocated by Admin 2026-08-16 at dispatch |
 | BT-155 to BT-174 | build-tooling, THE HARNESS GATE CENSUS, finally flippable: the sweep now documents 302 of 314 probes with 12 visible exclusions, per-probe timeouts and no verdict lost to output volume; run the census LOCALLY at 2 concurrent (Reid 2026-08-16: heavy development runs on the desktop, the VM keeps only the test server), publish the real green/red/no-verdict census, and state exactly what remains before the gate can be flipped | allocated by Admin 2026-08-16 at dispatch. **BT-155 to BT-160 USED, `lane/harness-census`, own worktree.** Full account in `docs/web/HARNESS-CENSUS-2026-08-16.md`. **BT-155, the sweep itself:** all 316 probe files, one pass, 2 concurrent shards (`--shard=0/1 --shards=2`) against a locally built (`npm ci`, `sync-wasm`, `sync-assets`, `tsc --noEmit && vite build`, both clean) and served (`vite preview --port 4600 --strictPort --host 127.0.0.1`) tree, real D3D11 headless Chrome, processes started via `Start-Process -PassThru` for a real PID and killed by PID (bash's `$!` is a wrapper PID under Git Bash and would have made "kill by PID" a lie). ~4 hours wall time on a genuinely contended box (16 `node.exe`/20 `chrome.exe` mid-run, `Get-Counter` read 100%), not the quiet machine BT-80..83 needed and never got — **and it still finished with zero silent nulls and zero TRUNCATED_OUTPUT**, which is itself evidence BT-130's stdout-to-disk fix holds under contention. 217 GREEN, 35 RED, 30 NO_VERDICT, 22 NO_OUTPUT (15 genuine 240 s timeouts, 7 non-timeout crashes), 12 EXCLUDED. **BT-156, the BT-116 reds are closed, cross-checked one by one, not assumed:** every one of BT-116's original 10 reds plus its 2 routed findings came back GREEN this sweep (`controls.js`, `machinepanel.js`, `machineshot.js`, `rescale.js`, `buildghost.js`, `digore.js`, `craftfull.js`, `balance.js`, `moonsite.js`, `pad.js`, `basesnap.js`, `machineports.js`, `propshadow.js`, `cantilever.js`); only `animgate.js` and `discovery.js` are still red, both previously known and not this lane's finding. **BT-157, the 35 reds triaged by confidence, none fixed:** a high-confidence tool-gate cluster (`build.js`/`furnace.js`/`furnacelit.js`, and separately `genpole.js`/`power.js`/`gp49.js`, both matching GP-890's proven bare-hand-vs-GP-506-gate mechanism), a high-confidence ascent/orbit fixture cluster (`map3d.js`/`qolflight3.js`/`vabdest.js` plus the timeouts `ascent.js`/`apexec.js`/`maneuver.js`, several CLAMPED), a medium-confidence group matching catalogued instrument classes from `INSTRUMENTS.md` (dead-field reads, black-frame captures, stale counts), and 13 reds with a bare `valid:false` and no diagnostic text at all, explicitly NOT defaulted to instrument. **BT-158, THE FLIP-BLOCKING FINDING: `probeall.mjs`'s `verdictOf()` recognises `fails[]` and boolean `valid`/`ok`/`pass` and NOTHING ELSE, and 6 live probes (`airlock.js`, `build.js`, `furnace.js`, `furnacelit.js`, `orbitdeck.js`, `portmigrate.js`) return only a singular string `fail` field, which is invisible to it.** All 6 carry a real, non-empty failure message and are filed NO_VERDICT (visible-but-non-blocking under BT-41's own proposed gate shape) when they should be RED. Cross-checked against every GREEN too: nothing is falsely GREEN, the gap only ever under-counts into NO_VERDICT. Same shape of gap BT-43 already fixed once for the `ok`-only convention. **BT-159, the NO_VERDICT bucket characterised:** of 30, ~24 are legitimately report-only telemetry/screenshot probes (named in full in the census doc) plus `buildtol.js` (measures a tolerance band, never asserts against it); the other 6 are BT-158's finding. **BT-160, the flip statement:** the gate cannot flip as `probeall.mjs` stands today without a known false negative (BT-158); recommends fixing BT-158 plus `orbitdeck.js`'s missing `--sandbox=1` invocation flag first (both small, mechanical, no game code), re-sweeping the previously-NO_VERDICT/EXCLUDED sets to confirm exactly 6 new reds surface and nothing else moves, then flipping with a `known-red.json` covering the full accurate set. Does NOT flip the gate; that is named in this lane's own brief as an Admin decision. **BT-161 to BT-174 free, abandoned.** Recorded by the lane per rule 5. |
+| GP-980 to GP-994 | gameplay/harness, `lane/padgate-stall`: the reported `probes/padgate.js` stall. Allocated to the lane in its Admin brief and **the row is written by the lane itself because Admin allocated it at dispatch rather than in this file** (rule 5's own failure mode, recorded here rather than left invisible). **THE BRIEFED PREMISE WAS FALSE AND WAS RETRACTED MID-LANE BY THE VERIFIER THAT RAISED IT: `padgate.js` does not stall, it takes about half an hour, and `run.mjs` prints nothing between its two boot lines and the final report.** **GP-980 USED:** `padgate.js`'s own `phase()` progress log and its last-resort named `abandon()` verdict, plus the `OF_ARGS` read corrected (it is the runner's wrapper PARAMETER, so `globalThis.OF_ARGS` reads undefined and a `--evalargs` budget would have been silently ignored, this file's own dropped-flag class). **GP-981 USED:** the smelt wait's render rate, `of.run(16.667)` at the default 144.3 Hz against `research.js`'s already-proven `of.run(16.667, 15)`, identical sim time and 9.6x fewer rendered frames; and the `PROBEALL-TIMEOUT` line padgate has never had. **GP-982 USED:** the runner and sweep HEARTBEAT (`run.mjs --heartbeat`, default 30 s, stderr only, stage-named, quoting the probe's own last page line; `probeall.mjs` forwards it live and prints a `running` line before each probe instead of only a `done` line after it). **GP-983 USED:** the false-stall episode in the catalogue below. **VERIFIED on a locally built, `vite preview`-served build with real D3D headless Chrome: `padgate.js` `valid: true, fails: []` THREE TIMES, 1414.2 s before the render-rate fix and 242.9 s then 204.2 s after it, the first two eval blocks identical field for field; `pad.js`, `pickaxegate.js` and `research.js` all GREEN through `probeall.mjs` with the heartbeat forwarding live; `researchstation.js` `valid: true, pass: true, fails: []` at `--heartbeat=0`; `run.mjs` stdout proven pure JSON with zero heartbeat lines on it.** GP-984 to GP-994 free. Recorded by the lane per rule 5. |
 | PH-382 to PH-394 | physics+gameplay, R99 the autopilot follow-through (the progression spine's next rung: auto-approach deliberately BEHIND the hand-flown station visit per Reid's task-39 ruling; docking R93 and the of_dk_* surface shipped at ABI 26, so the autopilot has a real capture envelope to fly to; design the unlock, the verb, and the flight law; diagnosis of what exists first: maneuver planning, R99 notes in physics.md) | re-issued from the PH-381 block's free tail by Admin 2026-08-16 at dispatch | **PH-382 to PH-386 USED, 2026-08-15 (lane/r99-autopilot), one number per IDEA rather than one per file: 382 the finding and the two additive bridge exports (`of::approach::guide` has existed and been ctest-pinned since PH-174 with NO caller in the wasm; a TypeScript transcription was refused because it would be a second corridor law, one tested and dead and one live and unpinned); 383 the `StationBoarded` unlock and the `FlightDeps.milestone` port, plus why the existing `techs::FlightAutopilot` was the wrong hook (its own milestone is `ReachedOrbit`, which is IN FRONT of the station visit Reid's ruling puts it behind); 384 the `[` verb, the PH-44 interlock and the tick's placement beside `guidanceTick`; 385 the auto-latch, which was NOT re-decided here (PH-361/PH-364 settled it) plus the client-side booking of a join the step makes on its own; 386 `probes/autoapproach.js` and its verdicts. **NO ABI BUMP: ABI stays 26**, additive and symbol-detected on `of_ap_api.inc` section 21's precedent. **PH-387 to PH-394 FREE, and the next lane in this block starts at 387.** Two things this lane owes the ledger beyond its own numbers. **(a) A PROBE-HARNESS DEFECT OF EXACTLY THIS FILE'S KIND, found in the lane's own first draft:** `autoapproach.js` sampled the closing rate every 3 s and asserted that nothing INSIDE the 0.60 m capture radius exceeded the dwell speed. It reported a peak of 0.000 m/s and went green over **zero samples** -- a vehicle crosses 0.60 m in well under a second, so the window the check was about was never observed. The transferable rule: **a peak, a minimum or a max over a sampled window needs its SAMPLE COUNT asserted as an antecedent**, or an extremum over an empty set passes every comparison forever. Fixed by shortening the step inside 8 m and asserting the count (227 near, 1 in-envelope). **(b) `web/wasm/test/parity.mjs` IS ALREADY RED ON MAIN**, 8 Tier-0 and 5 Tier-A gating assertions, and it prints **byte-identical output against the committed baseline `dist`** (verified by stashing this lane's rebuild), so `test/expected.json` is stale relative to the committed wasm and was before R99 touched anything. Recorded here rather than fixed because regenerating it is a `-SkipNative`-off build whose output this lane is forbidden to commit.** Recorded by the lane per rule 5.
 | GP-935 to GP-949 | gameplay/probes, the two placement residuals: basesnap.js "a wall needs a deck under it" on the minimal test platform (GP-915) and pad.js second-pad overlap-refusal misresolve (GP-924, suspected march-tolerance class triggered by the placed 28 m pad's own geometry); diagnose whether the support/overlap rules or the probes are wrong, fix at the cause | allocated by Admin 2026-08-16 at dispatch |
 | FS-129 to FS-143 | factory-sim, the BuildDrag targeting redesign (FS-99..101's routed second defect: dragRun reads neither BuildTarget.aimed nor ok, 589 of 915 haul ticks aimed false, 41 of 52 tiles laid off the 2.6 m fallback point, a ten-tile U-turn in one tick; design the gesture so laid tiles follow real aim without deleting 79 percent of what the gesture lays; four belt probes are the gates) | allocated by Admin 2026-08-16 at dispatch. **FS-129 to FS-133 USED, 2026-08-15** by `lane/drag-targeting`. No collision: FS-129 to FS-143 returned zero hits across `docs/`, `web/`, `core/` and `tools/` before the claim. **THE BRIEF'S PREMISE IS HALF WRONG AND THE MEASUREMENT THAT SHOWS IT IS FS-132.** Laying off the fallback point is not the defect. Re-traced on this machine the haul is 915 ticks, 588 of them `aimed: false`, and those unaimed ticks lay 32 of the run's 63 tiles ONE CELL AT A TIME, straight up the site's north axis for 500 consecutive ticks: the 2.6 m fallback sits in front of the walking player's feet, so a run steered by it TRACKS THE PLAYER, which is most of what a held drag is for. The naive guard would delete those 32 good tiles, and so would the principled-looking fix. **FS-129 IS A CANDIDATE THAT WAS BUILT, MEASURED AND REJECTED**, and it is recorded in `FactoryGhost.march`'s own comment so nobody rebuilds it: replace GP-289's flat 2.6 m with the aim's GROUND SHADOW AT THE REACH LIMIT (the tangent component of the unit direction scaled by `REACH_M`, left unnormalised), which carries no new constant, is continuous with the aimed case where the flat step is 6.3 m discontinuous, and degrades to zero as the aim goes vertical. It is right about the ghost and wrong about the drag, because a drag walks its run all the way to its target: leading by the full 9 m commits nine metres of belt in the direction the player was looking a second ago. Measured with it in and nothing else changed, the run **overshot the haul's single 90 degree corner by seven cells** (tip stranded at `m1:-37,24` while the route turned east at `j` 17) and **tiles fell 63 to 34** over the identical 915 ticks and 47.81 m of walk. Reverted. **WHAT LANDED IS TWO RULES IN `dragRun`, both of which now read `aimed`.** **FS-130**, `DRAG_FILL_UNAIMED_MAX` = 1: the 24-cell fill exists to bridge cells a crosshair swept across REAL GROUND, and a fallback is not ground the crosshair crossed, so it may extend a run by one cell and may never bridge a gap. Only 2 of the 588 unaimed ticks ever wanted more, and the run picks both up later, so unaimed tiles laid are **32 before and 32 after** and the cap is recorded firing on 5 cells. **FS-131**, the target-behind-the-run refusal, and it is the one that kills the U-turn: the existing guard compares ONE step against the step before it and is therefore blind to a run that has just turned a corner, whose step is PERPENDICULAR to the way it came, so a target six cells behind is reached by a first step the guard reads as a legal corner. The new test is on the TARGET, on the site's integer lattice, with a threshold that is derived and not tuned: refuse when the target lies behind the tile BEFORE the tip, `along + 1 < 0` where `along` is the target's displacement from the tip resolved onto the run's last step. The measured cases separate exactly: the legitimate corner at tick 573 scores -1 and is kept, FS-99's U-turn scores -4 or -6 depending which step the tip carried and is refused either way. It applies to AIMED ticks too, which turned out to matter more than the fallback did: **all 156 of the haul's aimed reversal breaks were a real aim sliding back down the run** as the walking player closed on the point they were aiming at and the 9 m march resolved nearer each tick. **FS-132** is the finding above. **FS-133** is `DragStep.how` gaining `behind` and `capped` so the trace names both new refusals instead of leaving them to be inferred from two runs' totals. **NUMBERS, BEFORE AND AFTER, same seed, same build, real D3D11 headless Chrome.** Ticks 915/915, eye travel 47.81/47.81 m, **tiles laid 63/63**, net span 54/54 cells, wasted tiles 9/9, **the finished belt line differs by exactly two tiles and the after line is the straighter of the two** (a west-then-north jog at `m1:-37,-8` becomes a straight `m1:-36,-7`), final tile identical at `73@m1:-8,18`. **Reversal breaks 171 -> 93**, with 85 new `behind` breaks (63 aimed, 22 unaimed) and **`refused` breaks 7 -> 0**, the guards now catching cells that `Factory.stage` used to decline. **Tip jumps of more than one cell on an unaimed tick: 0.** Verdicts are in `docs/controllers/factory-sim.md` §8. **FS-134 to FS-143 free.** Recorded by the lane per rule 5 |
@@ -1854,3 +1855,176 @@ Two consequences worth carrying:
 - **Establish that a red gate is pre-existing by STASHING and re-running, not by
   reading the file list and reasoning about it.** That takes ten seconds and it
   is the difference between an inherited debt and one you just added.
+
+### An instrument whose only output arrives at the END is indistinguishable from a dead one
+
+GP-983, 2026-08-15, and unlike most entries here the cost was paid entirely by
+the process rather than by a wrong number: **a full false diagnosis, a clean
+`origin/main` control run to "confirm" it, a routed defect, and a dispatched
+lane, all against a probe that was working correctly the whole time.**
+
+The report was that `probes/padgate.js` **returns no verdict**: it "sits at its
+two boot lines for over twenty minutes across two attempts and never reports",
+and in `probeall.mjs` it consumes a timeout slot rather than showing as a red.
+The verifier did everything this file asks. It reproduced the symptom twice, it
+re-reproduced it on clean `origin/main` so the finding could not be its own
+lane's doing, and it wrote the observation down exactly as it saw it.
+
+**The observation was accurate and the inference was wrong.** `padgate.js` is
+the longest probe in the suite. It gathers wood and stone bare-handed, crafts a
+pickaxe, mines ore, smelts forty five-unit batches in a hand furnace, builds a
+research station, crafts 48 science by DOM click, walks into a ruin, and buys
+two techs, because every one of those steps is the legal path to a launch pad
+and the file's whole point is that nothing is granted. It needs about half an
+hour. It was green at the twenty-minute mark and green when it finished.
+
+**What made a working probe look like a dead one is the shape of the runner's
+output, not the probe.** `run.mjs` emits two `[of]` boot lines from the client,
+then NOTHING until one `console.log(JSON.stringify(report))` at the very end.
+`probeall.mjs` is worse: it accumulates the child's stderr into a string it
+reads only after the child closes, and prints its `[n/total]` line after that,
+so a sweep sitting inside a long probe prints nothing at all. Under either one,
+these two states produce byte-identical output:
+
+- a probe doing 96,000 rendered frames of legitimate work, and
+- a probe wedged on a promise that will never resolve.
+
+A poller that counts lines reads "2 lines" for both. **Silence is not a signal,
+and an instrument that only speaks at the end has no way to say "working".**
+
+**THE FIX IS A HEARTBEAT, AND ITS CONSTRAINTS ARE WHAT MAKE IT SAFE.**
+`run.mjs --heartbeat=<seconds>` (default 30, `0` disables) emits, ON STDERR:
+
+```
+smoke: alive 620.4s stage=probe padgate.js | page 3.2s ago: padgate [618.9s] 3. smelt Raw iron batch 17/22
+```
+
+- **Stderr, never stdout.** Stdout carries exactly one JSON value, because
+  `probeall.mjs` reads the whole of it and `JSON.parse`s it for the verdict
+  (BT-130 already lost verdicts to a cap on that stream). A progress line on
+  stdout would break every sweep in the project.
+- **It names a STAGE, not just a time.** `alive 620s` proves a process exists.
+  `stage=probe | page 3.2s ago: smelt batch 17/22` proves it is progressing and
+  says where. The stage is the runner's own (`navigate`, `wait for __of.ready`,
+  `probe <file>`, `settle`, `report`); the page half is whatever the probe last
+  printed, so a probe that logs its phases gets a rich heartbeat for free and
+  one that logs nothing still gets a pulse.
+- **The first beat is one full interval in**, so every probe that finishes
+  inside 30 s is exactly as quiet as it is today. The fix adds no noise to the
+  91 probes that never needed it.
+- `probeall.mjs` forwards only lines matching `^smoke: alive `, prefixed with
+  the probe name, and prints a `running` line BEFORE each probe rather than
+  only a `done` line after it. Nothing else about its parsing changed.
+
+**Three transferable parts:**
+
+- **A long-running instrument owes a liveness signal, and it is the
+  instrument's job rather than the caller's.** "Wait longer" is not a fix,
+  because the whole difficulty is that nobody can tell how much longer.
+- **Reproducing a symptom on clean main is a strong control for "did I cause
+  it" and NO CONTROL AT ALL for "is it a defect".** This verifier ran the
+  better control and still landed on the wrong verb. When the symptom is an
+  ABSENCE of output, the missing control is the positive one: let it finish
+  once, or find another way to see inside, before naming it a hang.
+- **This file already had this lesson once and it did not generalise.** The
+  `of.run()` entry above corrects "hung" to "slow under load" and ends with an
+  instruction to try a quiet box before writing the code up as broken. That
+  entry is about CONTENTION; this one is about DURATION, and the shared cause
+  is the same missing signal. The rule worth keeping is the general one: **a
+  probe that stops producing output is not evidence of a hang until something
+  has shown you the inside of it.**
+
+### `probes/padgate.js` spent 96% of its half hour on a defaulted second argument
+
+GP-981, measured 2026-08-15 on the desktop with a locally built `vite preview`
+build and real D3D headless Chrome, two other lanes' probes sharing the box,
+with the probe's own `phase()` log giving per-step wall clock. Recorded so
+nobody re-litigates the cost.
+
+The run is dominated by ONE line. Everything before the furnace, all of it real
+gameplay, costs 7.2 s: boot settle 1.5, the pad refusal 1.9, the tree gate 1.1,
+a bare sweep over 749 nodes 0.4, the tooled sweep and the furnace 2.3.
+Everything after the last smelt, the research station and 48 science and the
+ruin walk and both tech purchases, costs 45.7 s. **Between them sit forty smelt
+batches at 22 to 35 s each: 1361.3 s of a 1414.2 s run, 96.3%.**
+
+`/core`'s Furnace needs 900 fixed ticks per five-unit batch, and the probe waits
+`of.run(1000 / 60)`, i.e. **16.667 SIM seconds = 1000 fixed ticks at 60 Hz**.
+That sim cost is correct and irreducible: the batches are what pay for the
+science, and the file's claim is that nothing is granted.
+
+**What was reducible is the RENDER rate the sim time is delivered at, and it is
+the second argument to `of.run(seconds, renderHz = 144.3)`.** The number of
+fixed ticks delivered is `seconds x 60` regardless of `renderHz`; `renderHz`
+only decides how many FRAMES are rendered to carry them. At the default 144.3
+that is 2406 frames a batch, 96,240 frames over forty batches. `probes/
+research.js` has passed the identical wait as `of.run(1000 / 60, 15)` since it
+was written, and 15 Hz means a 66.7 ms dt against `Loop.frame`'s 0.25 s clamp,
+four times the margin, so every one of the 1000 ticks still lands. **250 frames
+a batch instead of 2406, same sim, same assertions, 9.6x fewer frames.**
+
+**MEASURED BOTH WAYS ON THE SAME BUILD AND THE SAME SERVER: 1414.2 s before,
+242.9 s and then 204.2 s after** (280 s and 253 s of total process wall clock
+including boot), a 5.8x to 6.9x reduction end to end and 7.2x across the smelt
+window itself (1361.3 s to 189.5 s); the residue is per-batch DOM work that
+never scaled with the render rate, and the spread between the two fixed runs is
+box contention. All three runs `valid: true, fails: []`, and **the first two
+`eval` blocks are
+identical field for field with only `elapsedS` differing** -- same 101 harvest
+swings, same `{Wood 132, Stone 118, Coal 270, Raw iron 162, Raw copper 108}`,
+same 110 Iron and 90 Copper out of the furnace, same 32 and 16 science from 32
+and 16 landed clicks, same three refusal strings, same `gatesHeld 11 -> 9`.
+That identity is the evidence the change is free rather than an argument that
+it should be: a weakened run would have differed somewhere in those numbers.
+
+The file also gained the `PROBEALL-TIMEOUT: 900000` line it has never had. On
+`probeall.mjs`'s shared 240000 default, `padgate.js` could only ever have been
+recorded `NO_OUTPUT` even at its new cost, so the sweep entry the original
+report described (a timeout slot rather than a verdict) was real and would have
+survived the speed-up.
+
+The lesson is narrower than "the probe was slow": **a default argument that
+controls COST and not OUTCOME is invisible in review, because the code reads
+correctly with it and correctly without it.** `sleep(n)` in these probes is
+`of.run(n)`, and the one call in the file where the render rate matters is the
+one call that did not pass one. Two sibling probes, one line apart in intent,
+differing 9.6x in cost, and nothing in either file said so until the run was
+timed step by step.
+
+### `Stop-Process` filtered by COMMAND LINE kills every lane's server, not yours
+
+GP-984, 2026-08-15, done by this lane, to other lanes, while cleaning up after
+itself. Written down the same day because the whole point of this file is that
+a process failure recorded is cheaper than a process failure repeated.
+
+The brief says kill by PID and never by image name, and this lane obeyed the
+letter of that and broke the intent. The teardown was:
+
+```
+Get-CimInstance Win32_Process -Filter "Name='node.exe'"
+  | Where-Object { $_.CommandLine -match 'vite' -and $_.CommandLine -match 'preview' }
+  | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
+
+Every process it killed was killed BY PID, so it passes the rule as written.
+It still killed **eleven** processes and took down at least two other lanes'
+`vite preview` servers (ports 4972 and 4973 were listening before it ran and
+nothing was listening on any 4xxx port after), because **the selector was a
+command-line pattern and every lane's server matches it.** This is GP-670's
+finding wearing different clothes: there, `pgrep -f "headless_shell|chrome"`
+matched the briefs and guards that merely CONTAINED the pattern; here,
+`-match 'vite.*preview'` matches every lane that is doing the same job.
+
+**A PID is only yours if you learned it from something that is yours.** Two
+selectors are safe and neither is more work:
+
+- **Own the port.** `Get-NetTCPConnection -LocalPort <your port> -State Listen`
+  gives `OwningProcess`, and the port is a fact about your own server.
+- **Own the handle.** Keep the PID the spawn returned and kill that.
+
+A pattern that describes what the process IS ("a vite preview") can never
+distinguish yours from a sibling's, and on this box a sibling is the normal
+case. The blast radius is silent from inside the killing lane: nothing errors,
+the port frees, and the report reads like a clean teardown. It was noticed here
+only because a `netstat` for the lane's own port also returned every other
+port empty.
