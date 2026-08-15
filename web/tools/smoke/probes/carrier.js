@@ -2,6 +2,19 @@
 // relative to that frame, and the number that says it does not is 9.04 m per
 // tick.
 //
+//   node tools/smoke/run.mjs --scenario=walk --settle=25 \
+//        --evalfile=tools/smoke/probes/carrier.js
+//
+// CE-86. THAT INVOCATION LINE IS LOAD-BEARING, AND THIS FILE SHIPPED WITHOUT
+// ONE UNTIL 2026-08-14. `probeall.mjs` extracts the documented command out of
+// this header (`extractCmd`, first `//` line matching `run.mjs`); a probe that
+// documents none returns `null` and drops into the `--nodocs` bucket, which is
+// off by default and, when it is on, runs at the RUNNER'S defaults -- no
+// `--scenario=walk`, so the wrong world. So these 43 checks were never in the
+// documented sweep that the RED list is built from. That is not a cosmetic
+// gap: it is how a rotor red that had ALREADY BEEN FIXED at `a4f396d` stayed
+// on Admin's backlog as a "NEW genuine red" (see CE-85 at the C1 rotor row).
+//
 // ---------------------------------------------------------------------------
 // THE FIXTURE LESSON THIS PROBE WAS REWRITTEN AROUND, because it is the whole
 // reason the first version read backwards.
@@ -235,6 +248,37 @@
   // measured over 20,000 bases, the chord form against the stable angle is
   // exact to 1.44e-11 relative, so the gate is 1e-9 and it means something
   // again. It would have read 1.7240873e-6 against the old instrument.
+  //
+  // CE-85, 2026-08-14. THIS ROW WAS RE-OPENED AS A "NEW GENUINE RED" AND IT IS
+  // NOT ONE. The report was `perTickM 31.32092 vs r*w 31.320866, relative
+  // ~1.7e-6 against the 1e-6 tolerance`, blamed on the stamped station
+  // perturbing the rotor's seed. Every one of those terms was decomposed on a
+  // real D3D11 host (RTX 4060 Ti, ANGLE D3D11) and the arithmetic convicts the
+  // OLD INSTRUMENT, not this build:
+  //
+  //   * `31.320866` is not producible by any code path here. It implies
+  //     w = 3.1320866e-5, and the live atan2 instrument publishes
+  //     w = 3.132091952687908e-5. The gap is 5.3527e-11 rad, 1.7090e-6
+  //     relative: THE ENTIRE REPORTED ERROR IS THE ANGLE, and it is the
+  //     acos cliff CE-53 already removed. Divide it by the conditioning
+  //     2/sin(w/2) = 127,710 and it is 1.89 ulps of the quaternion dot
+  //     product, i.e. the last two bits of a four-term sum.
+  //   * the acos lattice steps 2.8357e-11 rad per ulp of that dot, which is
+  //     9.05e-7 relative per rung. That quantisation, not stability, is why
+  //     the old red "reproduced to 5 decimals" on two machines. 1.709e-6 is
+  //     the 2-ulp rung (-1.8974e-6) minus a rounding of the reported digits.
+  //   * the arc-vs-chord term, the only real one, is w^2/24 = 4.0875e-11
+  //     relative (measured 4.0875e-11). It is 24x INSIDE this 1e-9 gate, so
+  //     even the arc form would pass at 1e-6 today. The stamped station is
+  //     exonerated: `r`, `w` and `perTickM` all come from ONE `survey()` call
+  //     on the SAME pose pair, so there is no stale radius and no time skew.
+  //   * live residual of the chord relation, two independent runs on this
+  //     host: 1.97e-12 relative. Against the arc form it would be 3.89e-11.
+  //
+  // TWO RUNS, 43/43, `fails: []`. THE TOLERANCE WAS NOT WIDENED AND MUST NOT
+  // BE: at 1e-9 this gate has 500x of headroom over the 1.97e-12 it actually
+  // measures, and widening it to accommodate a number from a deleted
+  // instrument would throw away the only thing that caught that instrument.
   const rotorChord = 2 * rotorR * Math.sin(rotorTurn / 2);
   check('C1 the rotor\'s turn and its travel agree through its own radius',
     Math.abs(rotorPerTick - rotorChord) < 1e-9 * rotorPerTick,
