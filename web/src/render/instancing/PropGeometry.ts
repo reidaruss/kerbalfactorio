@@ -9,6 +9,7 @@
 // capacity measurement.
 
 import * as THREE from 'three';
+import { bendNormals, foliageBend } from './FoliageNormal.js';
 import { copyUv } from './Surfaces.js';
 
 /** Just enough of `PropLibrary.Batch` for the base-shade toggle below. */
@@ -282,6 +283,12 @@ export function normalize(
   // happened to need a transform. Silent, and only visible as one shrub in ten
   // being shaded sideways.
   g.applyMatrix4(worldMatrix);
+  // AFTER the matrix, for the same reason the gradient is: the bend is a
+  // function of the vertex's height and its offset from the part's own base
+  // centre in the frame the prop STANDS in, and a glTF node carrying a
+  // rotation would otherwise have its outward direction computed in the
+  // authoring frame and applied in the placed one.
+  if (bake === 'foliage') bendNormals(g, foliageBend().amount);
   bakeColour(g, bake);
   g.computeBoundingSphere();
   return g;
