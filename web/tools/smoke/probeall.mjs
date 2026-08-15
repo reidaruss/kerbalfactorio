@@ -30,6 +30,9 @@ const tree = resolve(args.get('tree') ?? join(here, 'tree'));
 const only = args.get('only');           // comma list of probe basenames
 const limit = Number(args.get('limit') ?? 0);
 const timeoutMs = Number(args.get('timeout') ?? 240000);
+// GP-982: forwarded to run.mjs only if given, so the runner's own default (30 s)
+// stays the single place the cadence is defined. `--heartbeat=0` silences it.
+const heartbeat = args.has('heartbeat') ? Number(args.get('heartbeat')) : null;
 const outFile = args.get('results') ?? join(here, 'results.jsonl');
 // BT-130: where each probe's raw stdout is captured. See the `cap` comment in
 // run() for why this exists instead of an in-memory string.
@@ -232,7 +235,31 @@ function run(cmd, argv, cwd, probeFile, runTimeoutMs) {
       if (soBytes <= SAFETY_CAP_BYTES) soStream.write(d);
       else soTruncated = true;
     });
-    p.stderr.on('data', (d) => { if (se.length < seCap) se += d; });
+    // GP-982. THE SWEEP HAD THE SAME BLIND SPOT THE RUNNER DID.
+    //
+    // `se` is accumulated and only ever read AFTER the child closes, and the
+    // `[n/total]` line below is printed after that too, so during a 30-minute
+    // probe this file printed nothing at all. Anyone watching a sweep saw the
+    // same undifferentiated silence a hung probe produces, which is precisely
+    // what turned `probes/padgate.js`'s legitimate half hour into a reported
+    // stall on 2026-08-15 (NUMBERS.md, GP-983).
+    //
+    // run.mjs now emits `smoke: alive <s> stage=... | ...` on ITS stderr; this
+    // forwards those lines through, prefixed with the probe, as they arrive.
+    // Deliberately narrow: ONLY the heartbeat line is forwarded, so the sweep's
+    // console does not turn into every probe's full `[page]` log, and nothing
+    // here touches stdout, which is the single JSON value `JSON.parse` below
+    // depends on.
+    let seLine = '';
+    p.stderr.on('data', (d) => {
+      if (se.length < seCap) se += d;
+      seLine += d;
+      const parts = seLine.split(/\r?\n/);
+      seLine = parts.pop() ?? '';
+      for (const l of parts) {
+        if (/^smoke: alive /.test(l)) console.error(`  [${probeFile}] ${l}`);
+      }
+    });
     // `se` is read here, not threaded through `partial`, so the error branch's
     // appended message is never shadowed by a stale copy taken earlier.
     const finish = (partial) => new Promise((r2) => {
@@ -299,7 +326,14 @@ let n = 0;
 for (const q of queue) {
   if (limit && n >= limit) break;
   n++;
-  const argv = [runner, `--url=${url}`, ...q.flags, `--evalfile=${join(probeDir, q.f)}`];
+  const argv = [runner, `--url=${url}`, ...q.flags,
+    ...(heartbeat === null ? [] : [`--heartbeat=${heartbeat}`]),
+    `--evalfile=${join(probeDir, q.f)}`];
+  // Printed BEFORE the run, not after it. Half of "is this sweep alive" is
+  // knowing which probe it is inside; the other half is the forwarded
+  // heartbeat in `run()`.
+  console.error(`[${n}/${queue.length}] ${q.f} running (budget `
+    + `${Math.round((q.timeoutMs ?? timeoutMs) / 1000)}s)`);
   const r = await run(process.execPath, argv, webDir, q.f, q.timeoutMs ?? timeoutMs);
   // BT-130: stdout is read back from disk, not from a capped in-memory
   // string, so a big-but-complete report (propshadow.js: 8.4 MB) parses the
@@ -351,6 +385,6 @@ for (const q of queue) {
     stderrTail: r.se.slice(-600),
   };
   appendFileSync(outFile, JSON.stringify(rec) + '\n');
-  console.error(`[${n}/${queue.length}] ${q.f} exit=${r.code} runner=${rec.runnerSaysPass ? 'PASS' : 'FAIL'} verdict=${v.cls}${v.fails.length ? ` (${v.fails.length})` : ''} ${Math.round(r.ms / 1000)}s`);
+  console.error(`[${n}/${queue.length}] ${q.f} done exit=${r.code} runner=${rec.runnerSaysPass ? 'PASS' : 'FAIL'} verdict=${v.cls}${v.fails.length ? ` (${v.fails.length})` : ''} ${Math.round(r.ms / 1000)}s`);
 }
 console.error('probeall: done');

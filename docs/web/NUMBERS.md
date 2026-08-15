@@ -163,6 +163,7 @@ is that the numbers are handed out by one writer before the work starts.
 | BT-140 to BT-154 | build-tooling, parity.mjs Tier-0 stale gameplay assertions (recipeNotCraftable, craftConsumedIron, furnaceOreLeftPack and the paced-harvest checks still assume the pickaxe's pre-GP-506 iron inputs; the Release lane proved expected.json itself is NOT stale and is byte-reproducible, so this is the fixture's own rot) plus a written statement of what Tier A's emscripten-vs-g++ transcendental divergence means for the gate | allocated by Admin 2026-08-16 at dispatch |
 | GP-950 to GP-964 | gameplay/probes, assembler.js's GP-837 stale control window (starvedMakesNothing and exhaustionStops fail on every run precisely BECAUSE the haul now completes; the control was written for a chain that never delivered) | allocated by Admin 2026-08-16 at dispatch |
 | GP-965 to GP-979 | gameplay, two design items: the tech tree and the progression spine disagree by one rung (techs::FlightAutopilot requiresMilestone ReachedOrbit while Reid's task-39 ruling puts the autopilot BEHIND the hand-flown station visit, which PH-383 gated on StationBoarded instead), and the pad-occlusion UX finding (a placement ghost aimed across a tall placed structure resolves its target block from that structure's own body hit, so a player gets a misresolved cell from every occluded vantage) | allocated by Admin 2026-08-16 at dispatch |
+| GP-980 to GP-994 | gameplay/harness, `lane/padgate-stall`: the reported `probes/padgate.js` stall. Allocated to the lane in its Admin brief and **the row is written by the lane itself because Admin allocated it at dispatch rather than in this file** (rule 5's own failure mode, recorded here rather than left invisible). **THE BRIEFED PREMISE WAS FALSE AND WAS RETRACTED MID-LANE BY THE VERIFIER THAT RAISED IT: `padgate.js` does not stall, it takes about half an hour, and `run.mjs` prints nothing between its two boot lines and the final report.** **GP-980 USED:** `padgate.js`'s own `phase()` progress log and its last-resort named `abandon()` verdict, plus the `OF_ARGS` read corrected (it is the runner's wrapper PARAMETER, so `globalThis.OF_ARGS` reads undefined and a `--evalargs` budget would have been silently ignored, this file's own dropped-flag class). **GP-981 USED:** the smelt wait's render rate, `of.run(16.667)` at the default 144.3 Hz against `research.js`'s already-proven `of.run(16.667, 15)`, identical sim time and 9.6x fewer rendered frames; and the `PROBEALL-TIMEOUT` line padgate has never had. **GP-982 USED:** the runner and sweep HEARTBEAT (`run.mjs --heartbeat`, default 30 s, stderr only, stage-named, quoting the probe's own last page line; `probeall.mjs` forwards it live and prints a `running` line before each probe instead of only a `done` line after it). **GP-983 USED:** the false-stall episode in the catalogue below. **VERIFIED on a locally built, `vite preview`-served build with real D3D headless Chrome: `padgate.js` `valid: true, fails: []` THREE TIMES, 1414.2 s before the render-rate fix and 242.9 s then 204.2 s after it, the first two eval blocks identical field for field; `pad.js`, `pickaxegate.js` and `research.js` all GREEN through `probeall.mjs` with the heartbeat forwarding live; `researchstation.js` `valid: true, pass: true, fails: []` at `--heartbeat=0`; `run.mjs` stdout proven pure JSON with zero heartbeat lines on it.** GP-984 to GP-994 free. Recorded by the lane per rule 5. |
 | BT-155 to BT-174 | build-tooling, THE HARNESS GATE CENSUS, finally flippable: the sweep now documents 302 of 314 probes with 12 visible exclusions, per-probe timeouts and no verdict lost to output volume; run the census LOCALLY at 2 concurrent (Reid 2026-08-16: heavy development runs on the desktop, the VM keeps only the test server), publish the real green/red/no-verdict census, and state exactly what remains before the gate can be flipped | allocated by Admin 2026-08-16 at dispatch |
 | PH-382 to PH-394 | physics+gameplay, R99 the autopilot follow-through (the progression spine's next rung: auto-approach deliberately BEHIND the hand-flown station visit per Reid's task-39 ruling; docking R93 and the of_dk_* surface shipped at ABI 26, so the autopilot has a real capture envelope to fly to; design the unlock, the verb, and the flight law; diagnosis of what exists first: maneuver planning, R99 notes in physics.md) | re-issued from the PH-381 block's free tail by Admin 2026-08-16 at dispatch | **PH-382 to PH-386 USED, 2026-08-15 (lane/r99-autopilot), one number per IDEA rather than one per file: 382 the finding and the two additive bridge exports (`of::approach::guide` has existed and been ctest-pinned since PH-174 with NO caller in the wasm; a TypeScript transcription was refused because it would be a second corridor law, one tested and dead and one live and unpinned); 383 the `StationBoarded` unlock and the `FlightDeps.milestone` port, plus why the existing `techs::FlightAutopilot` was the wrong hook (its own milestone is `ReachedOrbit`, which is IN FRONT of the station visit Reid's ruling puts it behind); 384 the `[` verb, the PH-44 interlock and the tick's placement beside `guidanceTick`; 385 the auto-latch, which was NOT re-decided here (PH-361/PH-364 settled it) plus the client-side booking of a join the step makes on its own; 386 `probes/autoapproach.js` and its verdicts. **NO ABI BUMP: ABI stays 26**, additive and symbol-detected on `of_ap_api.inc` section 21's precedent. **PH-387 to PH-394 FREE, and the next lane in this block starts at 387.** Two things this lane owes the ledger beyond its own numbers. **(a) A PROBE-HARNESS DEFECT OF EXACTLY THIS FILE'S KIND, found in the lane's own first draft:** `autoapproach.js` sampled the closing rate every 3 s and asserted that nothing INSIDE the 0.60 m capture radius exceeded the dwell speed. It reported a peak of 0.000 m/s and went green over **zero samples** -- a vehicle crosses 0.60 m in well under a second, so the window the check was about was never observed. The transferable rule: **a peak, a minimum or a max over a sampled window needs its SAMPLE COUNT asserted as an antecedent**, or an extremum over an empty set passes every comparison forever. Fixed by shortening the step inside 8 m and asserting the count (227 near, 1 in-envelope). **(b) `web/wasm/test/parity.mjs` IS ALREADY RED ON MAIN**, 8 Tier-0 and 5 Tier-A gating assertions, and it prints **byte-identical output against the committed baseline `dist`** (verified by stashing this lane's rebuild), so `test/expected.json` is stale relative to the committed wasm and was before R99 touched anything. Recorded here rather than fixed because regenerating it is a `-SkipNative`-off build whose output this lane is forbidden to commit.** Recorded by the lane per rule 5.
 | GP-935 to GP-949 | gameplay/probes, the two placement residuals: basesnap.js "a wall needs a deck under it" on the minimal test platform (GP-915) and pad.js second-pad overlap-refusal misresolve (GP-924, suspected march-tolerance class triggered by the placed 28 m pad's own geometry); diagnose whether the support/overlap rules or the probes are wrong, fix at the cause | allocated by Admin 2026-08-16 at dispatch |
@@ -1766,3 +1767,139 @@ Three transferable parts:
   nobody had cause to cross them until the red was triaged. Prefer the
   conserved, downstream quantity (what the player is HOLDING) over any record of
   what was meant to be handed over.
+
+
+### An instrument whose only output arrives at the END is indistinguishable from a dead one
+
+GP-983, 2026-08-15, and unlike most entries here the cost was paid entirely by
+the process rather than by a wrong number: **a full false diagnosis, a clean
+`origin/main` control run to "confirm" it, a routed defect, and a dispatched
+lane, all against a probe that was working correctly the whole time.**
+
+The report was that `probes/padgate.js` **returns no verdict**: it "sits at its
+two boot lines for over twenty minutes across two attempts and never reports",
+and in `probeall.mjs` it consumes a timeout slot rather than showing as a red.
+The verifier did everything this file asks. It reproduced the symptom twice, it
+re-reproduced it on clean `origin/main` so the finding could not be its own
+lane's doing, and it wrote the observation down exactly as it saw it.
+
+**The observation was accurate and the inference was wrong.** `padgate.js` is
+the longest probe in the suite. It gathers wood and stone bare-handed, crafts a
+pickaxe, mines ore, smelts forty five-unit batches in a hand furnace, builds a
+research station, crafts 48 science by DOM click, walks into a ruin, and buys
+two techs, because every one of those steps is the legal path to a launch pad
+and the file's whole point is that nothing is granted. It needs about half an
+hour. It was green at the twenty-minute mark and green when it finished.
+
+**What made a working probe look like a dead one is the shape of the runner's
+output, not the probe.** `run.mjs` emits two `[of]` boot lines from the client,
+then NOTHING until one `console.log(JSON.stringify(report))` at the very end.
+`probeall.mjs` is worse: it accumulates the child's stderr into a string it
+reads only after the child closes, and prints its `[n/total]` line after that,
+so a sweep sitting inside a long probe prints nothing at all. Under either one,
+these two states produce byte-identical output:
+
+- a probe doing 96,000 rendered frames of legitimate work, and
+- a probe wedged on a promise that will never resolve.
+
+A poller that counts lines reads "2 lines" for both. **Silence is not a signal,
+and an instrument that only speaks at the end has no way to say "working".**
+
+**THE FIX IS A HEARTBEAT, AND ITS CONSTRAINTS ARE WHAT MAKE IT SAFE.**
+`run.mjs --heartbeat=<seconds>` (default 30, `0` disables) emits, ON STDERR:
+
+```
+smoke: alive 620.4s stage=probe padgate.js | page 3.2s ago: padgate [618.9s] 3. smelt Raw iron batch 17/22
+```
+
+- **Stderr, never stdout.** Stdout carries exactly one JSON value, because
+  `probeall.mjs` reads the whole of it and `JSON.parse`s it for the verdict
+  (BT-130 already lost verdicts to a cap on that stream). A progress line on
+  stdout would break every sweep in the project.
+- **It names a STAGE, not just a time.** `alive 620s` proves a process exists.
+  `stage=probe | page 3.2s ago: smelt batch 17/22` proves it is progressing and
+  says where. The stage is the runner's own (`navigate`, `wait for __of.ready`,
+  `probe <file>`, `settle`, `report`); the page half is whatever the probe last
+  printed, so a probe that logs its phases gets a rich heartbeat for free and
+  one that logs nothing still gets a pulse.
+- **The first beat is one full interval in**, so every probe that finishes
+  inside 30 s is exactly as quiet as it is today. The fix adds no noise to the
+  91 probes that never needed it.
+- `probeall.mjs` forwards only lines matching `^smoke: alive `, prefixed with
+  the probe name, and prints a `running` line BEFORE each probe rather than
+  only a `done` line after it. Nothing else about its parsing changed.
+
+**Three transferable parts:**
+
+- **A long-running instrument owes a liveness signal, and it is the
+  instrument's job rather than the caller's.** "Wait longer" is not a fix,
+  because the whole difficulty is that nobody can tell how much longer.
+- **Reproducing a symptom on clean main is a strong control for "did I cause
+  it" and NO CONTROL AT ALL for "is it a defect".** This verifier ran the
+  better control and still landed on the wrong verb. When the symptom is an
+  ABSENCE of output, the missing control is the positive one: let it finish
+  once, or find another way to see inside, before naming it a hang.
+- **This file already had this lesson once and it did not generalise.** The
+  `of.run()` entry above corrects "hung" to "slow under load" and ends with an
+  instruction to try a quiet box before writing the code up as broken. That
+  entry is about CONTENTION; this one is about DURATION, and the shared cause
+  is the same missing signal. The rule worth keeping is the general one: **a
+  probe that stops producing output is not evidence of a hang until something
+  has shown you the inside of it.**
+
+### `probes/padgate.js` spent 96% of its half hour on a defaulted second argument
+
+GP-981, measured 2026-08-15 on the desktop with a locally built `vite preview`
+build and real D3D headless Chrome, two other lanes' probes sharing the box,
+with the probe's own `phase()` log giving per-step wall clock. Recorded so
+nobody re-litigates the cost.
+
+The run is dominated by ONE line. Everything before the furnace, all of it real
+gameplay, costs 7.2 s: boot settle 1.5, the pad refusal 1.9, the tree gate 1.1,
+a bare sweep over 749 nodes 0.4, the tooled sweep and the furnace 2.3.
+Everything after the last smelt, the research station and 48 science and the
+ruin walk and both tech purchases, costs 45.7 s. **Between them sit forty smelt
+batches at 22 to 35 s each: 1361.3 s of a 1414.2 s run, 96.3%.**
+
+`/core`'s Furnace needs 900 fixed ticks per five-unit batch, and the probe waits
+`of.run(1000 / 60)`, i.e. **16.667 SIM seconds = 1000 fixed ticks at 60 Hz**.
+That sim cost is correct and irreducible: the batches are what pay for the
+science, and the file's claim is that nothing is granted.
+
+**What was reducible is the RENDER rate the sim time is delivered at, and it is
+the second argument to `of.run(seconds, renderHz = 144.3)`.** The number of
+fixed ticks delivered is `seconds x 60` regardless of `renderHz`; `renderHz`
+only decides how many FRAMES are rendered to carry them. At the default 144.3
+that is 2406 frames a batch, 96,240 frames over forty batches. `probes/
+research.js` has passed the identical wait as `of.run(1000 / 60, 15)` since it
+was written, and 15 Hz means a 66.7 ms dt against `Loop.frame`'s 0.25 s clamp,
+four times the margin, so every one of the 1000 ticks still lands. **250 frames
+a batch instead of 2406, same sim, same assertions, 9.6x fewer frames.**
+
+**MEASURED BOTH WAYS ON THE SAME BUILD AND THE SAME SERVER: 1414.2 s before,
+242.9 s and then 204.2 s after** (280 s and 253 s of total process wall clock
+including boot), a 5.8x to 6.9x reduction end to end and 7.2x across the smelt
+window itself (1361.3 s to 189.5 s); the residue is per-batch DOM work that
+never scaled with the render rate, and the spread between the two fixed runs is
+box contention. All three runs `valid: true, fails: []`, and **the first two
+`eval` blocks are
+identical field for field with only `elapsedS` differing** -- same 101 harvest
+swings, same `{Wood 132, Stone 118, Coal 270, Raw iron 162, Raw copper 108}`,
+same 110 Iron and 90 Copper out of the furnace, same 32 and 16 science from 32
+and 16 landed clicks, same three refusal strings, same `gatesHeld 11 -> 9`.
+That identity is the evidence the change is free rather than an argument that
+it should be: a weakened run would have differed somewhere in those numbers.
+
+The file also gained the `PROBEALL-TIMEOUT: 900000` line it has never had. On
+`probeall.mjs`'s shared 240000 default, `padgate.js` could only ever have been
+recorded `NO_OUTPUT` even at its new cost, so the sweep entry the original
+report described (a timeout slot rather than a verdict) was real and would have
+survived the speed-up.
+
+The lesson is narrower than "the probe was slow": **a default argument that
+controls COST and not OUTCOME is invisible in review, because the code reads
+correctly with it and correctly without it.** `sleep(n)` in these probes is
+`of.run(n)`, and the one call in the file where the render rate matters is the
+one call that did not pass one. Two sibling probes, one line apart in intent,
+differing 9.6x in cost, and nothing in either file said so until the run was
+timed step by step.

@@ -49,6 +49,9 @@ const waitMs = Number(args.get('wait') ?? 0);
 // --evalargs is JSON, exposed to the probe as the global OF_ARGS.
 const evalFile = args.get('evalfile');
 const evalArgs = args.get('evalargs') ?? '{}';
+// GP-982. THE HEARTBEAT. Seconds between progress lines, 0 disables.
+// See the block above `beat` further down for why this runner needed one.
+const heartbeatS = Number(args.get('heartbeat') ?? 30);
 // THE PROBE PRELUDE. `mustNum(obj, 'triangles', where)` returns the field or
 // THROWS, naming the keys the object actually publishes. It exists because a
 // probe that reads a field the client stopped publishing gets `undefined`, and
@@ -377,7 +380,7 @@ params.set('debug', args.get('debug') ?? '1');
 // hard exit before the browser is even launched. `--allow-unknown-flags` is the
 // door for a caller that means it, and it has to be typed, which is the point.
 const RUNNER_OWN = new Set(['url', 'out', 'width', 'height', 'settle', 'wait',
-  'evalfile', 'evalargs', 'eval', 'debug', 'allow-unknown-flags']);
+  'evalfile', 'evalargs', 'eval', 'debug', 'allow-unknown-flags', 'heartbeat']);
 const dropped = [...args.keys()].filter((k) => !RUNNER_OWN.has(k) && !params.has(k));
 if (dropped.length > 0 && !args.has('allow-unknown-flags')) {
   const known = [...PAGE_PARAMS, ...RUNNER_OWN];
@@ -451,6 +454,47 @@ const page = await browser.newPage({ viewport: { width, height }, deviceScaleFac
 // loss after ready means the probe measured a dead context, and an unanswered
 // loss never came back. Both still fail the run.
 let ready = false;
+// ============================================================================
+// GP-982. THE PROGRESS HEARTBEAT.
+//
+// THIS RUNNER'S ONLY OUTPUT USED TO ARRIVE AT THE END. Two lines at boot, then
+// silence until one `console.log(JSON.stringify(report))` at the finish. For a
+// probe that takes seconds that is fine. For `probes/padgate.js`, which needs
+// about half an hour to reach a launch pad legally, it is indistinguishable
+// from a dead process, and on 2026-08-15 a careful verifier read exactly that
+// silence as a hang, diagnosed a stall that does not exist, reproduced the
+// "stall" on clean `origin/main` as a control, and routed a defect. The probe
+// was green the whole time. The full episode is in NUMBERS.md (GP-983).
+//
+// The repair is a periodic line, and the three constraints it has to respect:
+//
+//  1. IT GOES TO STDERR. Stdout carries exactly one JSON value and nothing
+//     else, because `probeall.mjs` reads the whole of stdout and `JSON.parse`s
+//     it for the verdict. A progress line on stdout would break every sweep.
+//  2. IT NAMES A STAGE, not just a time. "alive 900s" says the process exists;
+//     "stage=probe | page 4.1s ago: padgate [898.2s] smelt batch 17/22" says
+//     it is working and on what. The stage is the runner's own; the page half
+//     is whatever the probe last printed, so a probe that logs its phases gets
+//     a rich heartbeat for free and one that logs nothing still gets a pulse.
+//  3. A FAST PROBE GAINS NOTHING. The first beat is one interval in, so
+//     anything under `--heartbeat` seconds (default 30) is silent exactly as
+//     it is today. `--heartbeat=0` turns it off entirely.
+// ============================================================================
+const runT0 = Date.now();
+let stage = 'launching';
+let lastPageLine = '';
+let lastPageAt = 0;
+const beat = heartbeatS > 0
+  ? setInterval(() => {
+    const el = ((Date.now() - runT0) / 1000).toFixed(1);
+    const tail = lastPageAt === 0
+      ? 'no page output yet'
+      : `page ${((Date.now() - lastPageAt) / 1000).toFixed(1)}s ago: `
+        + lastPageLine.slice(0, 200);
+    console.error(`smoke: alive ${el}s stage=${stage} | ${tail}`);
+  }, heartbeatS * 1000)
+  : null;
+beat?.unref?.();
 const ctx = { lost: 0, restored: 0, lateLoss: 0 };
 page.on('console', (m) => {
   const t = m.type();
@@ -490,25 +534,36 @@ page.on('console', (m) => {
       errors.push(`console.warn: ${m.text()}`);
     }
   }
-  else if (t === 'info' || t === 'log') console.error(`[page] ${m.text()}`);
+  else if (t === 'info' || t === 'log') {
+    lastPageLine = m.text();
+    lastPageAt = Date.now();
+    console.error(`[page] ${m.text()}`);
+  }
 });
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 page.on('requestfailed', (r) => errors.push(`requestfailed: ${r.url()} ${r.failure()?.errorText ?? ''}`));
 
 let exitCode = 0;
 try {
+  stage = 'navigate';
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  stage = 'wait for window.__of';
   await page.waitForFunction(() => typeof window.__of !== 'undefined', null, { timeout: 60000 });
+  stage = 'wait for __of.ready';
   await page.evaluate(() => window.__of.ready);
   // --eval runs against the live page and its return value lands in the report,
   // so a probe can drive the world (teleport, tapes) and hand back its own
   // measurements without the runner knowing anything about the scenario.
   ready = true;
   let evalResult;
+  stage = evalFile ? `probe ${evalFile.split(/[\\/]/).pop()}` : 'probe';
   if (evalScript) evalResult = await page.evaluate(evalScript);
+  stage = 'wait';
   if (waitMs > 0) await page.waitForTimeout(waitMs);
+  stage = 'settle';
   await page.evaluate((n) => window.__of.settle(n), settleFrames);
 
+  stage = 'report';
   const report = await page.evaluate(() => ({
     stats: window.__of.stats(),
     world: window.__of.world(),
@@ -517,6 +572,7 @@ try {
   if (evalResult !== undefined) report.eval = evalResult;
 
   if (out) {
+    stage = 'screenshot';
     const p = isAbsolute(out) ? out : resolve(repoRoot, out);
     // --out is resolved against the REPO ROOT, so a leading '../' escapes the
     // project and silently scatters screenshots into the parent directory. That
@@ -539,6 +595,10 @@ try {
   errors.push(`runner: ${e?.message ?? e}`);
   exitCode = 1;
 } finally {
+  // Cleared BEFORE the close so a slow teardown cannot emit a beat that reads
+  // like the probe is still working.
+  if (beat) clearInterval(beat);
+  stage = 'closing';
   await browser.close();
 }
 
