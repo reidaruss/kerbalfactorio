@@ -103,11 +103,11 @@ FIELD = 3.40                     # inset 0.30, so the kerb overlaps it by 0.04
 
 def build_lod0(root):
     mb = of.MeshBuilder()
-    mb.box((FOOTING, FOOTING, FOOTING_H), (0, 0, FOOTING_H * 0.5), "RockDark")
+    mb.box((FOOTING, FOOTING, FOOTING_H), (0, 0, FOOTING_H * 0.5), "MasonryDark")
     mb.box((BODY, BODY, BODY_Z1 - BODY_Z0), (0, 0, (BODY_Z0 + BODY_Z1) * 0.5),
-           "Rock")
+           "Masonry")
     mb.box((FIELD, FIELD, FIELD_Z1 - DECK_Z0), (0, 0, (DECK_Z0 + FIELD_Z1) * 0.5),
-           "Rock")
+           "Masonry")
     # Steel kerb: four strips whose OUTER faces are exactly on +/-2.0, so the
     # module dimension is set by the kerb and by nothing else. They cross at the
     # corners on purpose; overlapping solids never z-fight, coincident faces can.
@@ -162,9 +162,9 @@ def build_lod1(root):
     # nobody's. A tiling part's far LOD has to be the same SIZE (that is what
     # the `parts` block in contracts.json checks); it does not have to be one
     # box, and here it cannot be.
-    mb.box((FOOTING, FOOTING, FOOTING_H), (0, 0, FOOTING_H * 0.5), "Rock")
+    mb.box((FOOTING, FOOTING, FOOTING_H), (0, 0, FOOTING_H * 0.5), "Masonry")
     mb.box((BODY, BODY, BODY_Z1 - BODY_Z0), (0, 0, (BODY_Z0 + BODY_Z1) * 0.5),
-           "Rock")
+           "Masonry")
     # RN-1603. The steel slab starts at STEEL_Z0 and not at BODY_Z1, for the
     # same reason build_floor's rib tops moved 5 mm: LOD0's kerb, cross and
     # castings are now founded 80 mm below where this tier's steel used to
@@ -175,7 +175,7 @@ def build_lod1(root):
 
 def build_lod2(root):
     mb = of.MeshBuilder()
-    mb.box((W, D, H), (0, 0, H * 0.5), "Rock")
+    mb.box((W, D, H), (0, 0, H * 0.5), "Masonry")
     return mb, mb.build(NAME + "_LOD2", root)
 
 
@@ -188,7 +188,7 @@ def main():
     mb2, _ = build_lod2(root)
 
     of.add_collision_box("col_" + NAME, (W, D, H), (0, 0, H * 0.5), root,
-                         role="Rock")
+                         role="Masonry")
     sc.deck_sockets(root)
 
     of.report(NAME, [("LOD0", mb0), ("LOD1", mb1), ("LOD2", mb2)])

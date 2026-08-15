@@ -405,8 +405,14 @@ assert mf.LAYER["hinge"] < 0.21094, (
 # pass and a skin pass are judged against different things and a pass that
 # changes both can attribute neither, applies to a first build most of all.
 # ---------------------------------------------------------------------------
-STONE = "Rock"            # weathered ashlar, the body of the thing
-STONE_D = "RockDark"      # deep courses, sheltered stone, water staining
+# RN-1780 (look audit R3): `Masonry`/`MasonryDark`, not `Rock`/`RockDark`.
+# Same base colour, same metalness, same roughness (of_lib.PALETTE copies the
+# two constants verbatim) - only the tiling surface family differs, so the
+# ruin can wear a texture whose world scale is authored for a 35.2 m cella
+# instead of for a 1.0-1.5 m boulder. See ROLE_FAMILY's own comment in
+# texgen.py for the measured consumer range this split answers.
+STONE = "Masonry"          # weathered ashlar, the body of the thing
+STONE_D = "MasonryDark"    # deep courses, sheltered stone, water staining
 STONE_L = "Sand"          # FRESHLY BROKEN stone: every spall and every fracture
 EARTH = "Soil"            # silt and soil banked against the stone
 MOSS = "LeafDeep"         # cushion moss in full shade

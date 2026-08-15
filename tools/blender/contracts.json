@@ -571,7 +571,14 @@
       "tolerance_m": 0.005,
       "max_tris_lod0": 2400,
       "max_tris_total": 3300,
-      "max_materials": 6,
+      "max_materials": 7,
+      "_max_materials_note": [
+        "RN-1780 (look audit R6): 6 -> 7. LOD0 was already AT 6 (OF_SteelDark,",
+        "OF_EmissiveState, OF_Steel, OF_Accent, OF_Rock, OF_SteelRust), and the",
+        "firebox peep and sight strip now wear OF_EmberEmissiveState instead of",
+        "the bare OF_EmissiveState the +X status chip keeps, so the file gains",
+        "one distinct material rather than reusing one. No geometry moved."
+      ],
       "sockets": [
         "socket_item_in",
         "socket_item_out",
