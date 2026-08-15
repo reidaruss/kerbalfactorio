@@ -330,9 +330,20 @@
       // back at world luma 2.11 and box luma 0.10, i.e. black, while every
       // other field in the report (visible true, drawnParts 2, staleMaxM 0)
       // read perfectly correct: the exact shape of a probe measuring the wrong
-      // thing successfully. RN-822's own capture is at phase 0.35 and this
-      // takes the same phase, and PUBLISHES the elevation it lands on rather
-      // than asserting one.
+      // thing successfully.
+      //
+      // RN-822's own default (`stationdraw.js`) IS phase 0.35, and an earlier
+      // draft of this comment claimed this shot took the same phase; the code
+      // has shipped 0.60 since the commit that introduced both, which A0
+      // never noticed and RN-1800's look audit did. THE CODE IS KEPT: 0.35 was
+      // RN-822's choice for the INTERIOR frame this shot deliberately stopped
+      // taking (see the next paragraph), so there is no comparability to lose
+      // by disagreeing with it, and every box-luma number this shot has ever
+      // published (RN-1411, and RN-1800's own three captures below) was taken
+      // against 0.60. Re-pinning to 0.35 now would be the revert, not the fix.
+      // This comment is corrected to the code rather than the code to the
+      // stale comment, and PUBLISHES the elevation it lands on rather than
+      // asserting one.
       //
       // AND IT IS THE EXTERIOR, WHICH IS ALSO A CORRECTION. The plan says "the
       // station" and the interior was the assumed reading, because RN-822's
@@ -349,6 +360,49 @@
       sunMode: 'time', timeOfDay: 0.60,
       back: true, yawOff: 45, pitch: 3,
       box: [0.4200, 0.2000, 0.9800, 0.7200],
+      // RN-1800. THE STATION'S OWN ORBITAL CLOCK, PINNED, AND THIS IS THE
+      // ACTUAL FIX FOR THE NON-REPRODUCIBLE SHOT.
+      //
+      // `sunMode: 'time'` above pins the SUN. It never pinned the STATION: the
+      // hull is nadir-locked (`DebugGameplay.ts`'s `station()` docstring) at
+      // 400 km and 7.67 km/s, so its ATTITUDE is a function of where it is on
+      // its own orbit, which `VesselRegistry.clockAt` derives from elapsed
+      // FIXED TICKS since the record was last stamped -- not from the
+      // day-night clock `setTime` moves. Two captures that pin the identical
+      // sun phase still board, settle and frame the shot in a different
+      // number of ticks each run (menu transition, `standAt` convergence and
+      // the carrier-boarding wait are none of them tick-counted), so the hull
+      // is at a different point in its orbit, and therefore a different
+      // attitude to the same fixed sun, every time. That is what three
+      // captures at "the same pin" read as box luma 21.78, then 3.73, then
+      // 5.69: not the sun moving, the hull.
+      //
+      // `stationClockS` is applied ONCE, before `of.settle(20)` and the
+      // boarding press below (see that block's own note for why not later
+      // and not right before the press either -- both were tried and both
+      // broke something a naive reading would have missed). -100 is not a
+      // round number by design: a coarse sweep of this orbit at this sun
+      // phase found most of it reading near-black from this aft framing (a
+      // dark arc roughly 100 to 800 seconds wide out of an ~818 s period,
+      // matching the campaign's other finding that direct light on a
+      // convex hull is the exception, not the rule, at this build's grade);
+      // -100 sits in the lit arc rather than on it.
+      //
+      // NOT BIT-IDENTICAL, AND THAT IS REPORTED RATHER THAN HIDDEN: three
+      // consecutive captures at this pin read box luma 3.68, 4.42, 6.21 (RGB
+      // ratios and `iqr` scale together across the three, which is the
+      // signature of one smooth gradient sampled at slightly different
+      // points, not of three unrelated frames). The residual mover is the
+      // handful of ticks `of.settle(20)` and the pause-menu transition are
+      // not tick-counted to spend before boarding reads the clock
+      // (`stationClock().stampedTick` measured 10 ticks apart between two
+      // otherwise-identical runs) landing on a moderate local slope rather
+      // than a flat one. That is a bounded, understood few-count band, not
+      // the original defect's 6x/18-count swing with no known cause; tightening
+      // it further means finding a flatter stretch of the lit arc or making
+      // `settle`/the menu transition tick-exact, and is left to the next lane
+      // as a stated follow-up rather than blocking this fix on it.
+      stationClockS: -100,
       why: 'the station exterior, 400 km up, no terrain bounce and no local fill',
     },
   };
@@ -433,6 +487,10 @@
   };
 
   let setup = {};
+  // RN-1800. Set only by the `station` shot, read only by the general re-pin
+  // section below (`the capture`): the station's own orbital clock target, so
+  // it can be re-applied there with nothing left to drift it before `grab()`.
+  let stationClockTarget;
 
   if (name === 'forestfloor') {
     const w0 = of.world();
@@ -766,6 +824,48 @@
     if (st === null || st.install === null) {
       return { valid: false, shot: name, why: 'no installed station: drop ?station=0' };
     }
+    // RN-1800. PIN THE STATION'S OWN ORBITAL CLOCK BEFORE BOARDING, NOT AFTER,
+    // AND BEFORE `of.settle(20)`, NOT RIGHT BEFORE THE PRESS.
+    //
+    // Two placements were tried and both taught something the next lane
+    // should not have to re-learn.
+    //
+    // RIGHT BEFORE THE CAPTURE (next to the aim, the obvious spot) is wrong:
+    // `visit:station` SEATS the walker at wherever the deck IS at the moment
+    // of the press (`seatOnStationDeck`), so re-pinning to a new target AFTER
+    // that press relocates the station out from under an already-seated
+    // walker in one tick -- a bigger version of the exact bug `stationdraw.js`
+    // already documents (the walker left behind while the deck moves on).
+    // Measured: the eye ended up 1,088,460 m from the station and
+    // `stationDraw.visible` false, an order of magnitude worse than the
+    // 11,653.895 m miss the un-pinned shot already had.
+    //
+    // RIGHT BEFORE `row.click()`, WITH NO `await` BETWEEN THEM (tried second,
+    // on the reasoning that JS is single-threaded so nothing could drift in
+    // between) is ALSO wrong, and for a reason the position numbers do not
+    // show: boarding itself stopped registering (`ridingMounted: false`,
+    // `boarding.boarded: 0`) on every run tried this way, where the SAME pin
+    // placed one step earlier boards every time. The carrier membership test
+    // (`Loop.fixedTick`, CE-30) is not a pure position check against the
+    // walker's seated point; it is evaluated against the mount's own tracked
+    // motion, and a clock write with literally zero elapsed ticks between it
+    // and the press gives that tracking no tick in which to observe the
+    // walker arriving on the newly-pinned orbit at all.
+    //
+    // PINNED HERE INSTEAD, one `settle` and one menu transition before the
+    // press, boarding is reliable (confirmed valid on every run) and the
+    // residual few ticks of settle/menu jitter before boarding reads the
+    // clock (`stationClock().stampedTick` measured 10 ticks apart between two
+    // runs, RN-1800's own log) move the captured phase by a bounded amount
+    // rather than failing the shot outright -- see the box's own reported
+    // bound in the report and in rendering.md's target grade for this shot.
+    // See `of.stationClock()` (`DebugGameplay.ts`) and the `station` shot's
+    // own note above for why the clock is the quantity `setTime` never
+    // touched.
+    stationClockTarget = A.stationClockS ?? S.stationClockS;
+    if (stationClockTarget !== undefined && typeof of.stationClock === 'function') {
+      of.stationClock(stationClockTarget);
+    }
     pin();
     await of.settle(20);
     of.pause(true);
@@ -827,6 +927,23 @@
   else await of.settle(A.settle ?? 24);
   sun = pin();
   await sleep(0.2);
+  // RN-1800. READ (NEVER RE-WRITE) THE STATION'S OWN CLOCK HERE.
+  //
+  // The obvious move is to re-pin it again right before the capture, the same
+  // idiom as the sun two lines up -- and it is wrong, found by trying it. The
+  // walker is riding the deck through matched-velocity physics integration
+  // once boarded (CE-30's carrier frame), not through a live pose re-parent,
+  // so a second `of.stationClock()` WRITE here recomputes the station's
+  // Kepler position from the new clock while the already-boarded walker's own
+  // position keeps integrating from where boarding left him: exactly the
+  // "left behind while the deck moves on" failure this shot already documents
+  // for `standAt`, self-inflicted a second time. Measured: `eyeDistM` held at
+  // 4.32 m across eleven single-pin captures and would not have stayed there
+  // with a second write here (RN-1800's own sweep instrument, off the shipped
+  // file, `docs/web/NUMBERS.md`). The single pin before boarding is therefore
+  // the whole fix; this call only PUBLISHES what it landed on.
+  const stationClock = name === 'station' && typeof of.stationClock === 'function'
+    ? of.stationClock() : null;
   const elevDot = of.stats().sky.elevationDot;
   const sunErr = mode === 'time' ? 0 : Math.abs(elevDot - (A.sunDot ?? S.sunDot));
   if (sunErr > (A.sunTol ?? S.sunTol) && A.anySun !== true) {
@@ -1063,6 +1180,10 @@
     sun: { mode, wantDot: mode === 'time' ? null : (A.sunDot ?? S.sunDot),
       sunT: r3(of.stats().sky.sunT), elevDot: r3(elevDot),
       err: r3(sunErr), tol: A.sunTol ?? S.sunTol ?? null, solve: sun },
+    // RN-1800. The station's own orbital clock as pinned for THIS capture, so
+    // a probe can verify the pin landed rather than assume it: `null` on
+    // every shot but `station`.
+    stationClock,
     pose,
     // THE PIPELINE THE FRAME CAME THROUGH, published so a pair can be shown to
     // be one variable apart rather than asserted to be.
