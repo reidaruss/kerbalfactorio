@@ -192,7 +192,72 @@
     return { yaw: (y + 720) % 360, pitch: Math.max(-84, Math.min(-8, p)),
       pos: cur.g === null ? ideal : cur.g.pos, missM: +cur.d.toFixed(3),
       ok: cur.g === null ? false : cur.g.ok === true,
-      snapped: cur.g === null ? '' : cur.g.snapped };
+      snapped: cur.g === null ? '' : cur.g.snapped,
+      // GP-850: THE TWO FIELDS THAT SAY WHY, not only whether. `aimed` is
+      // FactoryGhost's own word for "the ray met the ground at all" and
+      // `reason` is its refusal sentence ('cell taken', 'too close to #N
+      // kind', ...) or its port-mate note. A hill-climb that converges on the
+      // closest achievable ground point with a big `missM` looks identical to
+      // one that converged ON the target unless a caller can also read WHY the
+      // best answer was not the target, which is what an axis-by-axis
+      // diagnostic needs.
+      aimed: cur.g === null ? false : cur.g.aimed === true,
+      reason: cur.g === null ? 'no ghost resolved' : cur.g.reason };
+  };
+
+  // GP-850: WALK CLOSER, THE SAME FIX CLASS AS demolish.js's `walkToPoint`
+  // (GP-770/771, this lane's own sibling row). `FactoryGhost.march`
+  // (web/src/game/FactoryGhost.ts) caps the aim ray at `REACH_M = 9.0` m from
+  // the EYE and `aimGhost`'s own pitch clamp (-8 to -84 degrees) bounds how
+  // much of that 9 m reaches ground far from a stationary player. Nothing
+  // upstream of this ever moves the player once the tail search ends, so a leg
+  // whose far cells sit beyond that combined limit is invisible to ANY sweep
+  // over yaw and pitch, however wide, no matter how much room the ground
+  // actually has. `walkToPoint` is copied from `demolish.js` almost verbatim
+  // (same step cap, same re-aim-every-step loop) rather than reinvented, since
+  // that lane already measured the frame budget a held key needs.
+  // SYNCHRONOUS ON PURPOSE, LIKE beltcargo's OWN `aimAt` ABOVE AND
+  // demolish.js's `aimFreeToWalk`: `of.look` and `of.aim()` are instant state
+  // (no frame has to render for the aim ray to change), so awaiting a settle
+  // between the 169 candidates each step tries turns a sub-second hill-climb
+  // into a multi-minute one for nothing. Measured the slow way first: with a
+  // `settle(0.02)` inside `missTo`, one `aimFreeAt` call cost real minutes.
+  const aimFreeAt = (t) => {
+    let y = of.world().observer.yawDeg;
+    let p = of.world().observer.pitchDeg;
+    const missTo = (yy, pp) => {
+      of.look((yy + 720) % 360, Math.max(-88, Math.min(20, pp)));
+      const a = of.aim();
+      const v = sub(t, a.origin);
+      const along = dot(v, a.dir);
+      if (along <= 0) return Infinity;
+      return len(sub(v, mul(a.dir, along)));
+    };
+    for (const step of [16, 4, 1]) {
+      let bestM = Infinity, by = y, bp = p;
+      for (let a = -6; a <= 6; ++a) {
+        for (let b = -6; b <= 6; ++b) {
+          const m = missTo(y + a * step, p + b * step);
+          if (m < bestM) { bestM = m; by = y + a * step; bp = p + b * step; }
+        }
+      }
+      y = by; p = Math.max(-88, Math.min(20, bp));
+    }
+    of.look((y + 720) % 360, p);
+  };
+  const walkToPoint = async (t, stopM) => {
+    aimFreeAt(t);
+    let d = gdist(eye(), t);
+    for (let i = 0; i < 20 && d > stopM; ++i) {
+      const frames = Math.max(5, Math.min(60, Math.round(((d - stopM * 0.7) / 4.6) * 60)));
+      of.input.tape([{ hold: frames, keys: ['KeyW'] }, { hold: 2, keys: [] }]);
+      await settle(1.1);
+      aimFreeAt(t);
+      d = gdist(eye(), t);
+    }
+    of.input.tape([{ hold: 2, keys: [] }]);
+    await settle(0.2);
+    return +d.toFixed(2);
   };
 
   // GP-762 FIX: THE ROOM DRY-SCAN THIS BLOCK USED TO OPEN WITH IS GONE.
@@ -359,58 +424,170 @@
     // site grid step and the tiles after it chain by construction.
     const legDir = tangD(drillToTail);
 
-    // GP-762/GP-774/GP-775. THE FOOTPRINT FIX ALONE IS NOT THE WHOLE STORY,
-    // AND THE REST IS RECORDED RATHER THAN FORCED. `mateCells` above (3, not
-    // the pre-FS-73 1-or-2) makes the tail land where a real mate actually
-    // forms, which is the mechanism GP-762 named. But the corridor scan below,
+    // GP-762/GP-774/GP-775, THE ACCOUNT SO FAR. `mateCells` above (3, not the
+    // pre-FS-73 1-or-2) makes the tail land where a real mate actually forms,
+    // which is the mechanism GP-762 named. But the corridor scan below,
     // unchanged since before FS-73, still measures its OWN reach from wherever
     // the player already stands, and a tail one cell further from the drill
     // than it used to be pushes the leg's own far cells past what that reach
     // sees: measured, the scan's own along-axis range topped out at 2.00 cells
-    // past the tail, short of the `2.6` a straight leg needs by four tenths of
-    // a metre, on BOTH rotations. Walking the player closer first (the fix
-    // every other placement in this lane needed for the identical reason,
-    // demolish.js's GP-770/771 included) was tried here and hit something this
-    // lane could not root-cause: `KeyW` held for a full 9 seconds (500 frames)
-    // from this exact stand-point moved the player 0.000 m (feet bit-identical
-    // before and after), while `grounded: true`, `blockedByBuild: false`,
-    // `blockedByRock: false` and `slopeCos: 1` all read as an ordinary, clear
-    // stand. `KeyS`/`KeyA`/`KeyD` each moved the eye a suspiciously IDENTICAL
-    // 9.053 m in the same test, which does not read as three different
-    // directions of ordinary strafing either. That is a genuine, reproducible
-    // player-movement anomaly, distinct from anything FactoryGhost, FactorySnap
-    // or FactoryWiring owns, and it is out of this lane's scope to chase into
-    // the movement/physics code: recorded here as GP-775 rather than forced
-    // past with a workaround this lane cannot verify is honest.
-    const scan = [];
-    for (let dy = -18; dy <= 18; dy += 2) {
-      for (let p = -62; p <= -12; p += 1.2) {
-        const g = await ghostAt(yawG + dy, p);
-        if (g === null || !g.ok) continue;
-        const s = { pos: g.pos, fwd: g.fwd, yaw: yawG + dy, pitch: p,
-          snapped: g.snapped !== '' };
-        const near = scan.find((q) => gdist(q.pos, s.pos) < 0.4);
-        if (near === undefined) scan.push(s);
-        else if (near.snapped && !s.snapped) Object.assign(near, s);
-      }
-    }
-    log.push(`[rot ${rot}] corridor scan: ${scan.length} distinct placeable cells`);
+    // past the tail, short of the `2.6` a straight leg needs, on BOTH
+    // rotations. GP-775 tried walking the player closer and hit what read as a
+    // movement freeze (`KeyW` held 500 frames moved the player 0.000 m) and
+    // recorded it as out of scope rather than chase it into player/physics
+    // code.
+    //
+    // GP-850 RE-OPENS EXACTLY THAT STEP, WITH THE PROVEN HELPER RATHER THAN AN
+    // AD HOC ONE. `demolish.js`'s own `walkToPoint` (GP-770/771) drives the
+    // identical `KeyW` tape in short, re-aimed increments (5 to 60 frames,
+    // never one 500-frame hold) and is proven live in this same file family:
+    // GP-775's freeze was measured with a single long hold, which this lane's
+    // own copy of that helper never issues. So the question this block answers
+    // is not "does the player move" (already proven yes, in `demolish.js` and
+    // in this very probe's own walk to the ore, above) but "is the corridor's
+    // `legRoom: 0` a property of the GROUND or of the STAND-POINT": scan once
+    // from wherever the tail search left the player, and only if that finds
+    // nothing, walk toward the leg with the proven helper and scan again
+    // before concluding the rotation is genuinely short. An axis-by-axis
+    // ghost reading (`axisProbe`) is taken both times, so a rotation that
+    // fails still publishes WHERE the reach ended and WHY, not just a count.
     const alongOf = (s) => dot(sub(s.pos, tailC.pos), legDir);
     const acrossOf = (s) => len(sub(sub(s.pos, tailC.pos), mul(legDir, alongOf(s))));
-    const legRoom = scan.filter((s) => alongOf(s) >= 2.6 && acrossOf(s) < 0.35).length;
-    const maxAlong = scan.reduce((m, s) => Math.max(m, alongOf(s)), -Infinity);
-    const minAlong = scan.reduce((m, s) => Math.min(m, alongOf(s)), Infinity);
-    log.push(`[rot ${rot}] tail ${tailGapM.toFixed(2)} m along the drill's outlet `
-      + `(align ${tailAlign.toFixed(3)}, aim miss ${tailAim.missM} m), leg room ${legRoom}, `
-      + `scan along range [${minAlong.toFixed(2)}, ${maxAlong.toFixed(2)}]`);
+    const axisProbe = async (maxK) => {
+      const rows = [];
+      for (let k = 0; k <= maxK; ++k) {
+        const a = await aimGhost(add(tailC.pos, mul(legDir, k * CELL_M)));
+        rows.push({ k, pos: a.pos, missM: a.missM, ok: a.ok, aimed: a.aimed, reason: a.reason });
+      }
+      return rows;
+    };
+    // GP-850: legRoom READ OFF THE AXIS PROBE, NOT THE WIDE GRID.
+    //
+    // The wide dy/pitch grid below (unchanged since before GP-762, kept for the
+    // CROSS-direction search further down) sweeps a FIXED angular window at a
+    // FIXED angular resolution. That window was sized for the distance the tail
+    // search happens to leave the player at, and MEASURED WRONG at the other
+    // distance this rotation actually needs: after walking closer (below), the
+    // straight-line `axisProbe` found real, `ok: true` cells with sub-centimetre
+    // miss three and four cells past the tail, while the wide grid, re-centred
+    // on that same corridor, still returned `legRoom: 0` — because a fixed
+    // degree-step swath covers less ground the closer the player stands, and
+    // 2 degrees of yaw / 1.2 degrees of pitch that comfortably covered the leg
+    // from the tail-search stand-off no longer does once the player has moved.
+    // `axisProbe` does not have that failure mode: `aimGhost`'s own adaptive
+    // hill-climb (10, 3.5, 1.2, 0.5 degree steps, the same routine the tail
+    // search itself trusts) re-aims for EACH cell rather than hoping a shared
+    // grid happens to land on it, so it is the one reading here that stays
+    // correct regardless of how far the player is standing. `missM` is checked
+    // too, not just `ok`: a hill-climb that cannot reach a point still returns
+    // its closest achievable answer marked `ok`, and only a small `missM` says
+    // that answer IS the point asked for.
+    const legRoomFrom = (rows) => rows.filter((a) => a.k * CELL_M >= 2.6
+      && a.ok && a.missM < 0.5).length;
+    const runScan = async (centerYaw) => {
+      const s = [];
+      for (let dy = -18; dy <= 18; dy += 2) {
+        for (let p = -62; p <= -12; p += 1.2) {
+          const g = await ghostAt(centerYaw + dy, p);
+          if (g === null || !g.ok) continue;
+          const c = { pos: g.pos, fwd: g.fwd, yaw: centerYaw + dy, pitch: p,
+            snapped: g.snapped !== '' };
+          const near = s.find((q) => gdist(q.pos, c.pos) < 0.4);
+          if (near === undefined) s.push(c);
+          else if (near.snapped && !c.snapped) Object.assign(near, c);
+        }
+      }
+      return s;
+    };
+    const mergeAxis = (s, rows) => {
+      for (const a of rows) {
+        if (!a.ok || a.missM >= 0.5) continue;
+        const c = { pos: a.pos, fwd: legDir, yaw: 0, pitch: 0, snapped: a.reason !== '' };
+        if (s.find((q) => gdist(q.pos, c.pos) < 0.4) === undefined) s.push(c);
+      }
+      return s;
+    };
+    const logScan = (tag, s, legRoom) => {
+      const maxAlong = s.reduce((m, c) => Math.max(m, alongOf(c)), -Infinity);
+      const minAlong = s.reduce((m, c) => Math.min(m, alongOf(c)), Infinity);
+      log.push(`[rot ${rot}] corridor scan (${tag}): ${s.length} distinct placeable cells, `
+        + `tail ${tailGapM.toFixed(2)} m along the drill's outlet `
+        + `(align ${tailAlign.toFixed(3)}, aim miss ${tailAim.missM} m), leg room ${legRoom}, `
+        + `scan along range [${minAlong.toFixed(2)}, ${maxAlong.toFixed(2)}]`);
+    };
+
+    const eye0 = eye();
+    let axis = await axisProbe(6);
+    log.push(`[rot ${rot}] axis probe (pre-walk, from tail): ` + JSON.stringify(axis));
+    let legRoom = legRoomFrom(axis);
+    let scan = mergeAxis(await runScan(yawG), axis);
+    logScan('pre-walk', scan, legRoom);
+
+    let walked = null;
+    if (legRoom === 0) {
+      // GP-850: 6 CELLS OUT, STANDING BACK 2.5, NOT 5-AND-3.2. The run needs a
+      // 3-cell straight leg AND two cross cells at its far end (see "TWO CELLS
+      // ACROSS" below), so the corner itself sits about 3 cells past the tail
+      // and the far cross cell about 3 cells beyond THAT along a different
+      // axis; a stand-point only 1.8 m past the tail (5.0 - 3.2) put the
+      // straight leg comfortably in reach but left the cross cells at the
+      // ragged edge, measured: two identical runs both laid exactly 5 of the
+      // 6 tiles the setup gate needs, always the same one short. Standing
+      // deeper (3.5 m past the tail) costs nothing else here, since every
+      // placement below is `aimGhost`'s hill-climb rather than a fixed sweep.
+      const farTarget = add(tailC.pos, mul(legDir, 6.0));
+      const standAt = sub(farTarget, mul(legDir, 2.5));
+      walked = await walkToPoint(standAt, 1.0);
+      log.push(`[rot ${rot}] leg room 0 from the tail-search stand-point (eye `
+        + `${gdist(eye0, tailC.pos).toFixed(2)} m from the tail before walking); `
+        + `walked to ${walked} m short of a stand-point 3.2 m back from a point `
+        + `5 cells past the tail`);
+      // GP-850: RE-AIM THE TAIL ITSELF FROM THE NEW STAND-POINT.
+      //
+      // `tailC.pos` is a WORLD position and stays correct; `tailC.yaw` and
+      // `tailC.pitch` are not a position, they are the crosshair angles that
+      // resolved onto it from the OLD stand-point, and the drag below starts
+      // by looking there (`of.look(tailC.yaw, tailC.pitch)`) to place the
+      // tail's own tile. Left stale, the drag opens by aiming the pre-walk
+      // angles from the post-walk eye, which point somewhere else entirely.
+      // MEASURED: with `tailC.yaw`/`pitch` left alone here, the drag still
+      // laid a clean 6-tile L (`oneRun`, `hasInteriorCorner`, `hasStraights`
+      // all true) but `drillFeedsTail` came back false and `links` empty, and
+      // the placed cells (`m1:0,5` first) sat one row off the drill's own row
+      // (`m1:1,2`), exactly the shape of a stale aim landing one cell short.
+      // `aimGhost` already knows how to re-resolve a world position into
+      // fresh angles from wherever the player is now; it is the same call the
+      // tail search itself made, just asked again after moving.
+      const retail = await aimGhost(tailC.pos);
+      log.push(`[rot ${rot}] re-aimed the tail from the new stand-point: `
+        + `yaw ${tailC.yaw.toFixed(1)} -> ${retail.yaw.toFixed(1)}, `
+        + `pitch ${tailC.pitch.toFixed(1)} -> ${retail.pitch.toFixed(1)} `
+        + `(miss ${retail.missM} m, ok ${retail.ok})`);
+      if (retail.ok) { tailC.yaw = retail.yaw; tailC.pitch = retail.pitch; }
+      axis = await axisProbe(6);
+      log.push(`[rot ${rot}] axis probe (post-walk, from tail): ` + JSON.stringify(axis));
+      legRoom = legRoomFrom(axis);
+      // GP-850: RECENTRE THE WIDE SCAN ON THE LEG ITSELF, NOT ON A FIXED
+      // OFFSET FROM THE DRILL, for the same reason `legRoom` no longer trusts
+      // that scan: `drill.pos + outDir*4.008` sits about one cell past the
+      // TAIL, close enough from the tail search's original stand-off but not
+      // once the player has walked nearer. This only feeds the CROSS-direction
+      // search below now (`axisProbe`, merged in, already carries the on-axis
+      // room), so a residual mismatch here cannot reopen the reach defect.
+      const legAim2 = await aimGhost(add(tailC.pos, mul(legDir, 3.0)));
+      scan = mergeAxis(await runScan(legAim2.yaw), axis);
+      logScan('post-walk', scan, legRoom);
+    }
+
     if (legRoom === 0) {
       // Reported WITH the room on the other hand, because that is what proves
       // the OTHER rotation is the one worth trying next.
-      const behind = scan.filter((s) => alongOf(s) <= -2.6 && acrossOf(s) < 0.35).length;
+      const behind = scan.filter((s2) => alongOf(s2) <= -2.6 && acrossOf(s2) < 0.35).length;
       return { ok: false, rot, drill,
         why: 'no straight leg of three cells along the outlet',
-        tail: tailC, legDir, legRoom, roomBehindTheOutlet: behind,
-        cells: scan.map((s) => [+alongOf(s).toFixed(2), +acrossOf(s).toFixed(2)]) };
+        tail: tailC, legDir, legRoom, roomBehindTheOutlet: behind, walked,
+        axisProbe: axis,
+        cells: scan.map((s2) => [+alongOf(s2).toFixed(2), +acrossOf(s2).toFixed(2)]) };
     }
     return { ok: true, rot, drill, outDir, tangD, scan, tailC, legDir };
   };
@@ -428,9 +605,11 @@
       return { valid: false, why: 'no straight leg of three cells along the outlet, '
         + 'on EITHER drill rotation',
         attempts: [{ rot: 0, why: attempt.why, legRoom: attempt.legRoom ?? null,
-          roomBehindTheOutlet: attempt.roomBehindTheOutlet ?? null },
+          roomBehindTheOutlet: attempt.roomBehindTheOutlet ?? null,
+          walked: attempt.walked ?? null, axisProbe: attempt.axisProbe ?? null },
           { rot: 2, why: second.why, legRoom: second.legRoom ?? null,
-            roomBehindTheOutlet: second.roomBehindTheOutlet ?? null }],
+            roomBehindTheOutlet: second.roomBehindTheOutlet ?? null,
+            walked: second.walked ?? null, axisProbe: second.axisProbe ?? null }],
         second, log };
     }
     attempt = second;
