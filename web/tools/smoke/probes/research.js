@@ -508,8 +508,17 @@
   // CONTROL 4b: the milestone tech is STILL blocked with its prereq now in.
   check('the autopilot is STILL blocked with its prereq in',
     stateOf(T.FlightAutopilot) === 'blocked', stateOf(T.FlightAutopilot));
+  // GP-965. THE DEED IS BOARDING THE STATION, NOT REACHING ORBIT. This assertion
+  // used to read /orbit/i and it was the client-side half of the one-rung
+  // disagreement PH-383 recorded: Reid's task-39 ruling puts the autopilot
+  // BEHIND the hand-flown station visit, `story_line_outline_v1.txt` awards it
+  // AT that visit, and `research.h` now says so. Both halves are asserted, the
+  // second one negatively, so a revert of the constant fails here loudly rather
+  // than passing on a substring that happens to still match.
   check('the autopilot refusal names the DEED, not a price',
-    /orbit/i.test(whyOf(T.FlightAutopilot)), `"${whyOf(T.FlightAutopilot)}"`);
+    /station/i.test(whyOf(T.FlightAutopilot)), `"${whyOf(T.FlightAutopilot)}"`);
+  check('GP-965: and the deed is the STATION, not the orbit it used to name',
+    !/orbit/i.test(whyOf(T.FlightAutopilot)), `"${whyOf(T.FlightAutopilot)}"`);
   // GP-2, visible: the off-world row cannot be bought on this planet.
   check('Cinderite Refining is blocked', stateOf(T.CinderRefining) === 'blocked');
 

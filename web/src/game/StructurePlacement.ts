@@ -137,6 +137,57 @@ export function ghostPrompt(t: StructureTarget | null): HudTarget | null {
  * whichever comes first. Without the second half a player aiming at the top of a
  * foundation would be told about the soil underneath it, and no upper storey
  * could ever be aimed at.
+ *
+ * =============================================================================
+ * GP-966. "IGNORE THE SOLIDS A PLACEMENT CANNOT STAND ON" WAS BUILT, MEASURED
+ * AND REVERTED. The numbers are here so nobody spends the afternoon this lane
+ * did (FS-129's precedent, one file over).
+ *
+ * The brief was GP-937's UX finding: aiming a placement ghost across a tall
+ * placed structure resolves the target block from that structure's own body hit,
+ * so a player near a 28 m launch pad gets a misresolved cell from every vantage
+ * the pad occludes; five were tried and all failed identically. The fix built
+ * for it was principled: every solid shares one `StructureBodies` by design
+ * (GP-58, one collision set for the walker), so tag the structural base parts
+ * and let this march see only those, since a pad stands on 36 decks and nothing
+ * is ever built on a pad. `Solid.basePart`, one flag, five files.
+ *
+ * IT MOVES NOTHING, MEASURED. Two dists one line apart, same seed, same
+ * standoff, same single aim, real D3D11 headless Chrome: the block resolved is
+ * `[-3,-2,0]` in BOTH arms, with the whole ghost JSON identical. Two independent
+ * reasons, both of which had to be measured to be believed:
+ *
+ *  1. THE NEAR HIT IS DISCARDED BEFORE THE MARCH RESULT IS USED. `MIN_PLACE_M`
+ *     below throws away any hit inside 3.2 m, and on a finished platform the
+ *     nearest surface is the deck you are standing on. Measured from pad.js's
+ *     own 3 m standoff: first solid on the ray at 0.20 m with the pad placed and
+ *     3.00 m without it, and the same block out of both. Whatever the march
+ *     found, this function did not use it.
+ *  2. THE PAD IS NOT 28 m TO THE AIM. `heightM` 28 is the GEOMETRY BOUND,
+ *     "tower and masts included" (LaunchPadModule.ts). The `col_*` proxy set the
+ *     march actually sees tops out at the launch table and the deck banks:
+ *     measured live by sweeping `solidBuild` up the pad's own vertical, the
+ *     collision crown is a small fraction of 28 m, and a real aim from 10 m back
+ *     at 15 m up the visual tower meets NO solid within the full 24 m reach.
+ *     Every "a 28 m body against a 24 m aim reach, so no vantage clears it"
+ *     argument, this lane's included, was reasoning about the mesh.
+ *
+ * So the pad never was the occluder, and the reported symptom is GP-968 below,
+ * one constant away. The ownership rule may still be right in principle -- a
+ * ruin wall is genuinely tall and genuinely carries no address -- but it is not
+ * shipping on principle alone: a change to this function with no measurable
+ * consequence is a liability in the one place every placement in the game goes
+ * through. The pair of assertions that would catch it live in `probes/pad.js`
+ * (GP-967 and GP-969), so the day a real occluder appears, the arm is already
+ * built and the flag is four lines away.
+ *
+ * The three other candidates, for the same reason: IGNORE ALL PLACED STRUCTURES
+ * takes decks out too and deletes multi-storey aiming; RESOLVE THE GROUND BEHIND
+ * A HIT ON THE PLACEMENT'S OWN KIND fixes pad-behind-pad and leaves machine,
+ * ruin, antenna and station each to be found separately; A VISIBLE CUE names a
+ * wrong cell without making it right. None of them addresses GP-968, which is
+ * what was actually wrong.
+ * =============================================================================
  */
 /**
  * GP-289. THE MARCH, AND WHETHER IT HIT ANYTHING.
@@ -173,14 +224,48 @@ export function aimHit(s: Structures, ray: { origin: Vec3d; dir: Vec3d }):
     // already knows how to put a point on the surface in the direction the
     // player is facing, so a close hit reuses it rather than inventing a second
     // projection.
+    //
+    // =========================================================================
+    // GP-968. ARM'S LENGTH IS `MIN_PLACE_M`, AND THIS PUSHED TO `FALLBACK_M`.
+    //
+    // `fallbackOnGround` used to hardcode `Math.max(FALLBACK_M, MIN_PLACE_M)`,
+    // which is 6.0 m, so a hit refused for being nearer than 3.2 m was moved to
+    // 6.0 m: 2.8 m further than the rule that rejected it asks for, in a
+    // direction the player did not aim. On the shipped 4 m module that is most
+    // of a cell, and it lands in the NEXT one.
+    //
+    // IT IS THE WHOLE OF THE "PAD OCCLUSION" REPORT (GP-937's five vantages),
+    // MEASURED. On a finished platform the nearest surface is the deck you are
+    // standing on, so `raw` is always inside 3.2 m and this branch always fires;
+    // the point it returns is then a function of the eye and the aim direction
+    // ALONE, with nothing in the world in it. That is why five different
+    // vantages returned one identical block, and why an A/B one line apart --
+    // marching the pad's body versus not marching it -- returns the same block
+    // too, on the same seed, from the same standoff, with the first solid on the
+    // ray at 0.20 m in one arm and 3.00 m in the other. The pad was never the
+    // cause; this constant was, and the pad was simply the thing in frame.
+    //
+    // Measured at pad.js's own 3 m standoff, 4 m cells: pushing to 6.0 m puts
+    // the point 3.0 m past the aimed cell CENTRE, over its 2.0 m boundary and
+    // into the next cell (`[-3,-2,0]` for `[-3,-3,0]`). Pushing to 3.2 m puts it
+    // 0.2 m past the centre, inside the cell that was aimed at.
+    //
+    // GP-289's ARGUMENT IS UNTOUCHED AND THAT IS THE POINT OF USING ITS OWN
+    // NUMBER. 3.2 m is derived there as the smallest distance that keeps a
+    // standing eye outside the largest 4 m module's box (half-diagonal 2.83 m
+    // plus margin), so pushing to exactly it satisfies the rule exactly, and the
+    // 6.0 m was never a second safety margin -- it is `FALLBACK_M`, the distance
+    // for a ray that hit NOTHING, borrowed by a branch about a ray that hit
+    // something too close. Two different questions were sharing one constant.
+    // =========================================================================
     if (raw < MIN_PLACE_M) {
-      return { p: fallbackOnGround(s, o, d), found: true,
+      return { p: fallbackOnGround(s, o, d, MIN_PLACE_M), found: true,
                overhead: overheadOf(o, d) };
     }
     return { p: { x: o.x + d.x * raw, y: o.y + d.y * raw, z: o.z + d.z * raw },
              found: true, overhead: false };
   }
-  return { p: fallbackOnGround(s, o, d), found: false,
+  return { p: fallbackOnGround(s, o, d, FALLBACK_M), found: false,
            overhead: overheadOf(o, d) };
 }
 
@@ -215,7 +300,15 @@ function overheadOf(o: Vec3d, d: Vec3d): boolean {
   return tan.length() < OVERHEAD_TAN;
 }
 
-function fallbackOnGround(s: Structures, o: Vec3d, d: Vec3d): Vec3d {
+/**
+ * GP-968. `aheadM` IS THE CALLER'S, because the two callers are asking two
+ * different questions and used to share one answer. A ray that hit NOTHING
+ * wants `FALLBACK_M`; a ray that hit something INSIDE arm's length wants
+ * `MIN_PLACE_M`, the constant that rejected it. The `Math.max` that used to sit
+ * on the step below made the second silently take the first's value.
+ */
+function fallbackOnGround(s: Structures, o: Vec3d, d: Vec3d,
+                          aheadM: number): Vec3d {
   const up = new THREE.Vector3(o.x, o.y, o.z).normalize();
   const fwd = new THREE.Vector3(d.x, d.y, d.z);
   fwd.addScaledVector(up, -fwd.dot(up));
@@ -233,8 +326,10 @@ function fallbackOnGround(s: Structures, o: Vec3d, d: Vec3d): Vec3d {
     return { x: up.x * r0, y: up.y * r0, z: up.z * r0 };
   }
   fwd.normalize();
+  // GP-968: `aheadM`, not `Math.max(FALLBACK_M, MIN_PLACE_M)`. The clamp is kept
+  // as a floor so no caller can ask for a point inside its own preview box.
   const p = new THREE.Vector3(o.x, o.y, o.z)
-    .addScaledVector(fwd, Math.max(FALLBACK_M, MIN_PLACE_M));
+    .addScaledVector(fwd, Math.max(aheadM, MIN_PLACE_M));
   p.normalize();
   const r = s.groundRadius(p.x, p.y, p.z);
   return { x: p.x * r, y: p.y * r, z: p.z * r };

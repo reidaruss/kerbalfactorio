@@ -31,9 +31,14 @@ export const BLOCK = {
   PrereqMissing: 3, MilestoneMissing: 4, CostShort: 5,
 } as const;
 
-/** `research.h` milestones. DW-29's autopilot condition is ReachedOrbit.
- *  RuinInvestigated (L7, GP-546 to GP-549) is Electrification's: granted from
- *  `RuinInteract.ts` when the player interacts at a ruin's investigate socket. */
+/** `research.h` milestones. GP-965: DW-29's autopilot condition is
+ *  StationBoarded, NOT ReachedOrbit — Reid's task-39 ruling puts the autopilot
+ *  behind the hand-flown station visit, and `FlightAuto.ts`'s auto-approach verb
+ *  was already gated there, so the tech moved to agree with the verb rather than
+ *  the other way round. ReachedOrbit is still earned and still saved; no tech
+ *  reads it today. RuinInvestigated (L7, GP-546 to GP-549) is Electrification's:
+ *  granted from `RuinInteract.ts` when the player interacts at a ruin's
+ *  investigate socket. */
 export const MILESTONE = {
   ReachedOrbit: 0x0001, LandedOffWorld: 0x0002, RuinInvestigated: 0x0003,
   // GP-718. The station rung, and the one-shot latch for the full-map reveal.
@@ -225,8 +230,9 @@ export class Research {
  * GP-530. THE ONE ENTRY POINT for a LIVE grant. `Research.earn` alone was
  * reachable from exactly one call site in the whole web tree
  * (`PersistProgress.ts`'s restore path) and from nowhere that a player's own
- * play could reach: FlightAutopilot's `ReachedOrbit` gate was unearnable in a
- * fresh world, a live bug this wraps the fix for.
+ * play could reach: FlightAutopilot's milestone gate (`ReachedOrbit` then,
+ * `StationBoarded` since GP-965) was unearnable in a fresh world, a live bug
+ * this wraps the fix for.
  *
  * A THIN WRAPPER, on purpose: `earn` (`_of_rs_set_milestone`) is already the
  * one authority and is already idempotent (research.h's `setMilestone`

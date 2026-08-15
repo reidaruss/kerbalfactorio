@@ -198,7 +198,17 @@ using MilestoneId = uint16_t;
 static constexpr MilestoneId kNoMilestone = 0;
 
 namespace milestones {
-static constexpr MilestoneId ReachedOrbit = 0x0001;    // DW-29's own condition
+// GP-965. DW-29's own condition, AND NO TECH READS IT ANY MORE. It is still
+// earned from live play (`Systems.ts` grants it off a real ORBIT status
+// transition) and it is still saved, because "did this player ever reach orbit"
+// is a fact about the save that the questline and the HUD may ask; what moved
+// is the autopilot, which now hangs off `StationBoarded` (see the tech's own
+// comment below). The note at the top of this block calls a milestone no tech
+// reads a smell, and it is right to; this one is kept rather than retired
+// because retiring an id from an append-only set breaks every save that holds
+// it, and because the ordering ruling that moved the autopilot is exactly the
+// kind of thing that moves back.
+static constexpr MilestoneId ReachedOrbit = 0x0001;
 static constexpr MilestoneId LandedOffWorld = 0x0002;  // the GP-2 crossover, later
 // L7 (GP-546 to GP-549). `story_line_outline_v1.txt`'s ruins rung: "Investigate
 // ruins (upon searching the ruins you gain the ability to research ... as well
@@ -227,6 +237,10 @@ static constexpr MilestoneId RuinInvestigated = 0x0003;
 // declared anyway because what it gates is not a tech: it gates a world-state
 // mutation (discovery.h's survey layer), and the append-only set is where a
 // "thing the player did" belongs regardless of who reads it.
+//
+// GP-965: A TECH READS IT NOW. `FlightAutopilot` moved onto it, which is the
+// sentence the paragraph above was waiting for, and the reason is Reid's
+// task-39 ordering ruling rather than a balance choice. See the tech.
 static constexpr MilestoneId StationBoarded = 0x0004;
 }  // namespace milestones
 
@@ -754,9 +768,41 @@ inline std::vector<TechDef> survivalTechs() {
   t.push_back(plate);
 
   // DW-29. The autopilot is not bought, it is EARNED and then bought: you fly
-  // the ascent by hand once, and only then may you spend the science that lets
+  // the mission by hand once, and only then may you spend the science that lets
   // the machine do it. Its payload is the unlock flag itself, which the flight
   // lane reads.
+  //
+  // GP-965. THE DEED IS BOARDING THE STATION, NOT REACHING ORBIT, and this is
+  // the reconciliation of a one-rung disagreement PH-383 found and recorded
+  // rather than papered over.
+  //
+  // What disagreed: this line used to read `milestones::ReachedOrbit`, while
+  // the shipped auto-approach verb (`FlightAuto.ts`) gates on
+  // `milestones::StationBoarded`, because Reid's task-39 ruling (CLAUDE.md)
+  // says "the first station mission is hand flown and difficult on purpose"
+  // and "the autopilot moves BEHIND the station visit rather than being
+  // research-gated before it". Orbit is a rung the player passes BEFORE the
+  // station -- you cannot fly to Anchorage without reaching orbit -- so an
+  // autopilot gated on orbit is available for the very mission it is meant to
+  // sit behind. Two gates, one arc, and they disagreed by exactly that rung.
+  //
+  // The spine settles it in one sentence. `story_line_outline_v1.txt`, at the
+  // station rung: "Upon investigation you discover some technology that gives
+  // you the ability to research and build the autopilot unit for craft". The
+  // autopilot is a REWARD FOR THE STATION VISIT in the story, so the milestone
+  // is the station visit, and DW-29's "earned by flying" survives intact -- the
+  // flight it names is just the harder one.
+  //
+  // THE TECH IS NOT REDUNDANT AND WAS NOT RETIRED, which was the other candidate
+  // fix. The verb and the tech unlock different things. The verb is a CONTROL:
+  // it flies the terminal approach of a vessel that already has a docking port,
+  // and it costs nothing. The tech unlocks an ITEM, `parts_items::AutopilotModule`
+  // (`vessel::parts::AutopilotModule`, 0x010D), which is a PART the player pays
+  // science for and then has to build onto a rocket in the VAB; without it the
+  // catalogue does not offer the module at all (`VesselCatalogue.offeredParts`).
+  // Retiring the tech would delete the only thing in the game that charges for
+  // the autopilot, and would strand an allocated PartId and its
+  // `static_assert`ed ItemId. So both stay, and now they agree.
   //
   // GP-267: IT NOW UNLOCKS AN ITEM. This comment used to end "it deliberately
   // unlocks no item, because inventing a part for it here would be this lane
@@ -769,7 +815,7 @@ inline std::vector<TechDef> survivalTechs() {
   autopilot.id = techs::FlightAutopilot;
   autopilot.name = "Flight Autopilot";
   autopilot.prereqs = {techs::Electrification};
-  autopilot.requiresMilestone = milestones::ReachedOrbit;
+  autopilot.requiresMilestone = milestones::StationBoarded;
   autopilot.cost = {ItemStack{items::AutomationScience, 25},
                     ItemStack{items::LogisticScience, 15}};
   autopilot.unlockItems = {parts_items::AutopilotModule};
@@ -786,10 +832,13 @@ inline std::vector<TechDef> survivalTechs() {
   // it is requiring a base.
   //
   // IT DELIBERATELY REQUIRES NO MILESTONE. `FlightAutopilot` above is the tech
-  // that is EARNED (`milestones::ReachedOrbit`), and it must stay the only one:
-  // gating the PAD on having reached orbit would be a cycle, because reaching
-  // orbit is what the pad is for. The two techs are the two ends of the same
-  // arc and the milestone belongs on the far one.
+  // that is EARNED (`milestones::StationBoarded` since GP-965; it was
+  // `ReachedOrbit` when this paragraph was written, and the argument is
+  // unchanged by the move because the far end just moved further out): gating
+  // the PAD on having reached orbit, or on having boarded a station reached by
+  // rocket, would be a cycle, because launching is what the pad is for. The two
+  // techs are the two ends of the same arc and the milestone belongs on the far
+  // one.
   TechDef pad;
   pad.id = techs::LaunchFacilities;
   pad.name = "Launch Facilities";
