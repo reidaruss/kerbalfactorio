@@ -23,16 +23,37 @@
   };
 
   await sleep(0.5);
+  // GP-890. TWO SWEEPS WITH THE PICKAXE CRAFTED BETWEEN THEM, the same
+  // correction probes/machinepanel.js carries and for the same reason: GP-506
+  // made coal, iron and copper `requiresToolFor`, so the single loop this
+  // replaces (kinds 0, 3, 2, and never kind 1) landed 183 Wood, took 21
+  // ToolRequired refusals on the iron and could not pay the furnace's
+  // Wood x5 + Raw iron x2. Wood and loose stone are ungated so the pickaxe
+  // (Stone x2 + Wood x1) has a bare-hand path.
+  const nodesOnce = of.nodes();
+  const packCount = (name) =>
+    (of.game().carried.find((c) => c.name === name)?.count ?? 0);
+  const KIND_ITEM = { 0: 'Wood', 1: 'Stone', 2: 'Coal', 3: 'Raw iron' };
   let harvests = 0;
-  for (const n of of.nodes()) {
-    if (n.kind !== 0 && n.kind !== 3 && n.kind !== 2) continue;
-    for (let k = 0; k < 3; ++k) if (of.harvest(n.index).ok) harvests++;
-    if (harvests > 30) break;
-  }
+  const sweep = (kinds, want) => {
+    for (const n of nodesOnce) {
+      if (!kinds.includes(n.kind)) continue;
+      if (kinds.every((k) => packCount(KIND_ITEM[k]) >= want[KIND_ITEM[k]])) break;
+      if (packCount(KIND_ITEM[n.kind]) >= want[KIND_ITEM[n.kind]]) continue;
+      for (let k = 0; k < 3; ++k) if (of.harvest(n.index).ok) harvests++;
+    }
+  };
+  sweep([0, 1], { Wood: 30, Stone: 6 });        // Tree, Rock: always bare-hand
+  const pickaxe = of.craft(0);                  // Stone x2 + Wood x1
+  sweep([2, 3], { Coal: 20, 'Raw iron': 20 });  // CoalSeam, IronOre: gated
   of.hotbar(1);
   of.look(of.world().observer.yawDeg, -70);
   await click();                                   // spend the lock-buying click
-  if (!of.craft(2)) return { valid: false, why: 'no furnace' };
+  if (!pickaxe) return { valid: false, why: 'no pickaxe, so no ore', harvests };
+  if (!of.craft(2)) {
+    return { valid: false, why: 'no furnace', recipe: of.game().recipes[2] ?? null,
+      carried: of.game().carried, harvests };
+  }
 
   of.hotbar(2);
   of.look(of.world().observer.yawDeg, -22);
