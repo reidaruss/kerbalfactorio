@@ -916,7 +916,37 @@ def build_lod1(root):
 
 def build_lod2(root):
     """Three boxes. The gantry is gone at this range, so a squat base stands in
-    for it; it is narrower than the body so the two share no plane."""
+    for it; it is narrower than the body so the two share no plane.
+
+    RN-1676: MEASURED AGAINST CASCADE 2 (210.94 mm) AND LEFT ALONE, AN HONEST
+    NEGATIVE ON RN-1599's OWN PRECEDENT. This tier measures 619.07 mm and
+    earns nothing, so cascade 2 falls back to LOD1 (576 triangles) instead of
+    drawing this one (36). RN-1623's method (trace of_lib.MeshBuilder._add
+    over LOD0, block in every feature standing proud of this tier at its
+    MEASURED envelope) was tried here too, against this tier's own budget
+    rather than LOD1's. It does not close at a sane cost.
+
+    THE DETAIL IS NOT CONCENTRATED, IT IS EVERYWHERE. 29 independent LOD0
+    features each exceed 210.94 mm alone and share no envelope with another:
+    the duct, the gantry slab and its columns, the drill guide and its guard
+    cage, two full-footprint rings (the fasteners, the hazard band), four
+    port-mouth bands, the canopy, the service face, the motor detail, the
+    standing detail, the hose, the wet-steel band. Blocking in the worst ten
+    (36 to 156 triangles) still measured 325.00 mm, not even back under
+    cascade 1. Blocking in all 29 (36 to 336 triangles, 58% of LOD1's own
+    576) reached 199.00 mm - technically under 210.94, but on a 12 mm (5.6%)
+    margin that the next LOD0 change erases, and it buys nothing on the
+    multiplier: cascade 0 already requires LOD0 regardless of what LOD2
+    measures, so the miner stays 2.0x either way (RN-1623). The only thing
+    336 triangles would purchase is swapping cascade 2's own draw from LOD1
+    (576) to LOD2 (336) - 240 triangles per instance per frame against a
+    fixed +300 triangle cost forever, on a tier whose whole point is to be
+    materially cheaper than LOD1 rather than 58 per cent of it.
+
+    NOT SHIPPED. This is RN-1599's power pole again: a machine's detail is
+    CONCENTRATED and one stand-in box catches it, or it is DISTRIBUTED and
+    catching it is the next tier up again. This tier's three boxes and 36
+    triangles are unchanged."""
     mb = of.MeshBuilder()
     mb.box((3.20, 3.20, BODY_Z0), (0, 0, BODY_Z0 * 0.5), "SteelDark")
     mb.box((BODY, BODY, BODY_TOP - BODY_Z0),
