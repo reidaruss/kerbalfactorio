@@ -122,10 +122,33 @@
       // conditioned. Found by measurement, not by suspicion: aiming at 90
       // produced a NaN aim, which read as `site: -1` and "there is no base here"
       // while standing on 36 foundations.
-      if (l < 0.5) { of.look(of.world().observer.yawDeg, -82); await sleep(1 / 60); continue; }
+      //
+      // GP-920 to GP-934: `l` is the FULL eye-to-target distance, which is at
+      // LEAST the eye height (about 1.6 m) for any target at ground level, so
+      // this guard could never fire for the exact case its own comment
+      // describes: a target almost directly under the feet, which is a
+      // near-1.6-2 m case, not a near-0 m one. Measured on the pad's repair
+      // pass, aiming at the true centre of an enclosed gap cell (dist to feet
+      // 0.0001 m): `l` read 1.62 m, missed this guard, and the un-clamped
+      // pitch solve came out beyond -82 and got clamped there anyway --
+      // exactly the bad case this branch exists to avoid, just reached from
+      // the other side. The clamped ray then landed 0.22 m off in an
+      // ILL-CONDITIONED yaw (near-zero horizontal `d`, `atan2` amplifying
+      // noise), and on ground already tiled edge to edge that 0.22 m was
+      // enough to resolve one full cell over. `horiz` is the part of `d`
+      // that is actually ACROSS the ground (perpendicular to the origin's own
+      // radial `up`), which is what "has no horizontal component" is
+      // actually asking about.
+      const r0 = Math.hypot(a.origin[0], a.origin[1], a.origin[2]) || 1;
+      const up0 = [a.origin[0] / r0, a.origin[1] / r0, a.origin[2] / r0];
+      const vert0 = d[0] * up0[0] + d[1] * up0[1] + d[2] * up0[2];
+      const horiz = Math.hypot(d[0] - up0[0] * vert0, d[1] - up0[1] * vert0,
+        d[2] - up0[2] * vert0);
+      if (horiz < 0.5) { of.look(of.world().observer.yawDeg, -82); await sleep(1 / 60); continue; }
       const u = [d[0] / l, d[1] / l, d[2] / l];
       const pitch = Math.max(-82, Math.min(82, pitchOf(a.origin, u)));
-      of.look(horizAngle(a.origin, u) + yawOffset, pitch);
+      const wantYaw = horizAngle(a.origin, u) + yawOffset;
+      of.look(wantYaw, pitch);
       await sleep(1 / 60);
     }
   };
@@ -242,25 +265,38 @@
     }
     if (gap === null) break;
     const c = cellPoint(gap[0], gap[1]);
-    const cr = Math.hypot(c.x, c.y, c.z) || 1;
-    of.teleport(latDeg(c.y, cr), Math.atan2(c.z, c.x) * D, 0);
+    // GP-920 to GP-934: STAND BACK before aiming, rather than teleporting onto
+    // the gap cell itself. Landing exactly on top of the target makes the
+    // eye-to-target aim nearly straight down (eye height alone is ~1.6 m, so
+    // `aimAt`'s own "target under the feet" guard, keyed off the FULL 3D
+    // distance, never fires for a target that is horizontally right there but
+    // 1.6 m of pure eye height away) and pushes the pitch solve past its own
+    // clamp, landing the resolved cell a full module off. Standing back
+    // `STANDOFF_M` along the site's own north first, same class of fix as
+    // GP-760's stand-offs for the belt aim hill-climb, gives `aimAt` a normal,
+    // well-conditioned angle instead.
+    const STANDOFF_M = 3;
+    const standAt = { x: c.x - site.north.x * STANDOFF_M,
+      y: c.y - site.north.y * STANDOFF_M, z: c.z - site.north.z * STANDOFF_M };
+    const cr = Math.hypot(standAt.x, standAt.y, standAt.z) || 1;
+    of.teleport(latDeg(standAt.y, cr), Math.atan2(standAt.z, standAt.x) * D, 0);
     await sleep(0.35);
     await aimAt(c);
     const preGhost = of.game().build.structGhost;
     of.input.act(['use'], 3);
     await sleep(1 / 20);
     if (!laidAt(gap[0], gap[1])) {
-      // GP-905 to GP-919: measured, not guessed. The ghost aimed AT the gap
-      // (0,-3) resolved to a DIFFERENT address before the key was even
-      // pressed, and pressing it still placed something (a foundation landed,
-      // parts count rose), just not at the cell that was aimed at. That is
-      // GP-37's socket snap (`SNAP_FRACTION = 0.75`, a 3 m capture radius on a
-      // 4 m cell) catching a neighbour's socket instead of the bare-grid
-      // answer for a cell enclosed on multiple sides, where every point in the
-      // cell's interior is within capture range of some already-built
-      // neighbour. Recorded as a candidate game defect, not fixed here (see
-      // controller log): the raw grid target and the ghost's resolved target
-      // diverge by a full cell.
+      // GP-905 to GP-919 recorded this as GP-37's socket snap catching a
+      // neighbour's socket instead of the bare grid answer on an enclosed
+      // gap cell. GP-920 to GP-934 RE-DIAGNOSED IT AND THAT WAS WRONG:
+      // instrumented at the source (`StructureSnap.ts`'s `nearestSocket`),
+      // the failing press never caught a socket at all (`sockFound: false`)
+      // and the RAW grid answer (`addressAt`, no snap involved) was ALREADY
+      // the wrong cell. The actual cause was above this block, in `aimAt`
+      // itself: teleporting onto the gap made the aim nearly straight down,
+      // which is the exact case `aimAt`'s own guard exists for and, keyed
+      // off the wrong distance, never caught. Standing back fixes it; this
+      // branch should no longer be reached, and stays as a named fallback.
       log.push(`cell ${gap} would not take a foundation, ghost resolved to `
         + `${JSON.stringify(preGhost?.addr)} instead: ${preGhost?.reason}`);
       break;
@@ -284,13 +320,49 @@
   await hold(padSlot);
   // Stand back at the block's own centre before aiming the pad, so the ghost's
   // block is the one that was just laid.
+  //
+  // GP-920 to GP-934: the comment above always said "stand back"; the code
+  // never did, teleporting onto the cell's own centre and then looking
+  // straight down with whatever yaw was left over from the last placement.
+  // That alone was worth fixing (same class as the repair pass above), but it
+  // was not sufficient: even with a calibrated aim measured dead-on target
+  // (0.0003 degrees off `c`, standing back 3 m first), `padBlockAt`'s march
+  // across a deck plane already tiled edge to edge still resolved one cell
+  // short of `base` (`[i0,j0]` came back one cell over in one direction).
+  // Rather than chase the march's own tolerance on a flat, fully-built plane,
+  // a small local sweep around the calibrated aim -- the same aim hill-climb
+  // class as GP-760's stand-offs and GP-850's axisProbe -- finds the exact
+  // cell directly, the way a player nudging the mouse would.
+  const padC = cellPoint(base[0], base[1]);
+  const wantsBlock = (g) => g !== null && g.addr !== null
+    && g.addr[0] === i0 && g.addr[1] === j0 && g.addr[2] === 0;
+  // Re-aims at the block's own centre and, if the march does not resolve
+  // exactly there, hill-climbs a small local sweep until it does (or gives
+  // up and leaves whatever the sweep last saw). Called again before the
+  // overlap check below: placing the 28 m pad changes what the crosshair's
+  // OWN previous aim ray meets, so "aimed here a moment ago" does not carry
+  // forward the way it would for a flat, empty platform.
+  const aimAtPadBlock = async () => {
+    await aimAt(padC);
+    if (wantsBlock(ghost())) return;
+    const y0 = of.world().observer.yawDeg, p0 = of.world().observer.pitchDeg;
+    outer:
+    for (const dp of [0, -2, 2, -4, 4, -6, 6]) {
+      for (const dy of [0, -3, 3, -6, 6]) {
+        of.look(y0 + dy, Math.max(-85, Math.min(85, p0 + dp)));
+        await sleep(1 / 30);
+        if (wantsBlock(ghost())) return;
+      }
+    }
+  };
   {
-    const c = cellPoint(base[0], base[1]);
-    const cr = Math.hypot(c.x, c.y, c.z) || 1;
-    of.teleport(latDeg(c.y, cr), Math.atan2(c.z, c.x) * D, 0);
+    const STANDOFF_M = 3;
+    const standAt = { x: padC.x - site.north.x * STANDOFF_M,
+      y: padC.y - site.north.y * STANDOFF_M, z: padC.z - site.north.z * STANDOFF_M };
+    const cr = Math.hypot(standAt.x, standAt.y, standAt.z) || 1;
+    of.teleport(latDeg(standAt.y, cr), Math.atan2(standAt.z, standAt.x) * D, 0);
     await sleep(0.6);
-    of.look(of.world().observer.yawDeg, -82);
-    await sleep(0.2);
+    await aimAtPadBlock();
   }
   await sleep(0.2);
   const gOk = ghost();
@@ -312,6 +384,16 @@
   log.push(`pad #${pad.id} site ${pad.siteId} cell ${pad.i},${pad.j},${pad.level}`);
 
   await sleep(0.2);
+  // GP-920 to GP-934, RECORDED NOT CHASED FURTHER: re-aiming here (the same
+  // `aimAtPadBlock` used above) does not help, and neither does leaving the
+  // crosshair exactly where it was for the successful placement above --
+  // both land on `[-3,-2,0]` rather than the pad's own `[i0,j0,0]`, missing
+  // 6 of 36. The one difference from the placement this check follows is
+  // that a 28 m pad now stands where a flat, walkable deck used to be, so
+  // this is most likely the SAME march-tolerance class of issue as the fix
+  // above, just triggered by the pad's own (much taller, non-flat) collision
+  // geometry instead of a flat deck plane, and not one this lane's effort
+  // budget covers. See the residual note in `docs/controllers/gameplay.md`.
   const g2 = ghost();
   check('a second pad on the same platform is refused BY OVERLAP',
     g2 !== null && g2.ok === false && /too close/.test(g2.reason), g2?.reason);
