@@ -168,17 +168,35 @@ SIZE = 512                 # px, square. See docs/web/ASSET-SPECS.md 2.8.
 FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384,
                "fur": 384, "suitfab": 512, "suitplate": 384,
                "stone": 384, "paintchip": 512, "rust": 512,
-               # RN-1780. `masonry` reuses `stone`'s exact pixel recipe (same
-               # height/masks/albedo functions, same params, see FAMILIES
-               # below), so it takes `stone`'s own size for the same reason:
-               # a different resolution on an identical field would resolve
-               # visibly softer or sharper than the family it is a world-scale
-               # retile of. `ember` is a THIRD the resolution because it is a
-               # tiny family (one part, two 0.30/0.86 m primitives on one
-               # machine) at a 0.28 m tile: 128 px / 0.28 m = 457 texels/m,
-               # already above panel's 341 machine target, so spending more
-               # would buy nothing this consumer can show.
-               "masonry": 384, "ember": 128}
+               # RN-1780, REVISED. `masonry` first shipped at `stone`'s own
+               # 384 px so the two were byte-identical pixels, which was the
+               # right call for proving the split changes nothing but world
+               # scale. It was wrong on resolution, and the honest measure is
+               # texels_per_m: 384 / 1.8 m = 213, the lowest tiling family in
+               # the game and BELOW ASSET-SPECS 2.8's 256 px/m machine floor,
+               # not just below panel's 341. Measured on real D3D11 at the
+               # storyline's own approach distance (`of.standAt` 3.4 m off
+               # the cella floor, the closest a standing eye gets before the
+               # ruin's own footprint pushes it back further): the facets
+               # read soft, individual crack edges lose definition, in a way
+               # `stone` at the same 384 px never has to answer for because
+               # nothing stands a player 3 m from a 1.0-1.5 m boulder with a
+               # cracked stone wall filling the frame the way a ruin does.
+               # 512 clears the floor at 284 texels/m (matching `panel`'s own
+               # resolution, which is this project's precedent for "large
+               # architectural surface, judged up close"). masonry NO LONGER
+               # SHIPS THE SAME BYTES AS STONE below this line: the same
+               # generator functions, called at a genuinely higher target
+               # resolution, are not the same PNG, and that is the honest
+               # trade for the fix (stone itself is untouched, still 384,
+               # still byte-identical to its own prior bytes).
+               #
+               # `ember` is a THIRD the resolution because it is a tiny
+               # family (one part, two 0.30/0.86 m primitives on one machine)
+               # at a 0.28 m tile: 128 px / 0.28 m = 457 texels/m, already
+               # above panel's 341 machine target, so spending more would buy
+               # nothing this consumer can show.
+               "masonry": 512, "ember": 128}
 
 ZLIB_LEVEL = 9
 ZLIB_MEMLEVEL = 9
@@ -1875,50 +1893,129 @@ def _stone_albedo(w, h, height, aux):
 # is spatial variation, so this is an EMISSIVE map only, multiplied against
 # that colour, not a restyle of it.
 #
-# REUSES `stone`'s height/masks RATHER THAN AUTHORING A NEW FIELD, and this
-# is a considered reuse and not a shortcut: a coal bed IS fractured mineral,
-# so `_stone_height`'s facet/chip/arris hierarchy is the honest physical
-# claim for "chunks of coal and ash", and its `aux["crest"]`/`aux["crevice"]`
-# masks are already exactly "standing clear of the arris" and "in the low
-# ground of it" (RN-742's own reading), which is precisely hot-coal-crest
-# versus ash-shadowed-crevice.
+# `_ember_height` IS ITS OWN FIELD, NOT `_stone_height` REUSED, and the
+# reversal is the whole lesson of the first version's failure. Calling
+# `_stone_planes` at `STONE_FACETS = 8` was the honest physical claim (a coal
+# bed IS fractured mineral) but it silently imported `stone`'s FREQUENCY
+# along with its shape: 8 cells across a 0.6 m tile is a 7.5 cm facet, big
+# enough to survive minification on a boulder seen from metres away; the
+# same 8 cells across `ember`'s 0.28 m tile is a 3.5 cm facet, 16 px of a
+# 128 px texture, and the peep draws at roughly 85 SCREEN px on the
+# `smelterhero` shot. That is below the texture's own native size, so the
+# GPU samples a blurred mip level by construction, and a mip filter is a box
+# average: it cannot tell a `smoothstep` boundary from noise, and it erases
+# both. The first version's source PNG had real 67-per-cent-dark contrast
+# (verified by decoding the shipped bytes) and the RENDERED frame kept the
+# old shape anyway (peep iqr 0.93 -> 5.35, p25 barely moved), which is
+# minification and not a curve problem: a sharper heat curve on the SAME
+# facet frequency cannot fix a feature the sampler already cannot resolve.
+# `EMBER_FACETS = 3` makes each coal chunk about 43 px of the 128 px map,
+# close to the screen footprint itself, so the pattern the source PNG
+# carries is closer to what a minified sample can still tell apart.
 # ---------------------------------------------------------------------------
 
+EMBER_FACETS = 3
+EMBER_CHIPS = 7
+
+
+def _ember_height(w, h):
+    """(height, aux). Two-scale fracture like `_stone_height`'s, at a
+    frequency chosen for `ember`'s own tiny screen footprint rather than
+    inherited from `stone`'s boulder-scale one (see the family header just
+    above). `aux["crest"]`/`aux["crevice"]` keep the same meaning `stone`'s
+    do (RN-742): standing clear of the arris, and sitting in its low ground."""
+    facet, e1 = _stone_planes(w, h, EMBER_FACETS, 4211, 0.85, FACET_ARRIS)
+    chip, e2 = _stone_planes(w, h, EMBER_CHIPS, 4517, 1.70, CHIP_ARRIS)
+    out = [0.0] * (w * h)
+    for i in range(w * h):
+        out[i] = 0.65 * facet[i] + 0.35 * chip[i]
+    lo = min(out)
+    span = (max(out) - lo) or 1.0
+    crest = [0.0] * (w * h)
+    crev = [0.0] * (w * h)
+    for i in range(w * h):
+        hn = (out[i] - lo) / span
+        clear = (1.0 - e1[i]) * (1.0 - e2[i])
+        crest[i] = clear * _smoothstep(0.30, 0.80, hn)
+        e = e1[i] if e1[i] > e2[i] else e2[i]
+        crev[i] = e * (1.0 - _smoothstep(0.20, 0.70, hn))
+    return out, {"crest": crest, "crevice": crev}
+
 def _ember_emissive(w, h, height, aux):
-    """RN-1780. A believable falloff, not a flat rectangle: crests (fresh
-    coal facets, clear of the arris) glow hot, crevices (the arris low
-    ground, where ash and shadow collect) bank down toward a floor rather
-    than to black, and a slow patch field says not every facet is equally
-    hot at once. `MachineGlow` still owns colour, intensity and flicker; this
-    map owns ONLY the spatial term it multiplies against.
+    """RN-1780, REVISED. The first version banked a floor at 0.16 so the
+    surface could never read as damage, and that was the wrong lesson taken
+    from the wrong place: RN-1524's warning is about a MEAN that will not
+    move, and a floor that can never go dark makes the SAME mistake at the
+    other end of the range, because it puts every texel within a factor of
+    six of every other one. Measured on the shipped bytes, that version's
+    peep read p05 189.4, p95 192.0 (a plus-or-minus-7-count ripple around an
+    unchanged 190), which is a lit sticker with a fine crackle on it, not
+    coal at temperature: the client's tone mapper and bloom compress a
+    self-lit surface hard, so a source map has to put real black where black
+    belongs or none of it survives to the sensor.
 
-    FLOOR = 0.16, not 0. An ember bed that goes to zero between the coals
-    reads as damage (a hole punched in the glow) rather than as a cooler
-    coal, which is RN-1524's own warning about a flat rectangle read
-    backwards: the failure there was no motion in the MEAN, and a map that
-    can hit true black on a self-lit surface invites the same flat read at
-    the other end of the range.
+    THE FIX IS A THRESHOLD ON HEIGHT ITSELF, not a floor on the crest mask.
+    `aux["crest"]` already answers "is this texel clear of the arris", which
+    is a MAJORITY of the field (mean 0.32, but the smoothstep's own knees are
+    wide) -- fine for shading a rock, wrong for an ember bed, where the coals
+    are the MINORITY and the ash between them is what a photograph of a
+    firebox is mostly made of. `_smoothstep(0.55, 0.90, hn)` on the
+    NORMALISED height instead keeps only the top of the facet field lit at
+    all: measured off the shipped field, 67 per cent of texels land under
+    0.05 before the patch and crevice terms are even applied, against 0 per
+    cent for the crest-mask version. That is deliberately a LARGE dark
+    fraction, not a thin crack: the client's bloom kernel is wide relative to
+    an 83 x 65 px peep on screen, so a crevice-width dark line is exactly the
+    feature bloom erases, and the fix has to survive AT THE SCREEN, not only
+    in the source PNG.
 
-    THE CHANNELS ARE NOT EQUAL, on purpose. `MachineGlow` supplies one flat
-    RGB (fire orange or ember red) that this map only scales, so tinting the
-    map's own channels is what lets a HOT patch whiten (R, G and B closing
-    together) while a COOL patch stays saturated red (R alone). That is the
-    coal-bed cue a single-channel multiply cannot give at all."""
+    `crevice` still darkens further on top of the threshold (0.85, not the
+    first version's 0.55): the arris crack gets its own black line rather
+    than merely wherever the height threshold happens to fall, which is what
+    keeps the coals reading as fractured chunks and not as a painted blob.
+    `patch` still says not every crest is equally hot, now with a wider
+    0.35..1.20 range so a few crests can clip past full brightness while
+    others stay a dim red, which is `MachineGlow`'s own two-colour (FIRE vs
+    EMBER) argument reproduced spatially within one instance.
+
+    THE CHANNELS STILL DIVERGE BY POWER, not by an additive tint: R rises
+    fastest (heat**0.55, so even a dim coal reads red rather than black-red),
+    G next (heat**1.15), B slowest (heat**1.9, so only the genuinely hottest
+    texels close toward white). `MachineGlow` supplies the one flat colour
+    this whole map multiplies against; the map's job is only to say WHERE and
+    HOW MUCH, in both luma and in how close to white that texel gets to be."""
+    lo = min(height)
+    span = (max(height) - lo) or 1.0
     patch = _fbm(w, h, 3, 2, seed=27011)   # ~20 cm: which coals are hottest
-    crest = aux["crest"]
     crevice = aux["crevice"]
-    FLOOR = 0.16
     out = bytearray(3 * w * h)
     for i in range(w * h):
-        heat = FLOOR + (1.0 - FLOOR) * crest[i]
-        heat *= 0.55 + 0.55 * patch[i]
-        heat *= 1.0 - 0.55 * crevice[i]
+        hn = (height[i] - lo) / span
+        heat = _smoothstep(0.55, 0.90, hn)
+        heat *= 0.35 + 0.85 * patch[i]
+        heat *= 1.0 - 0.85 * crevice[i]
         heat = _clamp01(heat)
         o = 3 * i
-        out[o] = int(round(255.0 * _clamp01(heat * 1.05)))
-        out[o + 1] = int(round(255.0 * _clamp01(heat * (0.30 + 0.60 * heat))))
-        out[o + 2] = int(round(255.0 * _clamp01(heat * (0.05 + 0.35 * heat * heat))))
+        out[o] = int(round(255.0 * _clamp01(heat ** 0.55)))
+        out[o + 1] = int(round(255.0 * _clamp01(0.85 * heat ** 1.15)))
+        out[o + 2] = int(round(255.0 * _clamp01(0.65 * heat ** 1.9)))
     return bytes(out)
+
+
+def _ember_masks(w, h, height, aux):
+    """(roughness, metalness). Pinned rather than derived from the field,
+    which every other family's masks are not, and the difference is the
+    point: `_stone_masks`'s crest/crevice band (roughness 0.36 on a crest,
+    1.00 in a crevice) puts a GLOSSY, low-roughness patch exactly where the
+    emissive map also puts its hottest texel, and on a dielectric role under
+    a bright sky IBL that specular highlight is bright enough to compete with
+    the emissive term for which one the eye reads as "the hot spot" - a coal
+    should glow, not glint. Pinned flat (rough 0.95, metal identity so the
+    palette's own 0.00 stands) removes that confound entirely: whatever
+    contrast survives to the screen is then attributable to the emissive
+    term alone, which is what this family exists to test."""
+    n = w * h
+    return [0.95] * n, [1.0] * n
 
 
 # ---------------------------------------------------------------------------
@@ -3389,13 +3486,16 @@ FAMILIES = {
                   albedo=_stone_albedo,
                   normal_strength=10.0, ao_radius=9, ao_floor=0.44,
                   ao_gain=5.0),
-    # RN-1780. `masonry` is `stone`'s row COPIED, not re-derived: the same
-    # height, masks and albedo functions called with the same parameters
-    # produce byte-identical pixels (build_family takes no name-keyed seed),
-    # so this family is the deliberate claim that architecture-scale masonry
-    # and a boulder are the SAME substance and differ only in the world scale
-    # FAMILY_TILE_M applies them at. See the ROLE_FAMILY entry above for the
-    # three assets that wear it.
+    # RN-1780. `masonry` is `stone`'s row REUSED, not re-derived: the same
+    # height, masks and albedo functions, same parameters, so this family is
+    # still the deliberate claim that architecture-scale masonry and a
+    # boulder are the SAME substance and differ only in the world scale
+    # FAMILY_TILE_M applies them at. It is NOT byte-identical to `stone` any
+    # more (see FAMILY_SIZE's own note): `build_family` calls these functions
+    # at `masonry`'s OWN `size_px`, now 512 against `stone`'s 384, because
+    # 384 measured soft at the ruin's own approach distance. Same recipe,
+    # rendered at a resolution stone was never asked to answer for. See the
+    # ROLE_FAMILY entry above for the three assets that wear it.
     "masonry": dict(height=_stone_height, masks=_stone_masks,
                     albedo=_stone_albedo,
                     normal_strength=10.0, ao_radius=9, ao_floor=0.44,
@@ -3411,7 +3511,7 @@ FAMILIES = {
     # bed of it. ao_radius/ao_floor/ao_gain scale down from stone's with the
     # tile (9 texels at stone's 640 texels/m is 14 mm; at ember's 457
     # texels/m the same 14 mm is ~6 texels).
-    "ember": dict(height=_stone_height, masks=_stone_masks,
+    "ember": dict(height=_ember_height, masks=_ember_masks,
                   emissive=_ember_emissive,
                   normal_strength=5.0, ao_radius=5, ao_floor=0.50,
                   ao_gain=3.0),

@@ -96,6 +96,22 @@ if ( vRole > 2.5 ) {
   else if ( vFx.z > 1.5 ) c = vec3( 0.90, 0.18, 0.08 );
   else if ( vFx.z > 0.5 ) c = vec3( 0.18, 0.74, 1.00 );
   diffuseColor.rgb = c * 0.22;
-  totalEmissiveRadiance += c * ( 0.22 + 0.95 * vFx.w );
+  // RN-1780. This ADDS to totalEmissiveRadiance, so it never read a bound
+  // emissiveMap at all: material.emissive is the batch's own fresh
+  // MeshStandardMaterial default (never set from any glTF value on this
+  // path), the standard emissivemap_fragment chunk MULTIPLIES that zero and
+  // stays zero, and this line runs entirely on top of it. Measured, not
+  // assumed: ember's first authored map moved nothing (peep iqr 0.93 to
+  // about 4, entirely from the normal map's own specular response, confirmed
+  // by toggling normal/orm and emissive independently and finding the SAME
+  // number both times emissive was flipped). statusTex closes that gap for
+  // any status-role material that DOES carry one, and stays the identity
+  // (1,1,1) for the other status chips in the game that do not, so this
+  // is provably a no-op everywhere except the one family it exists for.
+  vec3 statusTex = vec3( 1.0 );
+  #ifdef USE_EMISSIVEMAP
+  statusTex = emissiveColor.rgb;
+  #endif
+  totalEmissiveRadiance += c * ( 0.22 + 0.95 * vFx.w ) * statusTex;
 }`);
 }

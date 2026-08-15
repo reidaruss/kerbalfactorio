@@ -78,18 +78,18 @@
     "ember": {
       "normal": {
         "file": "of_ember_n.png",
-        "bytes": 39175,
-        "sha256": "278a422d73af8e1daefa6fe6f7167c32b86fa6e5bab5bc67abb5e81a5f672dd6"
+        "bytes": 19737,
+        "sha256": "e12a1dac740f6d1e14e32e33e556253aa192752b59199ea2d56a6255439c43b4"
       },
       "orm": {
         "file": "of_ember_orm.png",
-        "bytes": 28755,
-        "sha256": "fce0c70e0555bc7c3db4aab6d58cc63745108cdc067ca899664fc4e273715a15"
+        "bytes": 12138,
+        "sha256": "e3c834174edbf376d036e6e5140227508801e0ec3810fca1675759604c9af03b"
       },
       "emissive": {
         "file": "of_ember_e.png",
-        "bytes": 33875,
-        "sha256": "7c51c8b930b63db7c69c636165d748969822a37b9c728913a82b7c90e166a789"
+        "bytes": 8226,
+        "sha256": "65b621cafd60810cf7b734d381df8075b83c0c113573c8aedcd1c5ab945be404"
       },
       "tile_m": 0.28,
       "size_px": 128,
@@ -119,22 +119,22 @@
     "masonry": {
       "normal": {
         "file": "of_masonry_n.png",
-        "bytes": 301888,
-        "sha256": "542a8521bd118754fa72dac7e453ff8c6b1d0f0539b3b425f7c033c15e0df6b6"
+        "bytes": 475321,
+        "sha256": "cee2bf6a2db2372e4a498f0fb0210913ef646def119b1a6c10e6f330ff2702d8"
       },
       "orm": {
         "file": "of_masonry_orm.png",
-        "bytes": 192127,
-        "sha256": "16e175bb34d14177699e38eb7f43078632d71c28c4975cbf1ee519ccc8c7ca97"
+        "bytes": 304316,
+        "sha256": "2a69b03925570a59267cdf8323f81365f46d69b46811253c5b6545f195bd155d"
       },
       "albedo": {
         "file": "of_masonry_a.png",
-        "bytes": 38666,
-        "sha256": "7929ea3c37429b81de5bb997d0c8389d5a123916208a0f2fbd9ffa31ecea33b3"
+        "bytes": 57898,
+        "sha256": "1b06115462fb16c0c8df2c98b56d4851e0c4ca07890d0e3eba131d421343647f"
       },
       "tile_m": 1.8,
-      "size_px": 384,
-      "texels_per_m": 213.33333333333331,
+      "size_px": 512,
+      "texels_per_m": 284.44444444444446,
       "albedo_mean_linear": 0.2124
     },
     "ore": {

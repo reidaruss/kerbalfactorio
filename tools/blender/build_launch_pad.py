@@ -1525,7 +1525,6 @@ def lod2_geometry(mb):
     what says 'launch site' from orbit-adjacent altitude, so it is the one
     thing LOD2 keeps at full height. The trench stays too, because a slot of
     shadow down the middle is the whole silhouette."""
-    mb = of.MeshBuilder()
     mb.box((2 * TR_HW, W, TR_FLOOR), (0.0, 0.0, TR_FLOOR * 0.5), "MasonryDark")
     for sx, y0, y1 in ((-1.0, -HALF, HALF), (1.0, -HALF, STAIR_S)):
         cy, dy = (y0 + y1) * 0.5, y1 - y0
