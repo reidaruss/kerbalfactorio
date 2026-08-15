@@ -25,20 +25,82 @@
   const len = (p) => Math.hypot(p[0], p[1], p[2]);
 
   await of.run(0.8, 60);
-  for (const k of ['weight', 'gravityScale', 'stationGravity', 'standAt', 'station']) {
+  for (const k of ['weight', 'gravityScale', 'stationGravity', 'standAt', 'station',
+    'standAboard', 'carrier', 'gravity', 'solidBuild']) {
     if (typeof of[k] !== 'function') return { fail: `no __of.${k}: rebuild` };
   }
   const home0 = of.world().player.feet.slice();
   const feet = () => of.world().player.feet.slice();
 
+  // =======================================================================
+  // CE-103. THE MEASUREMENT FRAME FOLLOWS THE RIDER, AND EVERYTHING FROM Z4
+  //         ON IS TAKEN ABOARD.
+  // =======================================================================
+  //
+  // Z0 TO Z3 ARE UNTOUCHED AND MUST STAY THAT WAY. They run on the ground and
+  // in free space with nothing boarded, `ridingNow()` is null throughout, and
+  // every number they report is the body-frame finite difference this file's
+  // header describes. `mpos()` returns the feet in that case, so the
+  // arithmetic below is the arithmetic that was already here.
+  //
+  // Z4 ONWARD IS THE STATION, AND ON THE STATION THE BODY FRAME IS THE WRONG
+  // RULER. Anchorage travels at 1879.2552 m/s, so a rider correctly standing
+  // still on its deck moves 31.32 m per tick in the body frame: measured in
+  // this run, 1.0 s of standing still is 0.000000 m of local drift against
+  // 1,879 m of body-frame drift. Reporting the second as a "speed" is what
+  // CE-54 refused to let `standAt` decide silently, and the answer it named is
+  // the one taken here: the probe SAYS which frame it is measuring in, and the
+  // station legs say the carrier's.
+  //
+  // `of.carrier('local')` is the rider's position in the carrier frame, which
+  // is a RIGID transform of the body frame, so a distance measured in it is a
+  // real physical distance and not a rescaled one. Its +Y is the radial
+  // (verified in this run: a 0.19375 m rise in local y arrived as a 0.193758 m
+  // rise in |feet|), which is why Z3's and Z6's radial columns survive the
+  // move unchanged.
+  const ridingNow = () => {
+    const m = of.carrier('mounts');
+    return m !== null && m.rider !== null && m.rider !== undefined
+      ? m.rider.carrier : null;
+  };
+  const localNow = () => {
+    const c = of.carrier('local');
+    return c !== null && Array.isArray(c.local) ? c.local.slice() : null;
+  };
+  /** The position this run's speeds are finite differences OF. */
+  const mpos = () => localNow() ?? feet();
+
+  /**
+   * CE-103. THE LIVE STATION, FETCHED AND SPENT WITH NO `await` IN BETWEEN.
+   *
+   * CE-46's rule, and this file used to break it in the worst possible place:
+   * `st` was read ONCE before Z4 and its `pos`/`axes`/`deckR` were then used to
+   * build Z5b's sample point, Z7's aim and Z8's two EVA sites, tens of seconds
+   * and hundreds of kilometres of orbit later. Every caller below refetches.
+   */
+  const stationNow = () => {
+    const s = of.station();
+    if (s === null) return null;
+    const P = s.pos; const dR = s.deckR;
+    return { s, P, dR, A: s.axes, el: s.el,
+      u: [P[0] / dR, P[1] / dR, P[2] / dR] };
+  };
+
   // Every leg restores the world it borrowed: gravity back to 1, the station's
   // generator back on, the player back on the ground. run.mjs settles on
   // terrain convergence and a walker parked 400 km up never lets it exit
   // (PH-89), and a probe that leaves gravity at zero poisons the next one.
+  //
+  // CE-103. AND IT LETS GO OF THE STATION FIRST. `standAt` does not release a
+  // rider (it is a position verb, not a frame one), so returning to the ground
+  // while still holding Anchorage's frame would run one more `CarrierRide.tick`
+  // with the walker 400 km off the frame origin, which transports it by the
+  // frame's full per-tick motion before the membership rule gets its say.
   const back = async () => {
     of.input.tape([{ hold: 60, keys: [] }]);
     of.gravityScale(1);
     of.stationGravity(true);
+    of.carrier('release');
     of.standAt(home0[0], home0[1], home0[2]);
     await of.run(0.5, 60);
     await yield0();
@@ -63,7 +125,7 @@
   };
 
   /**
-   * Drive `keys` for `secs`, sampling the FEET every `chunk` seconds.
+   * Drive `keys` for `secs`, sampling POSITION every `chunk` seconds.
    *
    * TWO INSTRUMENT RULES, BOTH LEARNED THE HARD WAY IN THIS FILE.
    *
@@ -78,30 +140,42 @@
    *     thrust as 1.402 and failed it. Every speed below is therefore a real
    *     physical speed with none of the harness's accounting left in it, which
    *     is what lets the assertions be exact instead of tolerant.
+   *
+   * (3) CE-103. AND IT IS A DIFFERENCE OF `mpos()`, NOT OF `feet()`. Off a
+   *     carrier those are the same array and nothing changes. Aboard one they
+   *     differ by the carrier's whole orbital speed, and the body-frame
+   *     reading is not a speed the player has: it is Anchorage's.
    */
   const sample = async (secs, keys, chunk = 0.25) => {
     const out = [];
     const n = Math.max(1, Math.round(secs / chunk));
     of.input.tape([{ hold: Math.ceil(secs * 60) + 180, keys }]);
-    let prev = feet();
+    let prev = mpos();
+    let prevBody = feet();
     let prevTick = of.world().tick;
     let ticks = 0;
     for (let i = 0; i < n; ++i) {
       await of.run(chunk, 60);
       await yield0();
       const f = feet();
+      const m = mpos();
       const w = of.weight();
       const tk = of.world().tick;
       const dTicks = tk - prevTick;
       ticks += dTicks;
       out.push({
         t: r6((i + 1) * chunk), ticks: dTicks, secs: r6(dTicks / 60),
-        speed: dTicks === 0 ? 0 : dist(f, prev) / (dTicks / 60),
-        r: len(f), feet: f,
+        speed: dTicks === 0 ? 0 : dist(m, prev) / (dTicks / 60),
+        // The body-frame reading is kept BESIDE the frame-relative one rather
+        // than dropped, because their ratio is the evidence that the frame
+        // term is doing something: 0 against 1,879 m/s is a carried rider and
+        // 1,879 against 1,879 is a probe measuring the orbit.
+        bodySpeed: dTicks === 0 ? 0 : dist(f, prevBody) / (dTicks / 60),
+        r: len(f), feet: f, local: localNow(),
         floating: w.floating, grounded: w.grounded, onDeck: w.onDeck,
         apparentG: w.apparentG,
       });
-      prev = f; prevTick = tk;
+      prev = m; prevBody = f; prevTick = tk;
     }
     out.ticks = ticks;
     out.secs = ticks / 60;
@@ -382,77 +456,150 @@
   //     exactly 0.0, so this is an `===` and it would catch anyone giving the
   //     generator a magnitude of its own.
   // =====================================================================
+  //
+  // CE-100. HOW THIS LEG GETS ONTO THE DECK, AND WHY IT USED TO GET NOWHERE.
+  //
+  // It used to say `of.standAt(hub, { frame: 'body' })`, and it was HONESTLY
+  // RED for a year of lane-days because of it (GP-805 measured the mechanism:
+  // `of.carrier('mounts').boarding` read `tested: 137, boarded: 0`, the walker
+  // sat at a fixed absolute point, and over this leg's own 2.5 s settle
+  // Anchorage took the deck and both gravity volumes 4,698 m away, leaving
+  // `grounded: false, onDeck: false, inVolumes: []`).
+  //
+  // THE CONTRACT, DECIDED HERE AND WRITTEN UP IN core-engine.md 5m:
+  //
+  //   `standAt` NAMES A POINT IN THE BODY FRAME AND NEVER BOARDS, in either
+  //   frame. Its argument is an absolute coordinate, which on a carrier is
+  //   stale the instant it is computed; boarding is a velocity match against a
+  //   LIVE pose, and this verb has no live pose. `{ frame: 'body' }` therefore
+  //   keeps meaning exactly what its name says and is NOT extended into a
+  //   second door onto the deck: it is the one honest way to ask for the
+  //   defect, which is what a negative control is, and Z4neg below is that
+  //   control.
+  //
+  //   `standAboard(lx, ly, lz)` IS THE WAY ABOARD, and it takes the STATION'S
+  //   OWN AUTHORED LOCAL FRAME so the point cannot go stale. With no arguments
+  //   it drives the shipped arrival (`seatOnStationDeck`, the same function the
+  //   `visit:station` row presses, scanning the asset's `socket_hall` for
+  //   clearance), which is what this leg now uses: the deck a player actually
+  //   arrives on rather than a second spelling of it.
+  //
+  // AND `at(0.5)` WAS THE WRONG POINT EVEN WITH THE RIGHT VERB. GP-400
+  // measured it: station-local (0, 0.5, 0) is INSIDE `col_HallCore`, a solid
+  // column x and z in [-1.548, 1.548] and 5.4 m tall, and `resolveStep` lets a
+  // body already inside a solid move freely, so Z6's push-off ran with no
+  // collision at all. `socket_hall` is (0, 0, 4) in the same frame, clear of
+  // the column by 2.45 m, and it is the asset's own answer to the question
+  // rather than this probe's.
   of.gravityScale(1);
   of.stationGravity(true);
-  const st = of.station();
-  if (st === null) return fail('Z4: no station record (run without --station=0)');
-  const P = st.pos, dR = st.deckR;
-  const u = [P[0] / dR, P[1] / dR, P[2] / dR];
-  const at = (h) => [u[0] * (dR + h), u[1] * (dR + h), u[2] * (dR + h)];
-  const hub = at(0.5);
-  // CE-54. `frame: 'body'` IS REQUIRED HERE AND IT IS NOT A FORMALITY.
-  // `standAt` refuses inside a carrier's bound now, because on a station
-  // travelling at 1879.2552 m/s it seats a walker the deck leaves behind
-  // (RN-1412). THIS PROBE WANTS EXACTLY THAT, because every speed it reports is
-  // a FINITE DIFFERENCE OF BODY-FRAME POSITION (see the header): a rider
-  // boarded onto the frame would read 1879 m/s standing still and Z1 to Z8
-  // would all be measuring the station's orbit. So the body frame is asked for
-  // by name, and the behaviour below is byte for byte what it always was.
+  const st0 = stationNow();
+  if (st0 === null) return fail('Z4: no station record (run without --station=0)');
+
+  // ---------------------------------------------------------------------
+  // Z4neg. THE NEGATIVE CONTROL, AND IT IS THE DEFECT ITSELF, ON PURPOSE.
   //
-  // WHAT THAT COSTS IS WRITTEN DOWN RATHER THAN HIDDEN: the station is leaving
-  // at 31.32 m per tick while these legs run, so Z4's gravity is sampled at a
-  // point the station is receding from and `restoredExactly` may be true
-  // because the volume has GONE rather than because it cancelled.
+  // GP-142's rule cuts both ways in this file: Z4's green must be unreachable
+  // by accident, and the cheapest proof of that is to run the SAME leg the
+  // wrong way first and watch it fail. `{ frame: 'body' }` is asked for by
+  // name, at the same 0.5 m above the station's own centre this leg used to
+  // aim at, and the reading it produces is the one CE-54 was written about.
   //
-  // GP-805 FINDING, MEASURED RATHER THAN SPECULATED: THE VOLUME IS GONE, AND
-  // Z4 IS HONESTLY RED ON MAIN FOR THAT REASON, BEFORE THIS PASS'S OWN FIX
-  // EVEN RUNS. `standAt(..., { frame: 'body' })` resolves the given point to
-  // an ABSOLUTE body-frame position ONCE and does not board the walker onto
-  // the mount at all -- a diagnostic run off `of.carrier('mounts')` read
-  // `boarding: { tested: 137, boarded: 0, released: 0 }` across the whole
-  // leg. The walker therefore sits at a FIXED point while the station (and
-  // the gravity volumes `installStationGravity` re-poses every tick to the
-  // station's LIVE position) travels on at 1879.2552 m/s: over this leg's own
-  // 2.5 s settle that is 4,698 m of separation, dwarfing both the freefall
-  // volume's 207.85 m bound and the generator volume's 28.52 m one. Measured
-  // end state: `grounded: false, onDeck: false, inVolumes: []`, the walker
-  // radially 11.11 m LOWER than where it was seated (ordinary gravity acting
-  // on a body no volume reaches and no deck holds), reproduced identically on
-  // an unmodified checkout of this file -- so it is inherited, not introduced
-  // by the carrierG check below. `!Z4.grounded` (pre-existing) is what turns
-  // this red rather than a silent pass, which is correct behaviour and is
-  // left standing: the fix owed here is `restoredExactly`'s OWN vacuous-pass
-  // risk (below), not a redesign of how this probe rides a station moving
-  // this fast, which is `CE-54`'s own open question and belongs to Admin/
-  // physics, not to a rewrite smuggled into an unrelated fix.
-  //
-  // GP-805. CLOSED, NOT JUST FLAGGED. `restoredExactly` is `apparentG === trueG`,
-  // and `apparentAt` (GravityVolumes.ts) returns exactly that whenever delta
-  // sums to zero -- which is true both when the generator genuinely cancels
-  // trueG AND when `carrierG` is silently zero (or installed from a stale
-  // radius) and nothing is happening at all. `inVolumes.length !== 2` below
-  // catches the volumes being ABSENT, but a `carrierG` of 0.0 installed into
-  // two present, correctly-shaped volumes sails through every check that used
-  // to live here: two volumes present, apparentG === trueG exactly, grounded
-  // and onDeck both true. That is the CE-54 litFrac lesson landing on this
-  // file's own ground: the assertion was a proxy that stays green (a boolean
-  // equality) rather than the discriminating quantity (a real, nonzero,
-  // physically-derived magnitude actually doing the cancelling). Closed below
-  // by comparing the INSTALLED `carrierG` against an independently fetched
-  // `of.gravity(deckR)` -- the same pure function, `PlanetBody.gravityAccel`,
-  // that `StationMount.ts` feeds `installStationGravity` from -- read fresh
-  // rather than trusted, so a broken wiring moves THIS assertion and nothing
-  // upstream of it.
-  of.standAt(hub[0], hub[1], hub[2], { frame: 'body' });
+  // CE-101 is what makes it assertable rather than merely observable: the body
+  // frame path now reports the carrier it landed inside and its depth, and
+  // `boarded: false` says out loud that no `standAt` ever boards. Before that
+  // this control could only have been a comment.
+  const hubNeg = [st0.u[0] * (st0.dR + 0.5), st0.u[1] * (st0.dR + 0.5),
+    st0.u[2] * (st0.dR + 0.5)];
+  const negSeat = of.standAt(hubNeg[0], hubNeg[1], hubNeg[2], { frame: 'body' });
+  const negTick0 = of.world().tick;
+  await settle(2.5);
+  const negTick1 = of.world().tick;
+  const wNeg = of.weight();
+  const stNeg = stationNow();
+  const negFeet = feet();
+  // PREDICTED, NOT TOLERATED. The station's own `speedMps` over the measured
+  // tick count is an ARC; what `dist` measures is the CHORD it subtends about
+  // the planet's centre, and at 4.7 km over a 1,000 km radius the two differ
+  // by 4.3 mm, which is larger than the assertion would otherwise care about.
+  // The walker also falls radially while it is left behind (ordinary gravity
+  // on a body no volume reaches), so the two legs are combined as the right
+  // triangle they are.
+  const negArcM = stNeg.s.speedMps * ((negTick1 - negTick0) / 60);
+  const negChordM = 2 * stNeg.dR * Math.sin(negArcM / (2 * stNeg.dR));
+  const negFellM = (st0.dR + 0.5) - len(negFeet);
+  const Z4neg = {
+    askedFrame: 'body',
+    carrier: negSeat.carrier,
+    depthM: r6(negSeat.depthM),
+    boarded: negSeat.boarded,
+    riding: ridingNow(),
+    grounded: wNeg.grounded, onDeck: wNeg.onDeck,
+    inVolumes: wNeg.inVolumes.map((v) => v.mode),
+    ticks: negTick1 - negTick0,
+    leftBehindM: r6(dist(negFeet, stNeg.P)),
+    predictedLeftBehindM: r6(Math.hypot(negChordM, negFellM)),
+    fellM: r6(negFellM),
+    boundM: r6(-negSeat.depthM),
+  };
+  Z4neg.leftBehindErrM = r6(Z4neg.leftBehindM - Z4neg.predictedLeftBehindM);
+  log.push({ Z4neg });
+  if (Z4neg.carrier === null || Z4neg.boarded !== false) {
+    return fail('Z4neg: standAt did not report the carrier it seated inside, so '
+      + 'the body-frame path is silent again and this control cannot be read '
+      + '(CE-101)', Z4neg);
+  }
+  if (Z4neg.riding !== null) {
+    return fail('Z4neg: standAt boarded the walker. It must never board in '
+      + 'either frame; that is standAboard\'s job and the whole CE-100 '
+      + 'contract', Z4neg);
+  }
+  if (Z4neg.onDeck || Z4neg.inVolumes.length !== 0) {
+    return fail('Z4neg: the un-boarded control was still on the deck after the '
+      + 'settle, so the station is not moving and every number below is being '
+      + 'taken on a frozen fixture (GP-142)', Z4neg);
+  }
+  if (Math.abs(Z4neg.leftBehindErrM) > 1.0) {
+    return fail('Z4neg: the distance the deck left the control behind is not '
+      + 'the station\'s own speed times the elapsed ticks, so something other '
+      + 'than the orbit moved one of them', Z4neg);
+  }
+
+  // ---------------------------------------------------------------------
+  // Z4. AND NOW THE SAME LEG, ABOARD.
+  const seat = of.standAboard();
+  if (seat === null || seat.error !== undefined) {
+    return fail('Z4: standAboard could not seat the walker', { seat });
+  }
   await settle(2.5);
   const w4 = of.weight();
-  // Fetched AFTER the settle, not reused from `st` above: `deckR` is a live
+  // Fetched AFTER the settle, not reused from `st0` above: `deckR` is a live
   // Kepler solve and the point is to catch `installStationGravity` aiming at a
   // radius that has drifted from the one this tick's field was built with, not
   // to compare against a snapshot that is itself now stale.
-  const stAtSample = of.station();
-  const predictedCarrierG = stAtSample === null ? NaN : of.gravity(stAtSample.deckR);
+  const stAtSample = stationNow();
+  const predictedCarrierG = stAtSample === null ? NaN : of.gravity(stAtSample.dR);
+  // ---------------------------------------------------------------------
+  // CARRIED, MEASURED IN BOTH FRAMES OVER THE SAME SECOND.
+  //
+  // This is the assertion that says the rider is GENUINELY aboard rather than
+  // merely standing somewhere that happens to read green this instant, and it
+  // is a ratio so that neither half can be the identity element: local drift
+  // must be ~0 AND body drift must be the station's whole orbital travel. A
+  // frozen station would pass the first and fail the second; an un-boarded
+  // walker fails the first.
+  const carr0 = localNow();
+  const body0 = feet();
+  const cTick0 = of.world().tick;
+  await settle(1.0);
+  const carr1 = localNow();
+  const body1 = feet();
+  const cTick1 = of.world().tick;
+  const cArcM = stAtSample.s.speedMps * ((cTick1 - cTick0) / 60);
   const Z4 = {
+    seatScannedM: seat.scannedM, seatClear: seat.clear,
+    seatDeckDepthM: r6(seat.deckDepthM),
+    carrier: seat.carrier, riding: ridingNow(),
     carrierG: r6(w4.station?.carrierG ?? NaN),
     predictedCarrierG: r6(predictedCarrierG),
     trueG: w4.trueG, apparentG: w4.apparentG,
@@ -460,8 +607,29 @@
     floating: w4.floating, grounded: w4.grounded, onDeck: w4.onDeck,
     volumes: w4.volumes, inVolumes: w4.inVolumes.map((v) => v.mode + (v.powered ? '' : ':off')),
     freefallHalfM: w4.station?.freefallHalfM ?? null,
+    carriedTicks: cTick1 - cTick0,
+    localDriftM: carr0 === null || carr1 === null ? null : dist(carr0, carr1),
+    bodyDriftM: r6(dist(body0, body1)),
+    predictedBodyDriftM: r6(2 * stAtSample.dR * Math.sin(cArcM / (2 * stAtSample.dR))),
+    // CE-102. THE RULE'S COUNTERS, REPORTED AND DELIBERATELY NOT ASSERTED ON.
+    // `boarded` stays 0 through a perfectly boarded run, because `standAboard`
+    // seats through `CarrierRide.board` and the per-tick rule then finds a
+    // rider that already holds a frame. `rider` is the number that answers
+    // "is anyone aboard"; this pair is here so the next reader of GP-805's
+    // `tested: 137, boarded: 0` sees the same shape in a HEALTHY world.
+    ruleBoarding: of.carrier('mounts').mounts.boarding,
+    rideReport: of.carrier('mounts').rider,
   };
+  Z4.bodyDriftErrM = r6(Z4.bodyDriftM - Z4.predictedBodyDriftM);
   log.push({ Z4 });
+  if (Z4.riding !== 'station:anchorage') {
+    return fail('Z4: standAboard did not leave the walker riding the station\'s '
+      + 'frame', Z4);
+  }
+  if (Z4.seatClear !== true) {
+    return fail('Z4: the arrival socket is not clear of the station\'s own '
+      + 'colliders, so this leg is measuring a walker inside a wall (CE-49)', Z4);
+  }
   if (!Z4.restoredExactly || Z4.apparentG !== Z4.trueG) {
     return fail('Z4: a powered generator did not restore gravity bit-exactly', Z4);
   }
@@ -469,6 +637,24 @@
     return fail('Z4: the player is not standing on the powered deck', Z4);
   }
   if (Z4.inVolumes.length !== 2) return fail('Z4: expected both volumes at the hub', Z4);
+  // THE RIDE ITSELF. A rider at rest in the carrier's frame stays at rest in
+  // it, in f64, at a radius of 1e6 m: `CarrierRide`'s own invariant, measured
+  // at 1.6e-9 m over 600 ticks by `probes/stationride.js`. 1e-6 m over 60
+  // ticks is that bound with three orders of headroom, and it is a derived
+  // number rather than a tuned one: the transport is one quaternion round trip
+  // per tick at 1e6 m, i.e. ~1e-9 m of representable resolution per tick.
+  if (!(Z4.localDriftM < 1e-6)) {
+    return fail('Z4: the rider drifted in the carrier\'s own frame while '
+      + 'standing still, so it is not really being carried', Z4);
+  }
+  // ...AND THE FRAME IS REALLY MOVING WHILE IT DOES. Without this the line
+  // above is satisfied by a frozen station, which is exactly the fixture every
+  // one of these numbers was originally taken on (CE-45).
+  if (!(Z4.bodyDriftM > 1000) || Math.abs(Z4.bodyDriftErrM) > 1.0) {
+    return fail('Z4: standing still on the deck did not move the walker through '
+      + 'the body frame by the station\'s own orbital travel, so the carrier '
+      + 'is frozen and the local-drift assertion above is vacuous', Z4);
+  }
   // THE DISCRIMINATING QUANTITY (GP-805). `restoredExactly` alone cannot tell
   // "the generator cancelled trueG" from "carrierG is 0 and neither term did
   // anything", because both leave delta at exactly 0.0. `carrierG` itself is
@@ -480,32 +666,71 @@
       + 'is true because nothing is being cancelled rather than because it '
       + 'cancelled', Z4);
   }
-  if (w4.station.carrierG !== predictedCarrierG) {
-    return fail('Z4: carrierG does not match of.gravity(deckR), so the '
-      + 'generator is not cancelling the station\'s own freefall '
-      + 'acceleration', Z4);
+  // CE-104. AND THE COMPARISON IS A BAND THE ORBIT DERIVES, NOT AN `===`.
+  //
+  // GP-805 wrote this as `carrierG !== predictedCarrierG` and it was never
+  // reached, because Z4 died four lines above it. Reached, it fails: measured
+  // 3.5315999999999974 installed against 3.5315999999999983 fetched, 9e-16
+  // apart. That is not a wiring defect, it is the design saying something:
+  // `installAndMountStation` calls `installStationGravity(volumes, st.pos,
+  // gravityAccel(st.deckR))` ONCE, so the generator's MAGNITUDE is frozen at
+  // the install tick and only its POSE follows the frame. The live `deckR` a
+  // probe fetches later is a different point on the conic.
+  //
+  // So the honest bound is the conic's own radius band times the field's own
+  // gradient. Anchorage is authored circular and `e` is 5.27e-16, i.e. a band
+  // `a*e` wide either side of `a`; `dg/dr` is `-2g/r`. Plus a few ulps of g
+  // for the two `hypot`-and-divide round trips that produce each radius. The
+  // check still catches everything GP-805 aimed it at -- a zero, a stale
+  // kilometre, a hand-tuned magnitude -- by eleven orders of magnitude.
+  const el4 = stAtSample.el;
+  const bandM = el4 === null ? 0 : Math.abs(el4.a * el4.e);
+  const carrierGBand = (2 * predictedCarrierG / stAtSample.dR) * bandM
+    + 8 * Number.EPSILON * predictedCarrierG;
+  Z4.carrierGErr = w4.station.carrierG - predictedCarrierG;
+  Z4.carrierGBand = carrierGBand;
+  Z4.orbitRadiusBandM = bandM;
+  if (!(Math.abs(Z4.carrierGErr) <= carrierGBand)) {
+    return fail('Z4: carrierG is further from of.gravity(deckR) than the '
+      + 'conic\'s own radius band allows, so the generator is not cancelling '
+      + 'the station\'s own freefall acceleration', Z4);
   }
 
   // =====================================================================
   // Z5. THE STATION, UNPOWERED: weightless, and the RESIDUAL IS THE TIDAL
-  //     DIFFERENCE, predicted rather than tolerated. The feet stand 0.5 m
-  //     above the station centre, so what is left after the cancellation is
-  //     g(r_feet) - g(r_station), and asserting a bare epsilon here would
-  //     call correct physics a defect -- which is exactly what `stationwalk`
-  //     P4 learned about d^2/2R, three times now in two days.
+  //     DIFFERENCE, predicted rather than tolerated. The feet stand a little
+  //     off the station's own centre radius, so what is left after the
+  //     cancellation is g(r_feet) - carrierG, and asserting a bare epsilon
+  //     here would call correct physics a defect -- which is exactly what
+  //     `stationwalk` P4 learned about d^2/2R, three times now in two days.
   // =====================================================================
+  //
+  // CE-104. PREDICTED FROM THE INSTALLED `carrierG`, NOT FROM `of.gravity
+  // (deckR)`. The two differ by the band Z4 just measured, and this assertion
+  // is an `===`: predicting from the fetched radius reads an error of
+  // -1.8e-15, which belongs entirely to the instrument asking a different
+  // question from the one the field answered. The field subtracted the number
+  // it was installed with, so that is the number the prediction uses, and what
+  // is left being tested -- the whole content of this row -- is that the
+  // field's own true term is `PlanetBody.gravityAccel` at the radius it
+  // reports. Z4 above is what pins `carrierG` itself to an outside authority,
+  // so the pair together is strictly stronger than the single loose `===` was.
   of.stationGravity(false);
   await settle(1.5);
   const w5 = of.weight();
   const rFeet = w5.r;
-  const predicted = of.gravity(rFeet) - of.gravity(dR);
+  const carrierG5 = w5.station?.carrierG ?? NaN;
+  const predicted = of.gravity(rFeet) - carrierG5;
+  const st5 = stationNow();
   const Z5 = {
     apparentG: w5.apparentG, trueG: w5.trueG,
+    carrierG: carrierG5,
     predictedTidalG: predicted,
     tidalErr: r6(w5.apparentG - predicted),
-    feetAboveCentreM: r6(rFeet - dR),
+    feetAboveCentreM: r6(rFeet - st5.dR),
     floating: w5.floating, grounded: w5.grounded, onDeck: w5.onDeck,
     floatG: w5.floatG,
+    riding: ridingNow(),
     inVolumes: w5.inVolumes.map((v) => v.mode + (v.powered ? '' : ':off')),
   };
   log.push({ Z5 });
@@ -519,26 +744,39 @@
   }
   if (Z5.grounded) return fail('Z5: a weightless player reported grounded', Z5);
   if (!Z5.onDeck) return fail('Z5: the deck stopped being reported under the feet', Z5);
+  if (Z5.riding !== 'station:anchorage') {
+    return fail('Z5: cutting the generator threw the rider off the frame', Z5);
+  }
 
-  //     THE TIDAL TERM, SOMEWHERE IT IS NOT ZERO. On the deck the feet sit at
-  //     exactly `deckR` (the station's local y = 0 IS its own centre radius),
-  //     so `g(feet) - g(centre)` is identically 0 and the assertion above,
-  //     while exact, exercises nothing. 100 m radially out -- still inside the
-  //     freefall box -- it is a real number, and its SIGN is the interesting
-  //     part: above the centre of a freefalling frame the residual points
-  //     OUTWARD, which is why a loose object drifts away from a station rather
-  //     than settling onto it. This is microgravity being modelled rather than
+  //     THE TIDAL TERM, SOMEWHERE IT IS NOT ZERO. On the deck the feet sit
+  //     within 8e-06 m of `deckR` (the station's local y = 0 IS its own centre
+  //     radius, and `socket_hall` is 4 m along the deck from the centre, which
+  //     the sphere lifts by d^2/2R), so `g(feet) - carrierG` is 5.7e-11 and
+  //     the assertion above, while exact, exercises almost nothing. 100 m
+  //     radially out -- still inside the freefall box, whose half-height is
+  //     120 m -- it is a real number, and its SIGN is the interesting part:
+  //     above the centre of a freefalling frame the residual points OUTWARD,
+  //     which is why a loose object drifts away from a station rather than
+  //     settling onto it. This is microgravity being modelled rather than
   //     rounded to zero.
-  const hi = [u[0] * (dR + 100), u[1] * (dR + 100), u[2] * (dR + 100)];
+  //
+  //     CE-103. AND THE POINT IS BUILT OFF THE WALKER'S OWN LIVE FEET. It used
+  //     to be built off `u` and `dR`, both captured before Z4 ran; by the time
+  //     this line was reached the station had travelled tens of kilometres and
+  //     the sample point was in empty space, `inVolumes: []`, so this row
+  //     would have gone red for a reason that had nothing to do with tides.
+  const f5 = feet();
+  const r5 = len(f5);
+  const hi = [f5[0] / r5 * (r5 + 100), f5[1] / r5 * (r5 + 100), f5[2] / r5 * (r5 + 100)];
   const wHi = of.weight(hi[0], hi[1], hi[2]);
   // PREDICTED AT THE RADIUS THE FIELD ACTUALLY SAW, `wHi.r`, and NOT at the
-  // `dR + 100` this probe asked for. They differ in the last bit, because the
-  // point was built by normalising `pos` and scaling back up, and `hypot` of
+  // `r5 + 100` this probe asked for. They differ in the last bit, because the
+  // point was built by normalising `feet` and scaling back up, and `hypot` of
   // that round trip is not bit-identical to the number that went in. Predicting
-  // from `dR + 100` reads an error of 8.88e-16 which belongs entirely to the
+  // from `r5 + 100` reads an error of 8.88e-16 which belongs entirely to the
   // instrument re-deriving its own input. The rule generalises: ask the system
   // where it thinks it is before predicting what it should feel there.
-  const tidalPredicted = of.gravity(wHi.r) - of.gravity(dR);
+  const tidalPredicted = of.gravity(wHi.r) - (wHi.station?.carrierG ?? NaN);
   const Z5b = {
     atM: 100,
     apparentG: wHi.apparentG,
@@ -563,21 +801,36 @@
   //     have pinned them there for ever; this is the negative control for
   //     that, and it was found by reading rather than by playing.
   // =====================================================================
+  //
+  // CE-103. THE RISE IS THE CARRIER FRAME'S OWN RADIAL COLUMN NOW, `local[1]`,
+  // which is the same quantity `|feet|` used to carry and is immune to the
+  // 1,879 m/s of tangential travel that would otherwise be in every difference
+  // this leg takes. Both are reported; they agree to 6e-06 m.
+  //
+  // AND IT RUNS FOR 4 s AND NOT 2 s. At `socket_hall` there is real headroom
+  // (measured: the rise stops at 2.65 m and holds there, bit-stably, for five
+  // further seconds), where the OLD site inside `col_HallCore` had none and
+  // the leg was reading a body moving freely through a solid. 2 s of a
+  // governed 4.0 m/s thrust does not reach the ceiling, so the plateau this
+  // row exists to detect would not have happened yet.
+  const restLocal = localNow();
   const rRest = len(feet());
-  const off = await sample(2.0, ['Space'], 0.5);
-  const offS = off.map((q) => r6(q.r - rRest));
+  const off = await sample(4.0, ['Space'], 0.5);
+  const offS = off.map((q) => r6(q.local[1] - restLocal[1]));
   const Z6 = {
-    restR: r6(rRest), leftM: r6(len(feet()) - rRest),
+    restR: r6(rRest), restLocalY: r6(restLocal[1]),
+    leftM: r6(localNow()[1] - restLocal[1]),
+    leftRadialM: r6(len(feet()) - rRest),
     samples: offS,
     plateauM: r6(offS[offS.length - 1] - offS[offS.length - 2]),
     onDeckAtEnd: of.weight().onDeck,
-    // 0.85 m is not a coincidence and it is not this probe's number: it is the
-    // 2.5 m authored headroom less the capsule's 1.65 m top sample, which
-    // SpaceStation.ts writes down in advance ("contact at feet 0.85 m, which is
-    // 2.5 minus the 1.65 m top sample"). Reported rather than asserted, because
-    // the Blender lane is changing that headroom to ~4.0 m and this figure must
-    // be free to follow the asset. What IS asserted is asset-independent.
-    authoredCeilingPredictionM: 0.85,
+    riding: ridingNow(),
+    // 2.65 m is not this probe's number and it is not asserted: it is whatever
+    // the shipped asset puts over `socket_hall`, and the Blender lane is free
+    // to move it. The previous figure here was 0.85 m, which was the authored
+    // headroom over a point INSIDE `col_HallCore` and was never a place a
+    // player could stand (GP-400). What IS asserted is asset-independent.
+    measuredCeilingM: r6(offS[offS.length - 1]),
   };
   log.push({ Z6 });
   if (!(Z6.leftM > 0.5)) {
@@ -592,40 +845,125 @@
     return fail('Z6: the rise never stopped, so nothing overhead held the '
       + 'player and the ceiling leaked (R48)', Z6);
   }
+  // AND THE RADIAL COLUMNS AGREE. The carrier frame's local +Y and the body
+  // frame's radius are two independent derivations of "how far up"; they must
+  // move together, or the frame's basis is not what this leg believes.
+  if (Math.abs(Z6.leftM - Z6.leftRadialM) > 1e-3) {
+    return fail('Z6: the carrier frame\'s local up and the body frame\'s radius '
+      + 'disagree about how far the player rose, so the frame basis is not '
+      + 'radial and every local reading in this file is mis-aimed', Z6);
+  }
 
   // =====================================================================
   // Z7. CONTACT IS INELASTIC, WHICH IS THE WHOLE OF "HOW DO YOU STOP".
   //     Drift into the hub wall and require the speed to be taken, radial
   //     included. No grab key, no authored handrail.
   // =====================================================================
-  // CE-54. The body frame by name again; the argument is at Z4's own call.
-  of.standAt(hub[0], hub[1], hub[2], { frame: 'body' });
+  // CE-100. Aboard, by the same verb as Z4, and the axes are refetched LIVE
+  // for the aim: `st0.axes` is minutes old by now and the station's LVLH basis
+  // has rotated with it.
+  of.standAboard();
   await settle(1.0);
-  const A = st.axes;
+  const st7 = stationNow();
+  const u7 = st7.u;
+  const A = st7.A;
   const dotv = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const east = (() => {
-    const e = [u[2], 0, -u[0]]; const l = len(e);
+    const e = [u7[2], 0, -u7[0]]; const l = len(e);
     return l < 1e-9 ? [1, 0, 0] : [e[0] / l, e[1] / l, e[2] / l];
   })();
-  const north = [u[1] * east[2] - u[2] * east[1], u[2] * east[0] - u[0] * east[2],
-    u[0] * east[1] - u[1] * east[0]];
-  // Aim at the SOLID -Z hub wall, which is the one with no doorway in it.
+  const north = [u7[1] * east[2] - u7[2] * east[1], u7[2] * east[0] - u7[0] * east[2],
+    u7[0] * east[1] - u7[1] * east[0]];
+  // Aim AFT along the spine, away from the dock end: the walk starts at
+  // `socket_hall` and runs into the hall's own aft wall.
   const backAxis = [-A.along[0], -A.along[1], -A.along[2]];
   of.look(Math.atan2(dotv(backAxis, east), dotv(backAxis, north)) * 180 / Math.PI, 0);
+  const from7 = localNow();
   const into = await sample(6.0, ['KeyW'], 0.5);
+  const to7 = localNow();
+  // CE-103. EVERYTHING GEOMETRIC ABOUT THE STOP IS TAKEN NOW, LIVE, WITH NO
+  // `await` between the fetch and the last use of it.
+  const st7b = stationNow();
+  const fEnd = feet();
+  const uEnd = [fEnd[0] / len(fEnd), fEnd[1] / len(fEnd), fEnd[2] / len(fEnd)];
+  const aftEnd = [-st7b.A.along[0], -st7b.A.along[1], -st7b.A.along[2]];
+  // WHAT STOPPED THE PLAYER, ASKED OF THE WALKER'S OWN PREDICATE.
+  //
+  // This row used to assert `acrossM >= -(6 + 0.31)`, a metre count calibrated
+  // against a start point at the hub centre that GP-400 showed was inside a
+  // pillar. Re-seated at `socket_hall` the same walk legitimately ends at
+  // -6.6 to -6.9 m and the old constant fires on correct behaviour. So the
+  // claim is made directly instead: there is a SOLID a short way ahead of
+  // where the player stopped, and open space the same distance behind, both
+  // read from `of.solidBuild`, which is the walker's own collision predicate
+  // rather than a parallel test written in this probe. A player who left
+  // through the wall has vacuum on both sides and fails the first half; a
+  // player who never moved has the wall behind them too and fails the second.
+  //
+  // IT IS A SCAN AND NOT A SINGLE SAMPLE, AND THE FIRST DRAFT'S FAILURE IS THE
+  // REASON. One probe at 0.6 m read FALSE against a wall that is really there:
+  // `col_JambMouthAftR` is 0.30 m thick (x in [-7.3148, -7.0148]) and 0.6 m
+  // ahead of the feet is already THROUGH it and out the other side. A
+  // fixed-offset sample of a thin wall measures whether the offset happens to
+  // land in it, which is not the question. The scan reports the distance at
+  // which it first hits, so the number is measured rather than assumed.
+  const at7 = (fwd, up) => [
+    fEnd[0] + aftEnd[0] * fwd + uEnd[0] * up,
+    fEnd[1] + aftEnd[1] * fwd + uEnd[1] * up,
+    fEnd[2] + aftEnd[2] * fwd + uEnd[2] * up];
+  const firstSolidM = (sign) => {
+    for (let d = 0.05; d <= 1.2001; d += 0.05) {
+      if (of.solidBuild(...at7(sign * d, 1.0))) return r6(d);
+    }
+    return null;
+  };
+  const wallAheadM = firstSolidM(1);
+  const wallBehindM = firstSolidM(-1);
+  const solidAhead = wallAheadM !== null;
+  const clearBehind = wallBehindM === null;
+  const mounts7 = of.carrier('mounts');
+  const hullR = mounts7.solid === null ? null : mounts7.solid.cr;
   const Z7 = {
     speeds: into.map((q) => r6(q.speed)),
+    bodySpeeds: into.map((q) => r6(q.bodySpeed)),
     endSpeed: r6(into[into.length - 1].speed),
     peakSpeed: r6(Math.max(...into.map((q) => q.speed))),
     blocked: of.world().player.blockedByBuild,
-    acrossM: r6(dotv([feet()[0] - P[0], feet()[1] - P[1], feet()[2] - P[2]], A.along)),
+    travelledM: r6(dist(from7, to7)),
+    acrossM: r6(dotv([fEnd[0] - st7b.P[0], fEnd[1] - st7b.P[1], fEnd[2] - st7b.P[2]],
+      st7b.A.along)),
+    // Distance from the station's own centre, in the deck plane. Asserted
+    // against the hull's OWN bounding radius, read off the collision solid, so
+    // "did not leave through the wall" is the asset's number and not a literal.
+    offCentreM: r6(Math.hypot(to7[0], to7[2])),
+    hullR: r6(hullR),
+    solidAhead, clearBehind, wallAheadM, wallBehindM,
+    riding: ridingNow(),
   };
   log.push({ Z7 });
   if (!(Z7.peakSpeed > 1.0)) return fail('Z7: the player never got moving', Z7);
   if (!(Z7.endSpeed < 0.05)) {
     return fail('Z7: hitting the wall did not stop the drifting player', Z7);
   }
-  if (Z7.acrossM < -(6 + 0.31)) return fail('Z7: the player left through the hub wall', Z7);
+  if (!(Z7.travelledM > 3)) {
+    return fail('Z7: the player stopped before it had crossed any deck, so the '
+      + 'stop is not a wall', Z7);
+  }
+  if (!Z7.solidAhead) {
+    return fail('Z7: nothing solid is in front of where the player stopped, so '
+      + 'the speed was taken by something other than the hull', Z7);
+  }
+  if (!Z7.clearBehind) {
+    return fail('Z7: the walker is in a solid on BOTH sides, so this leg is '
+      + 'measuring a body embedded in geometry rather than a body meeting it '
+      + '(GP-400)', Z7);
+  }
+  if (!(Z7.offCentreM < hullR)) {
+    return fail('Z7: the player left through the hub wall', Z7);
+  }
+  if (Z7.riding !== 'station:anchorage') {
+    return fail('Z7: the collision threw the rider off the frame', Z7);
+  }
 
   // =====================================================================
   // Z8. EVA, AND ITS NEGATIVE CONTROL. 30 m off the hull is inside the
@@ -633,33 +971,70 @@
   //     The second is `stationwalk.js` P3's site, so that control still
   //     holds and now proves two things: no deck AND no frame.
   // =====================================================================
-  const sideAt = (m) => {
-    const s3 = [P[0] + A.across[0] * m, P[1] + A.across[1] * m, P[2] + A.across[2] * m];
-    const l = len(s3);
-    return [s3[0] / l * dR, s3[1] / l * dR, s3[2] / l * dR];
-  };
-  const near = sideAt(30);
-  of.standAt(near[0], near[1], near[2]);
+  //
+  // CE-100. THE TWO SITES ARE SEATED BY DIFFERENT VERBS AND THAT IS THE WHOLE
+  // OF WHAT THIS ROW NOW SAYS.
+  //
+  //   near, 30 m: `standAboard(0, 0, 30)`, i.e. 30 m out along the asset's own
+  //   +Z, ON the frame. That is what stepping off a hull IS: you leave with
+  //   the station's velocity, and the freefall volume (207.85 m bound) is
+  //   still around you. A body-frame seat here would simply be Z4neg again 30
+  //   m to one side, and would tell us nothing about EVA.
+  //
+  //   far, 200 m: RELEASED first, then a plain `standAt`. Outside the bound
+  //   `standAt` does not refuse and needs no frame argument, and the explicit
+  //   release is what makes the fall a fall: a rider still holding the frame
+  //   400 m off its origin gets one more transport tick before the membership
+  //   rule lets go, which is 31 m of teleport in the middle of the measurement.
+  const near = of.standAboard(0, 0, 30);
+  const near0 = localNow();
   const evaNear = await sample(3.0, [], 1.0);
   const wNear = of.weight();
+  const near1 = localNow();
+  const relFar = of.carrier('release');
+  const st8 = stationNow();
+  const sideAt = (m) => {
+    const s3 = [st8.P[0] + st8.A.across[0] * m, st8.P[1] + st8.A.across[1] * m,
+      st8.P[2] + st8.A.across[2] * m];
+    const l = len(s3);
+    return [s3[0] / l * st8.dR, s3[1] / l * st8.dR, s3[2] / l * st8.dR];
+  };
   const far = sideAt(200);
-  of.standAt(far[0], far[1], far[2]);
+  const farSeat = of.standAt(far[0], far[1], far[2]);
+  const rFar0 = len(feet());
   const evaFar = await sample(3.0, [], 1.0);
   const Z8 = {
+    nearLocal: near0 === null ? null : near0.map(r6),
+    nearOffCentreM: near0 === null ? null : r6(len(near0)),
     nearFloating: wNear.floating, nearApparentG: wNear.apparentG,
-    nearDriftM: r6(Math.abs(evaNear[evaNear.length - 1].r - dR)),
+    nearDriftM: near0 === null || near1 === null ? null : r6(dist(near0, near1)),
+    nearBodyDriftM: r6(dist(evaNear[0].feet, evaNear[evaNear.length - 1].feet)),
+    nearRiding: near === null ? null : near.carrier,
     nearInVolumes: wNear.inVolumes.map((v) => v.mode),
-    farFellM: r6(dR - evaFar[evaFar.length - 1].r),
+    farReleased: relFar.was,
+    farRefused: farSeat.refused,
+    farCarrier: farSeat.carrier,
+    farRiding: ridingNow(),
+    farFellM: r6(rFar0 - evaFar[evaFar.length - 1].r),
     farFloating: of.weight().floating,
-    predictedFarFallM: r6(0.5 * of.gravity(dR) * 9),
+    predictedFarFallM: r6(0.5 * of.gravity(st8.dR) * 9),
   };
   log.push({ Z8 });
   if (!Z8.nearFloating) {
     return fail('Z8: an EVA 30 m off the hull did not float, so leaving the '
       + 'station is still a fall', Z8);
   }
-  if (!(Z8.nearDriftM < 0.01)) {
+  if (!(Z8.nearDriftM < 1e-6)) {
     return fail('Z8: a floating EVA with no input did not stay put', Z8);
+  }
+  if (!(Z8.nearBodyDriftM > 1000)) {
+    return fail('Z8: the EVA did not travel with the station through the body '
+      + 'frame, so it is not floating beside a moving hull, it is floating '
+      + 'beside a frozen one', Z8);
+  }
+  if (Z8.farRefused !== false || Z8.farRiding !== null) {
+    return fail('Z8: the 200 m control is still on the frame, so its fall is '
+      + 'being measured against a body the station is carrying', Z8);
   }
   if (Z8.farFloating) return fail('Z8: the 200 m control floated, so the freefall '
     + 'region is larger than stationwalk P3 assumes', Z8);
@@ -668,13 +1043,18 @@
   await back();
   return {
     ok: true,
-    Z0, Z1a, Z1b, Z2, Z3, Z4, Z5, Z5b, Z6, Z7, Z8,
+    Z0, Z1a, Z1b, Z2, Z3, Z4neg, Z4, Z5, Z5b, Z6, Z7, Z8,
     verdict: {
       oldModelStopsDead: Z1b.stoppedDead,
       oldModelHasNoDescentAxis: Z1b.noDescentAxis,
       newModelKeepsMomentum: Math.abs(Z2.driftLostMps) < 0.05,
       poweredIsBitExact: Z4.restoredExactly,
       unpoweredIsTidal: Z5.tidalErr === 0,
+      // CE-100. The pair that makes every station row above non-vacuous: the
+      // un-boarded control is left behind by the deck, and the boarded rider
+      // is not, over settles of the same length in the same run.
+      bodyFrameSeatIsLeftBehind: Z4neg.leftBehindM > 1000 && Z4neg.riding === null,
+      riderIsCarried: Z4.localDriftM < 1e-6 && Z4.bodyDriftM > 1000,
     },
     log,
   };

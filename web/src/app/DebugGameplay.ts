@@ -416,9 +416,33 @@ export function gameplayApi(s: Services, loop: Loop) {
       // right one. What the refusal is for is making the caller SAY which,
       // because this verb cannot tell and guessing wrong is invisible in both
       // directions.
-      const on = opts?.frame === 'body' ? null
-        : s.mounts?.mountContaining(x, y, z, BOARD_MARGIN_M) ?? null;
-      if (on !== null) {
+      //
+      // ===================================================================
+      // CE-101. AND `frame: 'body'` NOW SAYS WHAT IT DID, RATHER THAN GOING
+      // QUIET.
+      // ===================================================================
+      //
+      // CE-54 CHOSE THIS BRANCH AND THEN MADE IT THE ONLY SILENT ONE. The
+      // membership test was skipped entirely for `frame: 'body'`, so the exact
+      // reading CE-54 exists to prevent -- a caller seated at a point the deck
+      // is about to leave behind -- came back indistinguishable from a seat in
+      // empty space: `carrier: null`, and nothing else to read. `zerog.js` Z4
+      // then spent a pass being honestly red with no instrument in its own
+      // return value that named the cause (GP-805 had to go to
+      // `of.carrier('mounts')` for it).
+      //
+      // The test is run on BOTH paths now and only the ACTION differs. Asking
+      // for the body frame is still granted in full and still zeroes the
+      // absolute velocity; it is simply told, in the value it hands back,
+      // which carrier it is inside and how deep. That is what lets a probe
+      // ASSERT it is holding the defect on purpose (`carrier` non-null,
+      // `boarded: false`) instead of asserting nothing, and it is why Z4's
+      // negative control can now be a named reading rather than a comment.
+      //
+      // The cost off a carrier is unchanged and is the same sentence as
+      // before: one bounding-sphere reject per mount, and there is one mount.
+      const on = s.mounts?.mountContaining(x, y, z, BOARD_MARGIN_M) ?? null;
+      if (on !== null && opts?.frame !== 'body') {
         const why = `standAt refuses: (${x}, ${y}, ${z}) is inside carrier `
           + `'${on.frame.id}', whose bound this point is `
           + `${(-on.depthAt(x, y, z)).toFixed(3)} m inside. standAt zeroes the `
@@ -437,11 +461,26 @@ export function gameplayApi(s: Services, loop: Loop) {
         // probe that only reads the transcript.
         console.warn(`[of] ${why}`);
         return { refused: true, why, carrier: on.frame.id,
+          depthM: on.depthAt(x, y, z), boarded: false,
           feet: null, r: null, grounded: null, onDeck: null };
       }
       p.standAt(x, y, z);
       const f = p.body.feet;
-      return { refused: false, why: null, carrier: null,
+      return {
+        refused: false, why: null,
+        /** CE-101. The carrier this body-frame seat landed INSIDE, or null.
+         *  Non-null only on the `frame: 'body'` path, where it is the caller's
+         *  own stated intent: the seat happened, in the body frame, and the
+         *  deck will leave it behind at the carrier's own speed. */
+        carrier: on?.frame.id ?? null,
+        depthM: on === null ? null : on.depthAt(x, y, z),
+        /** CE-101. ALWAYS FALSE, and it is here to be read rather than to
+         *  vary. `standAt` never boards, in either frame: boarding is a
+         *  velocity match against a LIVE pose and this verb's argument is a
+         *  body-frame coordinate that was already stale when it was computed.
+         *  A probe that wants a rider aboard asks `standAboard`; a probe that
+         *  wants this defect as a control asserts on this field. */
+        boarded: false,
         feet: [f.x, f.y, f.z], r: Math.hypot(f.x, f.y, f.z),
         grounded: p.body.grounded, onDeck: p.body.onDeck };
     },

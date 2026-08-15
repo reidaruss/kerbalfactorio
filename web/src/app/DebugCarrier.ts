@@ -259,11 +259,39 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
          * `solid` is the object `StructureBodies` queries, not a copy of it, so
          * a probe asserting that the deck moved is asserting about the thing the
          * walker resolves against.
+         *
+         * -------------------------------------------------------------------
+         * CE-102. `boarding` IS THE RULE'S CENSUS AND NOT THE BOARDING CENSUS,
+         * AND ONE PASS HAS ALREADY BEEN MISLED BY THE DIFFERENCE.
+         *
+         * `mounts.census().boarding` counts what `BoardingRule.decide` did.
+         * GP-805 read `tested: 137, boarded: 0` off it and concluded, quite
+         * correctly for what it was looking at, that `standAt(..., { frame:
+         * 'body' })` boards nobody. The trap is that the SAME READING comes
+         * back when a rider is perfectly aboard: `standAboard` boards through
+         * `seat.board(frame)` directly, so `decide` finds `seat.carrier`
+         * already set and returns null without ever incrementing `boarded`.
+         * Measured on the fixed world: `tested: 294, boarded: 0` with the
+         * walker riding Anchorage at exactly 0 m of local drift over 3 s.
+         *
+         * So `boarded: 0` cannot distinguish "nobody is aboard" from "the rule
+         * was not the one who put them there", and that is the one question a
+         * reader of this op asks. `rider` is `CarrierRide`'s OWN report, which
+         * can: `carrier` is the frame actually held, `boards`/`releases` count
+         * every boarding however it happened, and `applied` counts the ticks a
+         * transport was really applied.
+         *
+         * The rule's counters are NOT widened to cover the explicit verb.
+         * Their whole value is separating "running and declining" from "not
+         * running at all" (`BoardingRule`'s own header), and a counter that
+         * also ticked for seats the rule never made would lose exactly that.
+         * Two numbers answering two questions, published side by side.
          */
         case 'mounts': {
           const solid = lastStationSolid();
           return {
             tick, mounts: s.mounts.census(),
+            rider: s.ride?.report(tick) ?? null,
             solid: solid === null ? null : {
               pos: [solid.pos.x, solid.pos.y, solid.pos.z],
               quat: [solid.quat.x, solid.quat.y, solid.quat.z, solid.quat.w],
