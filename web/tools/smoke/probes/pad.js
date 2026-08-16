@@ -465,11 +465,15 @@
       + 'so the vantage really is occluded',
       tSolidAfter >= 0 && (tSolidBefore < 0 || tSolidAfter < tSolidBefore - 1e-9),
       `before ${tSolidBefore} m, after ${tSolidAfter} m`);
-    // TWO ASSERTIONS BECAUSE THERE WERE TWO CAUSES, and only the pair separates
-    // them. GP-968 fixed the near-hit push-out (`MIN_PLACE_M`, not
-    // `FALLBACK_M`), which is what made the answer wrong; GP-966 stopped the
-    // aim reading addresses off a pad's flank, which is what would have made it
-    // wrong again once the push-out stopped masking it.
+    // ONE CAUSE WAS FOUND AND FIXED, AND ONE IS STILL OPEN. GP-968 alone made
+    // this answer right: the near-hit push-out now goes to `MIN_PLACE_M` rather
+    // than `FALLBACK_M`. GP-966, which would have stopped the aim reading an
+    // address off a pad's FLANK, was built, measured to move nothing here, and
+    // REVERTED (see line ~430 above and `StructurePlacement.aimHit`'s header),
+    // so the flank misread is NOT closed -- this file measures it live in the
+    // GP-969 block below, at `[-2,-4,3]`. These assertions therefore credit
+    // GP-968 only, and they pass because the hit at this standoff is inside the
+    // clamp and never reaches the flank path at all.
     //
     // FIRST, THE ABSOLUTE CELL. Before GP-968 this read `[-3,-2,0]` for
     // `[-3,-3,0]` from every vantage tried, with no pad in the world at all.
@@ -574,10 +578,22 @@
     // It is NOT asserted green here because it is not fixed, and it is not
     // asserted red because a probe that gates on a defect goes green the day
     // somebody fixes it. It is published, with its reason string, so the next
-    // lane inherits a reading instead of a suspicion. THE SEVERITY IS
-    // LEGIBILITY, NOT A BAD PLACEMENT: the refusal above is the platform count,
-    // so the pad cannot actually be built up there. The assertion belongs on
+    // lane inherits a reading instead of a suspicion. The assertion belongs on
     // this line the day the storey stops being invented.
+    //
+    // THE SEVERITY IS WORSE THAN THIS ONE READING SHOWS, and the distinction
+    // matters to whoever takes the `basePart` pass. On THIS base the misread is
+    // legibility only: `[-2,-4,3]` refuses structurally, because level 3 has no
+    // decks and an invented storey cannot manufacture the 36 real deck parts
+    // `missingDecks` counts. But that is a property of this fixture, not of the
+    // defect. On a base that genuinely HAS a 6 x 6 platform at the invented
+    // level, the same flank read resolves a LEGAL, GREEN ghost at a cell the
+    // player never aimed at -- and `overlapping()` only rejects pads sharing a
+    // level, so a pad already standing at level 0 does not refuse it either.
+    // The real worst case is therefore a wrong-but-placeable pad that looks
+    // correct right up to the press, which is a different class from a confusing
+    // refusal. Any fix should be judged against THAT case, and a multi-storey
+    // fixture is what would demonstrate it.
     check('GP-969: the collision crown REACHES the mesh height, so the pad '
       + 'proxies are not the knee-high stub a two-column sweep reported',
       crownM >= m.heightM - 1, `${crownM} m of ${m.heightM} m`);

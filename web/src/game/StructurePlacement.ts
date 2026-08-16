@@ -188,14 +188,22 @@ export function ghostPrompt(t: StructureTarget | null): HudTarget | null {
  * (`round(l.z / storey)`, clamped to MAX_LEVEL) off a point on a vertical face,
  * so the pad is addressed at a storey the platform does not have.
  *
- * IT IS A LEGIBILITY DEFECT AND NOT A BAD PLACEMENT, which is why it is routed
- * rather than rushed: the ghost at that address refuses with its own platform
- * count ("36 of 36 cells have no foundation"), so nothing can be built up
- * there. The reading is published in `pad.js` unasserted, with the reason
- * string, so the next lane inherits a number instead of a hunch. Reinstating
- * `basePart` is a candidate fix for it and would need its own verification pass
- * across every placement probe; a change to the one function every placement in
- * the game goes through does not ship on the side of a correction.
+ * ON THAT FIXTURE IT IS LEGIBILITY ONLY, AND THAT IS A PROPERTY OF THE FIXTURE
+ * RATHER THAN OF THE DEFECT. `[-2,-4,3]` refuses structurally, because level 3
+ * has no decks and an invented storey cannot manufacture the 36 real deck parts
+ * `missingDecks` counts. **On a base that genuinely HAS a 6 x 6 platform at the
+ * invented level, the same flank read resolves a LEGAL, GREEN ghost at a cell
+ * the player never aimed at**, and `overlapping()` only rejects pads sharing a
+ * level, so an existing pad at level 0 does not refuse it either. The worst case
+ * is a wrong-but-placeable pad that looks correct right up to the press, not a
+ * confusing refusal, and any fix should be judged against that case.
+ *
+ * The reading is published in `pad.js` unasserted, with the reason string, so
+ * the next lane inherits a number instead of a hunch. Reinstating `basePart` is
+ * a candidate fix and would need its own verification pass across every
+ * placement probe plus a multi-storey fixture to exercise the case above; a
+ * change to the one function every placement in the game goes through does not
+ * ship on the side of a correction.
  *
  * The three other candidates, for the same reason: IGNORE ALL PLACED STRUCTURES
  * takes decks out too and deletes multi-storey aiming; RESOLVE THE GROUND BEHIND
