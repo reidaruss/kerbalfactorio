@@ -196,7 +196,21 @@ FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384,
                # at a 0.28 m tile: 128 px / 0.28 m = 457 texels/m, already
                # above panel's 341 machine target, so spending more would buy
                # nothing this consumer can show.
-               "masonry": 512, "ember": 128}
+               "masonry": 512, "ember": 128,
+               # RN-1880 (look audit R4). `timber` keeps `bark`'s 384 px and
+               # changes only the tile, so the resolution argument is entirely
+               # in FAMILY_TILE_M: 384 px / 0.35 m = 1097 texels/m against
+               # bark's 640. That is not a preference. THE FIRST-PERSON BLOCK
+               # TWELVE LINES ABOVE ALREADY STATES THE THRESHOLD AND ALREADY
+               # SIZED TWO FAMILIES BY IT ("a family under about 1000 px/m is
+               # visibly soft in the one asset that is in every frame of the
+               # game": suitfab 1024, suitplate 960) -- and the tool held in
+               # that same hand, at that same 0.62 m, was left on a family
+               # sized for a trunk at 3 to 10 m. `timber` clears the floor
+               # that block set; `bark` itself is untouched, still 384, still
+               # byte-identical to its own prior bytes, and every tree keeps
+               # the field chosen for it.
+               "timber": 384}
 
 ZLIB_LEVEL = 9
 ZLIB_MEMLEVEL = 9
@@ -339,6 +353,24 @@ ROLE_FAMILY = {
     # with moss. Bark's structure is directional (fissures along the grain),
     # so it needs its own field, not a retune of the shared one.
     "Bark": "bark", "BarkLight": "bark",
+    # --- timber: worked wood in the player's own hand (RN-1880, audit R4) ---
+    # `Haft`, NOT a re-point of `Bark`, and the split is the same shape as
+    # RN-1780's `Masonry`: `bark`'s two roles are worn by trunks and branches
+    # the camera meets at 3 to 10 m, and the ONE consumer that meets it at
+    # 0.62 m is the tool in the first-person hand. Re-tiling `bark` to suit
+    # the haft would move every tree in the game, which is R2's subject and
+    # not this lane's. Worn by exactly the two crude tools' hafts.
+    # Moves in the same commit as the client's copy of this table (RN-100's
+    # rule: verifyAgainstManifest makes a one-sided move a failed smoke run).
+    "Haft": "timber",
+    # `Rawhide` is the lashing and the grip wrap on the same two tools, and it
+    # takes `suitfab` rather than a family of its own. Two reasons and both
+    # are already written down elsewhere in this file: a wrapped cord grip IS
+    # a woven surface, and `suitfab` is the ONE family in the table whose
+    # resolution was chosen for this exact distance ("the first-person hand
+    # sits 0.62 m from the eye ... suitfab 512 px / 0.5 m = 1024 px/m"). A
+    # new family here would be a second answer to a question already answered.
+    "Rawhide": "suitfab",
     # --- ore: seam mineral in host rock ---
     # The ore-in-rock roles (RN-156), NOT the Iron/Copper/Coal item rows
     # above, which stay in `coarse`. Same argument that split bark out: a
@@ -485,7 +517,31 @@ FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6, "ore": 0.5,
                  # reads once, not tiled) and the strip carries ~3 along its
                  # length, few enough that no copy is countable on either
                  # part at the distance a player actually stands from them.
-                 "masonry": 1.8, "ember": 0.28}
+                 "masonry": 1.8, "ember": 0.28,
+                 # RN-1880 (look audit R4). `timber` 0.35 m, and it is chosen
+                 # from the CONSUMER's distance rather than from its size.
+                 #
+                 # The haft is a 48 mm section, so no tile in this table can
+                 # give it a whole repeat across (bark's 0.6 m gives 0.080,
+                 # measured off the shipped UVs), and chasing one repeat would
+                 # need a 48 mm tile and would put ~18 tile seams down an
+                 # 0.85 m shaft. Repeats are the wrong instrument for a
+                 # cylinder this thin. The right one is TEXEL DENSITY, which
+                 # is what FAMILY_SIZE's own first-person block already
+                 # measures things by, and 0.35 m puts 1097 texels/m on a
+                 # surface the player holds at 0.62 m where a 900 px frame
+                 # resolves ~1117 px/m.
+                 #
+                 # It also lands the grain at the right physical size by
+                 # accident of the reuse, which is worth stating because it is
+                 # what makes the reuse honest rather than convenient:
+                 # `_bark_height`'s fissures are authored "inside the 3 to
+                 # 10 cm range mature conifer bark actually has" over bark's
+                 # 0.6 m tile, and at 0.35 m the same field lands them at 1.8
+                 # to 5.8 cm, which is the split and grain spacing of a cut
+                 # branch. A haft is not fine-grained bark; it is the same
+                 # wood seen from a third as far away.
+                 "timber": 0.35}
 
 # Texel density that implies, for the record against ASSET-SPECS 2.8
 # (512 px/m for first-person, 256 px/m for machines):
@@ -4004,6 +4060,18 @@ FAMILIES = {
                  albedo=_bark_albedo,
                  normal_strength=12.0, ao_radius=9, ao_floor=0.45,
                  ao_gain=3.0),
+    # RN-1880 (look audit R4). `timber` is `bark`'s row REUSED at a different
+    # world scale, exactly as `masonry` reuses `stone`'s, and the reuse is the
+    # deliberate claim rather than a shortcut: a split branch haft and a
+    # standing trunk ARE the same substance with the same directional grain,
+    # and the only thing wrong with a haft wearing `bark` is the SIZE the
+    # field is applied at. No new generator, no new argument about what wood
+    # looks like. See FAMILY_TILE_M and FAMILY_SIZE for the two numbers that
+    # differ and for the measurement that chose them.
+    "timber": dict(height=_bark_height, masks=_bark_masks,
+                   albedo=_bark_albedo,
+                   normal_strength=12.0, ao_radius=9, ao_floor=0.45,
+                   ao_gain=3.0),
     # ore's crevice walls drop 0.45 over a ~1.6 cm bevel, just under bark's
     # fissures, so 11 lands them near bark's shading weight while keeping the
     # 0.14 facet grain from reading as corrugation. ao_gain by bark's
@@ -4908,6 +4976,11 @@ ALLOWED_CONSTANT = {
     ("bark", "orm", "B"): (255,
         "bark is not a metal; the palette constant is already 0 and identity "
         "is the only multiplier that does not rescale it"),
+    ("timber", "orm", "B"): (255,
+        "worked wood is not a metal, for `bark`'s reason above and with the "
+        "same identity multiplier: this family IS bark's row at a different "
+        "world scale, so its channels can only be allowed or refused on the "
+        "same grounds bark's were. RN-1880"),
     ("ore", "orm", "B"): (255,
         "ore-in-rock is mineral, not polished metal: the three ore roles' "
         "palette metallic values sit under the client's 0.5 metal/matte "

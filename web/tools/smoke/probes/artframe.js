@@ -1351,6 +1351,36 @@
       state: SH.state(), bearings };
   }
 
+  // RN-1876. `{"hideVm": true}` takes the SAME frame with the first-person
+  // view model suppressed. It is the control half of a per-pixel difference,
+  // which is the only honest way to read the model's frame share: the look
+  // audit's own R4 could publish nothing better than "roughly 7.8 per cent as
+  // an upper bound (a bounding rectangle ...)", and a bounding rectangle
+  // around two hands and a diagonal haft is mostly world.
+  //
+  // ASSERTED, NOT ASSUMED. `Systems` rewrites `viewModel.visible` from the
+  // camera mode on every frame, so a probe that just clears the flag captures
+  // an unchanged frame and reports a coverage of zero as a result. The
+  // suppression therefore goes through `Avatar.debugHidden`, is READ BACK
+  // here, and a disagreement refuses the frame. The default is untouched, so
+  // every capture any pass has ever taken is bit-identical.
+  const vmDbg = window.__ofViewModel ?? null;
+  let vmHidden = false;
+  if (A.hideVm === true) {
+    if (vmDbg === null) {
+      return { valid: false, shot: name,
+        why: 'hideVm was asked for and window.__ofViewModel does not exist, so '
+          + 'the control frame would silently be the treatment frame.' };
+    }
+    vmDbg.hide(true);
+    await of.settle(2);
+    vmHidden = vmDbg.hidden();
+    if (vmHidden !== true) {
+      return { valid: false, shot: name,
+        why: 'hideVm did not take: __ofViewModel.hidden() is still false.' };
+    }
+  }
+
   const g0 = await grab();
   const { W, H, cx } = g0;
   const blob = g0.blob;
@@ -1399,6 +1429,9 @@
     // a probe can verify the pin landed rather than assume it: `null` on
     // every shot but `station`.
     stationClock, captureDiag, iblSettleIters,
+    // RN-1876. Whether THIS frame is the view-model control. Published on every
+    // shot, so a pair is provably one variable apart rather than filed as one.
+    vmHidden,
     pose,
     // THE PIPELINE THE FRAME CAME THROUGH, published so a pair can be shown to
     // be one variable apart rather than asserted to be.

@@ -265,6 +265,15 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     await avatar.load();
     scenes.near.add(avatar.group);
     scenes.viewModel.add(avatar.viewModel);
+    // RN-1876. The probe surface for `Avatar.debugHidden`, published the way
+    // `Surfaces.ts` publishes its own (`__ofSurfaces`) and for the same stated
+    // reason: Debug.ts is at its line cap and this is one property removable in
+    // one line. Reading it back is deliberate, so a probe can assert the
+    // control frame actually took rather than assume it did.
+    (window as unknown as { __ofViewModel: unknown }).__ofViewModel = {
+      hide: (on: boolean): boolean => { avatar.debugHidden = on; return avatar.debugHidden; },
+      hidden: (): boolean => avatar.debugHidden,
+    };
   } else {
     scenes.viewModel.add(createViewModelPlaceholder());
   }
