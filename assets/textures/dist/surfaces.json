@@ -75,6 +75,27 @@
       "texels_per_m": 512.0,
       "albedo_mean_linear": 0.1806
     },
+    "concrete": {
+      "normal": {
+        "file": "of_concrete_n.png",
+        "bytes": 249481,
+        "sha256": "624a8e2aabfb10a27a01b4624879b7aff6b4cb07a3ed3a54e182970276f7e6b6"
+      },
+      "orm": {
+        "file": "of_concrete_orm.png",
+        "bytes": 159086,
+        "sha256": "d9d3ca4053e604f3b7898c63944af0e6f7fc6751b274296edeac1b129bb6030a"
+      },
+      "albedo": {
+        "file": "of_concrete_a.png",
+        "bytes": 137892,
+        "sha256": "c296d1b17861f6b922441bda0ed3b0cc372911f872ea7afefe7b96a65d07267a"
+      },
+      "tile_m": 1.8,
+      "size_px": 512,
+      "texels_per_m": 284.44444444444446,
+      "albedo_mean_linear": 0.2208
+    },
     "ember": {
       "normal": {
         "file": "of_ember_n.png",
@@ -318,6 +339,9 @@
     "ChitinUnder": "fur",
     "Coal": "coarse",
     "CoalSeam": "ore",
+    "Concrete": "concrete",
+    "ConcreteDark": "concrete",
+    "ConcreteSoot": "concrete",
     "Copper": "coarse",
     "CopperOre": "ore",
     "EmberEmissiveState": "ember",
@@ -339,6 +363,7 @@
     "Rubber": "coarse",
     "Sand": "coarse",
     "Soil": "coarse",
+    "Soot": "rust",
     "Steel": "panel",
     "SteelDark": "panel",
     "SteelLight": "panel",

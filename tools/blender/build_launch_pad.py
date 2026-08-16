@@ -158,6 +158,33 @@ and the sim's exhaust leaves `socket_vessel` straight down the 3.00 m flame
 hole, so "inside the hole, on the ridge, and up the trench walls as far as the
 splash reaches" is the plume's own envelope. Nothing on the west bank, the
 tower or the bunker wears rust, because nothing there is ever hit.
+
+RN-1815 ANSWERS THE TWO THINGS THE FORM PASS'S OWN VERIFIER LEFT OWED, AND
+BOTH ARE MATERIAL FINDINGS RATHER THAN FORM ONES.
+
+(1) THE OUTER SKIRT. It is the largest single surface in the walk and close
+frames and it read as "a repeating dark aggregate or rock tile rather than
+poured concrete". RN-1780 had already moved every stone surface here off
+`stone` and onto `masonry`, which fixed the WORLD SCALE and, by design,
+reused `_stone_height` - so the pad was still wearing a field of 22 cm
+fractured facets. A pad is poured. Every one of those surfaces now wears
+`Concrete`/`ConcreteDark` (texgen's `concrete`), which is board marks, form
+panel joints, tie holes, blowholes, spalls and rain runs at the same 1.8 m
+and 512 px `masonry` already validated for this consumer. The ruin and the
+foundation keep `masonry`, which is right for laid stone.
+
+(2) THE TRENCH. It read as rust PAINT: one uniform `SteelRust` band down the
+full 24 m of both walls, measured at saturation 0.635 sunlit and 0.829 shaded
+on real D3D11 from the south mouth. A supersonic exhaust deposits carbon, so
+every plume surface here - the liner's lower band, the deflector, the flame
+throat - is now `Soot`, the trench floor and the deflector plinth are
+`ConcreteSoot`, and the gradient runs OUT of the trench rather than along it:
+black inside, thin scorch marks on the deck immediately outboard of the lips,
+clean concrete everywhere the plume never reaches. `SteelRust` leaves this
+asset; see `ground()` for the graded version that was built first and
+measured out. NO GEOMETRY MOVES in either item: same 4256/2024/192 triangles,
+same 18 sockets and colliders, same LOD1 deviation. RN-1815 is a materials
+pass end to end.
 """
 
 import math
@@ -197,6 +224,13 @@ CURB_STANDOFF = 0.04
 TR_HW = 3.60             # trench half-width; a 7.2 m channel through 24 m of Y
 TR_FLOOR = 0.30          # trench floor slab top, so the trench is 1.70 m deep
 DEFL_Z = 1.30            # blast deflector ridge, clear of the mount underside
+# RN-1815: THERE IS NO SOOT THRESHOLD, AND THE TWO THAT WERE TRIED ARE
+# RECORDED IN `ground()` RATHER THAN HERE, because both were killed by a
+# measurement and a frame rather than by an argument. The whole trench is the
+# plume's path - the flow leaves socket_smoke at the deflector ridge and runs
+# the full 24 m out of both mouths - so every surface in it is a plume
+# surface, and the gradient this pass owes runs from the trench OUT ONTO THE
+# DECK, not from the middle of the trench to its ends.
 
 # --- the launch mount straddling the trench ---------------------------------
 MT_HW = TR_HW            # the table spans the trench exactly, wall to wall
@@ -358,7 +392,27 @@ def rail_run(mb, a, b, z_deck, role="Steel", spacing=4.0, mid_rail=True):
 # differs, at a 1.8 m world scale authored for a 24 m pad instead of a
 # 1.0-1.5 m boulder. See texgen.py's ROLE_FAMILY comment for the measured
 # consumer range this split answers.
+#
+# RN-1815 SUPERSEDES THAT FOR THIS ASSET: `Concrete`/`ConcreteDark`, not
+# `Masonry`/`MasonryDark`. RN-1780 moved the pad off `stone` because the
+# WORLD SCALE was a boulder's, and it fixed exactly that; what it could not
+# fix, having deliberately reused `_stone_height`, is that the recipe is
+# still fractured rock. The pad's fresh-context verifier read the 2 m outer
+# skirt - the largest single surface in the walk and close frames - as "a
+# repeating dark aggregate or rock tile rather than poured concrete, with a
+# visible repeat at walking distance". A pad is POURED. `concrete` is board
+# marks, form panel joints, tie holes, blowholes and rain runs, at the same
+# 1.8 m and 512 px masonry already validated for this consumer.
+#
+# THE COLLISION PROXIES BELOW KEEP `Masonry` AND THAT IS DELIBERATE. This
+# pass is required to leave all 18 `col_*` and `socket_*` nodes byte-identical
+# and a proxy's role is written into its exported material index, so moving
+# them would break the identity proof to change something no pixel reads
+# (of_lib hides every `col_*` and `assets/Loaders.ts` hides them again on
+# load). `OF_Masonry` therefore survives in the .glb material table, worn by
+# nothing that draws.
 # ---------------------------------------------------------------------------
+
 
 def ground(mb, detail=True):
     """Two concrete banks with a 6 m channel between them.
@@ -369,13 +423,31 @@ def ground(mb, detail=True):
     matter what the normal map does to it."""
     # Trench floor, which is also the only thing standing on z = 0 under the
     # channel, so the asset's base plane is the ground and not the deck.
-    mb.box((2 * TR_HW, W, TR_FLOOR), (0.0, 0.0, TR_FLOOR * 0.5), "MasonryDark")
+    #
+    # RN-1815: STILL ONE BOX, AND `ConcreteSoot` FOR ALL 24 m OF IT.
+    #
+    # TWO GRADED VERSIONS WERE BUILT AND BOTH WERE MEASURED OUT, which is
+    # worth the lines because the reasoning that produced them is the
+    # reasoning the next lane will reach for. Version one split this slab in
+    # three and sooted only |y| < 6.00 (the deflector's own 9.80 m footprint
+    # plus a metre of splash), leaving the ends as clean `ConcreteDark`: on
+    # real D3D11 from the south mouth that put the `floor` rectangle at luma
+    # 157.96 AFTER the pass against 131.84 BEFORE, i.e. a flame trench whose
+    # floor came out BRIGHTER and cleaner than the rock it replaced, over the
+    # largest single area in the frame. Version two moved the threshold out to
+    # 9.60 (the reach of driven rain at a mouth) and still measured 141.16.
+    # The premise was wrong, not the number: rain that gets into a mouth runs
+    # ALONG a floor and pools on it, which deposits rather than scours, and
+    # the bottom of a channel is where everything the plume carries ends up.
+    # There is no clean part of a flame trench floor, so there is no split.
+    mb.box((2 * TR_HW, W, TR_FLOOR), (0.0, 0.0, TR_FLOOR * 0.5),
+           "ConcreteSoot")
 
     # West bank: full 24 m of Y. East bank stops short of the stair notch.
     for sx, y0, y1 in ((-1.0, -HALF, HALF), (1.0, -HALF, STAIR_S)):
         cy, dy = (y0 + y1) * 0.5, y1 - y0
         mb.box((HALF - TR_HW, dy, CAP_Z),
-               (sx * (HALF + TR_HW) * 0.5, cy, CAP_Z * 0.5), "MasonryDark")
+               (sx * (HALF + TR_HW) * 0.5, cy, CAP_Z * 0.5), "ConcreteDark")
         # The cap is inset on the OUTER and END faces only. Its trench face
         # stays flush at |x| = TR_HW so the mount can abut it exactly: two
         # coincident faces with opposite normals are invisible under backface
@@ -384,7 +456,7 @@ def ground(mb, detail=True):
         cap_y1 = y1 - (INSET if y1 >= HALF - 1e-9 else 0.0)
         mb.box((HALF - INSET - TR_HW, cap_y1 - cap_y0, DECK_CAP),
                (sx * (HALF - INSET + TR_HW) * 0.5, (cap_y0 + cap_y1) * 0.5,
-                CAP_Z + DECK_CAP * 0.5), "Masonry")
+                CAP_Z + DECK_CAP * 0.5), "Concrete")
 
     if detail:
         # Steel liner standing 0.22 m proud of each trench wall, IN TWO BANDS
@@ -396,9 +468,48 @@ def ground(mb, detail=True):
         # lower's top faces up into the upper's bottom), and their side faces
         # are coplanar but disjoint in Z, so there is no overlapping area for
         # check_coplanar to count.
+        #
+        # RN-1815 RE-ROLES THE LOWER BAND `Soot`, AND THAT IS THE SECOND OWED
+        # ITEM. As RN-1690 left it, the lower band was one 24 m box of
+        # `SteelRust` per wall: measured on real D3D11 from the south mouth,
+        # saturation 0.635 on the sunlit wall and 0.829 on the shaded one, and
+        # dead uniform end to end. The verifier's words: it "reads as rust
+        # paint rather than soot". A supersonic exhaust plume does not leave
+        # orange, it leaves carbon.
+        #
+        # A GRADED VERSION WAS BUILT FIRST AND MEASURED OUT. Sooting only the
+        # middle and leaving the 2.40 m at each mouth as oxide (the reach of
+        # driven rain) is the physically prettier story and it FAILED THE
+        # FRAME: the trench is only ever seen from a mouth, because nothing
+        # can stand on the 2 m deck, so the oxide fringe is the nearest and
+        # largest part of the wall in every possible view. The measurement
+        # said so - the whole-band saturation came down only 0.635 -> 0.561 -
+        # and the picture said so louder: two orange panels, still the most
+        # saturated thing in the trench, still the thing the finding was
+        # about. What was wrong was not the number but the premise that the
+        # role had a consumer left here at all. RN-1690 minted `SteelRust` for
+        # this pad's plume surfaces, reasoning that they are the only
+        # surfaces in the game a supersonic exhaust is aimed at by design;
+        # that reasoning is right and its conclusion is not, because what an
+        # exhaust plume deposits is carbon. So the role leaves this asset
+        # entirely - liner, deflector and throat all go to `Soot` - and the
+        # pad's gradient runs OUT OF the trench rather than along it: `Soot`
+        # on the steel and `ConcreteSoot` on the concrete inside, thin
+        # `ConcreteSoot` scorch marks on the deck immediately outboard of the
+        # lips, clean `Concrete` everywhere the plume never reaches.
+        #
+        # It is also one box per wall again, exactly as RN-1690 built it, so
+        # THIS PASS CHANGES NO GEOMETRY AT ALL: same 4256/2024/192 triangles,
+        # same 18 sockets and colliders, same LOD1 deviation. `SteelRust`
+        # keeps its palette row and its smelter and miner consumers.
+        #
+        # The UPPER band is untouched and that is deliberate twice over: it is
+        # above the splash waterline that is the whole reason the band was
+        # split, and leaving it gives this pass an adjacent, identically lit
+        # NEGATIVE CONTROL that must not move.
         for sx in (-1.0, 1.0):
             mb.box((0.22, W, 0.575), (sx * (TR_HW - 0.11), 0.0, 0.6125),
-                   "SteelRust")
+                   "Soot")
             mb.box((0.22, W, 0.475), (sx * (TR_HW - 0.11), 0.0, 1.1375),
                    "SteelDark")
 
@@ -415,7 +526,7 @@ def ground(mb, detail=True):
     # SteelDark is `panel`, so it now wears plate seams instead of gravel.
     # It also runs 9.20 m against the mount's 6.80, so it reaches out past
     # the table and into the light rather than hiding under it.
-    mb.box((7.40, 9.80, 0.22), (0.0, 0.0, TR_FLOOR + 0.11), "MasonryDark")
+    mb.box((7.40, 9.80, 0.22), (0.0, 0.0, TR_FLOOR + 0.11), "ConcreteSoot")
     dz = TR_FLOOR + 0.22
     hx, hy = 3.50, 4.60
     v = [(-hx, -hy, dz), (hx, -hy, dz), (hx, hy, dz), (-hx, hy, dz),
@@ -430,7 +541,21 @@ def ground(mb, detail=True):
     # trench floor by HUE and not only by value, which is the one separation
     # that survives being lit by bounce alone. The Steel splitter cap below
     # keeps its highlight and is now the only bright thing down there.
-    mb.add_raw(v, f, [False] * len(f), "SteelRust")
+    #
+    # RN-1815: `Soot`, and the paragraph above is the thing that has to be
+    # answered before changing it, because its separation argument is real.
+    # The deflector is the single most plume-hit surface in the game, so if
+    # anything on this pad is black with carbon it is this; but RockDark made
+    # it vanish once already by being the SAME VALUE as the floor it stands
+    # on, and that failure must not be repeated. It is not: the floor under
+    # it is now `ConcreteSoot` at luma 50.4 and the wedge is `Soot` at 39.6,
+    # which is only 11 counts, so the separation is NOT carried by value here
+    # either. It is carried by MATERIAL - `Soot` is `rust`'s oxide-flake
+    # relief at 0.02 metalness and 0.98 roughness against a concrete field at
+    # 0.00 and 0.97 - and, decisively, by the `Steel` splitter cap along the
+    # ridge, which RN-1690 added for exactly this reason and which is now the
+    # only bright thing in the trench rather than one of two.
+    mb.add_raw(v, f, [False] * len(f), "Soot")
     # A bright splitter cap along the ridge. Twelve triangles bought purely
     # for LEGIBILITY: the trench is 1.70 m deep and the table roofs most of
     # it, so the deflector is lit by bounce and nothing else, and a 9.6 degree
@@ -516,11 +641,15 @@ def mount_detail(mb):
         and 320 mm wider than the clamp's own 1.60 x 0.70 base so a rim of it
         shows all round, which is the only way the pad reads at all once the
         clamp is placed on it.
-    (2) THE THROAT, in `SteelRust`. Four plates hanging into the 3.00 m hole
-        from the table underside. The hole was an ABSENCE - four plate edges
-        and then nothing - and an opening with no visible inside is a pattern
-        (machine_form.louvre makes the same argument about a vent). These are
-        also the closest surfaces in the game to a firing engine bell.
+    (2) THE THROAT, in `Soot` since RN-1815 and in `SteelRust` before it.
+        Four plates hanging into the 3.00 m hole from the table underside.
+        The hole was an ABSENCE - four plate edges and then nothing - and an
+        opening with no visible inside is a pattern (machine_form.louvre
+        makes the same argument about a vent). These are also the closest
+        surfaces in the game to a firing engine bell, which is exactly why
+        they are the one place on this asset with a stronger claim on carbon
+        than on oxide: nothing is deeper inside the plume than the inside of
+        the hole it goes down.
     (3) THE WALKING PLATES, in `SteelWorn`, north and south of the curb. A
         crew stands here to work on a clamp, and paintchip is a coating rubbed
         through by feet, which is a different fact about a surface than the
@@ -561,10 +690,10 @@ def mount_detail(mb):
     # their tops are buried in the table and only the lining shows.
     for sy in (-1.0, 1.0):
         mb.box((2 * HOLE - 0.10, 0.09, 0.62), (0.0, sy * (HOLE - 0.045),
-                                               MT_UNDER - 0.19), "SteelRust")
+                                               MT_UNDER - 0.19), "Soot")
     for sx in (-1.0, 1.0):
         mb.box((0.09, 2 * HOLE - 0.28, 0.62), (sx * (HOLE - 0.045), 0.0,
-                                               MT_UNDER - 0.19), "SteelRust")
+                                               MT_UNDER - 0.19), "Soot")
     # (3) the walking plates, outboard of the curb's own outer corner.
     for sy in (-1.0, 1.0):
         mf.bolted_plate(mb, top, 0.0, sy * 2.56, 4.20, 1.24,
@@ -812,7 +941,7 @@ def deck_joints(mb):
         while -HALF + INSET + BAY * k < y1 - 0.6:
             y = -HALF + INSET + BAY * k
             mb.box((jx1 - jx0, JOINT_W, JOINT_UP + JOINT_DOWN),
-                   (sx * (jx0 + jx1) * 0.5, y, zc), "MasonryDark")
+                   (sx * (jx0 + jx1) * 0.5, y, zc), "ConcreteDark")
             k += 1
         # ...and one longitudinal joint per bank, halving its 8.05 m width.
         # It runs the bank's full length less PAINT_MARGIN at each end, for
@@ -820,7 +949,7 @@ def deck_joints(mb):
         # end face on the concrete's end face, same-facing, over its full
         # section.
         mb.box((JOINT_W, y1 - y0 - 2.0 * PAINT_MARGIN, JOINT_UP + JOINT_DOWN),
-               ((x0 + x1) * 0.5, (y0 + y1) * 0.5, zc), "MasonryDark")
+               ((x0 + x1) * 0.5, (y0 + y1) * 0.5, zc), "ConcreteDark")
     return mb
 
 
@@ -923,6 +1052,19 @@ def scorch(mb):
     # floating over a 1.70 m drop. Placed by their INNER EDGE instead, the
     # width is free to vary without any of them leaving the concrete, which
     # is what the deviating widths were for.
+    #
+    # RN-1815: `ConcreteSoot`, and the role is the point rather than a rename.
+    # These marks were `MasonryDark` - a WEATHERED ROCK grey at 11 counts of
+    # chroma and luma 83, sitting on a deck of the same family at luma 117 -
+    # so a deposit of carbon was drawn as a slightly darker patch of the same
+    # stone, which is the "one rectangle of a second colour" failure this
+    # docstring's own first paragraph is about, in the colour channel rather
+    # than in the outline. `ConcreteSoot` is luma 50.4 at 7 counts of chroma
+    # against `Concrete`'s 133.8: the mark is now dark and neutral against a
+    # light neutral deck, which is what soot on concrete looks like, and it
+    # reads as the OUTER, thinnest end of the same gradient the trench floor
+    # and the liner carry - these marks are outboard of the lips, the furthest
+    # the plume gets from the hole.
     for sx in (-1.0, 1.0):
         y_lim = HALF - INSET if sx < 0 else STAIR_S
         for (y, du, dv) in ((-y_lim + 2.10, 2.30, 4.40),
@@ -931,10 +1073,10 @@ def scorch(mb):
             inner = sx * (TR_HW + 0.06)
             mb.box((du, dv, SCORCH_UP + 0.010),
                    (inner + sx * du * 0.5, y,
-                    DECK_Z + (SCORCH_UP - 0.010) * 0.5), "MasonryDark")
+                    DECK_Z + (SCORCH_UP - 0.010) * 0.5), "ConcreteSoot")
             mb.box((du * 0.55, dv * 0.42, SOOT_UP + 0.007),
                    (inner + sx * du * 0.82, y + dv * 0.24,
-                    DECK_Z + (SOOT_UP - 0.007) * 0.5), "MasonryDark")
+                    DECK_Z + (SOOT_UP - 0.007) * 0.5), "ConcreteSoot")
     return mb
 
 
@@ -978,7 +1120,7 @@ def stair(mb, detail=True):
     only route up that a player on foot can take, and the second scale cue
     after the rails: a 0.25 m riser is a riser at any distance."""
     for size, loc in stair_treads():
-        mb.box(size, loc, "MasonryDark")
+        mb.box(size, loc, "ConcreteDark")
     if not detail:
         return mb
     run = STEPS * TREAD
@@ -1046,7 +1188,7 @@ def furniture(mb):
                role="Steel")
     # Control bunker, with the standard four-colour state chip for a window.
     bx, by = 8.40, -8.00
-    mb.box((4.00, 2.60, 1.70), (bx, by, DECK_Z + 0.85), "Masonry")
+    mb.box((4.00, 2.60, 1.70), (bx, by, DECK_Z + 0.85), "Concrete")
     mb.box((4.30, 2.90, 0.20), (bx, by, DECK_Z + 1.80), "SteelDark")
     mb.box((4.05, 0.12, 0.14), (bx, by - 1.34, DECK_Z + 1.56), "Accent")
     mb.box((3.20, 0.10, 0.55), (bx, by - 1.33, DECK_Z + 1.10),
@@ -1257,7 +1399,7 @@ def shadow_proxies(mb):
     # -- the control bunker: its parapet is 0.15 m wider than its walls, so
     # one box on the parapet buries the wall corners by 150 mm and one on the
     # walls leaves the parapet 150 mm out. Two boxes, each hugging its own.
-    mb.box((4.00, 2.60, 1.70), (8.40, -8.00, DECK_Z + 0.85), "Masonry")
+    mb.box((4.00, 2.60, 1.70), (8.40, -8.00, DECK_Z + 0.85), "Concrete")
     mb.box((4.30, 2.90, 0.20), (8.40, -8.00, DECK_Z + 1.80), "SteelDark")
     mb.box((4.05, 0.12, 0.14), (8.40, -9.40, DECK_Z + 1.56), "Accent")
     mb.box((3.20, 0.10, 0.55), (8.40, -9.33, DECK_Z + 1.10), "Accent")
@@ -1410,7 +1552,7 @@ def shadow_proxies(mb):
         mb.box((4.20, 1.24, 0.115), (0.0, sy * 2.56, DECK_Z + 0.0205),
                "SteelDark")
     mb.box((2 * HOLE, 2 * HOLE, 0.62), (0.0, 0.0, MT_UNDER - 0.19),
-           "SteelRust")
+           "Soot")
     # -- the stair's leaning handrail and its newels. 2.78 x 2.90 IS THE
     # MEASURED ENVELOPE AND NOT run + A MARGIN: the rail is a tilted box, so
     # its Y extent is 2.774 rather than the 2.72 of run, and `run + 0.34`
@@ -1472,7 +1614,7 @@ def lod2_verticals(mb):
     for x, y in ((-11.00, -10.60), (11.00, -11.40)):
         mb.box((0.60, 0.60, 6.92), (x, y, DECK_Z + 3.46), "Steel")
     mb.box((3.00, 3.00, 5.91), (8.60, 3.60, DECK_Z + 2.955), "Steel")
-    mb.box((4.30, 2.90, 1.90), (8.40, -8.00, DECK_Z + 0.95), "Masonry")
+    mb.box((4.30, 2.90, 1.90), (8.40, -8.00, DECK_Z + 0.95), "Concrete")
     mb.box((0.62, 0.62, T0_H), T0 + (DECK_Z + T0_H * 0.5,), "Steel")
     return mb
 
@@ -1525,11 +1667,18 @@ def lod2_geometry(mb):
     what says 'launch site' from orbit-adjacent altitude, so it is the one
     thing LOD2 keeps at full height. The trench stays too, because a slot of
     shadow down the middle is the whole silhouette."""
-    mb.box((2 * TR_HW, W, TR_FLOOR), (0.0, 0.0, TR_FLOOR * 0.5), "MasonryDark")
+    # RN-1815: LOD2 does NOT get the trench's soot gradient and that is a
+    # decision, not an oversight. This tier draws at 80 m, where the whole
+    # trench is about a dozen pixels of shadow; three boxes there would buy
+    # nothing and cost two more primitives on the cheapest tier in the asset.
+    # The roles move with the family so the silhouette does not change value
+    # between tiers, which is all LOD2 has to get right.
+    mb.box((2 * TR_HW, W, TR_FLOOR), (0.0, 0.0, TR_FLOOR * 0.5),
+           "ConcreteDark")
     for sx, y0, y1 in ((-1.0, -HALF, HALF), (1.0, -HALF, STAIR_S)):
         cy, dy = (y0 + y1) * 0.5, y1 - y0
         mb.box((HALF - TR_HW, dy, DECK_Z),
-               (sx * (HALF + TR_HW) * 0.5, cy, DECK_Z * 0.5), "Masonry")
+               (sx * (HALF + TR_HW) * 0.5, cy, DECK_Z * 0.5), "Concrete")
     mb.box((2 * MT_HW, 2 * MT_HY, DECK_Z - MT_UNDER),
            (0.0, 0.0, (MT_UNDER + DECK_Z) * 0.5), "SteelDark")
     tx, ty = TOWER

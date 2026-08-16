@@ -502,6 +502,75 @@ PALETTE = {
     # scale is authored for architecture instead of for a boulder.
     "Masonry":      ("7A756C", 0.00, 0.94, 1.0, None),
     "MasonryDark":  ("57534C", 0.00, 0.80, 1.0, None),
+    # RN-1815. POURED CONCRETE, ITS OWN FAMILY, AND THE ARGUMENT IS THE ONE
+    # THAT SPLIT `Masonry` OUT OF `Rock` ONE STEP FURTHER ALONG.
+    #
+    # RN-1780 moved the ruin, the foundation and the launch pad off `stone`
+    # because stone's 0.6 m tile was the wrong WORLD SCALE for architecture,
+    # and it fixed exactly that: `masonry` is stone's own recipe at 1.8 m and
+    # 512 px. What it could not fix, because it deliberately reused stone's
+    # generator functions, is that the recipe is FRACTURED ROCK - a field of
+    # 7.5 cm facets separated by arrises. That is the right substance for the
+    # ruin, which is quarried and laid stone, and it is the wrong substance
+    # for a launch pad, which is poured. The pad's own fresh-context verifier
+    # named it: the 2 m outer skirt is the largest surface in the walk and
+    # close frames and it reads as a dark aggregate rock tile.
+    #
+    # THE THREE ROLES, AND WHY THREE. `Concrete` is the poured cap - the deck
+    # a crew walks on and the bunker. `ConcreteDark` is the same material as
+    # MASS: the plinth, the trench floor at the mouths, the stair, the deck's
+    # control joints. Two values because `ground()`'s 0.20 m ledge is a
+    # HORIZON LINE on a 9 x 24 m block and a horizon line needs two values
+    # either side of it; that argument is unchanged from the roles these
+    # replace. `ConcreteSoot` is the third and it belongs to this pass's
+    # second owed item: soot deposited ON concrete, which is a different
+    # surface from soot on steel and must show the concrete through it
+    # (RN-859's rule, where `SuitGrime` reused `suitfab` so the weave reads
+    # through the dirt rather than becoming a patch of different fabric).
+    #
+    # THE HEXES ARE DERIVED, NOT PICKED. `Masonry` 7A756C and `MasonryDark`
+    # 57534C are WARM GREYS at 11 and 11 counts of chroma, which is right for
+    # weathered rock and wrong for cement: portland concrete is a cool
+    # near-neutral. Each new hex holds its predecessor's LUMA band and takes
+    # the chroma down and the neutral point cool, which is the smallest
+    # honest difference and keeps a value decision out of a material pass:
+    #   Concrete     878680  luma 133.8, chroma  7  (Masonry     117.4, 14)
+    #   ConcreteDark 63615B  luma  97.0, chroma  8  (MasonryDark  83.4, 11)
+    # Both move UP in value on purpose and that is the one deliberate look
+    # change here: outdoor concrete is a light grey, and the skirt reading
+    # DARK is half of why it reads as rock. `ConcreteSoot` is not a concrete
+    # colour at all - it is what is lying on the concrete - so it takes the
+    # soot value below rather than a lift of either row.
+    "Concrete":     ("878680", 0.00, 0.94, 1.0, None),
+    "ConcreteDark": ("63615B", 0.00, 0.88, 1.0, None),
+    "ConcreteSoot": ("35322E", 0.00, 0.97, 1.0, None),
+    # RN-1815. SOOT ON STEEL, and it is a role rather than a retune of
+    # `SteelRust` because they are two different deposits that happen in two
+    # different places on the same trench.
+    #
+    # The verifier's finding: the trench reads as RUST PAINT. It is one
+    # 834F2A band running the full 24 m of both trench walls at a measured
+    # saturation of 0.634 on the sunlit wall and 0.829 on the shaded one, and
+    # a supersonic exhaust plume does not leave orange, it leaves carbon.
+    # Soot is dark, near-neutral and matte; 2B2724 is 7 counts of chroma at
+    # luma 39.6, against `SteelRust`'s 89 counts of chroma at luma 87.4: 45
+    # per cent of its value and under a TWELFTH of its chroma.
+    #
+    # ROUGHNESS 0.98 AND METALNESS 0.02, both against `SteelRust`'s 0.92 and
+    # 0.35, and both physical rather than stylistic: soot is a dielectric
+    # carbon powder lying ON the steel, so the metal is buried, and it is the
+    # matte-est thing in this palette because a deposit of loose particles has
+    # no specular lobe to speak of. That is also what makes the two read as
+    # two materials rather than as one recolour, which is the same test the
+    # `SteelRust`/`SteelWorn` pair above is held to.
+    #
+    # IT WEARS THE `rust` FAMILY, ON PURPOSE, and this is RN-859's rule again:
+    # the steel under the soot is oxidised, so the flake relief has to read
+    # THROUGH the deposit. A new family would be three more PNGs to say the
+    # same thing about the same substrate. RN-1494 recorded the converse of
+    # this as a silent failure - "`rust` wired to a grey role renders grey
+    # rust" - and grey rust is precisely what soot on corroded steel is.
+    "Soot":         ("2B2724", 0.02, 0.98, 1.0, None),
     # RN-1780. THE FIREBOX PEEP AND SIGHT STRIP (look audit R6). A role of its
     # own, not a re-point of `EmissiveState`: the name still ENDS WITH
     # "EmissiveState" on purpose, because `MachineFx.ts` (`mat.name.endsWith(

@@ -196,7 +196,23 @@ FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384,
                # at a 0.28 m tile: 128 px / 0.28 m = 457 texels/m, already
                # above panel's 341 machine target, so spending more would buy
                # nothing this consumer can show.
-               "masonry": 512, "ember": 128}
+               "masonry": 512, "ember": 128,
+               # RN-1815. `concrete` takes `masonry`'s two numbers verbatim
+               # and neither is re-derived, because the consumer set is the
+               # same one masonry's own numbers were chosen against: an
+               # architecture-scale poured surface judged from a standing eye
+               # a few metres away. 512 px / 1.8 m = 284 texels/m, `panel`'s
+               # own resolution, which is this project's precedent for "large
+               # architectural surface, judged up close" and clears
+               # ASSET-SPECS 2.8's 256 px/m floor that masonry at 384 did
+               # not. Going BIGGER on the tile was considered and refused
+               # with a number: 2.4 m would drop the pad's 24 m skirt from
+               # 13.3 repeats to 10, and it would also drop the density to
+               # 213 texels/m, which is the exact defect RN-1780 spent its
+               # own raise fixing. The repeat is answered by what the tile
+               # CONTAINS instead (see `_concrete_height`), not by making the
+               # tile bigger and the texels worse.
+               "concrete": 512}
 
 ZLIB_LEVEL = 9
 ZLIB_MEMLEVEL = 9
@@ -370,6 +386,54 @@ ROLE_FAMILY = {
     # foundation deck and the launch pad, all `structures`/`rocket` scale and
     # none of them a prop a player picks up.
     "Masonry": "masonry", "MasonryDark": "masonry",
+    # --- concrete: POURED architecture-scale stone (RN-1815) --------------
+    # The launch pad leaves `masonry` and takes a family of its own, and the
+    # split is one step further along the argument that split `masonry` out
+    # of `stone`. RN-1780 fixed the WORLD SCALE (0.6 m was a boulder's tile
+    # on a 35 m ruin) and deliberately reused `_stone_height`, so masonry is
+    # still stone's own field: 7.5 cm fractured facets separated by arrises.
+    # That is a correct claim about a quarried ruin and a false one about a
+    # launch pad, whose surfaces were POURED against formwork; the pad's own
+    # verifier read the 2 m outer skirt as "a repeating dark aggregate or
+    # rock tile rather than poured concrete".
+    #
+    # WHY NOT RETUNE `masonry` INSTEAD, which is the cheaper move and was
+    # weighed first. Three reasons, in order of weight. (1) It would move the
+    # RUIN, whose whole subject is laid stone and whose own follow-up
+    # (coursed ashlar, routed by RN-1780 and allocated at RN-1835) is about
+    # making it MORE stone-like, not less; two lanes pulling one family in
+    # opposite directions is how a shared surface ends up serving neither.
+    # (2) The parameters that would have to change are not parameters at all:
+    # a facet field and a formed face differ in their FEATURES (board marks,
+    # a lift line, tie holes, blowholes) and no `normal_strength` or
+    # `tile_m` reaches those. RN-742's own rule, three times over now:
+    # the family encoded the wrong FACT about the surface. (3) The foundation
+    # deck is masonry's third consumer and is deliberately NOT moved here
+    # (see below), so a retune would have hit it too.
+    #
+    # THE FOUNDATION STAYS ON `masonry`, and that is a scope decision rather
+    # than a claim that it is right. A player-built foundation deck is poured
+    # too and probably wants this family; it is a different asset with its
+    # own frames, its own before/after and no verifier finding against it,
+    # and moving it here would put an unmeasured change in a measured pass.
+    # Recorded as owed, the same way RN-1780 recorded coursed ashlar.
+    #
+    # WORN BY: the launch pad and nothing else. `Concrete` the poured cap and
+    # the bunker, `ConcreteDark` the mass (plinth, trench floor, stair, deck
+    # control joints), `ConcreteSoot` the deposit on both - which wears THIS
+    # family and not the soot's own, by RN-859's rule: what is under the
+    # dirt has to read through it.
+    "Concrete": "concrete", "ConcreteDark": "concrete",
+    "ConcreteSoot": "concrete",
+    # --- rust, second consumer: SOOT on steel (RN-1815) -------------------
+    # `Soot` deliberately shares `SteelRust`'s family. See of_lib.PALETTE's
+    # `Soot` row: the steel under a flame trench's carbon IS oxidised, so the
+    # flake relief must read through the deposit, and a family of its own
+    # would be three more PNGs saying the same thing about the same
+    # substrate. RN-1494's recorded silent failure ("`rust` wired to a grey
+    # role renders grey rust") is the intended result here rather than a
+    # hazard.
+    "Soot": "rust",
     # --- ember: the firebox peep and sight strip (RN-1780, look audit R6) ---
     # See `of_lib.PALETTE`'s `EmberEmissiveState` row for why this is a new
     # role rather than a re-point of `EmissiveState`.
@@ -485,7 +549,15 @@ FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6, "ore": 0.5,
                  # reads once, not tiled) and the strip carries ~3 along its
                  # length, few enough that no copy is countable on either
                  # part at the distance a player actually stands from them.
-                 "masonry": 1.8, "ember": 0.28}
+                 # `concrete` 1.8 m, taken from `masonry` rather than
+                 # re-derived: the consumer is the same 24 m pad masonry's
+                 # own row already sized for (21.2 to 24.0 m of deck and
+                 # skirt, 11.8 to 13.3 repeats), and giving the pad's poured
+                 # surfaces a different world scale from the ruin's laid ones
+                 # would put two stone rhythms at two scales in one frame,
+                 # which is the objection the `paintchip`/`rust` row above
+                 # makes about `panel`.
+                 "masonry": 1.8, "ember": 0.28, "concrete": 1.8}
 
 # Texel density that implies, for the record against ASSET-SPECS 2.8
 # (512 px/m for first-person, 256 px/m for machines):
@@ -2207,6 +2279,258 @@ def _ashlar_masks(w, h, height, aux):
     return rough, metal
 
 
+# The `concrete` family (RN-1815): a POURED surface, judged at walking
+# distance against a 24 m wall.
+#
+# THE DEFECT THIS ANSWERS, IN THE VERIFIER'S OWN TWO HALVES. The launch pad's
+# 2 m outer skirt "reads as a repeating dark aggregate or rock tile rather
+# than poured concrete", "with a visible repeat at walking distance". Those
+# are two findings and only one of them is about the substance.
+#
+# HALF ONE, THE SUBSTANCE. `masonry` is `_stone_height` at 1.8 m: eight
+# fractured planes per tile separated by arrises, i.e. 22 cm rock facets. A
+# formed concrete face has no facets and no arrises at all. What it has, in
+# the order the pour puts them there, is: the FORMWORK's own imprint (board
+# faces and their joints, the panel joints between form sheets, the tie rods
+# that held the two forms apart), the AIR that could not escape the face
+# (blowholes), the laitance's slight waviness where the face is not a plane,
+# and, later, the places the arris has SPALLED and let the aggregate show.
+# Every one of those is authored below and not one of them is a facet.
+#
+# HALF TWO, THE REPEAT, AND IT IS ANSWERED BY ORIENTATION RATHER THAN BY A
+# BIGGER TILE. Which axis repeats is a fact about the consumer, not a matter
+# of taste. The pad's skirt is 24 m long and 1.55 m tall and UVs are
+# box-projected world metres, so at 1.8 m the tile lays 13.3 repeats along
+# the wall and 0.86 of one up it: the HORIZONTAL direction is the only one a
+# player can ever count, and the vertical direction cannot repeat on this
+# consumer at all. `_bark_height`'s derivation gives the axis to the digit -
+# on both horizontal-normal faces v = 1 - Y, so world-vertical is v - and
+# this family exploits it:
+#
+#   * every strong feature that varies is a HORIZONTAL line (the board
+#     faces and their joints, the per-board step). A field constant along u
+#     contributes exactly nothing to a horizontal repeat, however loud it is,
+#     and board marking is the strongest thing on a formed wall.
+#   * the one loud feature that varies along u is the FORM PANEL JOINT, and
+#     it is placed at u = 0 and u = 0.5, i.e. every 0.90 m. So the rhythm the
+#     eye actually locks onto is at HALF the tile period, and it is a rhythm
+#     that is supposed to be regular: form sheets are a standard width and a
+#     concrete wall really does carry a joint every panel. A repeat the
+#     subject genuinely has is not a tiling artefact.
+#   * nothing else is allowed to be both large and idiosyncratic. The
+#     spalls, which are the one feature with a distinctive silhouette, are
+#     gated down to a handful of 5 to 10 cm patches, which is `_bark_height`'s
+#     own recorded rule ("a long unique feature on a shared tiling surface is
+#     a repeat cue") applied to the feature most likely to break it.
+#
+# That is a claim with a number behind it and the number is in selftest: this
+# family's heightfield must change at least 1.5x faster ALONG v than along u,
+# the mirror of the check `bark` is held to, and it is the property that
+# makes the countable axis the quiet one.
+#
+# WHAT IT COSTS, stated here rather than found later. Three PNGs at 512 px:
+# roughly 4.0 MiB of VRAM with the mip chain, the same as `masonry`'s own,
+# and about 1.0 MB on disk. The pad is the only consumer today, so nothing
+# else in the game pays it, and the pad stops loading `masonry` for anything
+# it draws (its collision proxies still nominally carry the role, because
+# this pass froze their bytes; nothing renders them).
+# ---------------------------------------------------------------------------
+
+# THE AMPLITUDES ARE ALL SMALL AND THAT IS THE FAMILY'S CENTRAL CLAIM, not a
+# timidity to be tuned out later. A formed concrete wall IS flat: the form was
+# a sheet of ply and the wall is a cast of it. The first version of this field
+# ran a 0.10 board joint and a 0.17 panel joint against a 0.34 total range, so
+# the joints were a third and a half of everything the map had to say, and the
+# 2 x 2 tiled preview read as a tiled bathroom wall - a worse answer to "this
+# is not poured concrete" than the rock it replaced. Every relief number below
+# is between a fifth and a third of that first pass, and the CHARACTER moved
+# into the albedo, which is where a real wall keeps it: concrete is a tonal
+# surface, not a relief one.
+CONC_BOARDS = 12            # board faces across the tile -> 150 mm boards
+CONC_PANEL_U = (0.0, 0.5)   # form panel joints -> one every 0.90 m
+CONC_JOINT_HALF = 0.0022    # half a panel joint's gap -> 7.9 mm
+CONC_JOINT_FALL = 0.0042    # ...the face falls away over a further 7.6 mm
+CONC_BOARD_HALF = 0.0011    # half a board joint's gap -> 4.0 mm
+CONC_BOARD_FALL = 0.0026    # ...over a further 4.7 mm
+CONC_TIE_R = 0.0130         # a plugged tie hole -> 47 mm across
+# Tie rods on the form panels' own 0.90 x 0.60 m grid, jittered off it by a
+# few centimetres so the wall is built rather than printed. They are
+# deliberately NOT hashed into random positions: a tie grid is a real regular
+# thing at the panel pitch, and putting it there is what makes the 0.90 m
+# rhythm above read as formwork instead of as a texture period.
+CONC_TIES = ((0.24, 0.17), (0.76, 0.15), (0.27, 0.50),
+             (0.73, 0.52), (0.23, 0.84), (0.78, 0.82))
+
+
+def _concrete_height(w, h):
+    """(height, aux). The formed face, in the order the pour makes it.
+
+    AMPLITUDE, against the neighbours whose `normal_strength` this family's
+    is chosen beside. The face sits at 1.0; a board joint falls 0.10 over
+    ~6 mm and a panel joint 0.17 over ~11 mm, so the panel joint is the one
+    real edge on the tile and everything else is shallower than a `stone`
+    arris by a wide margin. That is the physical truth about the subject and
+    it is why `concrete` cannot simply borrow stone's 10.0: on a field whose
+    biggest step is a sixth of stone's, 10.0 reads as a wall of card."""
+    grain = _fbm(w, h, 96, 2, seed=31013)     # ~1.9 cm: the timber's own grain
+    laitance = _fbm(w, h, 7, 3, seed=31181)   # ~26 cm: the face is not a plane
+    air = _worley(w, h, 34, seed=31333)       # 5.3 cm cells: blowhole sites
+    spall = _worley(w, h, 11, seed=31489)     # 16 cm cells: candidate breaks
+    agg = _worley(w, h, 30, seed=31627)       # 6 cm: the stones underneath
+    # BLOWHOLES CLUSTER, AND THE FIRST VERSION DID NOT KNOW THAT. Ungated,
+    # a 34 x 34 worley pits every one of 1156 cells and the wall reads as
+    # regularly studded - the same "pattern rather than surface" failure
+    # `_paintchip_height` records about keying wear on exposure alone. Air
+    # collects where the form was vertical and the mix was stiff, in patches,
+    # so the void depth is gated on a 26 cm field and taken to the sixth
+    # power: only the very centre of a cell in a favoured patch is a void.
+    voids = _fbm(w, h, 9, 2, seed=31889)      # ~20 cm: where air collected
+    # THE SPALL OPPORTUNITY FIELD, and `_paintchip_height`'s reason for having
+    # one applies here twice over. Keyed on the worley alone, every one of the
+    # 121 cells breaks equally and the map reads as a pattern; worse, on THIS
+    # family a regular field of distinctive 16 cm silhouettes is exactly the
+    # repeat cue the header undertakes not to author. Gated, three to six of
+    # them survive per tile.
+    where = _fbm(w, h, 3, 2, seed=31771)
+
+    # Per-board tables, hoisted. Indices are integers modulo CONC_BOARDS, so
+    # the field is periodic in v BY CONSTRUCTION rather than by hoping.
+    step = [(_hash01(k, 7, 31907) - 0.5) * 0.020 for k in range(CONC_BOARDS)]
+    cup = [0.002 + _hash01(k, 23, 32009) * 0.007 for k in range(CONC_BOARDS)]
+
+    out = [0.0] * (w * h)
+    formed = [0.0] * (w * h)
+    sp_out = [0.0] * (w * h)
+    vd_out = [0.0] * (w * h)
+    bd_out = [0.0] * h
+    for y in range(h):
+        v = (y + 0.5) / h
+        base = y * w
+        # -- the board this row is on, and where across it. v * CONC_BOARDS
+        #    is an integer count over the tile, so board 11 meets board 0 at
+        #    the wrap with no special case.
+        f = v * CONC_BOARDS
+        bi = int(f) % CONC_BOARDS
+        bf = f - int(f)
+        dvj = min(bf, 1.0 - bf) / CONC_BOARDS      # to the nearest board joint
+        board_z = step[bi]
+        # A board bows away from the pour, so the face is very slightly dished
+        # across each board and the joints stand proudest. 4*bf*(1-bf) peaks
+        # at 1.0 mid-board and is 0 at both joints.
+        board_z -= cup[bi] * 4.0 * bf * (1.0 - bf)
+        board_z -= 0.030 * (1.0 - _smoothstep(CONC_BOARD_HALF,
+                                              CONC_BOARD_HALF
+                                              + CONC_BOARD_FALL, dvj))
+        # THE LIFT LINE, on the tile boundary in v. Two pours met here, so the
+        # lower one's top is a hair proud of the upper one's foot and there is
+        # a shallow trough between them. It is the only v-feature bigger than
+        # a board joint and it sits on the wrap, which is `panel`'s own trick
+        # (the tile edge IS a seam, so the repeat has nowhere to show).
+        dlift = _wrap_dist(v, 0.0)
+        board_z -= 0.026 * (1.0 - _smoothstep(0.0030, 0.0110, dlift))
+        for x in range(w):
+            u = (x + 0.5) / w
+            i = base + x
+            z = 1.0 + board_z
+            # -- the form panel joint. The one loud u-varying feature, and it
+            #    is at the panel pitch on purpose (see the family header).
+            # THE TWO JOINTS ARE NOT EQUAL, and the first version's were.
+            # Drawn at one depth they gave the wall a square grid of 0.90 m
+            # cells against the 0.15 m board lines, which reads as laid
+            # blocks - the failure mode next door, arrived at from the other
+            # side. Real formwork has a hierarchy: the joint between two form
+            # SHEETS is a real gap, the line where the next sheet's stud
+            # backing bears is much fainter. u = 0 is the sheet joint at full
+            # depth and u = 0.5 is the intermediate at 45 per cent of it, so
+            # the primary rhythm is 1.80 m (and lands on the tile wrap, where
+            # `panel` puts its own seams) and the 0.90 m one is a subdivision
+            # of it rather than its equal.
+            du = CONC_JOINT_HALF + CONC_JOINT_FALL + 1.0
+            weight = 1.0
+            for k, s in enumerate(CONC_PANEL_U):
+                d = _wrap_dist(u, s)
+                if d < du:
+                    du = d
+                    weight = 1.0 if k == 0 else 0.45
+            z -= 0.055 * weight * (1.0 - _smoothstep(
+                CONC_JOINT_HALF, CONC_JOINT_HALF + CONC_JOINT_FALL, du))
+            # ...and the grout that leaked through it and set as a fin. Only
+            # where the laitance field says the form was slack, so the fin is
+            # intermittent along the joint rather than a ruled line.
+            if du < 0.0075:
+                z += 0.020 * (1.0 - _smoothstep(0.0026, 0.0075, du)) \
+                    * _clamp01((laitance[i] - 0.46) / 0.34)
+            # -- the tie holes: a mortar plug shrunk back from the face.
+            for (tu, tv) in CONC_TIES:
+                ddu = _wrap_delta(u, tu)
+                ddv = _wrap_delta(v, tv)
+                dd = math.sqrt(ddu * ddu + ddv * ddv)
+                if dd < CONC_TIE_R * 1.45:
+                    z -= 0.030 * (1.0 - _smoothstep(CONC_TIE_R * 0.70,
+                                                    CONC_TIE_R * 1.45, dd))
+            # -- blowholes, clustered and to the sixth power: see `voids`.
+            vd = ((1.0 - air[i]) ** 6) * _clamp01((voids[i] - 0.40) / 0.34)
+            vd_out[i] = vd
+            z -= 0.034 * vd
+            # -- the face's own waviness and the timber grain printed into it.
+            z += (laitance[i] - 0.5) * 0.030
+            z += (grain[i] - 0.5) * 0.009
+            # -- spalling: the formed skin is gone and the aggregate shows.
+            raw = _clamp01((0.34 - spall[i]) / 0.34) * (0.10 + 0.90 * where[i])
+            sp = _smoothstep(0.30, 0.62, raw)
+            sp_out[i] = sp
+            z -= 0.060 * sp
+            z += 0.040 * sp * (1.0 - agg[i]) ** 2
+            # `formed` is "how intact the moulded skin is here", 1 on a face
+            # the form made and 0 in a spall or a void. The masks and the
+            # albedo both key on it, which is the honest single authority: a
+            # surface cannot be smooth AND broken at the same texel.
+            formed[i] = _clamp01((1.0 - sp) * (0.45 + 0.55 * air[i]))
+            out[i] = z
+        # Per-board cure tone, published per ROW because it is a function of v
+        # alone. Boards absorb different amounts of water out of the mix, so
+        # a board-marked wall is faintly BANDED in colour as well as in
+        # relief, and the banding is the strongest thing the albedo says.
+        # It is a v-only field, so it says it without touching the one axis
+        # that can show a repeat.
+        bd_out[y] = (_hash01(bi, 59, 32089) - 0.5) * 2.0
+    return out, {"formed": formed, "spall": sp_out, "agg": agg, "air": air,
+                 "void": vd_out, "board": bd_out,
+                 "laitance": laitance, "grain": grain}
+
+
+def _concrete_masks(w, h, height, aux):
+    """(roughness, metalness).
+
+    THE BAND IS NARROW ON PURPOSE AND THAT IS THE OPPOSITE OF `stone`'S CASE.
+    `_stone_masks` exists because `coarse` was never smooth anywhere and rock
+    needs a fresh fracture to glint; a formed concrete face is matte
+    everywhere and its interesting variation is small. What it does have is a
+    real two-material split: the MOULDED SKIN, which took the form's own
+    finish and is the smoothest concrete ever gets, and everywhere the skin
+    is gone - a blowhole, a spall, an exposed stone - which is as rough as it
+    gets. So roughness is driven by `formed` and by nothing else that could
+    disagree with it.
+
+    Metalness identity, `_stone_masks`'s reason word for word: no concrete
+    role is a polished metal and 1.0 is the only multiplier that leaves the
+    palette's own constant where the palette put it."""
+    dirt = _fbm(w, h, 6, 3, seed=32117)     # ~30 cm: where grime has settled
+    formed = aux["formed"]
+    rough = [0.0] * (w * h)
+    metal = [1.0] * (w * h)
+    for i in range(w * h):
+        # 0.72 on an intact moulded skin, 1.00 where it has gone. The palette
+        # multiplies: `Concrete` at 0.94 lands the skin at 0.677 effective,
+        # which is matte with a wide soft lobe rather than a glint, and the
+        # broken ground at 0.94.
+        r = 1.00 - 0.28 * _smoothstep(0.18, 0.86, formed[i])
+        # Grime roughens whatever it lands on and it lands everywhere.
+        r += 0.06 * (dirt[i] - 0.5)
+        rough[i] = _clamp01(r)
+    return rough, metal
+
+
 def _ashlar_albedo(w, h, height, aux):
     """A TILING ALBEDO for laid stone: per-block tone, mortar, weathering that
     runs across the blocks, and water staining that runs DOWN from the beds.
@@ -2320,6 +2644,141 @@ def _ashlar_albedo(w, h, height, aux):
                 v * (1.0 + 0.30 * warm + 0.05 * grn))))
             out[o + 2] = int(round(255.0 * _clamp01(
                 v * (1.0 - 0.85 * warm - 0.05 * grn))))
+    return bytes(out)
+
+
+# Rain runs down a wall, so the stain field is one meandering line per run
+# rather than a noise field: `_bark_height`'s construction, used here for the
+# axis it was derived for rather than against it.
+CONC_RUNS = 14
+CONC_RUN_PERIOD = 6
+
+
+def _concrete_albedo(w, h, height, aux):
+    """Cement is nearly one colour, so this map is almost entirely WEATHER.
+
+    WHAT IS AUTHORED AND WHY EACH OF IT IS THERE:
+      * RAIN RUNS. Water comes off the coping and runs down the face, leaving
+        washed light streaks with dark rims where the dirt it carried has
+        collected. This is the "staining below the coping" the brief asks
+        for, authored the only way a TILING map honestly can: the tile does
+        not know where the coping is, but every run on a real wall starts at
+        an edge above it and goes DOWN, so a field of vertical runs reads as
+        running off something whatever it is applied to.
+      * A LIFT LINE at v = 0, faint. Two pours meeting cure to slightly
+        different colours and the join is a horizontal band. It sits on the
+        tile boundary so it also hides the v wrap, which is `panel`'s own
+        trick with its seams.
+      * EFFLORESCENCE, pale and patchy, where salts have come out.
+      * The SPALLS reading warm, because what shows in a broken face is
+        aggregate and sand, which are warmer than the cement paste around
+        them.
+
+    IT READS `aux` AND `panel`'S ARGUMENT SAYS THAT IS ALLOWED HERE, where
+    `_stone_albedo` refuses it. The refusal there is specific: a pigment
+    field that agreed with a FACET field renders as cobblestone, because a
+    facet and a pigment patch are the same size. Here the only term keyed on
+    the height's own features is the spall warmth, and a spall genuinely IS
+    the same object in both maps - the broken place is broken in the relief
+    and warm in the colour. Every other term is its own field at its own
+    scale.
+
+    CENTRED AT 0.52, for the reason `_stone_albedo`'s last paragraph gives:
+    the level is free because `Surfaces.ts` divides `albedo_mean_linear` back
+    out, and the middle of the range is where both tails survive."""
+    grime = _fbm(w, h, 5, 3, seed=32261)      # ~36 cm: broad soiling
+    bloom = _fbm(w, h, 8, 2, seed=32369)      # ~22 cm: efflorescence
+    fines = _fbm(w, h, 40, 2, seed=32507)     # ~4.5 cm: sand in the paste
+    spall = aux["spall"]
+    agg = aux["agg"]
+    void = aux["void"]
+    board = aux["board"]
+
+    # One meander table per run, periodic in v by construction, plus a hashed
+    # base u and a hashed width. Runs are NARROW (2 to 5 cm) and there are
+    # nine of them: wide runs at this tile size would be the large idiosyncratic
+    # u-varying feature the family header undertakes not to author.
+    mp = CONC_RUN_PERIOD
+    wander = [[(_hash01(k, j, 32611) - 0.5) * 0.030
+               for j in range(mp)] for k in range(CONC_RUNS)]
+    base_u = [(k + 0.5 + (_hash01(k, 71, 32717) - 0.5) * 0.34) / CONC_RUNS
+              for k in range(CONC_RUNS)]
+    half = [0.0030 + _hash01(k, 13, 32831) * 0.0055 for k in range(CONC_RUNS)]
+    # How far down the tile each run has got. A run fades out, it does not
+    # stop, so this is a threshold on v with a soft edge rather than an end.
+    start = [_hash01(k, 41, 32933) * 0.35 for k in range(CONC_RUNS)]
+
+    LEVEL = 0.52
+    out = bytearray(3 * w * h)
+    for y in range(h):
+        v = (y + 0.5) / h
+        base = y * w
+        f = v * mp
+        j0 = int(f) % mp
+        j1 = (j0 + 1) % mp
+        t = _smooth(f - int(f))
+        row = []
+        for k in range(CONC_RUNS):
+            o0 = wander[k][j0]
+            o1 = wander[k][j1]
+            # A run is strongest just below where it started and thins with
+            # distance down the wall.
+            live = _smoothstep(start[k], start[k] + 0.10, v) \
+                * (1.0 - 0.55 * _smoothstep(start[k] + 0.10, 1.0, v))
+            row.append(((base_u[k] + o0 + (o1 - o0) * t) % 1.0, live, half[k]))
+        # THE LIFT LINE, on the tile boundary. `_wrap_dist` to v = 0, so the
+        # band is continuous across the wrap.
+        lift = 1.0 - _smoothstep(0.006, 0.030, _wrap_dist(v, 0.0))
+        for x in range(w):
+            u = (x + 0.5) / w
+            i = base + x
+            # -- the runs. `wash` is the scoured centre, `rim` the dirt it
+            #    pushed to the edges: the same washed/rimmed pair a real
+            #    streak has, and the reason a run reads as a run and not as a
+            #    painted stripe.
+            wash = 0.0
+            rim = 0.0
+            for (cu, live, hw) in row:
+                d = _wrap_dist(u, cu)
+                if d < hw + 0.0075:
+                    wash += live * (1.0 - _smoothstep(hw * 0.5, hw, d))
+                    rim += live * (1.0 - _smoothstep(hw, hw + 0.0075, d)) \
+                        * _smoothstep(hw * 0.55, hw, d)
+            wash = _clamp01(wash)
+            rim = _clamp01(rim)
+            # -- value. The weather is most of the amplitude and the BOARD
+            #    BANDING is the largest single term, which is the honest
+            #    claim about a board-marked wall and also the one that costs
+            #    nothing in repeat (it varies in v only).
+            val = 1.0 + board[y] * 0.060
+            val += (grime[i] - 0.5) * 0.14 + (fines[i] - 0.5) * 0.08
+            # A RUN IS A DARK STREAK WITH A FAINT LIGHT CORE, and that ratio
+            # is the whole difference between weathering and wax. Authored
+            # the other way round first (+0.14 wash, -0.20 rim) the runs came
+            # out as pale drips bright enough to be the most conspicuous
+            # u-varying thing on the tile, which put the repeat back in the
+            # one axis this family exists to keep quiet.
+            val *= 1.0 + 0.045 * wash - 0.100 * rim
+            val *= 1.0 - 0.07 * lift
+            # A blowhole is a hole: it reads dark because you are looking
+            # into it, not because the cement there is a different colour.
+            val *= 1.0 - 0.34 * void[i]
+            eff = _clamp01((bloom[i] - 0.62) / 0.30)
+            val *= 1.0 + 0.08 * eff
+            val *= LEVEL
+            # -- hue. Only two terms move it and both move it warm, because
+            #    everything that happens to concrete is either sand showing
+            #    through or dirt: there is no term here that could make it
+            #    blue, and inventing one would be the flat-colour defect in
+            #    a different disguise.
+            warm = _clamp01(spall[i] * (1.0 - agg[i])) * 0.55 + rim * 0.22
+            o = 3 * i
+            out[o] = int(round(255.0 * _clamp01(
+                val * (1.0 + 0.16 * warm - 0.02 * eff))))
+            out[o + 1] = int(round(255.0 * _clamp01(
+                val * (1.0 + 0.02 * warm + 0.00 * eff))))
+            out[o + 2] = int(round(255.0 * _clamp01(
+                val * (1.0 - 0.17 * warm + 0.04 * eff))))
     return bytes(out)
 
 
@@ -4068,6 +4527,48 @@ FAMILIES = {
                     albedo=_ashlar_albedo,
                     normal_strength=10.0, ao_radius=9, ao_floor=0.42,
                     ao_gain=4.4),
+    # RN-1815. `concrete` is the first architecture-scale family in this table
+    # that is NOT stone's recipe under another name, and its three numbers are
+    # all chosen against measured properties of its own field rather than
+    # inherited.
+    #
+    # normal_strength 15.0, ABOVE stone's 10.0 and below paintchip's 21.0,
+    # and it is up rather than down for the reason the `rust` row states from
+    # the same side: this field's gradients are GENTLER than stone's, so the
+    # strength has to come up to give a board joint the shading weight a rock
+    # arris gets. A stone arris drops ~0.55 over a 3 cm bevel; a board joint
+    # drops 0.030 over 4 mm and a panel joint 0.055 over 8 mm.
+    #
+    # MEASURED ON THE SHIPPED FIELD AT 512 px, and the SHAPE of the pair is
+    # the argument rather than either number on its own: mean tilt 4.73
+    # degrees, MAXIMUM 45.90. Set that beside the two rows this table already
+    # holds numbers for. `coarse` measured mean 7.69 / max 27.19 and 7f calls
+    # that the family's founding defect: relief everywhere and an edge
+    # nowhere, so nothing can glint and nothing catches a raking sun.
+    # `stone` measures 17.18 / 74.24, which is a surface made entirely of
+    # edges. Concrete is deliberately the third shape and not a point between
+    # them: a LOWER mean than coarse and a maximum nearly twice coarse's, i.e.
+    # a flat cast face that has real edges cut into it at the joints. Matching
+    # stone's mean would be authoring rock again with different features,
+    # which is the whole thing this family exists not to do.
+    #
+    # ao_radius 7, not stone's 9. The occluder here is a board joint 6 mm
+    # across or a blowhole 8 mm across, and at 284 texels/m a 15-texel window
+    # is 53 mm: wide enough to see across either feature and its lip, narrow
+    # enough not to average the whole board face into it. stone's 9 (33 mm at
+    # its own density) was sized for a 3.2 cm chip facet, a feature this
+    # family does not have.
+    #
+    # ao_floor 0.52 and ao_gain 3.0, both softer than stone's 0.44 / 5.0 and
+    # for one reason stated once: the relief left under the blur is ~0.08 in
+    # a board joint against stone's 0.15 to 0.20 in an arris, so stone's gain
+    # would clamp every joint to the floor and paint the board marks on as
+    # flat black lines - the failure `_coarse_masks` names and every row in
+    # this table since has had to avoid.
+    "concrete": dict(height=_concrete_height, masks=_concrete_masks,
+                     albedo=_concrete_albedo,
+                     normal_strength=15.0, ao_radius=7, ao_floor=0.52,
+                     ao_gain=3.0),
     # RN-1780. `ember` carries an EMISSIVE map (RN-1462's slot, unused by any
     # family until now) alongside a normal+orm at `stone`'s own physical
     # field (a coal bed IS fractured mineral; see `_ember_emissive`'s header
@@ -4951,6 +5452,14 @@ ALLOWED_CONSTANT = {
         "coal is not a polished metal and EmberEmissiveState's palette "
         "metallic is 0.00; identity is the only multiplier that leaves it "
         "there, `stone`'s reason one subject along"),
+    # RN-1815. `concrete` declares its own pinned channel at the moment the
+    # family lands, in the (value, reason) schema RN-1837 introduced one
+    # entry down. Nothing about this row is a repair of an older one.
+    ("concrete", "orm", "B"): (255,
+        "poured concrete is a dielectric and all three roles that wear this "
+        "family are already 0.00 metallic in the palette; identity is the "
+        "only multiplier that leaves that alone, and it is the same call "
+        "`stone` makes for the same substance-not-a-metal reason"),
     ("suitfab", "orm", "B"): (255,
         "a woven pressure garment is a polymer and both roles that wear it "
         "are already 0.00 metallic in the palette; identity is the only "
@@ -5410,6 +5919,75 @@ def selftest():
     check("ore band control fails", not (rv > 1.5 * ru),
           "rotated 90 degrees: ratio %.2f, correctly outside the > 1.50 rule"
           % (rv / ru if ru > 0 else float("inf")))
+
+    # 7e2. RN-1815. Concrete's board marks actually run ACROSS v, and this is
+    #      not a stylistic check: it is the whole answer to the verifier's
+    #      "visible repeat at walking distance". The launch pad's skirt is
+    #      24 m long and 1.55 m tall, so at a 1.8 m tile the HORIZONTAL axis
+    #      carries 13.3 repeats and the vertical axis carries 0.86 of one.
+    #      Only u can ever be counted. A family whose loud features vary along
+    #      v therefore cannot show its repeat on this consumer however loud
+    #      they are, and the one feature that does vary along u is placed at
+    #      the form panel pitch (0.90 m, half the tile) so the rhythm the eye
+    #      finds is a rhythm formwork genuinely has.
+    #
+    #      The rule is ore's, on the same side (v-varying wins), and it is the
+    #      mirror of bark's. What it catches is someone quietly making this
+    #      family isotropic again - reaching for a worley facet field because
+    #      it "looks more like a surface" - which would put the repeat
+    #      straight back. Measured at the SHIPPED size, because the board
+    #      count and the joint widths are texel-scale and a 192 px proxy would
+    #      let a change through that 512 px would not.
+    sc = FAMILY_SIZE["concrete"]
+    ch, _ = _concrete_height(sc, sc)
+    cu = cv = 0.0
+    for y in range(sc):
+        row = y * sc
+        for x in range(sc):
+            here = ch[row + x]
+            cu += abs(ch[row + (x + 1) % sc] - here)
+            cv += abs(ch[((y + 1) % sc) * sc + x] - here)
+    check("concrete boards cross v", cv > 1.5 * cu,
+          "sum |dz/dv| %.1f vs sum |dz/du| %.1f, ratio %.2f (need > 1.50)"
+          % (cv, cu, cv / cu if cu > 0 else float("inf")))
+
+    # 7e3. RN-1815, AND IT IS THE HALF THAT MATTERS MORE. Anisotropy alone
+    #      does not make a repeat invisible: a tile can be perfectly
+    #      v-directional and still carry one enormous u-varying blotch. The
+    #      property that actually decides whether a wall of copies reads as
+    #      copies is the LOW-FREQUENCY CONTRAST of the tile - how much the
+    #      tile varies at the scale of the tile itself - because that is the
+    #      signal the eye integrates over a whole repeat.
+    #
+    #      Measured as the standard deviation of an 8 x 8 box downsample of
+    #      the heightfield, normalised by the field's own full range so the
+    #      number is comparable between families with different amplitudes.
+    #      `masonry` (i.e. `_stone_height`, which is what the pad wore when
+    #      the verifier called the repeat visible) is the reference the bound
+    #      is set against, and it is measured here rather than quoted so the
+    #      comparison cannot go stale.
+    def _lowfreq(field, s, cells=8):
+        step = s // cells
+        cell = []
+        for cy in range(cells):
+            for cx in range(cells):
+                t = 0.0
+                for y in range(cy * step, (cy + 1) * step):
+                    row = y * s
+                    for x in range(cx * step, (cx + 1) * step):
+                        t += field[row + x]
+                cell.append(t / (step * step))
+        m = sum(cell) / len(cell)
+        var = sum((c - m) ** 2 for c in cell) / len(cell)
+        rng = max(field) - min(field)
+        return (math.sqrt(var) / rng) if rng > 0 else 0.0
+
+    mh, _ = _stone_height(FAMILY_SIZE["masonry"], FAMILY_SIZE["masonry"])
+    lf_m = _lowfreq(mh, FAMILY_SIZE["masonry"])
+    lf_c = _lowfreq(ch, sc)
+    check("concrete repeats less than masonry", lf_c < 0.5 * lf_m,
+          "low-frequency contrast %.4f vs masonry's %.4f (need under half)"
+          % (lf_c, lf_m))
 
     # 7f. Stone's facets are actually ANGULAR, and this is the check the whole
     #     family exists to satisfy (RN-742). `coarse` served every rock and
