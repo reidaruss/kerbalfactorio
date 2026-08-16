@@ -150,13 +150,13 @@
       },
       "albedo": {
         "file": "of_masonry_a.png",
-        "bytes": 150772,
-        "sha256": "a83bfd7bf372a8c04142dcdbd13ed5a049134db6f1720b5fbccf77c3c22364da"
+        "bytes": 152799,
+        "sha256": "83a8c881548497e545dab2585914aab3e12cc159f67dcd03af04452a25dc0e63"
       },
       "tile_m": 1.8,
       "size_px": 512,
       "texels_per_m": 284.44444444444446,
-      "albedo_mean_linear": 0.2115
+      "albedo_mean_linear": 0.1893
     },
     "ore": {
       "normal": {
