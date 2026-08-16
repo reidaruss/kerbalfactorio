@@ -1,5 +1,19 @@
 // THE AIRLOCK, AND THE WAY OUT WAS ALREADY IN THE MESH (PH-105 to PH-107, R55).
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/airlock.js
+//
+// BT-183 SWEEP CORRECTION: this probe never carried a documented invocation
+// either, the same defect as `orbitdeck.js` (BT-176): `extractCmd()` takes
+// the FIRST comment line mentioning `run.mjs`, which for this file was a
+// prose sentence 49 lines down ("run.mjs settles on terrain convergence"),
+// so every prior sweep ran it at the runner's bare defaults (survival, not
+// sandbox) rather than at any flags this file actually documented, because
+// it never documented any. Sandbox, not survival, for the same reason
+// `decksink.js`/`orbitdeck.js` give: this probe places nothing, spends
+// nothing, and the harvesting economy is noise against a station-gravity
+// measurement.
+//
 // R55 said "the station has no way out". That was TRUE of the placeholder
 // interior -- twelve boxes authored in code with `col_CorrCap` shutting the far
 // end -- and it is FALSE of the asset that replaced it. The measurement is the
