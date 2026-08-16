@@ -205,6 +205,16 @@ function verdictOf(ev) {
     return { cls: 'NO_VERDICT', fails: [] };
   }
   const fails = hasFails ? ev.fails.map(String) : [];
+  // BT-175: a report carrying BOTH a truthy `fail` string AND a `fails: []`
+  // (present but empty) now flips GREEN to RED, since `hasFail` alone is
+  // enough to fall through to the RED branch below. Checked against every
+  // convention-4 (`const fail = (why, extra) => ({ fail: why, ...extra })`)
+  // early-return guard in the corpus: it always short-circuits the whole
+  // run before the normal completion path ever builds a `fails` array, so
+  // no real probe can produce this combination today. Recorded here so the
+  // next reader does not have to re-derive that this is safe rather than an
+  // accidental behaviour change; if a probe is ever written that DOES mix
+  // the two, this comment is the trip-wire to come back and re-check it.
   if (hasFail) fails.push(ev.fail);
   const falseOnes = bools.filter((k) => ev[k] !== true);
   if (fails.length > 0 || falseOnes.length > 0) {

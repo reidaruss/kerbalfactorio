@@ -74,8 +74,10 @@ for exactly once:
 **These original counts are left as this lane recorded them; they are not the
 current truth.** See the "Amendment" section at the end of this document
 (2026-08-15, `lane/verdict-convention`, BT-175 to BT-189) for the corrected
-counts (219 GREEN / 39 RED / 24 NO_VERDICT / 22 NO_OUTPUT / 12 EXCLUDED) and
-the re-sweep evidence behind each change.
+counts (218 GREEN / 40 RED / 24 NO_VERDICT / 22 NO_OUTPUT / 12 EXCLUDED) and
+the re-sweep evidence behind each change, including a correction the
+amendment made to itself after a fresh-context verifier caught a wrong
+`terrainart.js` classification.
 
 304 probes actually ran through the runner (217+35+30+22); 12 more were
 recorded EXCLUDED without running, matching BT-115's audit exactly
@@ -499,7 +501,30 @@ entire re-run**, so the next finding is not another dead-server artifact:
 | Confirmed RED, as classified | 32 | includes `animgate.js`, `discovery.js` (both previously known) |
 | Confirmed RED after a false NO_OUTPUT read | 3 | `phrcskeys.js`, `phrendezvous.js`, `playthrough.js` (see above) |
 | Newly-red from item 3, confirmed again here | 2 | `airlock.js`, `portmigrate.js` (the other 3 newly-red probes, `build.js`, `furnace.js`, `furnacelit.js`, are also in this 38 and also confirmed RED, folded into the 32 above) |
-| **Reclassified RED to GREEN** | 1 | **`terrainart.js`**: the census's original RED was a sharded-contention artifact. Serially, with no other probe competing for the GPU/CPU, it is clean. This is exactly the failure mode `probeall.mjs`'s own comment warns a shard can produce, now caught by doing what that comment says. |
+| **`terrainart.js`: NONDETERMINISTIC, not a shard artifact** | 1 | see below, this was wrong in the first version of this amendment |
+
+**CORRECTION WITHIN THIS AMENDMENT: `terrainart.js` was first reported here
+as "reclassified RED to GREEN, a sharded-contention artifact" on the
+strength of a single isolated run that came back GREEN. That was wrong, and
+it was wrong in the specific way this whole file exists to catch: n=1,
+generalised in the direction that hides a defect. A fresh-context verifier
+ran it FIVE separate isolated times on an otherwise quiet box (nothing else
+running, no shard, no contention to blame) and got GREEN, RED, GREEN, RED,
+RED, 2 of 5 green. The probe is not contention-sensitive, it is
+**nondeterministic in isolation**. Reading the reds' own text explains why:
+the assertion compares a measured delta against a "do-nothing floor" that is
+itself computed fresh each run and moves run to run (0.0096 against a floor
+of 0.0063 one run, 0.0063 against 0.0031 the next, 0.0032 against a floor of
+literal 0 the run after that): a badly-conditioned comparison where the
+threshold is exactly as noisy as the thing it is measuring, so which side of
+it a given run lands on is close to a coin flip. **Reclassified RED**, kept
+inside the 40-count below rather than given a separate `FLAKY` bucket,
+because the numbers this amendment restores (218/40/24/22/12) are what
+Admin's coordinator asked for directly; the 2-of-5 green rate is the
+record of its flakiness, kept here rather than invented a new top-level
+census class for one probe. **Not fixed**: the badly-conditioned assertion
+itself is a game-probe-code question, out of this lane's scope, named as a
+remaining checklist item below.
 
 **On the "35" count:** this lane could only ground 33 individually-named
 probes in the census document's own text (31 newly-found across its
@@ -514,14 +539,35 @@ original headline "35" was itself exactly right.
 
 | Class | Original | Corrected | Change |
 |---|---:|---:|---|
-| GREEN | 217 | **219** | +`orbitdeck.js` (item 3), +`terrainart.js` (item 5, reclassified from RED) |
-| RED | 35 | **39** | -`terrainart.js` (item 5), +`airlock.js`/`build.js`/`furnace.js`/`furnacelit.js`/`portmigrate.js` (item 3) |
+| GREEN | 217 | **218** | +`orbitdeck.js` (item 3); `terrainart.js` stays RED (item 5, corrected below) |
+| RED | 35 | **40** | +`airlock.js`/`build.js`/`furnace.js`/`furnacelit.js`/`portmigrate.js` (item 3); `terrainart.js` was NOT reclassified, see the correction in item 5 |
 | NO_VERDICT | 30 | **24** | -6 (the singular-`fail` probes, 5 to RED + `orbitdeck.js` to GREEN) |
 | NO_OUTPUT | 22 | 22 | unchanged by this lane's own re-sweep (see NO_OUTPUT triage below); `main` moved independently while this amendment was being written and `padgate.js` (1 of the 22) is now fixed to GREEN by `lane/padgate-stall` (GP-980..984), not verified here, so 21 is the more likely true count but this table reports only what this lane itself confirmed |
 | EXCLUDED | 12 | 12 | unchanged |
 
-219 + 39 + 24 + 22 + 12 = 316, using the 22 this lane itself verified. Every
+218 + 40 + 24 + 22 + 12 = 316, using the 22 this lane itself verified. Every
 probe still accounted for exactly once.
+
+### 7. `airlock.js`'s missing invocation: `orbitdeck.js`'s defect, again
+
+A fresh-context verifier caught this, this lane had not. `airlock.js` never
+carried a documented invocation either: `extractCmd()`'s first match on
+`run.mjs` in this file is a prose comment at line 49 ("`run.mjs` settles on
+terrain convergence..."), so every prior sweep, including item 3's own
+re-sweep above, ran it at the runner's bare defaults (survival, not
+sandbox) rather than any flags this file ever actually documented, because
+it had none. Fixed the same way as item 2: added
+`--scenario=walk --sandbox=1` (the same reasoning `decksink.js` and
+`orbitdeck.js` already give, this probe places and spends nothing).
+**Re-run under the corrected invocation, sentinel-verified port: still
+genuinely RED**, `eval.fail` reading the identical text the census already
+had (`"the ramp is not the length the fringe predicts"`), so this specific
+probe's classification does not change, but it is now trustworthy for the
+first time rather than accidentally correct. `exit=1` on this run too (a
+separate `console.error` about the client surfaces role table disagreeing
+with `surfaces.json` on 3 roles, unrelated to `eval` and not investigated
+here). See the flip position below for the wider, unfixed corpus scan this
+single fix triggered.
 
 ### NO_OUTPUT (22): characterised, not fixed, same triage discipline the original census used for its REDs
 
@@ -585,26 +631,91 @@ the fix should not have moved, and moved everything it should have.
 **This lane does not consider the gate ready to flip anyway**, on evidence
 this lane itself produced rather than on the original two blockers:
 
-1. **`terrainart.js` proves the sharded-RED-is-untrustworthy rule is not
-   theoretical.** A `known-red.json` built from the original, un-reconfirmed
-   35 would have shipped one wrong entry on day one. The corrected 39-probe
-   RED set above (33 census-named + `airlock.js`/`build.js`/`furnace.js`/
-   `furnacelit.js`/`portmigrate.js`, minus `terrainart.js`) is the first set
-   this lane would trust for that file, and even it carries the open "35 vs
-   33-named" question above.
-2. **NO_OUTPUT (22, 21 once `padgate.js`'s independent fix is counted) has no
-   protective allowlist and 10 of its members remain undiagnosed.** A
-   flipped gate needs an answer for what NO_OUTPUT means
-   under it before it can be called complete, not just an accurate RED list.
-3. **A new, real timing caveat** (three probes reading NO_OUTPUT only when
-   deep in a long serial queue) means "re-run serially" is necessary but not
-   sufficient for a fully trustworthy reading; a probe's position in a long
-   queue is its own confound, previously undocumented.
+1. **`terrainart.js` is worse than a sharded-RED-is-untrustworthy problem,
+   and this amendment itself got that wrong once before a fresh-context
+   verifier caught it.** The first version of this section said serial
+   re-confirmation had cleared `terrainart.js` to GREEN. It had not: five
+   ISOLATED runs, quiet box, zero contention, zero sharding, came back
+   GREEN, RED, GREEN, RED, RED. **This probe is a coin flip with nothing
+   else running.** The remedy this amendment itself proposed, "re-run
+   serially before trusting a red," does nothing for a probe whose fail
+   condition is decided by round-off inside its own assertion, independent
+   of what else is on the box. A `known-red.json` needs a category this
+   file did not previously name: not "sharded, re-run it," but "flaky,
+   re-run it MANY times and record the rate," because n of 1 (in either
+   direction) generalises exactly the failure mode this whole audit
+   lineage exists to catch, and this amendment produced that failure mode
+   about itself before a second pair of eyes found it.
+2. **A defect class this amendment did not go looking for turned out to be
+   sitting in the same six lines of `extractCmd()` twice in a six-file
+   sample: `airlock.js` had `orbitdeck.js`'s exact defect, undetected until
+   a fresh-context verifier checked it.** `extractCmd()` takes the FIRST
+   `//` line mentioning `run.mjs`, with no check that the line is an actual
+   invocation rather than prose that happens to say the words. A wider,
+   mechanical scan of all 316 probes for this exact shape (below) found
+   **19 more probes with the identical trap**, none diagnosed by this
+   lane's own re-sweep because the re-sweep trusted the census's own
+   groupings rather than re-deriving each probe's actual invocation. Any
+   verdict this census or its amendment reports for one of those 19 carries
+   the same asterisk `airlock.js` did before its fix: unconfirmed at the
+   probe's real, intended flags.
+3. **NO_OUTPUT (22, 21 once `padgate.js`'s independent fix is counted) has
+   no protective allowlist and 10 of its members remain undiagnosed.** A
+   flipped gate needs an answer for what NO_OUTPUT means under it before it
+   can be called complete, not just an accurate RED list.
+4. **The queue-position timing caveat still stands** (three probes reading
+   NO_OUTPUT only when deep in a long serial queue): "re-run serially" is
+   necessary but not sufficient for a fully trustworthy reading on its own,
+   separately from item 1's point that serially is not sufficient for a
+   flaky probe either.
+
+### The prose-match invocation trap: a corpus-wide scan, not fixed except for `airlock.js`
+
+`extractCmd()`'s regex is `/^\s*\/\/.*run\.mjs/`, matched against every `//`
+line in a probe's first however-many lines, with no check that the matched
+line actually starts an invocation. A mechanical scan (compare that first
+match against every line that actually starts `// node ... run.mjs`) found
+**20 probes total carry this defect** (`airlock.js`, fixed above, plus 19
+more), split two ways:
+
+- **16 with no real invocation anywhere in the file**, so they have run at
+  the runner's bare defaults (survival, `--scenario=walk` since that is the
+  app's own unrelated default) every time they have ever been swept,
+  identically to `airlock.js`/`orbitdeck.js` before their fixes: `fpshot.js`,
+  `keycollide.js`, `lookdev.js`, `navdraw.js`, `platetile.js`,
+  `playerhealth.js`, `qolbuild1.js`, `qolbuild2.js`, `qolbuild3.js`,
+  `qolflight3.js`, `qolhandsafe.js`, `qolsandbox.js`, `rockpose.js`,
+  `stationwalk.js`, `survivalrun.js`, `zerog.js`.
+- **3 where a real invocation exists further down the file but is never
+  reached**, because `extractCmd()` stops at the first match regardless:
+  `artshot.js`, `flyto.js`, `popshot.js`. These may be running with a
+  *different* wrong set of flags than the real invocation intends,
+  depending what the accidentally-matched prose line's own continuation
+  lines contain.
+
+The 12 already-EXCLUDED probes (`bodydig.js`, `chestsave.js`, `damagesave.js`,
+`eva.js`, `mtnbore.js`, `mtnstand.js`, `padclear.js`, `poisites.js`,
+`rockreload.js`, `savenamed.js`, `startfresh.js`, `treereload.js`) also match
+the mechanical scan's pattern but are NOT affected: `probeall.mjs` checks
+`excludedReason()` before `extractCmd()` ever runs, so a `PROBEALL-EXCLUDE`
+header short-circuits the whole question for those 12.
+
+**Only `airlock.js` was fixed and re-verified in this lane** (item 3 above,
+re-confirmed still genuinely RED, same fail text, under its now-correct
+`--scenario=walk --sandbox=1`). **The other 19 are named, not fixed**: each
+needs its own read to determine what invocation it actually intends (the
+convention varies probe to probe, confirmed by comparing several working
+neighbours: `--scenario=walk` alone, `--scenario=walk --sandbox=1`,
+`--sandbox=1 --settle=25`, no two identical), then a re-run to see whether
+its currently-recorded verdict holds. This is real, unstarted work, not a
+survey that resolves itself.
 
 **Recommended remaining checklist, with owners:**
 
 | Item | Owner |
 |---|---|
+| Fix and re-verify the 19 remaining prose-match-trap probes (list above) | build-tooling, next lane |
+| Give `terrainart.js` a FLAKY-aware re-read (many runs, not one) once it is fixed at the cause, and fix the badly-conditioned floor-vs-delta assertion itself | build-tooling or whichever domain owns terrain art probes |
 | Standalone BT-130-style timing runs for the 10 unclustered NO_OUTPUT timeouts | build-tooling, next lane |
 | Decide and implement how NO_OUTPUT is represented under a flipped gate (a `known-no-output.json`, or fold into `known-red.json`, or something else) | Admin decision, then build-tooling |
 | `shadowk.js`'s `SyntaxError` (a real instrument bug, not a diagnosis) | build-tooling |
