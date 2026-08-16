@@ -1319,6 +1319,143 @@ fingers something to be closing on, and the bind pose still rests the hand on
 top of the shaft rather than around it. Closing it is a bind-pose change plus a
 `fp_grip` retune across all twelve `FP_*` clips.
 
+## 2.9a THE VIEW-MODEL PASS NOW HAS A SHADOW TERM, AND IT DOES NOT FIX THE FOUR SHOTS (RN-1990 to RN-1997, 2026-08-16, `lane/vm-light`)
+
+**WHAT LANDED.** `web/src/render/ViewModelLight.ts`. Pass 4's sun is named
+`vmSun` in `Boot.ts`, and once per frame -- from inside `Frame.render`, after
+the near pass and before the view-model pass, which is the only window in which
+the term is this frame's -- it is handed **cascade 0's own shadow map**, bias,
+normal bias, radius and map size, with cascade 0's shadow matrix
+post-multiplied by a translation of the engine eye. That composition is the
+whole trick: `CameraRig.setView` puts `vmCam` at the origin with the near
+camera's orientation and `Avatar.placeViewModel` fixes the model there too, so
+view-model space is engine space **translated** by the eye, with no rotation and
+no scale, and a matrix that maps engine metres to shadow UV maps view-model
+metres to the same UV after one translate. Nothing is re-rendered and no second
+map is allocated: `vmSun.shadow.autoUpdate` and `needsUpdate` are both false,
+which is the documented condition on which three's `WebGLShadowMap.render`
+skips a light before it would draw into its map. `Avatar`'s FP rig now loads
+with `receiveShadow: true` (it was false, and three's own line is
+`receiveShadow ? getShadow(...) : 1.0`, so a wired light with unwired meshes is
+a silent identity that reads exactly like the defect).
+
+**COST**, WG-189's interleaved paired method, off phase
+`__ofVmLight.receive(false)` -- which is the correct off phase and
+`shadow(false)` is not: zeroing the shadow INTENSITY still calls `getShadow` and
+still takes its five PCF taps, while clearing `receiveShadow` takes three's
+other ternary arm and also skips this file's per-frame traverse. 5 interleaved
+pairs of 4 s, real D3D11, RTX 4060 Ti: **median p50 8.30 -> 8.40 ms, delta
++0.10 ms against a 1.4 to 1.5 ms within-arm spread and 0.60 ms of off-arm drift,
+not resolvable from zero.** Pass 4 itself 0.30 ms in both arms (spread 0.10).
+Draw calls 74, programs 43, unmoved.
+
+### AND NOW THE HONEST HALF: THE FOUR SHOTS DO NOT MOVE, AND THE REASON IS MEASURED RATHER THAN GUESSED
+
+| shot | ratio before | ratio after | model/behind before | after | caster over the player? |
+|---|---|---|---|---|---|
+| `voxelface` | 0.577 | 0.569 | 0.676 | 0.668 | **no** |
+| `ruin` | 1.000 | 1.030 | 3.409 | 3.469 | **no** |
+| `forestfloor` | 2.320 | 2.323 | 2.696 | 2.647 | **no** |
+| `machine` | 2.931 | 2.933 | 2.889 | 2.955 | **no** |
+| `basedusk` | 0.950 | 1.005 | 3.348 | 3.598 | **no** |
+| `station` | 4.134 | 3.977 | 1.812 | 1.750 | rig off in orbit |
+
+Both arms are one variable apart **inside one page load**
+(`__ofVmLight.shadow`), so this is not two scene builds compared. Every movement
+above is inside the mask's own noise: the model's pixels are found by
+differencing against a view-model-suppressed control, and foliage moving between
+the two grabs swings the mask by 10 to 15 per cent, which is worth several
+counts. `station` also demonstrates the stale-map guard: in orbit `ShadowRig`
+clears `castShadow` on every cascade, and the term correctly reports shadow
+intensity 0 in both arms rather than shadowing the arms with the last daylight
+frame's trees.
+
+**`casterHere` IS A MEASUREMENT, and it is the finding.** `__ofVmLight.mapAt`
+reads cascade 0's own colour attachment (three's stock `MeshDepthMaterial`
+fills it with `1 - fragCoordZ`) at the very texel the arms sample. Over a
+24 x 24 grid at the RN-352 forest site the map is **non-zero on 105 of 576
+texels**, all at a depth within 0.004 of the eye's own plane: **the terrain
+does not cast into cascade 0, only the props do.** So "the ground in this frame
+is dark" and "this player stands in a cast shadow" are different facts, only
+the second is one a shadow term can see, and **none of the six canonical poses
+is standing in one.** The term is correct and inert there.
+
+**WHERE IT DOES BITE**, `probes/vmshade.js`, RN-352 forest site, sun dot 0.70,
+81 stations scanned by the map and 19 measured with a matched on/off pair at
+each: at the stations whose own texel holds a caster nearer the light,
+**the model drops 9.87 counts, 19.9 per cent (n = 6)**, and the
+model-over-world ratio moves **1.90 -> 1.51**; at the stations whose texel is
+clear the same toggle moves it **4.82 counts (n = 13, and one degenerate
+near-black station at world luma 4.4 carries 38 of that: the other twelve mean
+about 2.0)** and the ratio moves **2.69 -> 1.97**. The clear-station residual is
+owed and not a defect: the model spans 0.3 to 0.7 m and its pixels sample a
+spread of texels around the eye's, so a leaf over the tip of the haft is a real
+occlusion of a real pixel.
+
+### TWO NEGATIVES WORTH MORE THAN THE POSITIVE
+
+**1. THE AMBIENT IS NOT THE TERM, AND NOW THERE IS A NUMBER.** This lane built
+the obvious mechanism fix -- derive `VM_HEMI`'s open-sky endpoint from the same
+`stockFloor` call the near hemisphere reads, two lines away in `Headlamp.ts`, so
+the two cannot drift -- and then sized the term before shipping it and reverted
+it. On `forestfloor`, model luma 72.43: `__ofVmLight.ambient(0)` reads
+**68.95**, so the whole view-model hemisphere is **3.5 of 72 counts, 4.8 per
+cent**; `sun(0)` reads **22.32**, so the direct sun is **50.1 counts, 69 per
+cent**; the remaining 17.8 is the shared sky IBL. A term worth 4.8 per cent
+cannot move a ratio out by a factor of three. Worse, `stockFloor` returns
+intensity 1.0 and carries its level in the COLOUR, so binding the INTENSITY to
+it is arithmetically a multiply by one and the change would have read as a
+mechanism and shipped as a retune. Recorded beside the constant in
+`Headlamp.ts`. Taking the world's COLOUR as well is a real change and a
+different one; it costs the arms their warm underground fill and it is worth
+3.5 counts.
+
+**2. RN-1875's "the ratio should be about 1" IS THE WRONG BAR, and the
+four-shot spread is mostly the DENOMINATOR.** Across the four shots the model's
+own luma spans 55.3 to 99.2 (**1.79x**) while the world it is held against
+spans 24.1 to 82.8 (**3.43x**). A held tool with a fixed albedo in front of a
+world whose albedo and incidence swing 3.4x cannot sit at 1 in all four frames,
+and the sign change follows the world, not the model. The remaining defect on
+those frames is therefore NOT a missing shadow map; it is that the model's
+illumination barely responds to the shot at all, which is a question about the
+pass-4 sun's incidence against a camera-locked rig and about the shared IBL, not
+about occlusion. That is the next lane's item and it is now stated as a
+measurement rather than as a ratio.
+
+### THE INSTRUMENTS, WHICH ARE THE REUSABLE PART
+* `artframe.js` `{"vmRatio": true}` and `{"vmArms": [...]}`: the model's own
+  pixels by per-pixel difference against a `hideVm` control, three denominators
+  published together (whole frame, frame-minus-model, and **the world the model
+  occludes**, read out of the control frame at exactly the masked pixels), and
+  N arms of `__ofVmLight` state measured in one page load. `ambientAbs` sets an
+  ABSOLUTE hemisphere intensity, because a constant multiplier written into an
+  invocation would measure a different ambient on every shot and call it one
+  control.
+* `probes/vmlight.js`: the wiring gate. Wired, receivers non-zero, the eye's
+  shadow coordinate inside `getShadow`'s own frustum test, **the compiled
+  programs actually carry a `directionalShadowMap` sampler** (read back through
+  `onBeforeCompile`, because `castShadow` on the CPU and `USE_SHADOWMAP` in the
+  shader are joined only by an ordering), and the map has casters in it.
+* `probes/vmshade.js`: the behavioural gate, and its own two scars are the
+  lesson. `of.look` takes a DELTA and `of.teleport` re-derives the tangent
+  frame, so one correction lands short: the first walk **alternated between two
+  yaws on odd and even stations**, which moved the cascade centre 7 m and made
+  the eye's texel flip between unrelated cells every step, and the two
+  populations it reported were the two yaws, not sun and shade. And measuring
+  the model twice, each against its own fresh control, puts the wind clock into
+  both halves of the subtraction; one control and one mask per station turned a
+  12-count scatter on the negative-control stations into about 1.3.
+* `probes/vmcost.js`: WG-189's interleave with `receive` as the off phase.
+
+**A NULL THAT COST THREE MEASUREMENT PASSES, named so it costs none next time.**
+With the term wired, receivers at 13 and shadow intensity at 1, all four shots
+moved by less than the mask noise. "The arms are not in anybody's shadow here"
+and "the lookup never lands" are the same number in a ratio table. Forcing the
+shadow bias was tried first and **cannot work**: reversed depth puts the
+comparison at `z >= stored`, and an empty texel stores 0, so no bias in `[0, 1]`
+can shadow against it, and the forced-bias arm returns "lit" for exactly the
+reason the real one does. Only reading the map itself separated them.
+
 ## 3. Key design decisions
 | # | Decision | Rationale | Status | Date |
 |---|----------|-----------|--------|------|

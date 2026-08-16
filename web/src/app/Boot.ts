@@ -15,6 +15,7 @@ import { ShadowRig } from '../render/ShadowRig.js';
 import { SkyIbl } from '../render/SkyIbl.js';
 import { installIblDiag } from '../render/IblDiag.js';
 import { installShadeDiag } from '../render/ShadeDiag.js';
+import { installVmLightDiag } from '../render/ViewModelLight.js';
 import { Headlamp } from '../render/Headlamp.js';
 import { atmosphereForBody } from '../render/materials/Atmosphere.glsl.js';
 import { measureHorizonOcclusion, type HorizonOcclusion }
@@ -173,6 +174,13 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     addLighting(scenes.far, sky.sunDirection, 1e4),
     addLighting(scenes.viewModel, sky.sunDirection, 3, false),
   ];
+  // RN-1990. NAMED, because `ViewModelLight` resolves it by name for the same
+  // reason `Frame.publishSun` resolves cascade 0 by name: a producer that names
+  // and a consumer that reads cannot drift the way a cached handle can.
+  sunLights[1].name = 'vmSun';
+  // RN-1990. Pass 4's shadow term. Published unconditionally on RN-514's rule,
+  // and every default is the shipped frame, so its existence changes no pixel.
+  installVmLightDiag(frame.vmLight);
   // W5. THE underground lighting authority: it owns the near and view-model sky
   // ambient AND the headlamp that replaces it, because how dark it is and what
   // lights you are one question. Built here so the SpotLight is present in the

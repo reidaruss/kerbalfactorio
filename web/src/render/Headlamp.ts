@@ -70,6 +70,35 @@ const ADAPT_LIGHT_SECS = 0.6;
 const SKY_HEMI = { sky: 0x334466, ground: 0x101008, intensity: 0.35 };
 const VM_HEMI = { sky: 0x8fb0d8, ground: 0x35301f, intensity: 1.1 };
 /**
+ * RN-1990. `VM_HEMI.intensity` IS STILL 1.1 AND THAT IS NOW A MEASUREMENT
+ * RATHER THAN AN OMISSION.
+ *
+ * RN-1875 declined to retune this constant on the argument that no constant
+ * fixes a term whose error changes sign, and routed the view model's light to
+ * `ViewModelLight` as a missing shadow input. This lane went looking for the
+ * ambient half of that and BUILT the obvious mechanism fix -- derive the arms'
+ * open-sky endpoint from the same `stockFloor` call the near hemisphere reads,
+ * two lines below, so the two cannot drift -- and then measured the term before
+ * shipping it. It does not earn its place, and the number is why:
+ *
+ *   On `forestfloor`, model luma 72.43 total. `__ofVmLight.ambient(0)` (this
+ *   hemisphere removed, nothing else touched) reads 68.95, so THIS LIGHT IS
+ *   3.5 OF 72 COUNTS, 4.8 per cent of the model. `__ofVmLight.sun(0)` reads
+ *   22.32, so the direct sun is 50.1 counts, 69 per cent. The remaining 17.8 is
+ *   the shared sky IBL.
+ *
+ * A term worth 4.8 per cent cannot move a ratio that is out by a factor of
+ * three, and re-deriving it would have been a change with a rationale and no
+ * effect. Worse, `stockFloor` returns intensity 1.0 and carries its level in
+ * the COLOUR, so "bind the intensity to the world's endpoint" is arithmetically
+ * a multiply by one: the change would have read as a mechanism and shipped as a
+ * retune of 1.1 to whatever ratio was picked. Recorded here, with the numbers,
+ * so the next lane does not rebuild it. Taking the world's COLOUR as well is a
+ * real change and a different one; it is not free (the arms lose their warm
+ * fill) and it is worth 3.5 counts, so it is not this lane's.
+ */
+export const VM_HEMI_MODE = 'constant';
+/**
  * Buried ambient. NOT zero: a tunnel with no ambient at all is unreadable
  * outside the cone and stops being atmospheric the moment the player cannot
  * tell floor from wall. Cold, so the lamp is the only warm light down there.

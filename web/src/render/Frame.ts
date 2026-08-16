@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import type { OFRenderer } from './Renderer.js';
 import type { Scenes } from './Scenes.js';
 import type { CameraRig } from './CameraRig.js';
+import { ViewModelLight } from './ViewModelLight.js';
 
 export interface PassTimings {
   sky: number; far: number; near: number; viewModel: number; total: number;
@@ -70,12 +71,25 @@ export class Frame {
    */
   private sun: THREE.DirectionalLight | null = null;
   private sunSearched = false;
+  /**
+   * RN-1990. Pass 4's shadow receive. It is owned HERE and driven from inside
+   * `render()` for one reason that is structural rather than tidy: the term is
+   * the world's cascade-0 map rebased into view-model space, so it is only
+   * correct in the window between the near pass (which renders that map for
+   * this frame's eye) and the view-model pass (which samples it). This class
+   * owns that window. Anywhere else and the arms would sample last frame's
+   * shadow, which on a 4.6 m/s walk is 77 mm of lag on a term whose whole job
+   * is to change the instant the player steps under a tree.
+   */
+  readonly vmLight: ViewModelLight;
 
   constructor(
     private readonly r: OFRenderer,
     private readonly scenes: Scenes,
     private readonly rig: CameraRig,
-  ) {}
+  ) {
+    this.vmLight = new ViewModelLight(scenes.near, scenes.viewModel);
+  }
 
   /** Write the world-space sun direction into the post stack, or leave it zero. */
   private publishSun(): void {
@@ -156,6 +170,8 @@ export class Frame {
     const t4 = performance.now();
     r.clearDepth();
 
+    // RN-1990. AFTER the near pass, BEFORE pass 4. See `vmLight`.
+    this.vmLight.sync(this.rig.nearCam.position);
     r.render(this.scenes.viewModel, this.rig.vmCam);
     const t5 = performance.now();
 
