@@ -157,6 +157,13 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // mechanism and a second one would be a second way to say the same state.
   // Registered in the same commit that introduces them, per this list's rule.
   'reliefcell', 'reliefcellnoise',
+  // RN-1855, the two footprint fades' wavelengths in metres. The shipped
+  // values are DERIVED from the octave count and the tile fraction; passing
+  // the pre-RN-1855 `artfinem=4.2` and `relieffinem=0.45` restores the picture
+  // that shipped between WG-186 and this lane, which is the before half of
+  // every canonical-shot re-take this correction owes. Registered in the same
+  // commit that introduces them, per this list's rule.
+  'artfinem', 'relieffinem',
   // RN-731, the per-part material channel on the rock and ore node batches.
   // `rockmat=0` removes the hook entirely and restores the stock three
   // program, i.e. every ore seam back at one roughness and one metalness.

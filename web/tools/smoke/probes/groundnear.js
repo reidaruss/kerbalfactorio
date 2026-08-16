@@ -149,6 +149,45 @@
     mid: [0.2000, 0.5000, 0.8000, 0.5600],
   }, A.rects ?? {});
 
+  // RN-1855. RECTANGLES PLACED BY RANGE INSTEAD OF BY FRACTION, because the
+  // four above cannot reach the band this lane is about. At a standing eye the
+  // ground past 15 m is compressed into a few dozen rows just under the
+  // horizon, and where exactly those rows are is a function of the eye height
+  // (which the terrain decides, not the teleport: this pose asks for 2.0 m and
+  // stands at 1.62 m), the pitch and the FOV. Hand-written fractions would
+  // therefore name one range and read another the moment the ground under the
+  // site changed by a few centimetres. `{"rangeRects":[8,12,18,25,35]}` inverts
+  // `rangeAtRow` instead, so `r25` IS the row where 25 m is, and the `rangeM`
+  // printed beside it is the round trip back through the forward map, which is
+  // a live check on the inversion rather than a restatement of the request.
+  //
+  // Thin on purpose (9 rows by default), and wide to pay for it: a strip 1120
+  // px across is 10,080 samples, a quarter of the canonical box, while a strip
+  // tall enough to feel comfortable would span a factor of two in range and
+  // average the very gradient it is placed to resolve.
+  const halfT = Math.tan((fovDeg * Math.PI / 180) / 2);
+  const rowAtRange = (r) => {
+    const depress = Math.atan(eyeM / r);
+    const ndc = Math.tan(-(pitch * Math.PI / 180) - depress) / halfT;
+    return (1 - ndc) / 2;
+  };
+  {
+    const rows = A.rangeRowsPx ?? 9;
+    const H0 = A.rangeH ?? 900;
+    const x0 = A.rangeX ?? 0.15;
+    const x1 = A.rangeX1 ?? 0.85;
+    for (const r of A.rangeRects ?? []) {
+      const fy = rowAtRange(r);
+      const h = rows / (2 * H0);
+      if (!(fy > h && fy < 1 - h)) {
+        return { valid: false, why: `rangeRects ${r} m falls off the frame at`
+          + ` eye ${r2(eyeM)} m, pitch ${pitch}, fov ${fovDeg} (fy ${r3(fy)});`
+          + ' that is a pose problem, not something to silently clamp' };
+      }
+      RECTS[`r${r}`] = [x0, fy - h, x1, fy + h];
+    }
+  }
+
   // ------------------------------------------------------------ the decoders
   const grab = async () => {
     const blob = await of.screenshot();
@@ -260,16 +299,35 @@
       lag: bl, peak: bl === null ? null : r3(bp) };
   };
 
+  // RN-1855. THE PIXEL FOOTPRINT AT A ROW, which is the quantity `ofArtBumpG`
+  // actually fades on and is NOT the same statement as the range. `rangeM`
+  // alone cannot say whether a box sits inside a footprint fade, because the
+  // footprint at a grazing angle grows as the SQUARE of the range, so two boxes
+  // a factor of two apart in range are a factor of four apart in the variable
+  // the shader reads. It is the numeric derivative of `rangeAtRow` over one
+  // pixel row, i.e. exactly `length(dFdy(pos))` for the flat plane, which is
+  // the arm of the `max()` that binds at every grazing pose (the lateral arm is
+  // r * hFovPerPixel and is an order of magnitude smaller out here).
+  const footAtRow = (fy, H) => {
+    const dy = 1 / Math.max(1, H);
+    const a = rangeAtRow(fy - dy / 2);
+    const b = rangeAtRow(fy + dy / 2);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return Infinity;
+    return Math.abs(a - b);
+  };
+
   const readAll = (g) => {
     const out = {};
     for (const [k, f] of Object.entries(RECTS)) {
       out[k] = statOn(g.cx, f[0] * g.W, f[1] * g.H, f[2] * g.W, f[3] * g.H);
       out[k].rangeM = r2(rangeAtRow((f[1] + f[3]) / 2));
+      out[k].footM = r3(footAtRow((f[1] + f[3]) / 2, g.H));
     }
     out.world = statOn(g.cx, 0, 0, g.W, g.H);
     const tb = A.tileBand ?? [0.10, 0.80, 0.90, 0.94];
     out.tile = tiling(g.cx, tb[0] * g.W, tb[1] * g.H, tb[2] * g.W, tb[3] * g.H);
     out.tile.rangeM = r2(rangeAtRow((tb[1] + tb[3]) / 2));
+    out.tile.footM = r3(footAtRow((tb[1] + tb[3]) / 2, g.H));
     return out;
   };
 
@@ -286,6 +344,16 @@
   const hasFine = typeof art.setFine === 'function'
     && typeof art.fineDefault === 'function';
   const FD = hasFine ? art.fineDefault() : null;
+  // RN-1855. The two FOOTPRINT-FADE wavelengths. Absent on a binary built
+  // before this lane, and the `fade*` arms then REFUSE rather than silently
+  // measuring the ship state under a candidate's name (hasFine's precedent).
+  const hasFineM = typeof art.setFineM === 'function'
+    && typeof art.fineMDefault === 'function';
+  const MD = hasFineM ? art.fineMDefault() : null;
+  // Captured HERE, before any arm has written the uniform, because reading it
+  // at the return would report whatever `restore()` last set and would say
+  // "the flag landed" on a run where it never arrived.
+  const BOOT_FINE_M = hasFineM ? art.getFineM() : null;
   const restore = () => {
     art.set(D.art[0], D.art[1], D.art[2]);
     art.setTex(D.tex); art.setRelief(D.relief); art.setSpec(D.spec[0], D.spec[1]);
@@ -294,6 +362,12 @@
       art.setFineFreq(FD.freq[0], FD.freq[1], FD.freq[2]);
       art.setFineW(FD.w[0], FD.w[1], FD.w[2]);
     }
+    // The BOOT state, exactly as `D.tex` and `D.relief` above are the boot
+    // state and not the shipped constant. Restoring `MD.art` instead would
+    // silently defeat a `--artfinem=` on the command line: the page would boot
+    // at the override, the first arm would put the shipped value back, and the
+    // report would describe a run that never happened.
+    if (hasFineM) art.setFineM(BOOT_FINE_M[0], BOOT_FINE_M[1]);
   };
   /**
    * A FREE-FORM ARM, so a frequency or weight rung is an `--evalargs` and not a
@@ -339,6 +413,16 @@
     finenorm: () => { restore(); art.setFine(FD.bump, 0); },
     finealb: () => { restore(); art.setFine(0, FD.alb); },
     fine2: () => { restore(); art.setFine(FD.bump * 2, FD.alb * 2); },
+    // RN-1855. THE BEFORE HALF OF THIS LANE'S PAIR. `fadepre` is the shipped
+    // state from WG-186 until this lane: both footprint fades protecting a
+    // wavelength twice as long as the content they guard. `ship` is the derived
+    // pair. The two single-term arms exist because the art bump and the relief
+    // fade at footprints a factor of nine apart (0.69 m against 0.075 m), so
+    // they move DIFFERENT BANDS of the frame and a combined arm alone could not
+    // say which band belongs to which term.
+    fadepre: () => { restore(); art.setFineM(MD.artPre, MD.reliefPre); },
+    fadepreart: () => { restore(); art.setFineM(MD.artPre, MD.relief); },
+    fadeprerel: () => { restore(); art.setFineM(MD.art, MD.reliefPre); },
   };
 
   const want = A.arms ?? ['ship', 'texoff', 'reliefoff', 'bumpoff', 'ship'];
@@ -350,6 +434,10 @@
     if (isFine && !hasFine) {
       return { valid: false, why: `arm '${name}' needs __ofTerrainArt.setFine,`
         + ' which this binary does not have' };
+    }
+    if (/^fade/.test(name) && !hasFineM) {
+      return { valid: false, why: `arm '${name}' needs __ofTerrainArt.setFineM,`
+        + ' which this binary does not have (pre-RN-1855)' };
     }
     const fn = Array.isArray(spec) ? custom(spec) : ARMS[name];
     if (fn === undefined) return { valid: false, why: `unknown arm '${name}'`,
@@ -383,6 +471,15 @@
           + Math.abs(row.w[2]) / lam[2]));
       row.lambdaM = lam.map(r3);
     }
+    // RN-1855. The LIVE fade pair, read off the material, plus the two
+    // footprints the art fade actually acts between, so a reader can put the
+    // per-box `footM` beside the band that moved instead of holding the
+    // smoothstep's 0.125 and 0.333 in their head.
+    if (hasFineM) {
+      row.fineM = art.getFineM().map(r3);
+      row.artFadeFootM = [r3(row.fineM[0] * 0.125), r3(row.fineM[0] * 0.333)];
+      row.relFadeFootM = [r3(row.fineM[1] * 0.125), r3(row.fineM[1] * 0.333)];
+    }
     out.push(row);
     if (A.png === true || (Array.isArray(A.png) && A.png.includes(name))) {
       shots[name] = await new Promise((res) => {
@@ -407,10 +504,23 @@
   // THE TIER IS A PAGE LOAD, not a runtime switch: `Quality.ts`'s table is read
   // at boot. So the tier table is three invocations of this probe with
   // `--quality=`, and each one is internally interleaved.
+  //
+  // RN-1855. `{"costTerm":"fade"}` prices the FOOTPRINT FADES instead of the
+  // detail layer, through the identical drift-cancelling machinery, and the
+  // only thing that changes is what a "phase" applies. There is no "off" state
+  // for a fade, so the role the off phase plays is taken by the PRE-RN-1855
+  // pair: the alternation is pre / new / pre / new and each `new` is
+  // differenced against the mean of its two neighbouring `pre`s, which is the
+  // same first-order drift cancellation with the same published spread.
   let cost = null;
-  if (A.cost === true && hasFine) {
+  const costTerm = A.costTerm ?? 'fine';
+  if (A.cost === true && costTerm === 'fade' && !hasFineM) {
+    return { valid: false, why: 'costTerm fade needs __ofTerrainArt.setFineM' };
+  }
+  if (A.cost === true && (costTerm === 'fade' || hasFine)) {
     const phase = async (b, a) => {
-      art.setFine(b, a);
+      if (costTerm === 'fade') art.setFineM(b, a);
+      else art.setFine(b, a);
       await sleep(0.5);                    // settle; no recompile, it is a uniform
       const samples = [];
       const t0 = performance.now();
@@ -441,17 +551,24 @@
     // order, and the residual spread across the N pairs is published so a
     // reader can see whether the answer is resolvable at all rather than being
     // handed a number that is not.
-    const want2 = A.costArms ?? [
-      ['both', FD.bump, FD.alb], ['bump', FD.bump, 0], ['alb', 0, FD.alb]];
+    const want2 = A.costArms ?? (costTerm === 'fade'
+      ? [['derived', MD.art, MD.relief]]
+      : [['both', FD.bump, FD.alb], ['bump', FD.bump, 0], ['alb', 0, FD.alb]]);
+    // The BASELINE phase: all-off for the detail layer, the pre-RN-1855 pair
+    // for the fade. Named `offs` throughout because it is the same role in the
+    // same arithmetic and renaming half a published report is worse than one
+    // line of prose saying what it is.
+    const OFF = costTerm === 'fade' ? [MD.artPre, MD.reliefPre] : [0, 0];
     const reps = A.reps ?? 4;
-    cost = { reps, secs: A.secs ?? 4, offs: [], pairs: {} };
+    cost = { reps, secs: A.secs ?? 4, term: costTerm, baseline: OFF,
+      offs: [], pairs: {} };
     for (const [nm] of want2) cost.pairs[nm] = [];
-    cost.offs.push((await phase(0, 0)).p50);
+    cost.offs.push((await phase(OFF[0], OFF[1])).p50);
     for (let k = 0; k < reps; ++k) {
       for (const [nm, b, a] of want2) {
         const on = (await phase(b, a)).p50;
         const off1 = cost.offs[cost.offs.length - 1];
-        const off2 = (await phase(0, 0)).p50;
+        const off2 = (await phase(OFF[0], OFF[1])).p50;
         cost.offs.push(off2);
         cost.pairs[nm].push(r2(on - (off1 + off2) / 2));
       }
@@ -479,7 +596,14 @@
       sunDot: r3(s.sky.elevationDot), sunAsked: A.sunDot ?? 0.70 },
     fixture: { texW: tex.w, reliefW: rel.w, art: D.art, texAmp: D.tex,
       reliefAmp: D.relief, spec: D.spec,
-      hasFine, fine: FD },
+      hasFine, fine: FD,
+      // RN-1855. THE BOOT STATE OF THE TWO FADES AND WHETHER THE URL MOVED IT.
+      // `bootFineM` is read off the material BEFORE any arm runs, so a run
+      // launched with `--artfinem=` proves the flag arrived rather than
+      // assuming it: RN-152 lost a whole pair to `--starlight=0` going
+      // unforwarded with both sides running the feature on, and this lane's
+      // canonical-shot re-take is exactly that shape of pair.
+      hasFineM, fineM: MD, bootFineM: BOOT_FINE_M },
     rangeAtRow: { top: r2(rangeAtRow(0.50)), box: r2(rangeAtRow(0.66)),
       bottom: r2(rangeAtRow(0.95)) },
     arms: out, cost,

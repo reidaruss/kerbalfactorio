@@ -272,43 +272,130 @@ export const TERRAIN_ART_BUMP = /* glsl */`
 `;
 
 /**
- * The finest octave the bump adds, in metres. ONE definition, consumed both by
- * the shader that samples at that wavelength and by the fade that protects it.
+ * RN-1855. THE BUMP'S TWO OCTAVES, IN REPEATS PER CHUNK QUAD, which is the unit
+ * they are actually written in at the call site (`vChunkUv * 14.0` and
+ * `vChunkUv * 5.3` in TerrainShader) and the unit in which they are INVARIANT
+ * under a tessellation change.
  *
- * 4.2 m is the float32 precision floor on planet-centred metres at Forge's
- * radius, not a look choice: see this file's header.
+ * 14.0 and 5.3 rather than powers of two: a lattice that lined up with the
+ * 32-cell quad grid would put every noise cell boundary on a vertex and draw
+ * the grid. That argument is about the LATTICE and not about metres, which is
+ * why it survived WG-186 untouched while every metre in this file did not.
+ *
+ * They are named here, emitted as defines, and consumed by the noise call AND
+ * by ART_FINE_M below, so the octave and the fade that protects it read ONE
+ * number rather than two that agreed once. See ART_FINE_M for what happened the
+ * last time they were two.
  */
-export const ART_FINE_M = 4.2;
+export const ART_OCT_FINE = 14.0;
+export const ART_OCT_COARSE = 5.3;
 
 /**
- * The relief texture's finest authored wavelength in metres at the 16-repeat
- * consumer tile (RN-148), feeding ofArtBump's footprint fade for the relief
- * call. RN-78(d)'s lesson made quantitative: a derivative scales a field by
- * its own frequency, so the MIP CHAIN bounds the sampled VALUE but never its
- * gradient, and the throwaway test texture photographed exactly that as moire
- * arcs at range. The fade completing by a third of this wavelength is what
- * retires the term before its gradient can alias.
+ * RN-148. The relief texture's repeats per chunk quad, likewise named rather
+ * than written as a literal at its sample site, because RELIEF_FINE_M and
+ * RELIEF_GRAD_UV are both fractions of ONE REPEAT and cannot be derived without
+ * it. One repeat is 1.808 m at the shipped depth.
  */
-export const RELIEF_FINE_M = 0.45;
+export const RELIEF_REPEATS = 16.0;
+
+/**
+ * RN-1855. The relief texture's finest authored wavelength as a FRACTION OF ONE
+ * REPEAT, which is the depth-invariant statement of the same physical fact the
+ * old 0.45 m tried to state.
+ *
+ * The number is unchanged in substance: RN-148 measured the finest authored
+ * crest at 0.45 m against a depth-14 repeat of 3.616 m, and 0.45 / 3.616 =
+ * 0.1244. The texture is authored in TEXELS of its own tile, so this fraction
+ * is a property of `of_ground_relief.png` and of the 16-repeat consumer
+ * coordinate, and it is the same fraction at every LOD, at every maxDepth and
+ * on every body. The METRES are the derived quantity, not the input.
+ */
+export const RELIEF_FINE_TILES = 0.1244;
+
+/**
+ * The finest octave the bump adds, IN METRES, and DERIVED rather than written.
+ * ONE definition, consumed both by the shader that samples at that wavelength
+ * and by the fade that protects it.
+ *
+ * **RN-1855 FIXED THE DEFECT RN-1734 MEASURED AND ROUTED.** This was the literal
+ * `4.2`, justified as "the float32 precision floor on planet-centred metres at
+ * Forge's radius". Both halves of that had gone stale:
+ *
+ *  - The bump's height field has not been keyed on planet-centred metres since
+ *    RN-50 (see TerrainShader's "EVERY OCTAVE FEEDING THE DERIVATIVE IS ON THE
+ *    UV"), so the precision floor stopped being the binding constraint. What
+ *    4.2 actually approximated from then on was the finest octave's world size,
+ *    57.856 / 14 = 4.13 m at a depth-14 quad.
+ *  - WG-186 took the shipped `maxDepth` to 15 and HALVED every chunk-UV
+ *    wavelength in this file. The finest octave became 2.07 m; the fade went on
+ *    protecting 4.2 m, i.e. a wavelength that had stopped existing, and the
+ *    fade constant was therefore 2.0x too large. `ofArtBumpG` is fully faded at
+ *    `fineM * 0.333`, so the term stayed live out to a 1.40 m footprint against
+ *    a real Nyquist limit of 1.03 m: 1.33x PAST the fold point, where the
+ *    intended design is 1.5x inside it.
+ *
+ * Derived from the octave count, so a tessellation change or a swept octave
+ * cannot leave the fade behind again. This is the mirror image of WG-192's own
+ * finding (`ScatterLook.CLUSTER_SHIFT`: a tuning value expressed in CELLS is
+ * silently a function of `maxDepth`) -- here a tuning value expressed in METRES
+ * was silently a function of the cell, and the fix in both directions is the
+ * same: express it in the unit its argument is actually about.
+ *
+ * **28.93 / 14.0 = 2.0664 m at the shipped depth.**
+ */
+export const ART_FINE_M = FINE_CHUNK_M / ART_OCT_FINE;
+
+/**
+ * The relief texture's finest authored wavelength IN METRES, feeding
+ * ofArtBump's footprint fade for the relief call, DERIVED for ART_FINE_M's
+ * reason and by the same arithmetic. RN-78(d)'s lesson made quantitative: a
+ * derivative scales a field by its own frequency, so the MIP CHAIN bounds the
+ * sampled VALUE but never its gradient, and the throwaway test texture
+ * photographed exactly that as moire arcs at range. The fade completing by a
+ * third of this wavelength is what retires the term before its gradient can
+ * alias.
+ *
+ * **RN-1855**: this was the literal `0.45`, the depth-14 reading, and WG-186
+ * halved the crest it names to 0.23 m without moving it. Same 2.0x, same fix.
+ *
+ * **28.93 / 16.0 * 0.1244 = 0.2249 m at the shipped depth.**
+ */
+export const RELIEF_FINE_M = FINE_CHUNK_M / RELIEF_REPEATS * RELIEF_FINE_TILES;
+
+/**
+ * RN-1855. The two PRE-FIX values, kept as named exports rather than typed into
+ * a probe, because the before half of every pair this correction is judged by
+ * is exactly these two numbers and a transcribed constant is how a negative
+ * control ends up measuring something else (standing rule 11). `?artfinem=` and
+ * `?relieffinem=` restore them on one build; nothing in the shipped path reads
+ * them.
+ */
+export const ART_FINE_M_PRE1855 = 4.2;
+export const RELIEF_FINE_M_PRE1855 = 0.45;
 
 /**
  * RN-741. The support the relief's slope is measured over, in TILE UNITS, where
  * one unit is one repeat of `of_ground_relief` at the 16-repeat consumer
  * coordinate.
  *
- * DERIVED, NOT PICKED. A depth-14 chunk is 57.856 m and carries 16 repeats, so
- * one repeat is 3.616 m and the finest authored wavelength RELIEF_FINE_M of
- * 0.45 m is 0.1244 of a repeat. The support is a QUARTER of that finest
+ * DERIVED, NOT PICKED. The support is a QUARTER of the finest authored
  * wavelength, which is the widest offset that still resolves the feature it is
  * differencing (half a wavelength is where a central difference starts reading
  * the next crest instead of this one, named failure mode 2) and the narrowest
  * that spans meaningfully more than the ~2 cm crest whose discontinuity is the
  * defect.
  *
- *     0.45 / 3.616 * 0.25 = 0.0311
+ *     RELIEF_FINE_TILES * 0.25 = 0.1244 * 0.25 = 0.0311
  *
- * In metres at depth 14 that is 0.112 m, so the slope is averaged over about a
- * hand's width of ground rather than over one pixel.
+ * **RN-1855: THIS CONSTANT IS THE CONTROL THAT PROVES THE UNIT CHOICE IS THE
+ * FIX, AND ITS VALUE DOES NOT MOVE.** It was written the long way round
+ * (`0.45 / 3.616 * 0.25`, i.e. metres divided by metres) but it is expressed in
+ * TILE UNITS, so WG-186 halving the quad left it correct on its own while its
+ * two neighbours, which were in metres, silently went 2.0x wrong. Its world
+ * support simply tracked the crest it is a quarter of: 0.112 m at depth 14,
+ * 0.056 m at the shipped depth 15, still a quarter of a 0.225 m crest. It now
+ * reads RELIEF_FINE_TILES instead of restating the arithmetic, so there is one
+ * authority and not two, and it emits the identical `0.0311`.
  *
  * The same LOD caveat the rest of this file carries applies and is bounded the
  * same way: the chunk UV's world size doubles at every LOD step, so this is a
@@ -316,7 +403,7 @@ export const RELIEF_FINE_M = 0.45;
  * relief term fades out over 30 to 60 m and the streamer is at max depth inside
  * that, so no LOD step is reachable while the term is live.
  */
-export const RELIEF_GRAD_UV = 0.0311;
+export const RELIEF_GRAD_UV = RELIEF_FINE_TILES * 0.25;
 
 /**
  * RN-961. The ripple direction cell, in TILE UNITS (one unit is one repeat of
@@ -925,10 +1012,17 @@ export const TEX_FINE_REPEATS = 47.0;
 export { TERRAIN_ART_FINE, FINE_A, FINE_R, FINE_B, FINE_W, FINE_CHUNK_M,
   FINE_M, FINE_BUMP, FINE_ALB, FINE_LUM_REF } from './TerrainFine.glsl.js';
 
-export const TERRAIN_ART_PARS = `#define OF_ART_FINE_M ${ART_FINE_M.toFixed(1)}\n`
+// RN-1855. OF_ART_FINE_M and OF_RELIEF_FINE_M are GONE rather than left behind,
+// on RN-1005's rule exactly: they are uniforms now (uArtFineM, uReliefFineM),
+// and a dead define that still compiles is how a lane ends up sweeping one
+// authority while the shader reads the other. What replaces them is the pair of
+// OCTAVE COUNTS the fades are derived from, which the noise call sites now read
+// too, so the wavelength and its fade cannot be two numbers again.
+export const TERRAIN_ART_PARS = `#define OF_ART_OCT_FINE ${ART_OCT_FINE.toFixed(1)}\n`
+  + `#define OF_ART_OCT_COARSE ${ART_OCT_COARSE.toFixed(1)}\n`
+  + `#define OF_RELIEF_REPEATS ${RELIEF_REPEATS.toFixed(1)}\n`
   + `#define OF_FINE_CHUNK_M ${FINE_CHUNK_M.toFixed(2)}\n`
   + `#define OF_FINE_LUM_REF ${FINE_LUM_REF.toFixed(5)}\n`
-  + `#define OF_RELIEF_FINE_M ${RELIEF_FINE_M.toFixed(2)}\n`
   + `#define OF_RELIEF_GRAD_UV ${RELIEF_GRAD_UV.toFixed(4)}\n`
   + `#define OF_TEX_SCALE_GAIN ${TEX_SCALE_GAIN.toFixed(2)}\n`
   + `#define OF_TEX_FINE ${TEX_FINE_REPEATS.toFixed(1)}\n`
