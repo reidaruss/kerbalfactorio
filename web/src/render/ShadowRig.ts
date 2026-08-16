@@ -108,6 +108,41 @@ export const SHADOW_BIAS_LEGACY = SHADOW_BIAS_RAW === '0';
 const LEGACY_BIAS_UNITS = -0.0006;
 
 /**
+ * RN-1954. `?shadowcast=0` -- THE CONTROL `?shadows=0` IS NOT.
+ *
+ * `?shadows=0` reaches this rig as `on=false`, and `update` below then does two
+ * separate things at once: it clears `castShadow` AND it sets
+ * `light.visible = i === 0`. `cfg.shadows` false also clears
+ * `renderer.shadowMap.enabled` in `Renderer.ts`. So a pair taken across that
+ * flag differs by the shadow maps AND by which cascades are in the scene at
+ * all, and a level change it shows is unattributable between the two.
+ *
+ * It is NOT "two thirds of the sun rig", and an earlier draft of this comment
+ * said so wrongly: cascades 1 and 2 are constructed at INTENSITY 0 a few lines
+ * below and exist only to produce a map, and only `lights[0]` is ever pushed
+ * into `sunLights` (`Boot.ts`). Removing them removes no light.
+ *
+ * This flag clears `castShadow` ONLY. Every cascade stays in the scene, still
+ * fitted, still texel-snapped, still published, and the sole difference is that
+ * no shadow map is rendered or sampled. `castOff` in the stats says which arm
+ * produced a reading, so a frame taken under it cannot be mistaken for the
+ * shipped one (RN-150: the flag's presence is published, not inferred).
+ *
+ * WHAT IT CANNOT DO, recorded so the next reader does not repeat the mistake it
+ * was born from: `Systems.ts` gates this rig with `band !== 'ORBIT'`, so on any
+ * shot at orbital altitude -- the `station` canonical shot among them -- `active`
+ * is already false and `castShadow` already off, and THIS FLAG CANNOT CHANGE A
+ * PIXEL THERE. It was introduced while chasing that shot's residual and read
+ * three different "spreads" over identical pixels, which measures the noise
+ * floor of that ratio and nothing else. It ships because it is a correct control
+ * for shots where the rig is actually on.
+ *
+ * Absent is the shipped identity. Standing rule 7.
+ */
+const SHADOW_CAST_RAW = new URLSearchParams(self.location.search).get('shadowcast');
+export const SHADOW_CAST_OFF = SHADOW_CAST_RAW === '0';
+
+/**
  * Does THIS renderer configuration need the bias sign flipped? True only for
  * reversed depth on the PCF path, which is the one combination three r185 does
  * not correct for itself. Passed in rather than read from a global so the rule
@@ -142,6 +177,9 @@ export interface ShadowStats {
   reversedDepth: boolean;
   /** RN-1571's negative control: `?shadowbias=0` and the raw string behind it. */
   biasLegacy: boolean;
+  /** RN-1954. `?shadowcast=0`: casting cleared, every cascade light kept. */
+  castOff: boolean;
+  castRaw: string | null;
   biasRaw: string | null;
 }
 
@@ -250,7 +288,11 @@ export class ShadowRig {
       // sun: dropping it would turn the avatar black at night instead of dark,
       // and black in a lit frame reads as a missing asset.
       light.visible = this.active || i === 0;
-      light.castShadow = this.active;
+      // RN-1954. The ONLY line `?shadowcast=0` touches. The cascade is still
+      // fitted, still snapped and still published below, so `texel0M`, the LOD
+      // rule that reads it and every cascade uniform are the shipped ones; the
+      // light simply stops writing and sampling a depth map.
+      light.castShadow = this.active && !SHADOW_CAST_OFF;
       if (!this.active) continue;
       const far = this.splits[i];
       // Centre the cascade a little ahead of the eye: a walking player looks
@@ -315,6 +357,10 @@ export class ShadowRig {
       biasM: SHADOW_BIAS_M, biasSign: this.biasSign,
       biasUnits: this.biasUnits, reversedDepth: this.reversedDepth,
       biasLegacy: SHADOW_BIAS_LEGACY, biasRaw: SHADOW_BIAS_RAW,
+      // RN-1954, and it is the flag's PRESENCE rather than a re-read of the
+      // behaviour: `castShadow` is per light and a reader cannot tell "the arm
+      // was requested" from "the rig happened to be inactive" without it.
+      castOff: SHADOW_CAST_OFF, castRaw: SHADOW_CAST_RAW,
     };
   }
 }
