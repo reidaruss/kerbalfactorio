@@ -119,23 +119,23 @@
     "masonry": {
       "normal": {
         "file": "of_masonry_n.png",
-        "bytes": 475321,
-        "sha256": "cee2bf6a2db2372e4a498f0fb0210913ef646def119b1a6c10e6f330ff2702d8"
+        "bytes": 345247,
+        "sha256": "a0bd5df335b8806a951d7577ccfa4ccbd190542b5e2e154471a925e0a4c862ca"
       },
       "orm": {
         "file": "of_masonry_orm.png",
-        "bytes": 304316,
-        "sha256": "2a69b03925570a59267cdf8323f81365f46d69b46811253c5b6545f195bd155d"
+        "bytes": 189088,
+        "sha256": "fec228aaeaecc60c3ff4001f43641b67b3895643fa85346af59feeae9597960b"
       },
       "albedo": {
         "file": "of_masonry_a.png",
-        "bytes": 57898,
-        "sha256": "1b06115462fb16c0c8df2c98b56d4851e0c4ca07890d0e3eba131d421343647f"
+        "bytes": 150772,
+        "sha256": "a83bfd7bf372a8c04142dcdbd13ed5a049134db6f1720b5fbccf77c3c22364da"
       },
       "tile_m": 1.8,
       "size_px": 512,
       "texels_per_m": 284.44444444444446,
-      "albedo_mean_linear": 0.2124
+      "albedo_mean_linear": 0.2115
     },
     "ore": {
       "normal": {
@@ -160,18 +160,18 @@
       },
       "orm": {
         "file": "of_paintchip_orm.png",
-        "bytes": 144404,
-        "sha256": "7ca4f20fad82e66efcc1177538986adb440ab05df7be347306946a65520a2a58"
+        "bytes": 144091,
+        "sha256": "e309577f5501271be19c777f9c1ea3aff8236d1f739bad4d39fb1174da8eca1b"
       },
       "albedo": {
         "file": "of_paintchip_a.png",
-        "bytes": 157516,
-        "sha256": "5aacc3077206dfdec58e5fe4de89e8d5a6f4b535dc86cb63dd9e2bbf46a6523b"
+        "bytes": 211597,
+        "sha256": "c399f74d1e62f8148d688975257e53d51c6cb56c7938e3a3ee8b7e605bcda1a4"
       },
       "tile_m": 1.5,
       "size_px": 512,
       "texels_per_m": 341.3333333333333,
-      "albedo_mean_linear": 0.2567
+      "albedo_mean_linear": 0.2548
     },
     "panel": {
       "normal": {

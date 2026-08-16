@@ -1885,6 +1885,445 @@ def _stone_albedo(w, h, height, aux):
 
 
 # ---------------------------------------------------------------------------
+# `masonry`: COURSED ASHLAR (RN-1835, the follow-up RN-1780 routed and did not
+# take). LAID stone, not cut cliff.
+#
+# WHAT RN-1780 LEFT AND WHY IT IS A DIFFERENT KIND OF FIX. That pass split
+# `masonry` off `stone` and moved its world scale from 0.6 m to 1.8 m, which
+# took the ruin from ~59 tile repeats across its 35.2 m cella to ~19.6 and
+# raised the cella patch from iqr 20.19 to 27.39. Its own fresh-context
+# verifier then said what was still wrong, and it was not a scale problem: the
+# family was still `_stone_height`, i.e. an ISOTROPIC FRACTURE FIELD, so the
+# wall read as a patterned cut cliff with the same lozenge motif repeating on
+# a visible grid. A bigger tile cannot fix that, because the defect is that
+# the field describes broken rock and the subject is BUILT rock.
+#
+# WHAT ASHLAR ACTUALLY IS, and every term below is one of these:
+#   * COURSES. Horizontal beds running the full width. The bed joint is the
+#     strongest line on the wall and it is DEAD LEVEL; nothing else in this
+#     file is.
+#   * JOINTS THAT LINE UP ALONG A COURSE AND STAGGER BETWEEN THEM. A head
+#     joint that continued through two courses is a structural fault, and a
+#     wall that shows one reads instantly as wallpaper.
+#   * A JOINT AT EVERY BOUNDARY: a recessed mortar bed with its own colour and
+#     its own roughness, plus a chamfer where the block arris rounds into it.
+#     That chamfer is what makes the bed joint read at 34 m: it is a paired
+#     highlight and shadow line, and it survives minification when a
+#     one-texel groove does not.
+#   * PER-BLOCK VARIATION IN TONE AND WEAR. This is the anti-tiling term and
+#     it is the reason this family can carry a visible modular grid without
+#     reading as a repeat: a regular course grid is what the eye EXPECTS from
+#     masonry, so the repeat it can still find is the per-block TONE
+#     signature, not the geometry.
+#
+# THE ANTI-REPEAT ARGUMENT, STATED AS A MEASUREMENT RATHER THAN A HOPE. At
+# 1.8 m the ruin still carries 19.6 tiles across. Three things are done about
+# it, in descending order of how much they buy:
+#   1. COURSE HEIGHTS AND BLOCK LENGTHS ARE NOT MODULAR. Each of the four
+#      courses in a tile gets its own hashed height (0.37 to 0.52 m) and its
+#      own hashed block count (2 or 3) with jittered lengths and its own
+#      phase, so the tile contains ten blocks of eight different sizes rather
+#      than a 4x2 grid. There is no "the tile" shape to spot.
+#   2. THE WEATHERING IS CONTINUOUS ACROSS BLOCKS and sits at periods 7 and
+#      11, which share no factor with the 4-course / 2-3-block partition, so
+#      the dirt does not agree with the joints anywhere and the two fields
+#      beat against each other instead of confirming one another.
+#   3. The staining is DIRECTIONAL (it runs down from bed joints), which is
+#      the one cue in this family that tells the eye which way is up and is
+#      therefore the one an isotropic fracture field could never give it.
+#
+# WHY THE ALBEDO IS ALLOWED TO AGREE WITH THE HEIGHT HERE, WHEN RN-742 SAYS
+# IT MUST NOT. `_stone_albedo`'s rule is that pigment must not reproduce the
+# relief, because a rock's pigment does not know where the rock broke, and
+# RN-454's creature rendered as cobblestone doing exactly that. An ashlar
+# wall is the case where the rule inverts at ONE frequency and only one: the
+# joint is a DIFFERENT MATERIAL (lime mortar against dressed stone), so its
+# colour and its relief agree because they are the same physical fact. Inside
+# a block the rule stands unchanged: the tooling relief is NOT drawn in the
+# albedo, and the per-block tone is per BLOCK, a step function on the
+# partition, not a copy of the height. Measured on the shipped bytes, the
+# Pearson correlation between this map's luminance and its heightfield is
+# reported by `selftest` for exactly this reason.
+#
+# THE THREE CONSUMERS, AND WHICH ONE THIS IS OPTIMISED FOR. RN-953 and RN-1780
+# both failed by moving a family without asking what else wears it, so this is
+# stated before the code rather than discovered after it. `masonry` is worn by
+# the ruin (35.2 m), the foundation (4 m) and the launch pad (24 m).
+#   ruin        THE CONSUMER THIS IS AUTHORED FOR. A temple cella at 11.4 m
+#               tall carries ~25 courses at the mean 0.45 m course height,
+#               which is the real course count of a real ashlar temple wall,
+#               and blocks of 0.6 to 0.9 m are real ashlar block lengths.
+#   foundation  4 m, so ~9 courses on a player-built stone plinth. This is an
+#               improvement and it is not a compromise: dressed coursed blocks
+#               are what a built foundation is, and fractured rock is what it
+#               is not.
+#   launch pad  24 m of deck, trench floor, blast caps and bunker. THIS ONE IS
+#               A TRADE AND IT IS NOT A FIX. The pad wants POURED CONCRETE and
+#               it has never had it: RN-1815's own pad verifier records the
+#               skirt wall reading as "a repeating dark aggregate rock tile
+#               rather than poured concrete". Under this change it reads as a
+#               jointed slab field at 0.45 x 0.6-0.9 m instead, which is
+#               heavy paving rather than concrete, i.e. a DIFFERENT wrong
+#               thing at the same magnitude, not a regression into one. The
+#               shape is at least the right family of shape (a poured deck IS
+#               cast in bays with joints between them, and `build_launch_pad`
+#               already authors two deck control joints as geometry), and the
+#               pad's concrete is owned by the RN-1815 lane, which is expected
+#               to give it a family of its own. Recorded here so that lane
+#               does not have to re-derive why the pad moved.
+# `stone` is UNTOUCHED by all of this and keeps `_stone_*` verbatim: boulders,
+# the spire, the scree and the smelter's hearth surround are broken rock and
+# must stay broken rock.
+# ---------------------------------------------------------------------------
+
+ASHLAR_COURSES = 4       # per 1.8 m tile -> 0.45 m mean course height
+ASHLAR_JOINT_BED_M = 0.020    # ~5.7 texels at 512 px / 1.8 m
+ASHLAR_JOINT_HEAD_M = 0.015   # head joints are tighter than beds, as built
+ASHLAR_DRAFT_M = 0.026        # the chamfer each side: the arris rounding into
+                              # the joint. THIS is the feature that survives
+                              # minification, not the groove; at 34 m the ruin
+                              # draws ~45 px/m, so a 20 mm groove is under one
+                              # pixel and a 20+26+26 = 72 mm joint-plus-draft
+                              # is three, which is a line the eye can hold.
+ASHLAR_JOINT_DEPTH = 0.34     # relief units. Six times the largest face
+                              # feature below, because the joint has to be
+                              # the unarguable structure of this field: the
+                              # hierarchy argument `_stone_height` makes for
+                              # facets over grain, one subject along.
+
+
+def _ashlar_partition(w, h):
+    """The bond, precomputed. Returns (rowc, colc).
+
+    `rowc[y]` is `(course, dBed, lv)`: which course the row is in, its
+    distance in TILE UNITS to the nearer of the two bed joints bounding it,
+    and its 0..1 height fraction within the course.
+
+    `colc[c][x]` is `(blockKey, dHead, lu)`: the same three facts for the
+    head joints of course `c`. A separate array per course IS the stagger.
+
+    PERIODIC BY CONSTRUCTION IN BOTH AXES, which is the property the whole
+    module is gated on. The courses partition [0, 1) and so do the blocks of
+    every course, and every distance below is measured the short way round,
+    so the boundary at 0 and the boundary at 1 are one line and not two."""
+    # --- courses: heights hashed, then normalised so they sum to the tile ---
+    hs = [0.82 + 0.36 * _hash01(c, 0, 7717) for c in range(ASHLAR_COURSES)]
+    tot = sum(hs)
+    edges = [0.0]
+    for v in hs:
+        edges.append(edges[-1] + v / tot)
+    edges[-1] = 1.0
+    rowc = []
+    for y in range(h):
+        v = (y + 0.5) / h
+        c = 0
+        while c + 1 < ASHLAR_COURSES and v >= edges[c + 1]:
+            c += 1
+        lo, hi = edges[c], edges[c + 1]
+        d0 = v - lo
+        d1 = hi - v
+        rowc.append((c, d0 if d0 < d1 else d1, (v - lo) / (hi - lo)))
+    # --- blocks, per course. 2 or 3 per tile, jittered, with a phase ---
+    colc = []
+    for c in range(ASHLAR_COURSES):
+        n = 2 if _hash01(c, 1, 8161) < 0.55 else 3
+        ws = [0.80 + 0.40 * _hash01(c, k + 2, 8221) for k in range(n)]
+        tw = sum(ws)
+        # The phase is what staggers the head joints between courses. It is
+        # hashed rather than a fixed half-block: a fixed offset gives a
+        # perfect running bond, which is a rhythm the eye locks onto at 19
+        # repeats just as readily as a lattice does.
+        off = _hash01(c, 9, 8317)
+        bnd = [0.0]
+        for v in ws:
+            bnd.append(bnd[-1] + v / tw)
+        bnd[-1] = 1.0
+        row = []
+        for x in range(w):
+            u = ((x + 0.5) / w - off) % 1.0
+            k = 0
+            while k + 1 < n and u >= bnd[k + 1]:
+                k += 1
+            lo, hi = bnd[k], bnd[k + 1]
+            d0 = u - lo
+            d1 = hi - u
+            row.append((c * 16 + k, d0 if d0 < d1 else d1, (u - lo) / (hi - lo)))
+        colc.append(row)
+    return rowc, colc
+
+
+def _ashlar_height(w, h):
+    """(height, aux). Coursed ashlar: dressed blocks in level courses, a
+    chamfered recessed joint at every boundary, per-block set height and set
+    tilt, tooling on the faces, and spall on the arrises of the worn blocks.
+
+    THE JOINT EDGE IS PERTURBED AND THAT IS NOT A DETAIL. A joint whose two
+    edges are exactly straight for 35 m is a drawn line, and a drawn line is
+    the single loudest "this is a texture" cue a wall can carry. The distance
+    that feeds the joint profile is displaced by a fine field first, so every
+    arris wanders by a few millimetres the way a chiselled one does, and the
+    displacement is at period 96 (a 19 mm feature) so it reads as stone
+    dressing rather than as noise.
+
+    `aux` keeps `crest`/`crevice` meaning exactly what they mean in every
+    other family here (RN-742): standing clear and standing in the low
+    ground, so `_ao` and the masks read one vocabulary across the file. Four
+    more are published because they are per-BLOCK facts the pixel loop cannot
+    re-derive without redoing the partition: `joint` (the whole recess,
+    INCLUDING the chamfer, which is the shape), `mortar` (the mortar bed
+    ALONE, which is the material), `tone` (this block's hashed pigment draw)
+    and `wear` (this block's hashed weathering, which drives both how far its
+    arris is rounded and how dirty its face is).
+
+    `joint` AND `mortar` ARE TWO DIFFERENT MASKS AND CONFLATING THEM WAS THE
+    FIRST VERSION'S DEFECT. The recess is 20 mm of mortar plus up to 39 mm of
+    chamfer each side, so a colour keyed on the recess paints a 98 mm pale
+    band where the wall has a 20 mm one, and the first render read as
+    wide-jointed rubble rather than close-jointed ashlar. The chamfer is
+    STONE: it is the block's own arris rounded off, it takes the block's own
+    colour, and only the gap between two blocks is a different material."""
+    tile = FAMILY_TILE_M["masonry"]
+    rowc, colc = _ashlar_partition(w, h)
+    hw_bed = 0.5 * ASHLAR_JOINT_BED_M / tile
+    hw_head = 0.5 * ASHLAR_JOINT_HEAD_M / tile
+    draft = ASHLAR_DRAFT_M / tile
+    # The arris wander, and the tooling. Both are FACE-scale fields and both
+    # are deliberately at periods that share no factor with 4 courses or with
+    # 2/3 blocks: 96, 40 and 26 against 4, 2 and 3.
+    wob = _fbm(w, h, 96, 1, seed=8419)       # ~19 mm: the chiselled arris
+    tool = _fbm(w, h, 40, 2, seed=8467)      # ~45 mm: claw-chisel dressing
+    grit = _fbm(w, h, 128, 2, seed=8521)     # ~14 mm: the stone's own grain
+    eros = _fbm(w, h, 7, 2, seed=8573)       # ~26 cm: erosion, ACROSS blocks
+    pit = _worley(w, h, 26, seed=8627)       # ~69 mm: spall pits
+    out = [0.0] * (w * h)
+    joint = [0.0] * (w * h)
+    mortar = [0.0] * (w * h)
+    tone = [0.0] * (w * h)
+    wear = [0.0] * (w * h)
+    for y in range(h):
+        c, dbed, lv = rowc[y]
+        crow = colc[c]
+        base = y * w
+        for x in range(w):
+            i = base + x
+            key, dhead, lu = crow[x]
+            # Per-block draws. One hash call each, on the block key, so every
+            # texel of a block agrees to the bit about what block it is on.
+            bt = _hash01(key, 3, 8677)       # tone
+            bw = _hash01(key, 4, 8731)       # weathering
+            bs = _hash01(key, 5, 8783)       # set height
+            bx = _hash01(key, 6, 8837)       # set tilt, u
+            by = _hash01(key, 7, 8893)       # set tilt, v
+            tone[i] = bt
+            wear[i] = bw
+            # The joint. Distance is displaced by the arris wander before the
+            # profile is taken, and the draft WIDENS with the block's own
+            # weathering: a fresh block keeps a crisp arris, a worn one is
+            # rounded off into the mortar.
+            wob_i = (wob[i] - 0.5) * (0.006 / tile)
+            dr = draft * (0.65 + 0.85 * bw)
+            gb = 1.0 - _smoothstep(hw_bed, hw_bed + dr, dbed + wob_i)
+            gh = 1.0 - _smoothstep(hw_head, hw_head + dr, dhead + wob_i)
+            g = gb if gb > gh else gh
+            joint[i] = g
+            # The mortar ITSELF: the gap between two blocks, with a half-texel
+            # of ramp so it antialiases and no more. 0.55/1.15 of the half
+            # width rather than 0/1 of it because a mortar bed has a meniscus
+            # against the stone, not a printed edge.
+            mb_ = 1.0 - _smoothstep(0.55 * hw_bed, 1.15 * hw_bed,
+                                    dbed + wob_i)
+            mh_ = 1.0 - _smoothstep(0.55 * hw_head, 1.15 * hw_head,
+                                    dhead + wob_i)
+            mortar[i] = mb_ if mb_ > mh_ else mh_
+            # The block face. A set height and a set tilt per block (a hand
+            # laid course is not a plane), a very slight pillow so the face
+            # is not mirror-flat, the tooling, and the grain.
+            z = (bs - 0.5) * 0.055
+            z += ((lu - 0.5) * (bx - 0.5) + (lv - 0.5) * (by - 0.5)) * 0.048
+            # A dressed face is very slightly hollow, so it is not mirror-flat
+            # under a raking sun. Small on purpose: this is a finish, not a
+            # cushion, and a deep pillow is rustication rather than ashlar.
+            z -= 0.014 * ((2.0 * lu - 1.0) ** 2 + (2.0 * lv - 1.0) ** 2)
+            z += (tool[i] - 0.5) * 0.052 * (0.55 + 0.75 * bw)
+            z += (grit[i] - 0.5) * 0.020
+            z += (eros[i] - 0.5) * 0.030
+            # Spall: a bite out of the stone, and it only happens NEAR AN
+            # ARRIS and only on a weathered block, because that is the only
+            # place a block actually loses material. `g` is already the
+            # proximity-to-joint mask, so the spall keys on it rather than on
+            # a second field that could disagree with it.
+            sp = _clamp01((0.30 - pit[i]) / 0.30) * _smoothstep(0.10, 0.55, g)
+            z -= 0.075 * sp * _clamp01((bw - 0.42) / 0.40)
+            out[i] = z - ASHLAR_JOINT_DEPTH * g
+    lo = min(out)
+    span = (max(out) - lo) or 1.0
+    crest = [0.0] * (w * h)
+    crev = [0.0] * (w * h)
+    for i in range(w * h):
+        hn = (out[i] - lo) / span
+        clear = 1.0 - joint[i]
+        crest[i] = clear * _smoothstep(0.45, 0.92, hn)
+        crev[i] = joint[i] * (1.0 - _smoothstep(0.10, 0.55, hn))
+    return out, {"crest": crest, "crevice": crev, "joint": joint,
+                 "mortar": mortar, "tone": tone, "wear": wear}
+
+
+def _ashlar_masks(w, h, height, aux):
+    """(roughness, metalness). The mortar and the stone are TWO MATERIALS and
+    this channel is where that is said in a way light can see.
+
+    Lime mortar is porous and takes no specular at all; dressed limestone
+    does, weakly, and a wind-polished exposed block face does more. So the
+    band runs 1.00 in a joint down to about 0.44 on a clean crest, wider than
+    `_stone_masks`'s and for the same reason one subject along: the thing
+    that makes an ashlar wall read under a raking sun is that the blocks
+    catch it and the joints between them do not.
+
+    KEYED ON `mortar` AND `wear` AND NOT ON HEIGHT, which is `_stone_masks`'s
+    own argument transferred. A spall pit is at joint depth and is NOT
+    mortar: it is a fresh broken face, the roughest thing on the wall after
+    the mortar itself. Reading height alone would fill every pit with mortar.
+    It is `mortar` and not `joint` for the same reason the albedo uses it:
+    the chamfer is dressed stone and takes the stone's roughness.
+
+    Metalness identity, so the palette's own 0.00 stands. Declared in
+    ALLOWED_CONSTANT for `stone`'s reason exactly: a built stone wall is not
+    a polished metal and 1.0 is the only multiplier that leaves the palette
+    where the palette put it."""
+    dust = _fbm(w, h, 6, 2, seed=8951)       # ~30 cm: where dirt has settled
+    mottle = _fbm(w, h, 22, 3, seed=9007)    # ~8 cm: the stone's own finish
+    mortar = aux["mortar"]
+    crest = aux["crest"]
+    wear = aux["wear"]
+    rough = [0.0] * (w * h)
+    metal = [1.0] * (w * h)
+    for i in range(w * h):
+        r = (0.72
+             - 0.30 * _smoothstep(0.10, 0.80, crest[i]) * (1.0 - wear[i])
+             + 0.28 * _smoothstep(0.10, 0.75, mortar[i])
+             + 0.14 * _clamp01((dust[i] - 0.48) / 0.52)
+             + (mottle[i] - 0.5) * 0.13)
+        rough[i] = _clamp01(r)
+    return rough, metal
+
+
+def _ashlar_albedo(w, h, height, aux):
+    """A TILING ALBEDO for laid stone: per-block tone, mortar, weathering that
+    runs across the blocks, and water staining that runs DOWN from the beds.
+
+    THE ONE TERM THAT MATTERS MOST IS THE PER-BLOCK ONE, and it is worth
+    saying why in a file where every other albedo is a noise field. A masonry
+    wall's tone variation is quantised to the block, because a block is one
+    piece of one bed of one quarry: the change happens AT the joint and not
+    across it. A continuous noise field of the same amplitude reads as damp
+    patches on a single slab; the same amplitude as a step function on the
+    bond reads as stone that was cut and carried. It is also the term that
+    hides the tile, because it is the only one that varies at the block
+    frequency, which is the frequency the geometry already announces.
+
+    THE STAINING IS THE DIRECTIONAL TERM. Rain sheds off a bed joint and runs
+    down the face below it, so the TOP of each block darkens and the streak
+    fades over roughly half the course. That is the cue that says which way
+    is up, and it is the one thing an isotropic field cannot say at all. It
+    keys on `lv` recovered from the course partition rather than on a noise
+    field, so the streaks all start at a real joint.
+
+    WHICH WAY IS UP, DERIVED RATHER THAN GUESSED, because the first version
+    got it backwards and it is not visible in the map on its own. The
+    exporter writes v flipped (`of_lib`, v -> 1 - v) and the client samples
+    glTF-convention UVs with flipY false, so mesh v = 1 reads PNG row 0: the
+    decoded image's TOP IS WORLD UP. `_ashlar_partition` indexes rows in
+    increasing y, so `lv` = 0 is the top of a course, i.e. immediately under
+    the bed joint above it, which is where the wash starts.
+
+    MEAN-NEUTRAL AND CENTRED AT 0.50 for `_stone_albedo`'s reason verbatim:
+    the client divides `albedo_mean_linear` back out through material.color,
+    so the level is free and the middle of the range is where both tails
+    survive the byte quantisation."""
+    tile = FAMILY_TILE_M["masonry"]
+    rowc, _ = _ashlar_partition(w, h)
+    mortar = aux["mortar"]
+    tone = aux["tone"]
+    wear = aux["wear"]
+    # Periods 7 and 11 against a 4-course, 2-or-3-block bond: nothing here
+    # shares a factor with anything there, so the dirt never lines up with
+    # the joints and the two fields cannot confirm each other into a grid.
+    grime = _fbm(w, h, 7, 3, seed=9067)      # ~26 cm: soot and soil splash
+    algae = _fbm(w, h, 11, 2, seed=9127)     # ~16 cm: the green-black bloom
+    fleck = _fbm(w, h, 64, 2, seed=9181)     # ~28 mm: the stone's own fleck
+    # THE STREAK FIELD IS SAMPLED ONCE PER COURSE, AT THAT COURSE'S TOP ROW,
+    # AND HELD CONSTANT DOWN THE FACE. A wash modulated by an isotropic field
+    # is a blotch; rain runs DOWN, so the thing that varies is WHERE on the
+    # bed above it sheds, which is a function of u alone. Reading a 2D field
+    # at one row turns it into that function for free and cannot introduce a
+    # feature the field does not already have.
+    streak = _fbm(w, h, 48, 2, seed=9241)    # ~37 mm of run spacing
+    top = [None] * ASHLAR_COURSES
+    for y in range(h):
+        c = rowc[y][0]
+        if top[c] is None:
+            top[c] = y
+    scol = [[streak[top[c] * w + x] for x in range(w)]
+            for c in range(ASHLAR_COURSES)]
+    LEVEL = 0.50
+    out = bytearray(3 * w * h)
+    for y in range(h):
+        crs, _, lv = rowc[y]
+        srow = scol[crs]
+        base = y * w
+        for x in range(w):
+            i = base + x
+            m = _smoothstep(0.20, 0.80, mortar[i])
+            bt = tone[i]
+            bw = wear[i]
+            # Per-block value. +-0.21 about 1.0. `_stone_albedo`'s bedding
+            # term carries 0.34 peak-to-peak as a CONTINUOUS field; the same
+            # amplitude as a step function on the bond is far more visible,
+            # because the eye reads an edge and not a gradient, so this is
+            # deliberately larger than that and still inside what one bed of
+            # one quarry actually spans.
+            v = 1.0 + (bt - 0.5) * 0.42
+            v += (fleck[i] - 0.5) * 0.10
+            # Weathering, CONTINUOUS across the blocks. Two fields at two
+            # periods: soiling darkens, and it darkens more on a worn block.
+            v *= 1.0 - 0.26 * _clamp01((grime[i] - 0.42) / 0.58) * (0.45 + bw)
+            # The wash below the bed joint above. `lv` = 0 is the top of the
+            # course (see the docstring's orientation derivation), so the
+            # streak is strongest there and fades over about half the block.
+            wash = (1.0 - _smoothstep(0.05, 0.52, lv)) * (0.35 + 0.65 * bw)
+            wash *= _clamp01(0.22 + 1.55 * srow[x])
+            v *= 1.0 - 0.28 * wash
+            # Algae: the green-black bloom, only where it is already damp,
+            # i.e. where the wash and the grime agree.
+            grn = _clamp01((algae[i] - 0.58) / 0.34) * (0.35 + 0.85 * wash)
+            # Mortar. Lighter and markedly greyer than the stone, and it
+            # dirties rather than blooms, so it takes the grime term and not
+            # the algae one. Keyed on `mortar` and NOT on `joint`: the
+            # chamfer is stone and keeps the block's own colour, which is the
+            # distinction the aux docstring exists to make.
+            mv = (1.16 - 0.32 * _clamp01((grime[i] - 0.38) / 0.62))
+            v = v + (mv - v) * m
+            grn *= 1.0 - m
+            v *= LEVEL
+            o = 3 * i
+            # Hue. Limestone runs warm and the mortar runs cool-grey, so the
+            # channel split is driven by the SAME mask the value blend is,
+            # and the algae pulls green up and red down. The warm cast is
+            # per BLOCK as well as per material, because two blocks out of
+            # one quarry still differ in iron content: that is the second
+            # per-block channel and it separates neighbours the value term
+            # happens to draw close together.
+            warm = (1.0 - m) * (0.014 + 0.072 * bt)
+            out[o] = int(round(255.0 * _clamp01(
+                v * (1.0 + warm - 0.14 * grn))))
+            out[o + 1] = int(round(255.0 * _clamp01(
+                v * (1.0 + 0.30 * warm + 0.05 * grn))))
+            out[o + 2] = int(round(255.0 * _clamp01(
+                v * (1.0 - 0.85 * warm - 0.05 * grn))))
+    return bytes(out)
+
+
+# ---------------------------------------------------------------------------
 # The `ember` family (RN-1780, look audit R6): the firebox peep and sight
 # strip, the two brightest surfaces on the hero machine and, until now,
 # untextured (peep iqr 0.93, strip iqr 4.15, against 40.54 and 72.68 for the
@@ -2740,7 +3179,81 @@ def _paintchip_height(w, h):
         # has chipped, the substrate IS the surface.
         out[i] = sub[i] + _PAINT_T * (1.0 - c)
     return out, {"chip": chip, "expo": expo, "grain": grain, "ding": ding,
-                 "sub": sub}
+                 "sub": sub, "soil": _paintchip_soil(w, h)}
+
+
+def _paintchip_soil(w, h):
+    """RN-1838. DIRT RUNS: soot and rain-carried grime running DOWN the paint,
+    0..1. Computed here and published in `aux` so the albedo and the masks read
+    ONE field, which is this file's own one-authority rule.
+
+    WHY THIS FAMILY NEEDED A NEW TERM AT ALL, measured rather than asserted.
+    Every consumer of `paintchip` that this pass looked at is SMALL: the
+    smelter's placard is 0.40 x 0.26 m and its keep-out skirt band is 4.00 m
+    long but only ~0.30 m tall, against a 1.5 m tile. So a part sees between a
+    sixth and a quarter of the map in v, and whatever it sees is almost all
+    intact coating, because the chip mask is keyed on `_edge_wear` of the
+    SUBSTRATE and the substrate's features are plate seams and bolt heads.
+    Measured on the shipped bytes before this term: the whole albedo's luma
+    iqr is 14.1 counts about a mean of 138, i.e. 10.2 per cent relative, and
+    the ONLY thing carrying it over most of the map is a 37 cm coating fade at
+    +-11 per cent. Measured in the frame, the smelter's placard reads iqr 13.1
+    at p50 152: the render is exactly as flat as the map, so the map is the
+    ceiling and no amount of lighting work moves it.
+
+    WHY DIRT AND NOT MORE CHIPPING, which was the obvious first answer and is
+    wrong for these two consumers specifically. `build_smelter.py` says it
+    itself about the launder lip: "a painted lip is repainted and that is what
+    a keep-out marking is for". A keep-out ring and a placard are the two
+    painted things on a machine that are MAINTAINED, so authoring them down to
+    bare metal would be a worse claim than the flat one, and it would also
+    move `chip` -- which drives METALNESS -- on every `Accent` and `SteelWorn`
+    surface in the game. This term moves value and hue on the coating and
+    leaves the chip mask, and therefore every metalness byte's cause,
+    untouched.
+
+    IT IS DIRECTIONAL, WHICH IS THE POINT. `_stone_albedo` and
+    `_paintchip_albedo`'s existing terms are all isotropic noise, and isotropic
+    noise at any amplitude reads as a stain pattern rather than as history. Dirt
+    on a vertical machine face runs DOWN, so the field is built as a per-COLUMN
+    run: the strength varies across the tile at ~4 cm (the run spacing) and the
+    start height varies at ~30 cm (so neighbouring runs begin together, the way
+    water shedding off one lip does), and both are read from a real 2D field at
+    one row rather than hashed, so the field cannot contain a feature the noise
+    does not already have. Down is +y here: the exporter writes v flipped and
+    the client samples flipY false, so PNG row 0 is world UP (the same
+    derivation `_ashlar_albedo` sets out).
+
+    ONE HONEST LIMIT. The UVs are BOX PROJECTED (`of_lib.MeshBuilder`), so on a
+    horizontal face -- the pad deck, a chute lip's top -- this field's "down"
+    is an arbitrary axis in the ground plane and the runs read as streaking
+    rather than as drainage. That is the same limit `_edge_wear`'s docstring
+    records for exposure, it is not fixable without per-asset UVs, and
+    streaking on a horizontal painted surface is a real thing anyway."""
+    spread = _fbm(w, h, 34, 2, seed=22613)   # ~4.4 cm: the run spacing
+    head = _fbm(w, h, 5, 2, seed=22691)      # ~30 cm: where a run starts
+    tail = _fbm(w, h, 12, 2, seed=22853)     # ~12 cm: how far it carries
+    # Read at row 0 and held down the column: that IS the directionality, and
+    # it costs one row of an existing field rather than a new generator.
+    scol = [_clamp01((spread[x] - 0.36) / 0.40) for x in range(w)]
+    vcol = [head[x] for x in range(w)]
+    lcol = [0.16 + 0.34 * tail[x] for x in range(w)]
+    out = [0.0] * (w * h)
+    for y in range(h):
+        v = (y + 0.5) / h
+        base = y * w
+        for x in range(w):
+            s = scol[x]
+            if s <= 0.0:
+                continue
+            t = (v - vcol[x]) % 1.0
+            ln = lcol[x]
+            # Sharp at the top (a run has a source) and fading out along its
+            # length (it dries and thins), and periodic in v by construction
+            # because `t` is taken mod 1.
+            out[base + x] = s * (_smoothstep(0.0, 0.035, t)
+                                 * (1.0 - _smoothstep(0.30 * ln, ln, t)))
+    return out
 
 
 def _paintchip_masks(w, h, height, aux):
@@ -2769,6 +3282,12 @@ def _paintchip_masks(w, h, height, aux):
         r += 0.10 * _clamp01((chalk[i] - 0.52) / 0.40) * (1.0 - c)
         # Grime roughens whatever it lands on, and it lands everywhere.
         r += 0.05 * (dust[i] - 0.5)
+        # RN-1838. A dirt run roughens the coating under it, and it is the one
+        # place on a painted surface where roughness and albedo are allowed to
+        # agree exactly, because the deposit IS both facts. Small: the value
+        # move carries this term and the roughness only has to stop the run
+        # from still taking a clean specular.
+        r += 0.09 * aux["soil"][i] * (1.0 - c)
         # The rolled grain shows only on bare metal, because a rolling mark
         # under paint is invisible. Same gate `_suitplate_masks` puts on its
         # brushed grain.
@@ -2800,6 +3319,13 @@ def _paintchip_albedo(w, h, height, aux):
     shift the palette."""
     fade = _fbm(w, h, 4, 3, seed=22271)      # ~37 cm: uneven coating fade
     grime = _fbm(w, h, 30, 2, seed=22447)    # ~5 cm: dirt speckle
+    # RN-1838. THE THREE TERMS THAT MAKE A SMALL PAINTED PART READ. Every one
+    # of them lives on the COATING and none of them touches `chip`, so the
+    # metalness this family exists for is provably unmoved (see
+    # `_paintchip_soil`'s docstring for the whole argument and the numbers).
+    repaint = _fbm(w, h, 8, 3, seed=22787)   # ~19 cm: coating age and thickness
+    scuff = _fbm(w, h, 70, 2, seed=22861)    # ~2.1 cm: crates, boots, hands
+    soil = aux["soil"]
     chip = aux["chip"]
     LEVEL = 0.52
     out = bytearray(3 * w * h)
@@ -2810,8 +3336,26 @@ def _paintchip_albedo(w, h, height, aux):
         v = 1.0 + 0.34 * c
         # Uneven fade on the coating only.
         v += (fade[i] - 0.5) * 0.22 * (1.0 - c)
+        # REPAINT HISTORY. A maintained marking is not one coat: it is a
+        # thinner, greyer old coat under patches of a newer one, and the
+        # patches are the size of a brush pass. This is the largest single
+        # addition and it is at 19 cm, which is the band a 0.26 m placard and
+        # a 0.30 m band can both actually show.
+        #
+        # PUT THROUGH A SMOOTHSTEP FIRST, which is `_plate_wear`'s own lesson
+        # applied to value rather than to wear: a brush pass has an EDGE, and
+        # a raw fbm has none, so the same amplitude as a gradient reads as
+        # damp and as a step reads as a repaint. `_ashlar_albedo`'s per-block
+        # tone makes the identical argument one family along.
+        v += (_smoothstep(0.38, 0.62, repaint[i]) - 0.5) * 0.27 * (1.0 - c)
+        # SCUFFING at 2 cm, on the coating only: what a passing crate leaves.
+        v += (scuff[i] - 0.5) * 0.13 * (1.0 - c)
         # Dirt darkens and never lightens.
-        v -= 0.12 * _clamp01((grime[i] - 0.54) / 0.46)
+        v -= 0.16 * _clamp01((grime[i] - 0.54) / 0.46)
+        # THE RUNS. The directional term, and the strongest darkening here,
+        # because a soot run on orange paint is the most visible thing that
+        # happens to a keep-out ring in its whole life.
+        v -= 0.34 * soil[i]
         # A ding holds shadow even where the coating survived it.
         v -= 0.09 * (1.0 - aux["ding"][i]) ** 3
         v *= LEVEL
@@ -2823,13 +3367,22 @@ def _paintchip_albedo(w, h, height, aux):
         # Bare alloy also leans very slightly warm-neutral against the
         # coating, an order of magnitude under the bloom.
         warm = 0.020 * c
+        # RN-1838. SOOT DESATURATES. This map multiplies the palette colour
+        # per channel, so the way to make a saturated `Accent` orange read as
+        # dirty is to lift B relative to R, which is what a neutral-grey
+        # deposit over a saturated coat does. Deliberately small and lopsided:
+        # `SteelWorn` wears this same family and is already near-neutral, so a
+        # symmetric move would tint the pad's steel blue. Measured against
+        # `rust`, whose R iqr is 37 and B iqr 8, this is the same KIND of
+        # channel split at about a third of the magnitude.
+        s = soil[i]
         o = 3 * i
         out[o] = int(round(255.0 * _clamp01(
-            v * (1.0 + 0.30 * bloom + warm))))
+            v * (1.0 + 0.30 * bloom + warm - 0.045 * s))))
         out[o + 1] = int(round(255.0 * _clamp01(
-            v * (1.0 - 0.04 * bloom))))
+            v * (1.0 - 0.04 * bloom + 0.030 * s))))
         out[o + 2] = int(round(255.0 * _clamp01(
-            v * (1.0 - 0.27 * bloom - warm))))
+            v * (1.0 - 0.27 * bloom - warm + 0.130 * s))))
     return bytes(out)
 
 
@@ -3486,20 +4039,35 @@ FAMILIES = {
                   albedo=_stone_albedo,
                   normal_strength=10.0, ao_radius=9, ao_floor=0.44,
                   ao_gain=5.0),
-    # RN-1780. `masonry` is `stone`'s row REUSED, not re-derived: the same
-    # height, masks and albedo functions, same parameters, so this family is
-    # still the deliberate claim that architecture-scale masonry and a
-    # boulder are the SAME substance and differ only in the world scale
-    # FAMILY_TILE_M applies them at. It is NOT byte-identical to `stone` any
-    # more (see FAMILY_SIZE's own note): `build_family` calls these functions
-    # at `masonry`'s OWN `size_px`, now 512 against `stone`'s 384, because
-    # 384 measured soft at the ruin's own approach distance. Same recipe,
-    # rendered at a resolution stone was never asked to answer for. See the
-    # ROLE_FAMILY entry above for the three assets that wear it.
-    "masonry": dict(height=_stone_height, masks=_stone_masks,
-                    albedo=_stone_albedo,
-                    normal_strength=10.0, ao_radius=9, ao_floor=0.44,
-                    ao_gain=5.0),
+    # RN-1835. `masonry` IS NO LONGER `stone`'s ROW REUSED. RN-1780 shipped it
+    # as exactly that -- the same height, masks and albedo functions at a
+    # bigger world scale -- and its own verifier's finding was that a bigger
+    # tile does not turn an isotropic fracture field into a wall: the cella
+    # still read as patterned cut cliff. `_ashlar_*` is a different field with
+    # a different subject (LAID stone: courses, joints, per-block variation),
+    # authored for the ruin. See the family header above `_ashlar_partition`
+    # for the bond, the anti-repeat argument and the three-consumer trade.
+    #
+    # normal_strength 10.0 is `stone`'s and is INHERITED rather than
+    # rechosen, because the two fields are on the same relief budget: stone's
+    # steepest feature is a 0.52-amplitude facet arris and this family's is a
+    # 0.34-deep joint chamfer over a 26 mm draft, which at 512 px / 1.8 m is
+    # 7 texels. Measured at 10.0 the joint walls run to 68 degrees and the
+    # tooled face sits near 12, which is the hierarchy this field wants:
+    # the joint is unarguable and the face is modelled, not corrugated.
+    # ao_radius 9 (32 mm at this density) is chosen against the OCCLUDER, as
+    # every other row here is: the occluder is the 20 mm joint, so a 19-texel
+    # window sees one joint and the block face either side of it. A wider
+    # radius would average across a whole 0.6 m block and return the uniform
+    # grey the FAMILIES header calls the expensive failure.
+    # ao_floor 0.42 and ao_gain 4.4: the joint has to REACH the floor,
+    # because a mortar bed in shadow is the darkest thing on the wall, and
+    # 4.4 puts it there without dragging the block faces down with it
+    # (measured 5th percentile 0.437, median 0.744).
+    "masonry": dict(height=_ashlar_height, masks=_ashlar_masks,
+                    albedo=_ashlar_albedo,
+                    normal_strength=10.0, ao_radius=9, ao_floor=0.42,
+                    ao_gain=4.4),
     # RN-1780. `ember` carries an EMISSIVE map (RN-1462's slot, unused by any
     # family until now) alongside a normal+orm at `stone`'s own physical
     # field (a coal bed IS fractured mineral; see `_ember_emissive`'s header
@@ -4312,33 +4880,83 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
 # acceptable when the constant is the identity for how the channel is used.
 # metalness multiplies, so 255 is identity; anything else silently rescales
 # every material that wears the map. Each entry needs a reason.
+#
+# RN-1837. THE VALUE IS NOW PART OF THE DECLARATION, and the change is a
+# TIGHTENING that also unblocks one honest non-identity case. The check used
+# to be `declared and lo == 255`, so a declaration said only "this channel may
+# be flat" and the 255 was hard-coded beside it; an entry could therefore
+# never be wrong about its own value, because it did not state one. Each entry
+# is now `(value, reason)` and the check asserts the shipped constant IS that
+# value, so a family whose pinned constant silently moves now fails instead of
+# passing on a stale declaration.
+#
+# WHY A NON-255 ENTRY IS PERMITTED AT ALL, since 255 was the whole rule. 255
+# is identity for a MULTIPLIER, and that argument is exactly right for
+# metalness, which is why every metalness row below still reads 255. It is not
+# an argument about a channel a family pins as a deliberate ABSOLUTE. There is
+# exactly one of those (`ember`'s roughness, pinned matte by RN-1780 so no
+# specular highlight can compete with the emissive term for which one the eye
+# reads as the hot spot) and it has been shipping while `texgen check` was RED
+# on `main` since that lane landed, which is the worst of both worlds: the
+# gate was failing and nobody was reading it. A stated exception with its
+# value asserted is strictly better than a red gate nobody looks at. If a
+# second non-255 entry ever wants in, that is the moment to make the family
+# vary the channel instead.
 ALLOWED_CONSTANT = {
-    ("coarse", "orm", "B"):
-        "no coarse role is a polished metal, so metalness is left at identity",
-    ("bark", "orm", "B"):
+    ("coarse", "orm", "B"): (255,
+        "no coarse role is a polished metal, so metalness is left at identity"),
+    ("bark", "orm", "B"): (255,
         "bark is not a metal; the palette constant is already 0 and identity "
-        "is the only multiplier that does not rescale it",
-    ("ore", "orm", "B"):
+        "is the only multiplier that does not rescale it"),
+    ("ore", "orm", "B"): (255,
         "ore-in-rock is mineral, not polished metal: the three ore roles' "
         "palette metallic values sit under the client's 0.5 metal/matte "
         "batching split on purpose (RN-156), and identity is the only "
-        "multiplier that cannot move them across it",
-    ("fur", "orm", "B"):
+        "multiplier that cannot move them across it"),
+    ("fur", "orm", "B"): (255,
         "fur is not a metal by any reading, and section 2.1 asks that a "
         "flat channel say so rather than invent variation it does not "
         "have; identity leaves the material's own 0.02 exactly where the "
-        "palette put it",
-    ("stone", "orm", "B"):
+        "palette put it"),
+    ("stone", "orm", "B"): (255,
         "host rock is not a polished metal, and the roles that wear this "
         "family are the same non-metallic rock roles `coarse` left at "
         "identity for the same reason; inventing metalness variation on a "
-        "boulder would be the dishonest half of section 2.1's own rule",
-    ("suitfab", "orm", "B"):
+        "boulder would be the dishonest half of section 2.1's own rule"),
+    # RN-1836. `masonry` has been shipping this channel constant and
+    # UNDECLARED since RN-1780 split the family off `stone`, so `texgen
+    # check` has been red on `main` for it. The reason is `stone`'s, verbatim
+    # and for the same roles' sake: a built stone wall is not a polished
+    # metal either, and `Masonry`/`MasonryDark` copy `Rock`/`RockDark`'s own
+    # 0.00 metallic constant, which identity is the only multiplier that
+    # leaves alone. `_ashlar_masks` keeps it at identity for that reason and
+    # not by omission.
+    ("masonry", "orm", "B"): (255,
+        "a built stone wall is not a polished metal; Masonry/MasonryDark "
+        "copy Rock/RockDark's 0.00 metallic constant and identity is the "
+        "only multiplier that leaves the palette where the palette put it"),
+    # RN-1837. `ember`'s two, also red on `main` since RN-1780 and also
+    # deliberate there. G is the one non-identity entry in this table; see
+    # the header above for why it is allowed and why it is the only one.
+    ("ember", "orm", "G"): (242,
+        "RN-1780 pinned this family's roughness matte (0.95 -> 242) rather "
+        "than deriving it, because `_stone_masks`'s crest band puts a "
+        "GLOSSY patch exactly where the emissive map puts its hottest "
+        "texel, and on a dielectric under a bright sky IBL that highlight "
+        "competes with the glow for which one the eye reads as the hot "
+        "spot. A coal should glow, not glint. Pinning it is what makes the "
+        "measured peep/strip contrast attributable to the emissive term "
+        "alone, which is the whole reason the family exists"),
+    ("ember", "orm", "B"): (255,
+        "coal is not a polished metal and EmberEmissiveState's palette "
+        "metallic is 0.00; identity is the only multiplier that leaves it "
+        "there, `stone`'s reason one subject along"),
+    ("suitfab", "orm", "B"): (255,
         "a woven pressure garment is a polymer and both roles that wear it "
         "are already 0.00 metallic in the palette; identity is the only "
         "multiplier that leaves that alone, and inventing variation here "
         "would be the dishonest half of section 2.1's own rule. The suit's "
-        "metal is on `suitplate`, which does vary",
+        "metal is on `suitplate`, which does vary"),
 }
 
 # Channels that MUST carry variation, with the reason a flat one is a defect.
@@ -4543,10 +5161,13 @@ def check_maps(out_dir=OUT_DIR, verbose=True):
                 lo, hi, mean = stats[c]
                 key = (fam, kind, cname)
                 if lo == hi:
-                    why = ALLOWED_CONSTANT.get(key)
-                    say(why is not None and lo == 255,
+                    rule = ALLOWED_CONSTANT.get(key)
+                    say(rule is not None and lo == rule[0],
                         "%s.%s %s const" % (fam, kind, cname),
-                        ("constant %d, allowed: %s" % (lo, why)) if why
+                        ("constant %d, allowed: %s" % (lo, rule[1])) if rule
+                        and lo == rule[0] else
+                        ("CONSTANT at %d but the declaration says %d"
+                         % (lo, rule[0])) if rule
                         else "CONSTANT at %d and not declared allowed" % lo)
                 elif (kind, cname) in MUST_VARY:
                     say(hi - lo >= MIN_SPREAD, "%s.%s %s" % (fam, kind, cname),
@@ -4950,6 +5571,107 @@ def selftest():
     check("paintchip disagreement caught", not (bad_am >= 0.50),
           "albedo off an unrelated wear field: corr(albedo, metal) %.3f, "
           "correctly outside the >= 0.50 rule" % bad_am)
+
+    # 7n. `masonry` IS LAID AND NOT BROKEN (RN-1835). The family's whole claim
+    #     is that it is coursed ashlar rather than an isotropic fracture field,
+    #     and the falsifiable form of that claim is ANISOTROPY AT THE COURSE
+    #     LINES: a bed joint is a level line running the full width, so the
+    #     mean |dz/dy| across the tile must beat the mean |dz/dx| by a real
+    #     margin, because the bed joints are unbroken and the head joints are
+    #     interrupted by the stagger. `stone` at the same measurement is
+    #     isotropic to within a few per cent BY CONSTRUCTION (worley cells have
+    #     no preferred axis), so it is the control and it is measured here
+    #     rather than asserted. What this catches is the exact regression this
+    #     family exists to fix: a masonry retuned back into a rock field.
+    s = 192
+    ash, ash_aux = _ashlar_height(s, s)
+
+    def _aniso(field, n):
+        sx = sy = 0.0
+        for y in range(n):
+            ym = ((y - 1) % n) * n
+            yp = ((y + 1) % n) * n
+            row = y * n
+            for x in range(n):
+                sx += abs(field[row + (x + 1) % n] - field[row + (x - 1) % n])
+                sy += abs(field[yp + x] - field[ym + x])
+        return sx / (n * n), sy / (n * n)
+
+    a_dx, a_dy = _aniso(ash, s)
+    st_h, _ = _stone_height(s, s)
+    s_dx, s_dy = _aniso(st_h, s)
+    ratio = a_dy / a_dx if a_dx else 0.0
+    s_ratio = s_dy / s_dx if s_dx else 0.0
+    check("masonry courses are level", ratio >= 1.25,
+          "mean |dz/dy| / |dz/dx| = %.3f (need 1.25); `stone`, the isotropic "
+          "field this replaces, measures %.3f on the same statistic"
+          % (ratio, s_ratio))
+    check("stone isotropy control", s_ratio < 1.25,
+          "the control must NOT pass the course rule: %.3f is correctly under "
+          "1.25, so 7n is measuring the bond and not the arithmetic"
+          % s_ratio)
+
+    # 7o. THE MORTAR IS A MATERIAL AND THE CHAMFER IS NOT (RN-1835). The first
+    #     build of this family keyed the albedo's mortar colour on the whole
+    #     recess, which painted a 98 mm pale band where the wall has a 20 mm
+    #     one. The two masks must therefore differ by roughly the draft's own
+    #     share of the recess, and `mortar` must be strictly inside `joint`
+    #     everywhere: a texel that is mortar and not joint would be mortar
+    #     lying on a block face.
+    jm = sum(ash_aux["joint"]) / (s * s)
+    mm = sum(ash_aux["mortar"]) / (s * s)
+    outside = sum(1 for i in range(s * s)
+                  if ash_aux["mortar"][i] > ash_aux["joint"][i] + 1e-9)
+    check("mortar is inside the joint", outside == 0 and mm < jm * 0.62,
+          "mortar covers %.4f of the tile against the recess's %.4f "
+          "(need under 0.62 of it), and %d texels are mortar outside the "
+          "recess (need 0)" % (mm, jm, outside))
+
+    # 7p. THE ALBEDO DOES NOT REDRAW THE RELIEF INSIDE A BLOCK (RN-742's rule,
+    #     kept where it still applies). This family is allowed to agree with
+    #     its heightfield AT THE JOINT, because a mortar bed is a different
+    #     material and not a shadow; it is not allowed to agree inside a
+    #     block, which is the cobblestone defect RN-454 paid for.
+    #
+    #     THE RESIDUAL IS THE STATISTIC AND THE FIRST VERSION OF THIS CHECK
+    #     GOT THAT WRONG, which is worth writing down because it is a trap any
+    #     per-cell family will hit. Measured raw on block-face texels the
+    #     correlation is 0.344, which reads as a failure and is not one: it is
+    #     dominated by the fact that this tile contains about TEN blocks, and
+    #     each block draws one tone hash and one set-height hash, so the two
+    #     draws line up or fail to line up across a sample of ten. Measured,
+    #     corr(height, tone) across the tile is 0.531 on independent hashes
+    #     with different seeds -- which is exactly the standard error of a
+    #     ten-point correlation and not a shared field. A check that fails on
+    #     that is measuring a coincidence in the hash draws, not the defect.
+    #     So both series have their OWN BLOCK'S MEAN removed first, and what
+    #     is left is the only thing RN-742's rule was ever about: does the
+    #     pigment inside one block reproduce the tooling relief inside that
+    #     same block. The raw figure is reported beside it, because the gap
+    #     between the two is the whole point.
+    ash_a = _ashlar_albedo(s, s, ash, ash_aux)
+    a_luma = [(ash_a[3 * i] + ash_a[3 * i + 1] + ash_a[3 * i + 2]) / 3.0
+              for i in range(s * s)]
+    face_i = [i for i in range(s * s) if ash_aux["joint"][i] < 0.02]
+    a_rowc, a_colc = _ashlar_partition(s, s)
+    keys = [a_colc[a_rowc[i // s][0]][i % s][0] for i in face_i]
+    sums = {}
+    for n, k in enumerate(keys):
+        acc = sums.setdefault(k, [0.0, 0.0, 0])
+        acc[0] += a_luma[face_i[n]]
+        acc[1] += ash[face_i[n]]
+        acc[2] += 1
+    ra = [a_luma[face_i[n]] - sums[k][0] / sums[k][2] for n, k in enumerate(keys)]
+    rh = [ash[face_i[n]] - sums[k][1] / sums[k][2] for n, k in enumerate(keys)]
+    r_res = _pearson(ra, rh)
+    r_face = _pearson([a_luma[i] for i in face_i], [ash[i] for i in face_i])
+    check("masonry albedo is not the height", abs(r_res) <= 0.30,
+          "WITHIN-BLOCK corr(albedo, height) %.3f (need |r| <= 0.30) over %d "
+          "face texels in %d blocks. Raw, per-block means left in, it is "
+          "%.3f, and the difference is the ten-draw coincidence the comment "
+          "above sets out (`_stone_albedo` measures 0.07, `panel`'s "
+          "deliberately-correlated albedo 0.29, an albedo that IS the height "
+          "1.00)" % (r_res, len(face_i), len(sums), r_face))
 
     # 8. Every palette role is either mapped or explicitly flat. Catches the
     #    standing-rule-11 failure of a check that passes on what it never
