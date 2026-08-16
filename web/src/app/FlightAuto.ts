@@ -31,14 +31,24 @@ import type { FlightMode } from './FlightMode.js';
 //
 // THAT SECOND CLAUSE IS WHY THIS IS A MILESTONE AND NOT A TECH, which is worth
 // spelling out because the obvious move is the wrong one. `research.h` already
-// ships `techs::FlightAutopilot`, and its `requiresMilestone` is `ReachedOrbit`
-// -- a rung the player passes BEFORE the station, since you cannot fly to
-// Anchorage without reaching orbit. Hanging auto-approach off that tech would
-// therefore have made it available for the very mission it is meant to sit
-// behind, which is the exact ordering the ruling forbids. `StationBoarded` is
-// granted by `StationReveal.ts` on the rising edge of the walker standing on
-// Anchorage's frame, i.e. by the hand-flown mission itself, so gating on it
-// makes the order true by construction rather than by a balance number.
+// ships `techs::FlightAutopilot`, and when this was written its
+// `requiresMilestone` was `ReachedOrbit` -- a rung the player passes BEFORE the
+// station, since you cannot fly to Anchorage without reaching orbit. Hanging
+// auto-approach off that tech would therefore have made it available for the
+// very mission it is meant to sit behind, which is the exact ordering the ruling
+// forbids. `StationBoarded` is granted by `StationReveal.ts` on the rising edge
+// of the walker standing on Anchorage's frame, i.e. by the hand-flown mission
+// itself, so gating on it makes the order true by construction rather than by a
+// balance number.
+//
+// GP-965 CLOSED THE DISAGREEMENT PH-383 RECORDED, AND THIS GATE DID NOT MOVE.
+// The tech's own `requiresMilestone` is now `StationBoarded` too, so the two
+// halves agree; the tech was NOT retired, because it and this verb unlock
+// different things. This is a CONTROL and it is free: it flies the terminal
+// approach of a vessel that already has a docking port. The tech unlocks an
+// ITEM, `parts_items::AutopilotModule`, which is a part the player pays science
+// for and then has to build onto a rocket. A player who has boarded Anchorage
+// gets this verb at once and still owes 25 + 15 science for the module.
 //
 // It is read through a PORT (`FlightDeps.milestone`) rather than by giving
 // flight a reference to gameplay: flight already reaches the pads and the HUD

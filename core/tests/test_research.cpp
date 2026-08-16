@@ -274,29 +274,41 @@ TEST(milestone_grant_is_idempotent_and_gates_the_tech) {
   // Not earned yet: FlightAutopilot's own milestone requirement is unmet. This
   // is the exact live bug GP-530 fixes in the client — `Research.earn` had no
   // caller that could ever reach this line outside a save restore.
-  CHECK(!rs.hasMilestone(milestones::ReachedOrbit));
+  //
+  // GP-965: the deed is `StationBoarded`, not `ReachedOrbit`. Reid's task-39
+  // ordering ruling moved it; see the tech's own comment in research.h.
+  CHECK(!rs.hasMilestone(milestones::StationBoarded));
   CHECK(!rs.milestoneMet(techs::FlightAutopilot));
 
-  // First grant: succeeds, the milestone is now held.
+  // GP-965, ON-SCENE NEGATIVE CONTROL: the milestone this tech USED to want
+  // does not open it. Reaching orbit is a rung the player passes on the way to
+  // the station, so if this line ever went green the ruling would be broken and
+  // the autopilot would be available for the mission it sits behind.
   CHECK(rs.setMilestone(milestones::ReachedOrbit));
   CHECK(rs.hasMilestone(milestones::ReachedOrbit));
+  CHECK(!rs.milestoneMet(techs::FlightAutopilot));
+
+  // First grant of the RIGHT one: succeeds, the milestone is now held.
+  CHECK(rs.setMilestone(milestones::StationBoarded));
+  CHECK(rs.hasMilestone(milestones::StationBoarded));
   CHECK(rs.milestoneMet(techs::FlightAutopilot));
-  CHECK(rs.milestones().size() == 1);
+  CHECK(rs.milestones().size() == 2);
 
   // SECOND grant of the SAME milestone: a no-op. Returns false and the held
   // set does not grow — "grant twice, research state changes once," which is
   // the property `grantMilestone`'s idempotence in the client rests on
   // entirely: it adds a logged cause and nothing else (Research.ts).
-  CHECK(!rs.setMilestone(milestones::ReachedOrbit));
-  CHECK(rs.milestones().size() == 1);
-  CHECK(rs.hasMilestone(milestones::ReachedOrbit));
+  CHECK(!rs.setMilestone(milestones::StationBoarded));
+  CHECK(rs.milestones().size() == 2);
+  CHECK(rs.hasMilestone(milestones::StationBoarded));
 
-  // A second, DIFFERENT milestone grants independently and does not disturb
-  // the first (the set is a set, not a single slot) — LandedOffWorld, granted
+  // A third, DIFFERENT milestone grants independently and does not disturb
+  // the others (the set is a set, not a single slot) — LandedOffWorld, granted
   // on landing off Forge, is the client's other live caller.
   CHECK(rs.setMilestone(milestones::LandedOffWorld));
-  CHECK(rs.milestones().size() == 2);
+  CHECK(rs.milestones().size() == 3);
   CHECK(rs.hasMilestone(milestones::ReachedOrbit));
+  CHECK(rs.hasMilestone(milestones::StationBoarded));
   CHECK(rs.hasMilestone(milestones::LandedOffWorld));
 }
 
