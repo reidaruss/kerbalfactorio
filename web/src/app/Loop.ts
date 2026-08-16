@@ -94,6 +94,12 @@ export class Loop {
    * A driven accumulator that starts at zero and is CARRIED from one driven run
    * to the next keeps the slicing continuity the old comment protected, and
    * makes a scripted run a function of its own arguments and nothing else.
+   *
+   * GP-1013 FINISHED THE SENTENCE ABOVE, because it was not true yet. FS-101
+   * removed the wall clock from the ACCUMULATOR and left it in the CLOCK: `run`
+   * seeded a synthetic timeline at `performance.now()` and then had `frame`
+   * reconstruct each dt as `(now - lastMs) / 1000`, a subtraction of two large
+   * floats. See `run` and `step`.
    */
   private drivenAcc = 0;
   private running = false;
@@ -149,14 +155,41 @@ export class Loop {
    *    is synthetic already; the one wall-clock quantity left was the
    *    accumulator this inherited from the live loop, and that alone decided
    *    whether `run(4)` advanced 479 fixed ticks or 480. See `drivenAcc`.
+   *
+   * 4. GP-1013. IT WAS STILL NOT A FUNCTION OF ITS OWN ARGUMENTS, because the
+   *    dt was not synthetic after all: it was RECONSTRUCTED. This method used
+   *    to seed a synthetic timeline at `performance.now()`, walk it forward by
+   *    `dtMs` per frame, and hand each absolute position to `frame`, which
+   *    recovered the step as `(now - lastMs) / 1000`. That subtraction is two
+   *    large floats, and its error is the ULP OF THE WALL CLOCK: `now` is
+   *    milliseconds since page load, so at 20 s its ULP is about 3.6e-12 ms and
+   *    at 40 s twice that. At `renderHz = 60` the recovered dt is `FIXED_DT` to
+   *    within exactly that error, and `acc >= FIXED_DT` in `step` is therefore
+   *    DECIDED BY IT: one ULP short and the frame delivers no tick at all.
+   *
+   *    MEASURED (`of.run(1.0, 60)` as the first driven call on a fresh page,
+   *    `drivenAcc` provably 0, same build, same seed, ten sessions): QUIET the
+   *    call delivered 60, 60, 60, 60, 60 ticks; with the box's twelve cores
+   *    pegged at 100% it delivered 60, 59, 60, 59, 60. The two short runs are
+   *    exactly the two whose `performance.now()` was largest (35645.5 ms and
+   *    39737.5 ms against 21678.6 to 28380.8 for every full one), and feeding
+   *    those six seeds into the arithmetic above off-line reproduces the six
+   *    tick counts exactly. That is the whole causal chain: a busy box boots
+   *    slower, a slower boot makes `performance.now()` bigger, a bigger
+   *    `performance.now()` has a coarser ULP, and the coarser ULP eats a tick.
+   *    The same sweep at the default render rate, under the same load, gave 60
+   *    ticks 3 of 3, because there the accumulator never sits on the threshold.
+   *
+   *    THE FIX IS TO STOP RECONSTRUCTING WHAT WE ALREADY KNOW. A driven frame's
+   *    step is `1 / renderHz` by construction (bit-identical to the old
+   *    `dtMs / 1000` at every rate, checked), so it is passed to `step`
+   *    directly and no wall-clock value enters a driven run at any point.
    */
   async run(seconds: number, renderHz = 144.3): Promise<void> {
     const wasRunning = this.running;
     this.stop();
-    const dtMs = 1000 / renderHz;
+    const dt = 1 / renderHz;
     const total = Math.max(1, Math.round(seconds * renderHz));
-    let now = performance.now();
-    this.lastMs = now;
     // The accumulator is NOT reset, for the reason `drivenAcc` restates:
     // zeroing it snaps alpha to 0, which is a one-tick discontinuity in the
     // interpolated eye, and a probe that calls run() in slices would then
@@ -166,8 +199,7 @@ export class Loop {
     const liveAcc = this.acc;
     this.acc = this.drivenAcc;
     for (let i = 0; i < total; ++i) {
-      now += dtMs;
-      this.frame(now);
+      this.step(dt);
       // Yield often enough that terrain.worker payloads actually land: a
       // postMessage needs a macrotask, and a chunk that never arrives makes a
       // driven walk look like it streams nothing.
@@ -336,10 +368,27 @@ export class Loop {
     }
   }
 
+  /**
+   * The LIVE clock read, and nothing else. Splitting it off `step` is the whole
+   * of GP-1013: this is the only place a wall-clock timestamp is turned into a
+   * duration, so a driven run cannot pick one up by accident. rAF is the sole
+   * caller.
+   */
   private frame(now: number): void {
-    const t0 = performance.now();
-    const dt = Math.min((now - this.lastMs) / 1000, 0.25);
+    const dt = (now - this.lastMs) / 1000;
     this.lastMs = now;
+    this.step(dt);
+  }
+
+  /**
+   * One rendered frame advanced by `dt` SECONDS. The clamp stays here rather
+   * than at the two call sites so both paths keep the catch-up guarantee a
+   * stalled tab needs; a driven `dt` of `1 / renderHz` is far under it at any
+   * rate a probe would ask for.
+   */
+  private step(dtIn: number): void {
+    const t0 = performance.now();
+    const dt = Math.min(dtIn, 0.25);
     this.acc += dt;
     let ticks = 0;
     while (this.acc >= FIXED_DT && ticks < MAX_CATCHUP) {
