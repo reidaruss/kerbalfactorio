@@ -760,7 +760,7 @@ next thing standing between this shot and a target grade.
 **AND THE FRAMING CONSTANTS ARE NOW STALE BY EXACTLY THE BUG, WHICH IS THIS
 DOMAIN'S CALL AND IS DELIBERATELY NOT MADE HERE.** The yaw solve moves from
 **244.15 to 255.35 deg** because it is now solved against the attitude the hull
-is really drawn with. `yawOff: 45`, `back: true` and `pitch: 3` were chosen
+is really drawn with. **ADMIN CORRECTION, 2026-08-16, from the merge verifier: hand the residual on as UNATTRIBUTED FRAME-WIDE ILLUMINATION VARIANCE rather than as terrain streaming reaching the IBL fill. Its own captures rule out the longitude explanation, since two captures 0.007 deg apart in longitude differ 1.87x in world luma (28.99 against 15.49), and the terrain counters agree exactly at report (chunksBuilt 562, bytesTotal 18466758); all that still points at streaming is a 1403-triangle delta. Everything about the camera and the station is bit-identical across those captures, so it is definitively NOT pose, and the pose fix stands.** `yawOff: 45`, `back: true` and `pitch: 3` were chosen
 against the pre-fix bearing, so the reproducible frame is the station's INTERIOR
 (a hall of riveted panels, a floor, no stars:
 `docs/screenshots/CE115_station_repro.png`, one of the three identical captures,
