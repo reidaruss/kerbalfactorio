@@ -331,6 +331,41 @@
         // iqr 4.15.
         peep: [0.483750, 0.4288888888888889, 0.536875, 0.4977777777777778],
         strip: [0.436250, 0.5766666666666667, 0.582500, 0.5922222222222222],
+        // RN-1839. THE TWO PAINTED SLABS, AND THE REASON `band` IS NOT ENOUGH.
+        // R6 quotes `band` at iqr 63.69 as the machine's most varied surface.
+        // It is not a surface measurement: the rectangle spans the whole 4 m
+        // keep-out ring and the ring runs from full light at its left end to
+        // deep shade at its right, so 63.69 is a LIGHTING RAMP across a flat
+        // painted slab. Read through this manifest, a 130 px window at its lit
+        // end reads iqr 12.94 and a 230 px window at its shaded end 4.82.
+        // `bandLit` and `bandShade` are those two windows, committed, so the
+        // next lane measures the paint and not the sun.
+        //
+        // `placard` is the 0.40 x 0.26 m painted sign on the upper left of the
+        // pour face (`build_smelter.py`'s `mf.placard(..., "Accent")`). It is
+        // the flattest bright warm cell anywhere in this frame: a 40 px
+        // lattice over the whole capture puts it flatter than any other cell
+        // with warm over 40.
+        //
+        // BOTH ARE `Accent` -> `paintchip`, i.e. PAINT, and neither is
+        // emissive. That is worth stating in the manifest because RN-1835's
+        // brief called them "the two flat emissive slabs" and the emissive
+        // slot could never have reached either one: `MachineBatch`'s
+        // status-chip branch is role 1 and both of these are role 0.
+        //
+        // Measured on this build (RN-1838's paintchip landing) on real D3D11,
+        // both arms read through this manifest, before -> after:
+        //   placard    iqr 29.00 -> 37.52, p05 100.48 -> 54.64,
+        //              p50 129.21 -> 104.73, p95 154.37 -> 156.09
+        //   bandLit    iqr 12.94 -> 34.15, p95 168.70 -> 184.43
+        //   bandShade  iqr  4.82 -> 11.97
+        //   firebox 40.54, plate 25.74, hearthL 63.40, hearthR 21.74,
+        //   peep 20.66, strip 52.68 and sunface 53.66 are bit-identical in
+        //   EVERY published field across the same pair, which is what
+        //   attributes the move to `paintchip` and to nothing else in frame.
+        placard: [0.2700, 0.3388888888888889, 0.332500, 0.4133333333333333],
+        bandLit: [0.2937500, 0.7644444444444445, 0.3750000, 0.8111111111111111],
+        bandShade: [0.5625000, 0.7644444444444445, 0.7062500, 0.8111111111111111],
       },
       why: 'the smelter at arm-reach: the proof-shot framing, plate and brick',
     },
@@ -347,6 +382,47 @@
       // and the debris field, which is a value range rather than a shape.
       bearingDeg: 60, standoffM: 34, aimUpM: 4.0,
       box: [0.2800, 0.3000, 0.7400, 0.6100],
+      // RN-1839. FOUR RECTANGLES, COMMITTED. §2.8 R3, RN-1780 and RN-1835 have
+      // now each quoted a "cella wall patch" figure and NONE of them wrote down
+      // where the patch was, so three passes in a row have argued about a
+      // number nobody after them could re-take. That is RN-1728's finding
+      // happening again on a different shot, so the rectangles go in the
+      // manifest and the numbers below are read back FROM the manifest on a
+      // real D3D11 capture rather than from the search that found them.
+      //
+      // `cella` is clean sunlit wall on the long face, clear of the two dark
+      // openings and of the leaning slab at its foot; `cellaDark` is the
+      // shaded end wall, which is the same family lit by the sky alone and is
+      // where a relief change shows up with no direct sun helping it. `sky`
+      // and `hill` are the NEGATIVE CONTROLS and they are the reason the pair
+      // can be believed: a family change must not touch either, and on the
+      // ashlar pass both came back bit-identical to the digit across the two
+      // builds while the two wall rectangles moved.
+      //
+      // Measured on this build (RN-1835's ashlar landing) on real D3D11, both
+      // arms read THROUGH THIS MANIFEST rather than off an ad-hoc decoder,
+      // before -> after:
+      //   cella      iqr 23.15 -> 29.20, p05 105.18 -> 103.61,
+      //              p50 138.03 -> 143.66, p95 161.97 -> 168.87
+      //   cellaDark  iqr  4.93 ->  6.86, p05 9.51 -> 8.51
+      //   sky        14.00 -> 14.00, and luma/p05/p50/p95 111.51/98.04/
+      //              111.12/126.26 on BOTH arms: bit-identical to the digit
+      //   hill       27.67 -> 27.67, likewise 68.53/31.49/71.11/94.59 on both
+      //
+      // ONE TRAP, PAID FOR ONCE HERE. `statOn` above weights luma Rec.709
+      // (0.2126/0.7152/0.0722) and `tools/smoke/boxstat.mjs` weights it
+      // Rec.601 (0.299/0.587/0.114), so a number from the offline decoder and
+      // a number from this probe are NOT on one scale: the same `cella`
+      // rectangle reads 29.20 here and 29.27 there, and `sky` reads 14.00 and
+      // 13.53. Both are internally consistent, and mixing them across a
+      // before/after pair is a defect. Every figure in this comment is this
+      // probe's own.
+      extra: {
+        cella: [0.2875, 0.4444444444444444, 0.3562500, 0.5555555555555556],
+        cellaDark: [0.3875, 0.4222222222222222, 0.4375000, 0.5777777777777777],
+        sky: [0.6250, 0.1111111111111111, 0.7500000, 0.2222222222222222],
+        hill: [0.8125, 0.5222222222222223, 0.9062500, 0.5777777777777777],
+      },
       why: 'the ruin at approach, the structure high-water mark, whole silhouette',
     },
     basedusk: {
