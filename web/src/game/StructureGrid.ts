@@ -30,7 +30,7 @@
 // re-derivation, and it is why the pillar recipe below is measured too.
 
 import * as THREE from 'three';
-import { boundsOf } from './StructureBody.js';
+import { boundsOf, type Solid } from './StructureBody.js';
 import { fitPlane } from './StructureTolerance.js';
 import { snapToAxes, snapToGround } from './Grid.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
@@ -65,6 +65,20 @@ export function isDeck(k: StructureKind): boolean {
 export const SITE_REACH_M = 64;
 /** Storeys a site may stack. Four is 16 m at the DW-32 storey, a real tower. */
 export const MAX_LEVEL = 3;
+/**
+ * GP-1027. THE AIM MARCH'S STEP, and it lives here rather than in
+ * `StructurePlacement` because `levelOf` below needs it as a TOLERANCE and a
+ * tolerance that is a copy of somebody else's constant is a tolerance that goes
+ * stale. `StructurePlacement.aimHit` imports it for the march itself, so the
+ * step and the slack it produces are one number.
+ *
+ * The march samples the ray every `AIM_STEP_M` and returns the FIRST sample
+ * INSIDE a solid, so the point it hands back sits up to one step PAST the
+ * surface it hit: a downward aim onto a crown lands up to `AIM_STEP_M` below the
+ * crown's true plane. That is the whole of the slack, it is bounded, and it is
+ * the only slack `levelOf` is allowed to carry.
+ */
+export const AIM_STEP_M = 0.2;
 
 /** The tiling module, measured off the assets. */
 export interface StructureModule {
@@ -317,19 +331,102 @@ export function worldOf(site: Site, e: number, n: number, u: number,
 }
 
 /**
+ * How high, along the site's own up, the topmost corner of a placed solid
+ * reaches. The CROWN of the thing the aim ray actually entered.
+ *
+ * Eight corners per proxy box, rotated by the part's own quaternion, projected
+ * onto `site.up` from `site.o`: the same frame `localOf` speaks, so the answer
+ * is directly comparable with a hit point's own height. A door is three boxes
+ * and a launch pad is a dozen, and the maximum over all of them is what "did the
+ * ray reach the top of this body" has to be asked against -- taking the box the
+ * ray happened to enter would call the 2 m launch mount a crown while the 28 m
+ * tower stood beside it.
+ */
+export function crownOf(site: Site, s: Solid): number {
+  const v = new THREE.Vector3();
+  let top = -Infinity;
+  for (const b of s.boxes) {
+    for (let k = 0; k < 8; ++k) {
+      v.set(k & 1 ? b.max[0] : b.min[0], k & 2 ? b.max[1] : b.min[1],
+        k & 4 ? b.max[2] : b.min[2]).applyQuaternion(s.quat);
+      const x = s.pos.x + v.x - site.o.x, y = s.pos.y + v.y - site.o.y,
+        z = s.pos.z + v.z - site.o.z;
+      const u = x * site.up.x + y * site.up.y + z * site.up.z;
+      if (u > top) top = u;
+    }
+  }
+  return top;
+}
+
+/**
+ * GP-1027. WHICH STOREY A HIT HEIGHT NAMES, and the one thing it may not do is
+ * invent a storey nothing is standing on.
+ *
+ * `u` is the hit point's height over the site plane and `crownU` is the top of
+ * the SOLID the aim ray entered, or null when the ray met ground rather than a
+ * body. There are exactly two cases and they are told apart by that pair alone:
+ *
+ *   * A CROWN HIT, `u` within one march step of `crownU`. The ray came down onto
+ *     the top of something, so there IS a surface here and its plane is the
+ *     crown's. DW-32 lives on this branch: a wall spans `deckH` to `storey`, so
+ *     its crown is a storey plane exactly, and aiming at a wall top still puts
+ *     the next floor over it. `AIM_STEP_M` is the whole of the tolerance and it
+ *     is the march's own undershoot, not a taste.
+ *   * A FLANK HIT, `u` a real distance below `crownU`. The ray stopped on the
+ *     SIDE of a body. Nothing can rest at that height, so the honest answer is
+ *     the storey the point stands IN, which is the floor beneath it.
+ *
+ * THIS IS THE GP-969 DEFECT AND IT WAS ONE `Math.round`. Rounding a flank hit to
+ * the NEAREST storey plane hands back the plane ABOVE it for everything past the
+ * half-way mark, and a wall's face is 3.5 m of a 4 m storey: `probes/padflank.js`
+ * measures a hit 2.506 m up a wall being addressed at the storey at 4 m. On a
+ * single-storey base that refuses and is merely illegible; on a base that has
+ * the storey, MEASURED on that probe's fixture, the ghost is GREEN and the press
+ * puts a launch pad 1.994 m above the point the crosshair was on, through a
+ * ceiling the player cannot see past. `overlapping()` only rejects pads sharing
+ * a level, so nothing downstream catches it either.
+ *
+ * AND THE CLAMP IS GONE, which is the second half of the same bug. This used to
+ * end `Math.min(MAX_LEVEL, ...)`, so a hit 17 m up a launch pad's tower came
+ * back as level 3 instead of level 4, and BOTH callers' `level > MAX_LEVEL`
+ * refusals (`StructurePlacement.resolveTarget`, `LaunchPadPlacement`) were
+ * unreachable code that had never once run. Clamping an out-of-range answer into
+ * range is exactly how a level the player never aimed at becomes a legal
+ * address; the callers already know how to say "too high" and now they can.
+ *
+ * THE GROUND PATH IS DELIBERATELY UNCHANGED and it is an open, measured residual
+ * rather than an oversight: with `crownU` null this still rounds, so an aim at
+ * terrain 2.5 m above the site plane still names level 1. It refuses one step
+ * later (`supported()` finds nothing under it), so it is the illegible case and
+ * not the placeable one, and terrain is a separate argument from a body's faces.
+ */
+export function levelOf(m: StructureModule, u: number,
+                        crownU: number | null): number {
+  if (crownU !== null && u < crownU - AIM_STEP_M) {
+    return Math.max(0, Math.floor(u / m.storey));
+  }
+  return Math.max(0, Math.round((crownU ?? u) / m.storey));
+}
+
+/**
  * Which cell an aim point names, for a given part.
  *
  * A deck takes the cell it is inside. A wall takes the NEAREST cell edge, which
  * is what makes laying a run of walls a matter of running the crosshair along
- * the line rather than of choosing an axis from a menu. The level comes from the
- * aim point's own height over the site plane, so aiming at a deck top puts the
- * wall on that deck and aiming at a wall top puts the next floor over it.
+ * the line rather than of choosing an axis from a menu. The level comes from
+ * `levelOf`, so aiming at a deck top puts the wall on that deck and aiming at a
+ * wall top puts the next floor over it -- but aiming at the MIDDLE of a wall no
+ * longer puts it on a storey that is not there. `crownU` is the top of the solid
+ * the aim ray entered and null for a ground hit; a caller that does not have it
+ * gets the old rounding, which is the honest default for a point with no body
+ * behind it.
  */
 export function addressAt(site: Site, m: StructureModule, kind: StructureKind,
-                          p: Vec3d, flip: number): Addr {
+                          p: Vec3d, flip: number,
+                          crownU: number | null = null): Addr {
   const l = localOf(site, p, new THREE.Vector3());
   const a = l.x / m.cellM, b = l.y / m.cellM;
-  const level = Math.max(0, Math.min(MAX_LEVEL, Math.round(l.z / m.storey)));
+  const level = levelOf(m, l.z, crownU);
   if (isDeck(kind)) {
     return { kind, i: Math.floor(a), j: Math.floor(b), level, axis: 0, flip: 0 };
   }

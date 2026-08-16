@@ -11,7 +11,7 @@
 // it retypes a number the file already carries.
 
 import * as THREE from 'three';
-import { MAX_LEVEL, localOf, worldOf, type Site } from './StructureGrid.js';
+import { levelOf, localOf, worldOf, type Site } from './StructureGrid.js';
 import type { LocalBox } from './StructureBody.js';
 import type { Structures } from './Structures.js';
 import type { Vec3d } from '../world/PlanetBody.js';
@@ -280,13 +280,21 @@ export function padAnchor(site: Site, cellM: number, storeyM: number,
 }
 
 /** Which 6 x 6 block an aim point names: the block CENTRED on the cell the aim
- *  is in, so the ghost follows the crosshair rather than a corner of it. */
-export function padBlockAt(s: Structures, site: Site, p: Vec3d, cells: number):
+ *  is in, so the ghost follows the crosshair rather than a corner of it.
+ *
+ *  GP-1027. THE LEVEL IS `levelOf`'s, WHICH IS `addressAt`'s, and the duplicate
+ *  expression that used to sit here is gone. It was the same `round`-to-nearest
+ *  clamped to `MAX_LEVEL` that the structural grid had, so the flank misread had
+ *  two homes and a fix to one would have left the other; `LaunchPadPlacement`'s
+ *  own header calls a second authority for one question the failure this project
+ *  keeps paying for, and this was one. `crownU` is the top of the solid the aim
+ *  ray entered, in site-local up, and null for a ground hit. */
+export function padBlockAt(s: Structures, site: Site, p: Vec3d, cells: number,
+                           crownU: number | null = null):
 { i: number; j: number; level: number } {
   const l = localOf(site, p, new THREE.Vector3());
   const C = s.module.cellM;
   const ci = Math.floor(l.x / C), cj = Math.floor(l.y / C);
   const half = Math.floor(cells / 2);
-  const level = Math.max(0, Math.min(MAX_LEVEL, Math.round(l.z / s.module.storey)));
-  return { i: ci - half, j: cj - half, level };
+  return { i: ci - half, j: cj - half, level: levelOf(s.module, l.z, crownU) };
 }

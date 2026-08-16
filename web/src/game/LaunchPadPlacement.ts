@@ -41,7 +41,7 @@
 import * as THREE from 'three';
 import { orient } from './Grid.js';
 import { aimHit } from './StructurePlacement.js';
-import { MAX_LEVEL, deckKey, type Site } from './StructureGrid.js';
+import { MAX_LEVEL, crownOf, deckKey, type Site } from './StructureGrid.js';
 import { padAnchor, padBlockAt, padKey, type LaunchPads, type PadPart }
   from './LaunchPad.js';
 import { labelOf } from '../player/Bindings.js';
@@ -124,7 +124,11 @@ export function resolvePadTarget(pads: LaunchPads, s: Structures,
     pads.noDeckRefusals++;
     return t;
   }
-  const b = padBlockAt(s, site, hit, cells);
+  // GP-1027. The crown of the body the aim ray entered, so a hit partway up a
+  // wall's or a tower's FACE is addressed at the storey it stands on rather than
+  // at the storey it is nearest to. Null when the ray met ground.
+  const b = padBlockAt(s, site, hit, cells,
+    aim.solid === null ? null : crownOf(site, aim.solid));
   t.i = b.i; t.j = b.j; t.level = b.level;
   t.key = padKey(site.id, b.i, b.j, b.level);
   padAnchor(site, s.module.cellM, s.module.storey, s.module.deckH,
