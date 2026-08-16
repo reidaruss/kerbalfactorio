@@ -517,10 +517,11 @@ original headline "35" was itself exactly right.
 | GREEN | 217 | **219** | +`orbitdeck.js` (item 3), +`terrainart.js` (item 5, reclassified from RED) |
 | RED | 35 | **39** | -`terrainart.js` (item 5), +`airlock.js`/`build.js`/`furnace.js`/`furnacelit.js`/`portmigrate.js` (item 3) |
 | NO_VERDICT | 30 | **24** | -6 (the singular-`fail` probes, 5 to RED + `orbitdeck.js` to GREEN) |
-| NO_OUTPUT | 22 | 22 | unchanged; not re-swept by this lane (see NO_OUTPUT triage below) |
+| NO_OUTPUT | 22 | 22 | unchanged by this lane's own re-sweep (see NO_OUTPUT triage below); `main` moved independently while this amendment was being written and `padgate.js` (1 of the 22) is now fixed to GREEN by `lane/padgate-stall` (GP-980..984), not verified here, so 21 is the more likely true count but this table reports only what this lane itself confirmed |
 | EXCLUDED | 12 | 12 | unchanged |
 
-219 + 39 + 24 + 22 + 12 = 316. Every probe still accounted for exactly once.
+219 + 39 + 24 + 22 + 12 = 316, using the 22 this lane itself verified. Every
+probe still accounted for exactly once.
 
 ### NO_OUTPUT (22): characterised, not fixed, same triage discipline the original census used for its REDs
 
@@ -534,12 +535,23 @@ original headline "35" was itself exactly right.
   "used to answer, now hangs" is a different and more urgent claim than "was
   always slow."
 - **`machineports.js`**: fixed, item 4 above.
-- **11 remaining first-time timeouts with no shared textual signature**:
+- **`padgate.js`**: fixed independently, not by this lane. While this
+  amendment was being written, `main` moved: `lane/padgate-stall` (GP-980 to
+  GP-984) found the probe never stalled at all, it is GREEN and genuinely
+  takes about half an hour, and `run.mjs` printed nothing between its boot
+  lines and the final report so a line-count poll cannot tell a working
+  half-hour probe from a dead one. Fixed at the cause (a heartbeat on
+  `run.mjs`'s stderr, forwarded by `probeall.mjs`, plus a real render-rate
+  fix that cut the probe's own cost from 1414 s to 204 s and its own
+  `PROBEALL-TIMEOUT: 900000`). This lane's parser change and that lane's
+  heartbeat change touch disjoint regions of `probeall.mjs` and compose
+  cleanly (confirmed on rebase, no conflicts, `node --check` clean).
+- **10 remaining first-time timeouts with no shared textual signature**:
   `assembler.js`, `autoapproach.js`, `basereal.js`, `buildshot.js`,
-  `demolish.js`, `enemies.js`, `factoryrebase.js`, `padgate.js`,
-  `pondwade.js`, `qolflight2.js`, `survivalrun.js`. Each needs its own
+  `demolish.js`, `enemies.js`, `factoryrebase.js`, `pondwade.js`,
+  `qolflight2.js`, `survivalrun.js`. Each needs its own
   standalone, no-wrapper-timeout run (the BT-130 method) to tell "genuinely
-  slow, needs a documented override" from "hangs, is a real bug": 11 runs
+  slow, needs a documented override" from "hangs, is a real bug": 10 runs
   at up to several hundred seconds each is outside this lane's own number
   block and time budget. **Remaining checklist item, owner: build-tooling,
   next lane.**
@@ -580,8 +592,9 @@ this lane itself produced rather than on the original two blockers:
    `furnacelit.js`/`portmigrate.js`, minus `terrainart.js`) is the first set
    this lane would trust for that file, and even it carries the open "35 vs
    33-named" question above.
-2. **NO_OUTPUT (22) has no protective allowlist and 15 of its 22 members are
-   undiagnosed.** A flipped gate needs an answer for what NO_OUTPUT means
+2. **NO_OUTPUT (22, 21 once `padgate.js`'s independent fix is counted) has no
+   protective allowlist and 10 of its members remain undiagnosed.** A
+   flipped gate needs an answer for what NO_OUTPUT means
    under it before it can be called complete, not just an accurate RED list.
 3. **A new, real timing caveat** (three probes reading NO_OUTPUT only when
    deep in a long serial queue) means "re-run serially" is necessary but not
@@ -592,7 +605,7 @@ this lane itself produced rather than on the original two blockers:
 
 | Item | Owner |
 |---|---|
-| Standalone BT-130-style timing runs for the 11 unclustered NO_OUTPUT timeouts | build-tooling, next lane |
+| Standalone BT-130-style timing runs for the 10 unclustered NO_OUTPUT timeouts | build-tooling, next lane |
 | Decide and implement how NO_OUTPUT is represented under a flipped gate (a `known-no-output.json`, or fold into `known-red.json`, or something else) | Admin decision, then build-tooling |
 | `shadowk.js`'s `SyntaxError` (a real instrument bug, not a diagnosis) | build-tooling |
 | `post.js`'s RED-to-timeout regression | whichever domain owns `post.js`'s scenario |
