@@ -1,5 +1,17 @@
 // keycollide.js — GP-608. TWO KEY CODES ARE EACH BOUND TO TWO ACTIONS.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/keycollide.js
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("CHECKS HELD. Measured
+// directly against `run.mjs`...") as the command, which held zero real
+// flags, so every prior sweep ran this at the runner's bare defaults (which
+// happen to equal `--scenario=walk`, this probe's own on-foot fixture: a
+// wall taken from the default build menu, matching `controls.js`'s
+// unaffected sibling convention). No sandbox: the claim is about key
+// bindings, not the economy.
+//
 // `Bindings.ts` is a `Record<Action, readonly string[]>`, which makes the map
 // exhaustive in one direction only: every action must have codes. NOTHING has
 // ever checked the other direction, so two actions may quietly claim the same

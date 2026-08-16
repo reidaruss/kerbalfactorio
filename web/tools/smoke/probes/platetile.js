@@ -2,6 +2,21 @@
 // on the parts that actually carry it, and PROVE THE SWEEP TOOK before the
 // picture is worth anything.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/platetile.js
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("The flag is
+// dropped-flag-prone in exactly RN-698's way: `?tile=` is parsed in the
+// client, forwarded by run.mjs's whitelist...") as the command, which held
+// zero real flags, so every prior sweep ran this at the runner's bare
+// defaults. At the flags above the probe checks its OWN default claim
+// (`tileOverridden === false` against the manifest), a genuine reading; a
+// `--tile=suitplate:<value>` sweep with a matching
+// `--evalargs='{"want":<value>}'` is the RN-953 override form and is left
+// to whichever lane runs that sweep, since the value under test is the
+// question and not a fact this header can state once.
+//
 // The flag is dropped-flag-prone in exactly RN-698's way: `?tile=` is parsed in
 // the client, forwarded by run.mjs's whitelist, and a failure at either end
 // boots the manifest default while the filename says otherwise. So this reads

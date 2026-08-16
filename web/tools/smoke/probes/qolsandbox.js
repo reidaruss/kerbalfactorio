@@ -20,6 +20,19 @@
 // of false pass"). Run it with --sandbox=1 and again WITHOUT, and the claims
 // are opposite in the two modes:
 //
+//   node tools/smoke/run.mjs --sandbox=1 --evalfile=tools/smoke/probes/qolsandbox.js --evalargs='{"expect":"sandbox"}'
+//   node tools/smoke/run.mjs --scenario=walk --evalfile=tools/smoke/probes/qolsandbox.js --evalargs='{"expect":"survival"}'
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took the prose line above ("Run it with --sandbox=1 and
+// again WITHOUT...") as the command, which held zero real flags (there is
+// no `--flag=value` token in that sentence, unlike `playerhealth.js`'s near
+// miss), so every prior sweep ran this at the runner's bare defaults, which
+// is silently the SURVIVAL half of the pair with no `--evalargs` to match
+// (`expect` defaults to `'sandbox'` in the probe's own code, so the two
+// used to disagree about which half was under test). The two real
+// invocations above match `expect` to the mode actually booted.
+//
 //   sandbox : NO cost chip anywhere may carry the refusal class `no`.
 //   survival: at least one chip MUST carry `no` at spawn, or the probe is
 //             asserting nothing. A fresh survival pack cannot afford a launch

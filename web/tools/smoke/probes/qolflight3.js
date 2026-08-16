@@ -1,6 +1,18 @@
 // qolflight3.js: QOL SURVEY part 3. IN ORBIT: R89, WARP, THE MAP, THE RETURN.
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/qolflight3.js
+//
 //   --evalargs='{"section":"r89"}' | '{"section":"map"}'
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("OF_ARGS is the
+// WRAPPER'S PARAMETER in run.mjs...") as the command, which held zero real
+// flags, so every prior sweep ran this at the runner's bare defaults. The
+// flags above match `qolflight1.js` and `qolflight2.js`, parts 1 and 2 of
+// the same in-orbit survey, both of which document `--scenario=walk
+// --sandbox=1` for the same reason: reaching orbit needs the full part
+// catalogue this probe's own fixture builds on.
 //
 // OF_ARGS is the WRAPPER'S PARAMETER in run.mjs (`((OF_ARGS) => (...))(json)`),
 // not a global, so it is read by bare name here. qolflight2.js read

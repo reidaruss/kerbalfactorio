@@ -1,5 +1,18 @@
 // THE STATION IS WALKABLE, AND ITS FLOOR IS WHERE ITS ORBIT SAYS IT IS.
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/stationwalk.js
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("RETURNS THE PLAYER TO
+// THE GROUND BEFORE IT RESOLVES (PH-89): run.mjs settles on terrain
+// convergence...") as the command, which held zero real flags, so every
+// prior sweep ran this at the runner's bare defaults. The flags above match
+// `probes/orbitdeck.js` and `probes/airlock.js`, the two sibling station
+// probes this file's own header cites, both fixed at BT-176/BT-183 under
+// `--scenario=walk --sandbox=1` for the same reason: the claim is about the
+// station's geometry and orbit, not the survival economy.
+//
 // `probes/orbitdeck.js` proved the MECHANISM: a col_* proxy holds the walker up
 // 400 km above the terrain. It did that with a corridor the probe itself
 // injected, so it proved nothing about the shipped station. This one drives the

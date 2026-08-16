@@ -1,6 +1,17 @@
 // RN-731. One posed frame through the SHIPPING path, for the pairs a studio
 // floor structurally cannot carry.
 //
+//   node tools/smoke/run.mjs --scenario=walk --url=http://127.0.0.1:<port>/ \
+//        --evalfile=tools/smoke/probes/rockpose.js
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("The PNG comes back as a
+// data URL for `writeshot.mjs` rather than through run.mjs's own
+// `--out`...") as the command, which held zero real flags, so every prior
+// sweep ran this at the runner's bare defaults, which happen to equal
+// `--scenario=walk` above. No sandbox: this probe only teleports, aims and
+// screenshots, and touches no economy state.
+//
 // WHY A POSED IN-WORLD FRAME AND NOT A STUDIO RENDER. `render_rocks.py` shoots
 // a boulder on a neutral floor under a fixed studio light, which is the right
 // instrument for "is this asset correct" and the wrong one for the two claims

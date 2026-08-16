@@ -1,6 +1,19 @@
 // RN-648. Pitch the view to where a player actually looks while working, so
 // run.mjs's own `--out` screenshot photographs the first-person hands.
 //
+//   node tools/smoke/run.mjs --scenario=walk --url=http://127.0.0.1:<port>/ \
+//        --evalfile=tools/smoke/probes/fpshot.js \
+//        --out=docs/screenshots/RN648_fp_hands.png
+//
+// BT-190: this probe never carried a real invocation. `extractCmd()`'s old
+// first-match rule took the prose line above ("run.mjs's own `--out`
+// screenshot...") as the command, which reduced to zero real flags (`--out`
+// is excluded from the flag count and there is no other `--flag` token in
+// the sentence), so every prior sweep ran this at the runner's bare
+// defaults. The default scenario is already `walk`, so the missing
+// invocation cost nothing but the screenshot destination; recorded rather
+// than assumed harmless.
+//
 // THIS PROBE TAKES NO PICTURE, DELIBERATELY. The first version grabbed the
 // canvas itself with `toDataURL` after an `await of.run(...)` and wrote a
 // BLANK WHITE PNG. That is the documented WebGL trap and writeshot.mjs's own

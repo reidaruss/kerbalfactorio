@@ -8,6 +8,24 @@
 //   (survival.mjs builds fresh, serves on an ephemeral port, and drives this
 //    file through run.mjs with --scenario=walk and NO sandbox flag.)
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/survivalrun.js
+//
+// BT-190: this probe never carried a real invocation reachable by
+// `probeall.mjs`'s own `extractCmd()`. The `npm run probe:survival` line
+// above is the intended entry point (it builds fresh and serves before
+// driving this file) but names an npm script, not a `node ... run.mjs`
+// line, so it was never a candidate either before or after this fix; the
+// old first-match rule instead took a prose line further down ("Mode is
+// fixed at boot from the URL and `sandbox()` is read-only by design...") as
+// the command, which held zero real flags. Both of those facts point at the
+// SAME invocation, though: `--scenario=walk` with no `--sandbox`, so this
+// probe's own header states it directly for `probeall.mjs`'s benefit,
+// verbatim to what `survival.mjs` already drives it at, which is also
+// exactly the runner's bare default -- so the missing header cost nothing
+// this probe's own verdict depended on, only the fact that it was
+// documented.
+//
 // THE RULES OF EVIDENCE.
 //
 // (1) Every stage proves its own setup before its claim is believed, so a

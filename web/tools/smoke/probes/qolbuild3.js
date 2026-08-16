@@ -1,6 +1,18 @@
 // qolbuild3.js: QOL SURVEY, stage 3. DEMOLITION, machine scale, and the VAB.
 // --evalargs={"stage":"demolish"|"scale"|"vab"|"vabinsert"}
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/qolbuild3.js
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("GP-401. EVERY STAGE
+// ASSERTS AND A FAILED ASSERTION THROWS, because a returned `fails: [...]`
+// or `valid:false` exits 0 and run.mjs prints `smoke: PASS`...") as the
+// command, which held zero real flags, so every prior sweep ran this at the
+// runner's bare defaults. `--sandbox=1` matches `qolbuild1.js`/
+// `qolbuild2.js`, the rest of this same three-part survey, for the same
+// reason: the `vab`/`vabinsert` stages build from the full part catalogue.
+//
 // GP-401. EVERY STAGE ASSERTS AND A FAILED ASSERTION THROWS, because a returned
 // `fails: [...]` or `valid:false` exits 0 and run.mjs prints `smoke: PASS`: the
 // runner only fails a run on console errors and failed requests. A throw
