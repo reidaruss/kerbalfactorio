@@ -390,8 +390,13 @@ ROLE_FAMILY = {
     # The launch pad leaves `masonry` and takes a family of its own, and the
     # split is one step further along the argument that split `masonry` out
     # of `stone`. RN-1780 fixed the WORLD SCALE (0.6 m was a boulder's tile
-    # on a 35 m ruin) and deliberately reused `_stone_height`, so masonry is
-    # still stone's own field: 7.5 cm fractured facets separated by arrises.
+    # on a 35 m ruin) and deliberately reused `_stone_height`, so masonry was
+    # still stone's own field when the pad wore it: 7.5 cm fractured facets
+    # separated by arrises. (RN-1835 has since re-authored `masonry` as
+    # coursed ashlar, which changes what the RUIN wears and not this
+    # argument: the pad needs a poured field either way, and ashlar is if
+    # anything the worse of the two on a launch pad, being laid castle
+    # blocks rather than merely the wrong rock.)
     # That is a correct claim about a quarried ruin and a false one about a
     # launch pad, whose surfaces were POURED against formwork; the pad's own
     # verifier read the 2 m outer skirt as "a repeating dark aggregate or
@@ -2287,8 +2292,11 @@ def _ashlar_masks(w, h, height, aux):
 # than poured concrete", "with a visible repeat at walking distance". Those
 # are two findings and only one of them is about the substance.
 #
-# HALF ONE, THE SUBSTANCE. `masonry` is `_stone_height` at 1.8 m: eight
-# fractured planes per tile separated by arrises, i.e. 22 cm rock facets. A
+# HALF ONE, THE SUBSTANCE. The pad wore `masonry` when it was `_stone_height`
+# at 1.8 m: eight fractured planes per tile separated by arrises, i.e. 22 cm
+# rock facets. (RN-1835 has since made `masonry` coursed ashlar; the pad is
+# not poured concrete on that field either, so the substance argument below
+# is unchanged and only its foil has moved from cut cliff to laid wall.) A
 # formed concrete face has no facets and no arrises at all. What it has, in
 # the order the pour puts them there, is: the FORMWORK's own imprint (board
 # faces and their joints, the panel joints between form sheets, the tie rods
@@ -5962,10 +5970,34 @@ def selftest():
     #      Measured as the standard deviation of an 8 x 8 box downsample of
     #      the heightfield, normalised by the field's own full range so the
     #      number is comparable between families with different amplitudes.
-    #      `masonry` (i.e. `_stone_height`, which is what the pad wore when
-    #      the verifier called the repeat visible) is the reference the bound
-    #      is set against, and it is measured here rather than quoted so the
-    #      comparison cannot go stale.
+    #
+    #      THE REFERENCE IS `_stone_height` AND IT IS FROZEN ON PURPOSE, which
+    #      is a decision RN-1815's reconciliation had to make rather than
+    #      inherit. When this check was written, `_stone_height` WAS what
+    #      `masonry` shipped, so "masonry" and "the field the pad wore" named
+    #      one thing; RN-1835 then re-authored `masonry` as `_ashlar_height`
+    #      and split them. This check keeps the FIELD THE PAD WORE, because
+    #      what it guards is a regression against a NAMED DEFECT: the pad
+    #      skirt wearing stone at 1.8 m is the exact surface a verifier
+    #      refused as "a repeating dark aggregate rock tile", so that field is
+    #      a historical constant and not a moving comparison. Routing the
+    #      reference through FAMILIES instead would re-point the bound at
+    #      whatever `masonry` happens to be, which is a different claim.
+    #
+    #      THE ALTERNATIVE WAS MEASURED BEFORE IT WAS REFUSED, because the
+    #      obvious guess about it is wrong. `_ashlar_height` measures 0.0830
+    #      here against `_stone_height`'s 0.1352, i.e. routing through the
+    #      table would TIGHTEN this bound to 0.0415, not loosen it, and
+    #      concrete's 0.0311 would still pass. It is refused on meaning and
+    #      not on strictness. It is also refused on a measurement from the
+    #      other side: the reconciliation verifier put column-averaged
+    #      autocorrelation of the RENDERED wall at the 1.8 m tile at 0.144 for
+    #      stone, -0.011 for concrete and 0.372 for ashlar, so ashlar renders
+    #      as the MOST repetitive of the three while measuring the LEAST
+    #      low-frequency height contrast. Ashlar's repeat lives in its
+    #      per-block albedo tone, which this metric does not see at all.
+    #      Binding concrete's gate to it would be binding to a number that
+    #      demonstrably does not predict the rendered repeat.
     def _lowfreq(field, s, cells=8):
         step = s // cells
         cell = []
@@ -5985,8 +6017,11 @@ def selftest():
     mh, _ = _stone_height(FAMILY_SIZE["masonry"], FAMILY_SIZE["masonry"])
     lf_m = _lowfreq(mh, FAMILY_SIZE["masonry"])
     lf_c = _lowfreq(ch, sc)
-    check("concrete repeats less than masonry", lf_c < 0.5 * lf_m,
-          "low-frequency contrast %.4f vs masonry's %.4f (need under half)"
+    check("concrete repeats less than the field the pad wore",
+          lf_c < 0.5 * lf_m,
+          "low-frequency contrast %.4f vs stone-at-1.8m's %.4f (need under "
+          "half); `masonry` now ships `_ashlar_height`, see above for why "
+          "this reference stays the refused field and not the current one"
           % (lf_c, lf_m))
 
     # 7f. Stone's facets are actually ANGULAR, and this is the check the whole
