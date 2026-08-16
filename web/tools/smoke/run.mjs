@@ -268,6 +268,12 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // campaign; `shadowsoft=0` restores THREE.PCFShadowMap. Absent means "the
   // quality tier decides", which is a third state and not `false`.
   'iblsize', 'shadowsoft',
+  // RN-1954. `shadowcast=0` clears `castShadow` on every cascade and CHANGES
+  // NOTHING ELSE. `shadows=0` is not that control: it also drops cascades 1 and
+  // 2 as light sources, so a pair across it differs by the maps and by two
+  // thirds of the sun rig at once. Registered in the same commit that adds it,
+  // which is what this list's own guard asks for.
+  'shadowcast',
   // RN-1520 to RN-1524, standing rule 7, both TRI-STATE. `ibldiag=1` publishes
   // the environment-radiance instrument and changes no pixel; `ibldiag=mirror`
   // makes every machine a mirror so the environment is displayed rather than

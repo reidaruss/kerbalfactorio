@@ -1411,11 +1411,50 @@
     ? (Math.acos(Math.max(-1, Math.min(1,
       dot(norm(captureAim.dir), norm(capturePostSun))))) * 180) / Math.PI
     : null;
+  // RN-1951. THE DRAWN HULL'S OWN POSE, AT THE CAPTURE INSTANT, AND IT IS THE
+  // FIELD EVERY EARLIER PASS WAS MISSING.
+  //
+  // `setup.drawnParts` / `staleMaxM` / `eyeDistM` above are read right after
+  // `of.look`, two settle windows before the photograph, and `staleMaxM` only
+  // ever compared the TRANSLATION (`StationView.staleness`). So a hull whose
+  // ORIENTATION differed run to run reported a hard zero every time. `quat` and
+  // `posB` are the two numbers `StationView.sync` actually composes its engine
+  // transform from, read here at the same instant as `originF` and `dirF`, so
+  // "the camera is identical and the hull is not" is one comparison.
+  const sd = name === 'station' ? of.stats().stationDraw : null;
   const captureDiag = name === 'station' ? {
     originF: captureAim ? captureAim.origin : null,
     dirF: captureAim ? captureAim.dir : null,
     postSunF: capturePostSun,
     sunBearingDeg: r2(captureSunBearingDeg),
+    drawQuat: sd ? sd.quat : null,
+    drawPosB: sd ? sd.posB : null,
+    drawEyeDistM: sd ? sd.eyeDistM : null,
+    drawStaleMaxM: sd ? sd.staleMaxM : null,
+    drawnPartsF: sd ? sd.drawnParts : null,
+    // RN-1952. WHAT IS ACTUALLY BEING RASTERISED at the capture instant. The
+    // runner's own `stats` block is read AFTER the probe returns, by which time
+    // this shot's walker is no longer on the deck at all (`stationDraw.visible`
+    // false, `eyeDistM` 420 km), so every draw-count comparison made from it
+    // was measuring the wrong frame.
+    stationDrawF: sd,
+    drawF: of.stats().draw,
+    // RN-1953. THE HEADLAMP, AT THE CAPTURE INSTANT. Worth reading because it
+    // has the right SHAPE for a run-to-run residual: `skyVis` drives the cone,
+    // the hemisphere ambient AND `sunScale` together, on a 0.12/0.6 s
+    // time-driven adapt, and `Headlamp.measure` asks the TERRAIN oracle how much
+    // sky the eye can see, which inside a sealed hull 400 km above that terrain
+    // is a question with no meaning. MEASURED FLAT on every capture of the
+    // `station` shot (`skyVis`/`rawVis`/`sunScale`/`ambient`/`lampCd` all
+    // constant across modal and excursion frames), so it is a RULED-OUT
+    // candidate and not a suspect. Kept because a negative that had to be
+    // checked is worth more published than re-derived.
+    lampF: of.stats().lamp,
+    // RN-1955. The near camera's ENGINE-space transform beside the hull's
+    // (`stationDrawF.posE`). `originF`/`dirF` above are body-frame and cannot
+    // see the floating origin; these two can, and their DIFFERENCE is what the
+    // frame is actually a picture of.
+    camF: of.stats().cam,
   } : null;
   const elevDot = of.stats().sky.elevationDot;
   const sunErr = mode === 'time' ? 0 : Math.abs(elevDot - (A.sunDot ?? S.sunDot));

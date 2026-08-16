@@ -283,6 +283,7 @@ export function installDebugApi(
 
     stats() {
       const st = streamReport();
+      const rigCam = s.rig.nearCam;
       return {
         ...s.stats.stats(s.renderer, s.frame.timings),
         boot: s.boot,
@@ -302,6 +303,20 @@ export function installDebugApi(
         // RN-821. The station's DRAW, which is not the station: `__of.station()`
         // is the record, the orbit and the proxies, and this is the mesh.
         stationDraw: s.station?.stats() ?? null,
+        // RN-1955. THE CAMERA THAT WAS ACTUALLY RENDERED WITH, and it is NOT
+        // what `of.aim()` reports. `aim()` returns `Controller.view.eye`, the
+        // f64 body-frame eye; `Loop.drain` then runs `observer.interpolate`,
+        // converts through the FLOATING ORIGIN and hands `rig.setView` an
+        // ENGINE-space position. Three separate passes of the station shot
+        // certified "the camera is reproducible to full float precision" off
+        // `aim()` alone, which cannot see either the interpolation or the
+        // origin. Published here so that claim can be made against the
+        // transform the frame was rasterised from.
+        cam: {
+          posE: rigCam.position.toArray(),
+          quat: rigCam.quaternion.toArray(),
+          fovDeg: rigCam.fov, near: rigCam.near, far: rigCam.far,
+        },
         assets: { ...assetStats, ms: Math.round(assetStats.ms) },
         sky: {
           sunT: s.sky.sunT,

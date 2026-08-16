@@ -202,6 +202,37 @@ export class StationView {
       // fixes. Published as numbers, the reason is never in doubt.
       eyeDistM: Number.isFinite(this.lastEyeM) ? +this.lastEyeM.toFixed(3) : null,
       farPlaneM: this.lastFarM,
+      // RN-1951. THE POSE `staleness()` BELOW CANNOT SEE.
+      //
+      // `staleness()` differences `m[12..14]` against `origin.toEngine(pos)`,
+      // i.e. the TRANSLATION only. The drawn hull's ORIENTATION is never
+      // compared with anything, so a hull posed at any roll whatsoever reports
+      // `staleMaxM: 0` and `drawnParts: 2` and reads perfectly correct.
+      //
+      // THAT IS A FINDING ABOUT THE INSTRUMENT, NOT ABOUT ANY BUG. It is why
+      // the OLD pose certificate for the `station` canonical shot was worthless:
+      // CE-115..117's "the pose is fixed and holding" rested on a check that
+      // could not have failed for a wrong roll, so it was never evidence.
+      //
+      // MEASURED THROUGH THE FIELDS BELOW, THE POSE IS FINE AND IS RULED OUT AS
+      // A CAUSE: `quat`, `posB` and `posE` are bit-identical across a MODAL and
+      // an EXCURSION capture of that shot, so the drawn hull's orientation does
+      // not explain its residual and the pose fix stands with evidence behind
+      // it. See rendering.md section 2.1.7 for what the residual actually is
+      // (open), and for this lane's own refuted conclusions about it.
+      //
+      // Published as the raw quaternion and as the f64 body-frame position it
+      // is composed with, because those two ARE the pose `sync` uses and a
+      // derived Euler triple would be a second convention to get wrong.
+      posB: this.pos === null ? null : [this.pos.x, this.pos.y, this.pos.z],
+      quat: [this.quat.x, this.quat.y, this.quat.z, this.quat.w],
+      // RN-1955. AND THE SAME POINT IN ENGINE METRES, which is the one the
+      // camera is actually differenced against. `posB` is f64 body frame and is
+      // pinned by the orbital clock; `posE` is `posB` minus the FLOATING ORIGIN,
+      // and the origin is not part of any pin this shot performs. Publishing
+      // both is what makes "the hull is where the clock says" and "the hull is
+      // where the camera will see it" two separate, checkable claims.
+      posE: [this.p.x, this.p.y, this.p.z],
       ...this.staleness(),
     };
   }

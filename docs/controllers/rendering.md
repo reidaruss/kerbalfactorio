@@ -822,6 +822,133 @@ verified FRAME (the correct content is on screen, the camera is reproducible)
 and does not have to re-derive either; the remaining work is entirely the
 illumination-timing residual, isolated rather than merely named.
 
+**RN-1950 to RN-1955 (`lane/station-light`), 2026-08-16: TWO INSTRUMENTS THAT
+COULD NOT SEE WHAT THEY CERTIFIED, AND THE REASON EVERY SPREAD EVER QUOTED FOR
+THIS SHOT IS NOT A MEASUREMENT. THIS LANE'S OWN CAUSAL CONCLUSIONS WERE REFUTED
+BY ITS VERIFIER AND ARE STRUCK BELOW RATHER THAN QUIETLY REVISED.**
+
+**THE FINDING: EVERY RATIO PUBLISHED FOR THIS SHOT, INCLUDING THIS LANE'S, IS AN
+UNDERSAMPLED MAX-OVER-MIN OF A BIMODAL PROCESS.** The station shot does not have
+a "spread". It has a MODAL frame it returns to bit-identically, and an EXCURSION
+that lands roughly one run in seven. At n of five to eight, max/min is a draw
+from that rate, not a property of the build, and it is why the number keeps
+changing between passes while nobody changes the lighting: **16.4x, 5.8x, 3.71x,
+2.36x and this lane's own 5.88x are all the same non-measurement.** The
+verifier's post-off arm at n of 14 shows the shape outright: **eleven readings at
+18.30 and 18.31, then 34.52 and 85.62.** Eleven values agreeing to two decimal
+places is not a process with a 4.68x spread; it is a tight mode plus two
+excursions, and a max/min over six draws would have called it 1.37x (which is
+exactly what this lane did call it) or 4.68x depending only on which six.
+
+**WHAT TO REPORT INSTEAD, and what the next lane owes:** the EXCURSION RATE and
+the two modes, at an n large enough to see the rate, plus the thing nobody has
+yet asked — WHAT DISTINGUISHES AN EXCURSION FRAME FROM A MODAL ONE.
+`tools/smoke/pngdiff.mjs` already shows this is answerable: a modal-vs-modal pair
+moves **0.37%** of pixels (2030 darker / 2168 lighter, the ambient noise this
+file already characterises) while a modal-vs-excursion pair moves **63.43%**
+(172536 / 550422). That is a large, structured, both-directions difference
+sitting in front of an instrument that can read it. Chasing it with more arms at
+n of six cannot work, and this lane is the demonstration.
+
+**THE TWO INSTRUMENT DEFECTS, WHICH ARE THIS LANE'S REAL CONTRIBUTION AND ARE
+CONFIRMED.** Both were the basis of standing claims in this section.
+
+*`staleMaxM: 0` COULD NEVER HAVE SEEN A WRONG ROLL.* `StationView.staleness()`
+differences `m[12..14]` against `origin.toEngine(pos)`, i.e. the TRANSLATION and
+nothing else, so a hull drawn at ANY orientation reports a hard zero and
+`drawnParts: 2`. CE-115..117's pose claim rested on it. `stats()` now publishes
+`quat`, `posB` and `posE`, the values `sync` actually composes.
+
+*`originF`/`dirF` ARE NOT THE CAMERA.* The fields three separate passes used to
+certify this shot "reproducible to FULL FLOAT PRECISION" come from `of.aim()`,
+which returns `Controller.view.eye`: the f64 body-frame eye at the FIXED TICK.
+`Loop.drain` then runs `observer.interpolate(alpha)` (line 411), converts through
+the FLOATING ORIGIN (424) and calls `rig.setView` (425), so `aim()` can see
+neither step. `of.stats().cam` now publishes `rig.nearCam`'s real engine
+position, quaternion, fov, near and far — the camera that actually rasterises.
+
+Measured through the corrected instruments, the pose and camera ARE bit-identical
+across a modal and an excursion capture, so CE-115..117 holds and now has
+evidence behind it rather than a certificate that could not have failed.
+
+**AND A THIRD, WHICH THIS LANE BOTH FOUND AND THEN FELL INTO.** `run.mjs` runs
+the probe (line 603), settles (607) and only then reads `stats` and `world`
+(610). By that point this shot's walker is off the deck entirely:
+`stationDraw.visible` false, `eyeDistM` 420355 m, `observer.altM` **1.62**. Every
+counter taken from that block — `draw.triangles`, `chunksBuilt`, `shadow.active`
+— describes a different frame than the photograph. **This lane read
+`shadow.active: true` from it and built a whole mechanism on top, on a shot where
+the rig is off.** Use the capture-instant reads in `captureDiag`.
+
+**RULED OUT, and these survive verification.** The IBL is out, and it is the
+result worth keeping: `?ibldiag=noenv` assigns NULL instead of the PMREM texture
+and changes nothing else (RN-1526 built it for exactly this), and the excursions
+do not go away — this lane read 6.10x with no environment at all and the verifier
+read 11.80x. So the cube, the PMREM chain, WHEN the capture happens and RN-64's
+ground half are all out together. Separately, **`ibl.biome` reads a constant 2 on
+every capture this shot has ever taken** — `SkyIbl.stats()` has published it all
+along and no pass had read it — so the 40x Ocean-to-Polar albedo swing the ground
+hemisphere can carry is not firing. Also flat across modal and excursion frames:
+the render interpolation (`alpha` 0.2328482328482305, `renderPosVsIntegerM`
+24.0279, `tick - stampedTick` a constant 272) and the headlamp
+(`skyVis`/`rawVis`/`sunScale`/`ambient`/`lampCd`), which had exactly the right
+shape — it drives the cone, the hemisphere ambient AND `sunScale` on a 0.12/0.6 s
+time-driven adapt — and is not doing it. `ibl.builds` (9 to 12) and `scStamped`
+(117 to 150) move freely across bit-identical frames and predict nothing.
+
+**STRUCK, WITH THE CODE THAT REFUTES EACH.** Recorded because a ledger that only
+carries the conclusions that survived teaches nobody where the trap was.
+
+- **"The post stack is the amplifier" (1.37x): FALSE.** n of 6 missed an
+  excursion. At n of 14 the post-off arm reads 4.68x. The corollary that every
+  historical figure was "quoted through an amplifier" goes with it.
+- **"The extra cascade sun lights carry the variance": FALSE, three ways.**
+  `Systems.ts` gates the rig with `lit && s.regime.state.band !== 'ORBIT'`, and
+  this shot sits at 400 km, so **`shadow.active` is FALSE on every boot of it**
+  and `castShadow` is already false. Cascades 1 and 2 are constructed at
+  **intensity 0** (`ShadowRig.ts`, "exist only to produce a map") and only
+  `lights[0]` is pushed into `sunLights` (`Boot.ts`), so there are not three sun
+  lights to begin with. And `?shadows=0` sets `enabled` false, which is ZERO
+  cascade lights, not one.
+- **The proposed layer-mask mechanism: FALSE, and refuted by a comment I read
+  past.** The `layers.enable` lines sit directly beneath a twenty-line RN-45
+  block stating that `light.shadow.camera.layers` is **never consulted anywhere
+  in the shadow pass** in three r185. I built a mechanism on the two lines of
+  code and did not read the paragraph above them.
+- **The proposed next experiment (`?cascades=1`): MISCONCEIVED.** No such flag
+  exists; the nearest is `quality=low`, which also disables post and would
+  confound the arms it was meant to separate.
+- **`?shadowcast=0` therefore CANNOT MOVE A PIXEL ON THIS SHOT**, since casting
+  is already off at 400 km. It read 3.91x for this lane and 1.84x for the
+  verifier against 5.88x shipped: **three different "results" from identical
+  pixels**, which is the cleanest available measurement of this ratio's noise
+  floor. The flag is KEPT because it is correct, harmless and the control
+  `?shadows=0` genuinely is not (that one also removes light sources), but it is
+  a control for other shots, not evidence about this one.
+
+**GUARDRAIL, TAKEN AS A PAIR RATHER THAN AGAINST A PUBLISHED TABLE**, because
+`main` moved under this lane (the ashlar tone fix landed) and the §7b numbers are
+no longer the reference. All six MEASURED shots captured on this lane's tree, then
+`git checkout` of `main`'s `web/src` and `web/tools`, rebuild, recapture: **all
+six bit-identical on every field**, including `ruin` 86.10 / 139.65 and `basedusk`
+47.26 / 43.00, which have moved off §7b's 86.74 / 138.72 and 47.28 / 42.88 and are
+**`main`'s change, not this lane's** — which is exactly what the pair is for.
+`forestfloor` 23.98 / 17.28, `machine` 19.92 / 17.81, `smelterhero` 44.94 / 44.58,
+`voxelface` 86.68 / 39.48 unchanged throughout.
+
+**ONE MORE HARNESS TRAP, PAID FOR TWICE IN ONE LANE.** `npx vite build` skips the
+`prebuild` script, so it does not run `sync-assets` or `check:roles`, and the
+`dist` it produces can carry a stale `surfaces.json`. Every canonical shot then
+fails on a `console.error` about the client role table disagreeing on
+`ConcreteLean`/`ConcreteRich` — a failure that looks exactly like a regression in
+whatever you just changed and is not one. **Use `npm run build`.**
+
+**THE GRADE STAYS UNMEASURED.** What is genuinely closed: the pose and camera
+certificates are now taken with instruments that could fail, the IBL is out, and
+the shot's numbers are understood to be draws from a bimodal process rather than
+readings of a spread. What is open is the whole of the cause, and the first step
+is counting, not another arm.
+
 ### 7a. THESE SEVEN SHOTS CANNOT SEE THE MID FIELD (RN-1859, 2026-08-16, `lane/fade-nyquist`)
 
 Recorded here rather than in a decision row alone, because it is a property of
