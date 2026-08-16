@@ -66,6 +66,19 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     // page, one camera and one streamed chunk set. ?reliefgraduv= moves it; the
     // boot default is RELIEF_GRAD_UV.
     uniform float uReliefGradUv;
+    // RN-1855. THE TWO FOOTPRINT FADES' WAVELENGTHS, IN METRES, promoted out of
+    // OF_ART_FINE_M / OF_RELIEF_FINE_M for RN-843's reason and one more. Their
+    // BOOT DEFAULTS are now DERIVED (ART_FINE_M = FINE_CHUNK_M / ART_OCT_FINE,
+    // RELIEF_FINE_M = FINE_CHUNK_M / RELIEF_REPEATS * RELIEF_FINE_TILES) rather
+    // than written as absolute metres, which is the actual fix: written in
+    // metres they were silently a function of maxDepth and went 2.0x wrong the
+    // day WG-186 halved the quad. They are UNIFORMS on top of that because the
+    // correction moves the picture AT RANGE, and a before/after at range has to
+    // be one flag inside one page, one camera and one streamed chunk set --
+    // two page loads is two scenes (RN-1000). ?artfinem= and ?relieffinem=
+    // restore 4.2 and 0.45.
+    uniform float uArtFineM;
+    uniform float uReliefFineM;
     // RN-961. The ripple direction's swing in RADIANS, peak to peak, across
     // cells. 0 collapses every cell's rotation to the identity, which restores
     // the pre-RN-961 sample coordinate exactly, so ?reliefswing=0 is the
@@ -291,10 +304,11 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         // whole job is to retire the term before its FINEST octave folds, so a
         // fade keyed on a stale copy of that frequency is a negative control
         // made of a constant copied from the thing it watches (standing rule
-        // 11), and this file carries two shipped instances of exactly that
+        // 11). This file carried two shipped instances of exactly that
         // (OF_ART_FINE_M and OF_RELIEF_FINE_M, both derived against a depth-14
-        // quad and neither moved when WG-186 halved it). A swept frequency with
-        // a frozen fade would be a third.
+        // quad and neither moved when WG-186 halved it); RN-1855 measured them
+        // at range and derived both, so this term is no longer the only one in
+        // the material that gets its own Nyquist point right.
         fineM = OF_FINE_CHUNK_M / max(uFineFreq.z, 1.0);
         // The COARSE half is protected by the RIDGE's wavelength, not the clod
         // octave's, so the pair retires early rather than late; see
@@ -388,7 +402,10 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         // contradiction. Two offset grids, blended by centrality, because a
         // rigid per-cell rotation buys wavelength preservation with a seam and
         // the second grid is what pays the seam back.
-        vec2 relP = vChunkUv * 16.0;
+        // RN-1855: OF_RELIEF_REPEATS, not a literal 16.0. RELIEF_FINE_M and
+        // RELIEF_GRAD_UV are both fractions of ONE REPEAT, so the repeat count
+        // has to be one number that all three read.
+        vec2 relP = vChunkUv * OF_RELIEF_REPEATS;
         vec3 cellA = ofRelCell(relP, uReliefCell, uReliefCellNoise, uReliefSwing, vec2(0.0));
         vec3 cellB = ofRelCell(relP, uReliefCell, uReliefCellNoise, uReliefSwing, vec2(0.5));
         float relWsum = max(cellA.z + cellB.z, 1e-4);
@@ -461,11 +478,19 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
           // Two octaves, both local. 14.0 and 5.3 rather than powers of two: a
           // lattice that lined up with the 32-cell quad grid would put every
           // noise cell boundary on a vertex and draw the grid. At a depth-14
-          // chunk of 57.856 m these are 4.1 m and 10.9 m, which is the scale
-          // RN-45 wanted and could not reach from planet-centred metres.
-          float hB = (ofArtVnoise(vec3(vChunkUv * 14.0, 0.5)) - 0.5) * 0.9
-                   + (ofArtVnoise(vec3(vChunkUv * 5.3, 7.1)) - 0.5) * 0.5;
-          n = ofArtBump(n, vWorld, hB, bumpW * 1.6, OF_ART_FINE_M);
+          // chunk of 57.856 m these were 4.1 m and 10.9 m, which is the scale
+          // RN-45 wanted and could not reach from planet-centred metres; at the
+          // shipped depth-15 quad of 28.93 m they are 2.07 m and 5.46 m.
+          //
+          // RN-1855: THE COUNTS ARE DEFINES AND THE FADE IS DERIVED FROM THE
+          // FINE ONE. They used to be literals here and a hand-computed 4.2 m
+          // over in TerrainArt, which is two numbers for one fact; WG-186
+          // halved the quad, the literals meant something new and the 4.2 did
+          // not follow, and the fade spent a fortnight protecting a wavelength
+          // that no longer existed.
+          float hB = (ofArtVnoise(vec3(vChunkUv * OF_ART_OCT_FINE, 0.5)) - 0.5) * 0.9
+                   + (ofArtVnoise(vec3(vChunkUv * OF_ART_OCT_COARSE, 7.1)) - 0.5) * 0.5;
+          n = ofArtBump(n, vWorld, hB, bumpW * 1.6, uArtFineM);
         }
         // RN-148: the ASYMMETRIC relief drives the SAME surface-gradient bump
         // as a second, separable call, so ?groundrelief=0 and ?terrainbump=0
@@ -536,7 +561,7 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
             gx = dFdx(hR);
             gy = dFdy(hR);
           }
-          // OF_RELIEF_FINE_M, not OF_ART_FINE_M: the fade must protect THIS
+          // uReliefFineM, not uArtFineM: the fade must protect THIS
           // field's finest wavelength. The mip chain bounds the sampled value
           // but never its gradient (RN-78d), measured again here as moire
           // arcs when this call briefly rode the vnoise's 4.2 m constant.
@@ -548,7 +573,7 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
           // 30 to 60 m completes inside the max-depth ring, where the UV
           // scale is constant, so no LOD step is ever visible in the term.
           float relW = uGroundReliefAmp * (1.0 - smoothstep(30.0, 60.0, dist));
-          n = ofArtBumpG(n, vWorld, gx, gy, relW, OF_RELIEF_FINE_M);
+          n = ofArtBumpG(n, vWorld, gx, gy, relW, uReliefFineM);
         }
         // RN-1733. THE DETAIL LAYER'S NORMAL HALF, and it is a THIRD separable
         // ofArtBump call rather than another octave added to hB, for the reason

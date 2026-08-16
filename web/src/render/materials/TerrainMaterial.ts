@@ -22,9 +22,14 @@ import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 // rather than a `#define`. Imported from where it is derived and documented,
 // so there is still one authority for the number and the sweep cannot drift
 // from the value the sweep is measured against.
+// RN-1855. ART_FINE_M and RELIEF_FINE_M join it, for the same reason and one
+// more: they are DERIVED now (from the octave count and the tile fraction), so
+// importing them is the only way the uniform's boot default and the wavelength
+// the shader samples at can be the same number by construction.
 import { RELIEF_GRAD_UV, REL_SWING_DEFAULT, REL_CELL, REL_CELL_NOISE,
   FINE_BUMP, FINE_ALB, FINE_A, FINE_R, FINE_B, FINE_W, FINE_CHUNK_M,
-  FINE_LUM_REF }
+  FINE_LUM_REF, ART_FINE_M, RELIEF_FINE_M,
+  ART_FINE_M_PRE1855, RELIEF_FINE_M_PRE1855 }
   from './TerrainArt.glsl.js';
 import { FAR_SCALE } from '../Scenes.js';
 
@@ -220,6 +225,26 @@ function reliefGradUvFromQuery(): number {
   const v = new URLSearchParams(self.location.search).get('reliefgraduv');
   const n = v === null ? NaN : Number(v);
   return Number.isFinite(n) && n > 0 ? n : RELIEF_GRAD_UV;
+}
+
+/**
+ * RN-1855. `?artfinem=` and `?relieffinem=` override the two footprint fades'
+ * wavelengths, in METRES. The shipped values are DERIVED (2.0664 and 0.2249 at
+ * the shipped depth), and passing the pre-RN-1855 `4.2` and `0.45` is the
+ * negative control that restores the shipped-for-a-fortnight picture exactly,
+ * on one build, one camera and one streamed chunk set.
+ *
+ * Strictly positive, on reliefCellFromQuery's rule: zero would multiply the
+ * smoothstep's two edges into each other and hand `ofArtBumpG` a fade that is
+ * NaN or 1 depending on the driver, which is a state nothing documents. A bad
+ * value takes the boot default rather than being clamped. A missing parameter
+ * is MISSING and takes the boot default, never `Number(null) === 0` (RN-150,
+ * and it is exactly this material that paid for that lesson).
+ */
+function fineMFromQuery(key: string, boot: number): number {
+  const v = new URLSearchParams(self.location.search).get(key);
+  const n = v === null ? NaN : Number(v);
+  return Number.isFinite(n) && n > 0 ? n : boot;
 }
 
 /**
@@ -452,6 +477,16 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   // measurement that showed so needed to sweep it inside ONE page, one camera
   // and one streamed chunk set, which a define cannot do.
   const reliefGradUv: THREE.IUniform<number> = { value: reliefGradUvFromQuery() };
+  // RN-1855. The two footprint-fade wavelengths, shared by reference into both
+  // materials for the one-authority reason artAmp is. The far material compiles
+  // the whole art block out, so the share is belt and braces there; the pattern
+  // must not have an exception.
+  const artFineM: THREE.IUniform<number> = {
+    value: fineMFromQuery('artfinem', ART_FINE_M),
+  };
+  const reliefFineM: THREE.IUniform<number> = {
+    value: fineMFromQuery('relieffinem', RELIEF_FINE_M),
+  };
   // RN-961. Shared by reference into both materials for the one-authority
   // reason artAmp is: a control that reached the near material and not the far
   // one would make the negative control a statement about one scene only.
@@ -522,6 +557,8 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uFineLum: fineLum,
       uReliefGrad: reliefGrad,
       uReliefGradUv: reliefGradUv,
+      uArtFineM: artFineM,
+      uReliefFineM: reliefFineM,
       uReliefSwing: reliefSwing,
       uReliefCell: reliefCell,
       uReliefCellNoise: reliefCellNoise,
@@ -604,6 +641,35 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
         present: p.get('reliefgraduv') !== null,
         value: reliefGradUvFromQuery(),
         shipped: RELIEF_GRAD_UV,
+      };
+    },
+    /** RN-1855. THE TWO FOOTPRINT FADES' WAVELENGTHS, in metres, at runtime.
+     *  setReliefGradUv's precedent and RN-1000's sharper reason: this
+     *  correction is judged AT RANGE, where the mover is a smoothstep on the
+     *  pixel footprint, and a pair whose two halves are two page loads differs
+     *  by two streamed chunk sets and two sun solves as well as by the term.
+     *  Both together in one call rather than two, because the two fades are one
+     *  decision and an arm that moved one of them would be a third state
+     *  nothing in this lane's report describes. */
+    setFineM(artM: number, reliefM: number): [number, number] {
+      if (Number.isFinite(artM) && artM > 0) artFineM.value = artM;
+      if (Number.isFinite(reliefM) && reliefM > 0) reliefFineM.value = reliefM;
+      return [artFineM.value, reliefFineM.value];
+    },
+    getFineM(): [number, number] { return [artFineM.value, reliefFineM.value]; },
+    /** RN-1855. The shipped defaults, whether the URL moved either, and the two
+     *  PRE-FIX values, so an arm restores the before state from the source of
+     *  truth rather than from a number typed into a probe (standing rule 11),
+     *  and so the BOOT DEFAULT is assertable in its own right (RN-150). */
+    fineMDefault(): {
+      present: boolean; art: number; relief: number;
+      artPre: number; reliefPre: number;
+    } {
+      const p = new URLSearchParams(self.location.search);
+      return {
+        present: p.get('artfinem') !== null || p.get('relieffinem') !== null,
+        art: ART_FINE_M, relief: RELIEF_FINE_M,
+        artPre: ART_FINE_M_PRE1855, reliefPre: RELIEF_FINE_M_PRE1855,
       };
     },
     /** RN-1000. The ripple direction's peak-to-peak swing in radians, at
