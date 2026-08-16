@@ -95,7 +95,18 @@ export class Avatar {
       }),
       PlayerRig.create({
         url: ASSETS.playerFpArms, clips: FP_CLIPS, layer: null,
-        castShadow: false, receiveShadow: false, lod: '_LOD0',
+        // RN-1990. `receiveShadow` IS NOW TRUE, and `castShadow` deliberately
+        // is not. The arms live in render pass 4, whose sun now carries the
+        // world's cascade-0 shadow map rebased into view-model space
+        // (`ViewModelLight`), and three's own line is
+        // `receiveShadow ? getShadow(...) : 1.0` -- a wired light with unwired
+        // meshes is a silent identity that reads exactly like the defect it was
+        // meant to fix. Casting stays off because the only scene the arms could
+        // cast into is their own, two hands and a haft at 0.4 m, and that would
+        // cost a second shadow map to render a self-shadow nobody can see.
+        // `PlayerRig` applies both flags to the held tool and to armour too, so
+        // this survives a tool swap without a second write.
+        castShadow: false, receiveShadow: true, lod: '_LOD0',
       }),
     ]);
     this.body = body;

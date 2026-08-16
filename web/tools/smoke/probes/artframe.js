@@ -1821,6 +1821,191 @@
   const blob = g0.blob;
   const stat = (x0, y0, x1, y1) => statOn(cx, x0, y0, x1, y1);
 
+  // ======================================================================
+  // RN-1990. THE MODEL-OVER-FRAME RATIO, and it is a MATCHED PAIR TAKEN IN
+  // ONE PAGE LOAD rather than two numbers filed next to each other.
+  //
+  // WHAT IT MEASURES AND WHY IT IS NOT A RECTANGLE. RN-1875 established that
+  // the view model's fault is its LIGHT, not its geometry: model luma over
+  // frame luma read 0.55 / 1.23 / 2.76 / 3.36 across the four shots, a
+  // quantity that should sit near 1 and that CHANGES SIGN. A rectangle around
+  // two hands and a diagonal haft is mostly world, so the model's pixels have
+  // to be identified by DIFFERENCE against the same frame with the model
+  // suppressed -- which is exactly what `hideVm` already builds, one page load
+  // at a time. Doing both halves here makes the pair provably one variable
+  // apart: same scene build, same wind clock, same IBL counter, same pose.
+  //
+  // THREE DENOMINATORS, PUBLISHED TOGETHER, because they answer three
+  // different questions and picking one silently is how a ratio gets argued
+  // rather than read:
+  //   `ratio`       model / WHOLE FRAME. RN-1875's published quantity, kept to
+  //                 the digit so this lane's before-numbers are comparable
+  //                 with that one's. Its denominator contains the model.
+  //   `ratioWorld`  model / the frame MINUS the model's own pixels. The same
+  //                 statement with the subject removed from its own control.
+  //   `ratioBehind` model / THE WORLD IT OCCLUDES, read out of the control
+  //                 frame at exactly the masked pixels. This is the local
+  //                 statement and the strictest one: it compares the held tool
+  //                 against the surface it is held in front of, at the same
+  //                 depth range, under the same sun, with no framing in it.
+  //
+  // THE MASK IS CONTAMINATED AND THE CONTAMINATION IS PUBLISHED, never
+  // assumed away. Anything that moves between the two grabs (foliage, the wind
+  // clock, dither) lands in the difference. RN-1876 measured that at 156 px of
+  // 50,980 on `forestfloor` and 0 above y=0.75 on `voxelface`; `maskHiFrac` is
+  // the share of the mask in the TOP HALF of the frame, where a first-person
+  // carry has no geometry at all, so a reading that climbs is the tell.
+  //
+  // AND IT TAKES ARMS. `{"vmArms":[{"name":"shipped","shadow":false}, ...]}`
+  // measures the SAME shot at several settings of `__ofVmLight` inside ONE page
+  // load, each with its own model/control pair. That is the whole reason the
+  // shadow term was built with a runtime switch rather than a boot flag: a
+  // before/after taken across two page loads differs by the whole scene build,
+  // the wind clock and the IBL counter, and this lane's quantity is a ratio of
+  // two lumas that all three of those move.
+  const VL = window.__ofVmLight ?? null;
+  const pairAt = async () => {
+    const gT = await grab();
+    vmDbg.hide(true);
+    await of.settle(A.vmSettle ?? 2);
+    if (vmDbg.hidden() !== true) return { err: 'the control frame did not take' };
+    const gC = await grab();
+    vmDbg.hide(false);
+    await of.settle(A.vmSettle ?? 2);
+    if (vmDbg.hidden() !== false) return { err: 'the view model would not come back' };
+    if (gC.W !== gT.W || gC.H !== gT.H) return { err: 'the pair differs in size' };
+    const w = gT.W; const h = gT.H;
+    const A0 = gT.cx.getImageData(0, 0, w, h).data;
+    const B0 = gC.cx.getImageData(0, 0, w, h).data;
+    // 6 counts on any channel. Below that is dither and 8-bit rounding; the
+    // model is an opaque object at 0.3 to 0.7 m and moves whole channels.
+    const T = Math.max(1, Math.round(A.vmDiffT ?? 6));
+    let mn = 0; let mr = 0; let mg = 0; let mb = 0;
+    let br = 0; let bg = 0; let bb = 0;
+    let wn = 0; let wr = 0; let wg = 0; let wb = 0;
+    let hiN = 0;
+    const halfRow = Math.floor(h / 2);
+    for (let y = 0; y < h; ++y) {
+      for (let x = 0; x < w; ++x) {
+        const i = (y * w + x) * 4;
+        const dr = Math.abs(A0[i] - B0[i]);
+        const dg = Math.abs(A0[i + 1] - B0[i + 1]);
+        const db = Math.abs(A0[i + 2] - B0[i + 2]);
+        if (dr > T || dg > T || db > T) {
+          mn++; mr += A0[i]; mg += A0[i + 1]; mb += A0[i + 2];
+          br += B0[i]; bg += B0[i + 1]; bb += B0[i + 2];
+          if (y < halfRow) hiN++;
+        } else {
+          wn++; wr += A0[i]; wg += A0[i + 1]; wb += A0[i + 2];
+        }
+      }
+    }
+    const Y = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const frameL = statOn(gT.cx, 0, 0, w, h).luma;
+    const modelL = mn === 0 ? null : Y(mr / mn, mg / mn, mb / mn);
+    const behindL = mn === 0 ? null : Y(br / mn, bg / mn, bb / mn);
+    const worldL = wn === 0 ? null : Y(wr / wn, wg / wn, wb / wn);
+    return {
+      maskPx: mn, maskFrac: r3(mn / (w * h)),
+      maskHiFrac: mn === 0 ? null : r3(hiN / mn),
+      modelLuma: r2(modelL), modelWarm: mn === 0 ? null : r2(mr / mn - mb / mn),
+      frameLuma: frameL,
+      worldLuma: r2(worldL),
+      worldWarm: wn === 0 ? null : r2(wr / wn - wb / wn),
+      behindLuma: r2(behindL),
+      behindWarm: mn === 0 ? null : r2(br / mn - bb / mn),
+      ratio: mn === 0 ? null : r3(modelL / frameL),
+      ratioWorld: mn === 0 || wn === 0 ? null : r3(modelL / worldL),
+      ratioBehind: mn === 0 ? null : r3(modelL / behindL),
+      diffT: T,
+    };
+  };
+
+  let vmRatio = null;
+  let vmArms = null;
+  const wantArms = Array.isArray(A.vmArms) && A.vmArms.length > 0;
+  if (A.vmRatio === true || wantArms) {
+    if (vmDbg === null) {
+      return { valid: false, shot: name,
+        why: 'vmRatio needs window.__ofViewModel and it does not exist.' };
+    }
+    if (vmHidden === true) {
+      return { valid: false, shot: name,
+        why: 'vmRatio with hideVm is a difference of a frame against itself.' };
+    }
+    if (wantArms && VL === null) {
+      return { valid: false, shot: name,
+        why: 'vmArms needs window.__ofVmLight and it does not exist, so every '
+          + 'arm would silently be the same frame.' };
+    }
+    const arms = wantArms ? A.vmArms : [{ name: 'as-built' }];
+    // Arms the renderer handle once, so `mapAt` can read the cascade below.
+    if (VL !== null && typeof VL.peek === 'function') {
+      VL.peek();
+      await of.settle(6);
+    }
+    vmArms = [];
+    for (const arm of arms) {
+      if (VL !== null) {
+        VL.shadow(arm.shadow === undefined ? true : arm.shadow === true);
+        VL.sun(arm.sun ?? 1);
+        VL.ambient(arm.ambient ?? 1);
+        if (typeof VL.biasAdd === 'function') VL.biasAdd(arm.biasAdd ?? 0);
+        await of.settle(A.vmSettle ?? 2);
+        // `ambientAbs` asks for an ABSOLUTE hemisphere intensity rather than a
+        // multiplier, and it exists because the shipped view-model ambient
+        // (1.1) has to be reproducible as an arm on every shot. The world-side
+        // endpoint this lane now derives from is `stockFloor`, i.e.
+        // `TERRAIN_AMBIENT`, which `terrainNightAmbient` rewrites every frame
+        // from the sun's elevation -- so the multiplier that reaches 1.1 is a
+        // different number on a dot 0.88 shot than on a dot 0.35 one, and a
+        // constant multiplier written into the invocation would quietly measure
+        // four different ambients and call them one control.
+        if (typeof arm.ambientAbs === 'number') {
+          const a = VL.state().ambient;
+          if (!(a > 0)) {
+            return { valid: false, shot: name,
+              why: `vmArms[${arm.name}]: ambientAbs needs a live hemisphere, read ${a}.` };
+          }
+          VL.ambient(arm.ambientAbs / a);
+          await of.settle(A.vmSettle ?? 2);
+        }
+      }
+      const p = await pairAt();
+      if (p.err !== undefined) {
+        return { valid: false, shot: name, why: `vmArms[${arm.name}]: ${p.err}` };
+      }
+      // THE ARM'S OWN STATE, READ BACK OFF THE CLIENT, never the argument that
+      // was sent: `__ofVmLight.state()` reports the shadow intensity actually
+      // uploaded and the hemisphere intensity actually applied, so an arm that
+      // did not take is visible as an arm whose state matches its neighbour's.
+      // RN-1990. AND WHETHER THE PLAYER IS IN A CAST SHADOW AT THIS POSE, read
+      // out of cascade 0's own colour attachment at the very texel the arms
+      // sample. Without it a shot whose ratio does not move under the shadow
+      // term is ambiguous between "the term is inert" and "there is nothing
+      // above this player", and the four canonical poses turn out to be the
+      // second: the terrain does not cast into cascade 0, only the trees do.
+      let occl = null;
+      if (VL !== null && typeof VL.mapAt === 'function') {
+        const st = VL.state();
+        const cell = VL.mapAt(st.eyeCoord[0], st.eyeCoord[1]);
+        // Reversed depth: a LARGER z is nearer the light and the attachment
+        // holds 1 - z, so an occluder in front of the arms reads z above eyeZ.
+        const z = 1 - cell.oneMinusZ;
+        occl = { uv: [st.eyeCoord[0], st.eyeCoord[1]], eyeZ: st.eyeCoord[2],
+          cellZ: r3(z), casterHere: cell.rgba[3] > 0 && z > st.eyeCoord[2] };
+      }
+      vmArms.push({ arm: arm.name ?? JSON.stringify(arm), ...p, occl,
+        vmState: VL === null ? null : VL.state() });
+    }
+    if (VL !== null) {
+      VL.shadow(true); VL.sun(1); VL.ambient(1);
+      if (typeof VL.biasAdd === 'function') VL.biasAdd(0);
+      await of.settle(2);
+    }
+    vmRatio = vmArms[vmArms.length - 1];
+  }
+
   const bx = [S.box[0] * W, S.box[1] * H, S.box[2] * W, S.box[3] * H];
   /** RN-1490. The shot's further named rectangles, decoded from the SAME
    *  capture, so an extra box costs a `getImageData` and never a second frame
@@ -1903,6 +2088,9 @@
     // RN-1876. Whether THIS frame is the view-model control. Published on every
     // shot, so a pair is provably one variable apart rather than filed as one.
     vmHidden,
+    // RN-1990. Null unless `{"vmRatio": true}` or `{"vmArms": [...]}` was asked
+    // for, so every capture any earlier pass has taken is unchanged.
+    vmRatio, vmArms,
     pose,
     // THE PIPELINE THE FRAME CAME THROUGH, published so a pair can be shown to
     // be one variable apart rather than asserted to be.
