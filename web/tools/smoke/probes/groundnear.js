@@ -316,12 +316,119 @@
     return Math.abs(a - b);
   };
 
+  // RN-1900. ROW STD, SPLIT INTO WORLD-SCALE BANDS, and the split is the whole
+  // point rather than a refinement of it.
+  //
+  // `iqr` and a bare row std are both BLIND TO WHICH FREQUENCY BAND the detail
+  // sits in (RN-1732 recorded exactly that trap: an amplitude raise scores
+  // better while photographing worse, because the counts it adds are mottle at
+  // the fold rather than structure the eye can read). At 27 m one pixel row
+  // covers about half a metre of ground DOWN the view and 0.032 m ACROSS it, a
+  // 15x anisotropy, so anything finer than roughly a metre is a candidate for
+  // folding no matter which term carries it. A number that cannot separate
+  // "content at 4 m" from "mottle at 0.2 m" cannot settle this lane's question.
+  //
+  // The split is done ALONG A ROW, which is one iso-range slice of ground (the
+  // tiling instrument's own argument, forty lines up), and in METRES rather
+  // than pixels: the horizontal footprint at a row is `range * hFovPerPixel`,
+  // so a box filter of `scaleM / hFootM` pixels is a fixed WORLD wavelength at
+  // every range and the three bands mean the same thing in every rectangle.
+  //
+  //   `std`      the whole row's std of luma, mean removed per row. This is the
+  //              number RN-1859's verifier published (4.99 at 27 m against
+  //              13.33) and it is kept unchanged so the two are comparable.
+  //   `bandM`    std of the row LOW-PASSED at each world scale, i.e. how much
+  //              contrast survives if everything finer than that scale is
+  //              averaged away. `band[2]` (8 m) is drainage and tonal
+  //              patchiness; `band[1]` (2 m) is rock and debris scale;
+  //              `band[0]` (0.5 m) is at the fold and is the band an honest fix
+  //              must NOT be carried by out here.
+  //
+  // A single box filter is a poor low-pass on its own, so it is applied THREE
+  // TIMES, which is a near-Gaussian by the central limit theorem and has no
+  // sidelobe that would let fold-band mottle leak into the 8 m reading and be
+  // reported as structure. Edges are clamped rather than wrapped: a wrap would
+  // correlate the two ends of a strip that are 32 m apart on the ground.
+  const boxBlur = (src, w, k) => {
+    if (k < 2) return src.slice();
+    const half = Math.floor(k / 2);
+    const out = new Float64Array(w);
+    let acc = 0;
+    for (let i = -half; i <= half; ++i) acc += src[Math.min(w - 1, Math.max(0, i))];
+    const n = 2 * half + 1;
+    for (let i = 0; i < w; ++i) {
+      out[i] = acc / n;
+      const drop = src[Math.min(w - 1, Math.max(0, i - half))];
+      const add = src[Math.min(w - 1, Math.max(0, i + half + 1))];
+      acc += add - drop;
+    }
+    return out;
+  };
+  const rowBands = (cx, x0, y0, x1, y1, hFootM) => {
+    const w = Math.max(1, Math.round(x1 - x0));
+    const h = Math.max(1, Math.round(y1 - y0));
+    const d = cx.getImageData(Math.round(x0), Math.round(y0), w, h).data;
+    const scales = A.bandScalesM ?? [0.5, 2.0, 8.0];
+    // A band whose filter would be wider than a third of the strip is not
+    // measurable in it, and reporting a number for it anyway is how a lane ends
+    // up quoting the strip's own length back to itself. Those come back null.
+    const kern = scales.map((s) => {
+      const k = Math.round(s / Math.max(hFootM, 1e-6));
+      return (k >= 2 && k <= Math.floor(w / 3)) ? (k % 2 === 1 ? k : k + 1) : null;
+    });
+    let sAll = 0;
+    const sBand = scales.map(() => 0);
+    let rows = 0;
+    for (let j = 0; j < h; ++j) {
+      const row = new Float64Array(w);
+      let m = 0;
+      for (let i = 0; i < w; ++i) {
+        const o = (j * w + i) * 4;
+        row[i] = 0.2126 * d[o] + 0.7152 * d[o + 1] + 0.0722 * d[o + 2];
+        m += row[i];
+      }
+      m /= w;
+      let v = 0;
+      for (let i = 0; i < w; ++i) { row[i] -= m; v += row[i] * row[i]; }
+      sAll += Math.sqrt(v / w);
+      for (let b = 0; b < scales.length; ++b) {
+        if (kern[b] === null) continue;
+        let lp = row;
+        for (let t = 0; t < 3; ++t) lp = boxBlur(lp, w, kern[b]);
+        let mb = 0;
+        for (let i = 0; i < w; ++i) mb += lp[i];
+        mb /= w;
+        let vb = 0;
+        for (let i = 0; i < w; ++i) vb += (lp[i] - mb) * (lp[i] - mb);
+        sBand[b] += Math.sqrt(vb / w);
+      }
+      rows++;
+    }
+    if (rows === 0) return { rows: 0, std: null };
+    return { rows, w, hFootM: r3(hFootM), scalesM: scales,
+      kernPx: kern, std: r2(sAll / rows),
+      band: sBand.map((s, b) => (kern[b] === null ? null : r2(s / rows))) };
+  };
+
   const readAll = (g) => {
     const out = {};
     for (const [k, f] of Object.entries(RECTS)) {
       out[k] = statOn(g.cx, f[0] * g.W, f[1] * g.H, f[2] * g.W, f[3] * g.H);
-      out[k].rangeM = r2(rangeAtRow((f[1] + f[3]) / 2));
-      out[k].footM = r3(footAtRow((f[1] + f[3]) / 2, g.H));
+      const fyMid = (f[1] + f[3]) / 2;
+      out[k].rangeM = r2(rangeAtRow(fyMid));
+      out[k].footM = r3(footAtRow(fyMid, g.H));
+      // The LATERAL footprint, which is what a row's own sampling rate is and
+      // is NOT the `footM` above: that one is the vertical arm of the shader's
+      // max() and is the larger by an order of magnitude out here. Both are
+      // published because the anisotropy between them is the reason this lane
+      // exists.
+      const rM = rangeAtRow(fyMid);
+      const hFootM = Number.isFinite(rM)
+        ? rM * (2 * Math.tan((fovDeg * Math.PI / 180) / 2) * (g.W / g.H)) / g.W
+        : Infinity;
+      out[k].hFootM = r3(hFootM);
+      out[k].rows = rowBands(g.cx, f[0] * g.W, f[1] * g.H, f[2] * g.W, f[3] * g.H,
+        hFootM);
     }
     out.world = statOn(g.cx, 0, 0, g.W, g.H);
     const tb = A.tileBand ?? [0.10, 0.80, 0.90, 0.94];
@@ -350,6 +457,18 @@
   const hasFineM = typeof art.setFineM === 'function'
     && typeof art.fineMDefault === 'function';
   const MD = hasFineM ? art.fineMDefault() : null;
+  // RN-1900. The mid-field layer and the bump's coarse-octave fade. Absent on a
+  // binary built before this lane, and the `mid*` / `coarse*` arms then REFUSE
+  // rather than silently measuring the ship state under a candidate's name,
+  // which is hasFine's precedent and standing rule 11's cheapest form.
+  const hasMid = typeof art.setMid === 'function'
+    && typeof art.midDefault === 'function'
+    && typeof art.setArtCoarseM === 'function';
+  const MIDD = hasMid ? art.midDefault() : null;
+  const COARSED = hasMid ? art.artCoarseMDefault() : null;
+  const BOOT_MID = hasMid ? art.getMid() : null;
+  const BOOT_MID_M = hasMid ? art.getMidM() : null;
+  const BOOT_COARSE_M = hasMid ? art.getArtCoarseM() : null;
   // Captured HERE, before any arm has written the uniform, because reading it
   // at the return would report whatever `restore()` last set and would say
   // "the flag landed" on a run where it never arrived.
@@ -368,6 +487,14 @@
     // at the override, the first arm would put the shipped value back, and the
     // report would describe a run that never happened.
     if (hasFineM) art.setFineM(BOOT_FINE_M[0], BOOT_FINE_M[1]);
+    // RN-1900. The BOOT state for the same reason: restoring MIDD's shipped
+    // constants instead would silently defeat a `--groundmidamp=` on the
+    // command line, and the report would describe a run that never happened.
+    if (hasMid) {
+      art.setMid(BOOT_MID[0], BOOT_MID[1]);
+      art.setMidM(BOOT_MID_M[0], BOOT_MID_M[1]);
+      art.setArtCoarseM(BOOT_COARSE_M);
+    }
   };
   /**
    * A FREE-FORM ARM, so a frequency or weight rung is an `--evalargs` and not a
@@ -423,6 +550,21 @@
     fadepre: () => { restore(); art.setFineM(MD.artPre, MD.reliefPre); },
     fadepreart: () => { restore(); art.setFineM(MD.artPre, MD.relief); },
     fadeprerel: () => { restore(); art.setFineM(MD.art, MD.reliefPre); },
+    // RN-1900. THE BEFORE HALF OF THIS LANE'S PAIR, IN TWO SEPARABLE PIECES,
+    // because the lane makes two changes with two different mechanisms and a
+    // combined arm alone could not say which of them moved the band.
+    //   `midoff`     the mid-field albedo layer removed, coarse fade kept.
+    //   `coarsepre`  the bump's coarse octave faded at the FINE octave's
+    //                wavelength, i.e. the pre-RN-1900 single-fade bump, mid
+    //                layer kept.
+    //   `pre1900`    both, i.e. the shipped ground as of RN-1859.
+    midoff: () => { restore(); art.setMid(0, BOOT_MID[1]); },
+    mid2: () => { restore(); art.setMid(BOOT_MID[0] * 2, BOOT_MID[1]); },
+    midlumoff: () => { restore(); art.setMid(BOOT_MID[0], 0); },
+    coarsepre: () => { restore(); art.setArtCoarseM(COARSED.pre); },
+    pre1900: () => {
+      restore(); art.setMid(0, BOOT_MID[1]); art.setArtCoarseM(COARSED.pre);
+    },
   };
 
   const want = A.arms ?? ['ship', 'texoff', 'reliefoff', 'bumpoff', 'ship'];
@@ -438,6 +580,10 @@
     if (/^fade/.test(name) && !hasFineM) {
       return { valid: false, why: `arm '${name}' needs __ofTerrainArt.setFineM,`
         + ' which this binary does not have (pre-RN-1855)' };
+    }
+    if (/^(mid|coarse|pre1900)/.test(name) && !hasMid) {
+      return { valid: false, why: `arm '${name}' needs __ofTerrainArt.setMid and`
+        + ' setArtCoarseM, which this binary does not have (pre-RN-1900)' };
     }
     const fn = Array.isArray(spec) ? custom(spec) : ARMS[name];
     if (fn === undefined) return { valid: false, why: `unknown arm '${name}'`,
@@ -480,6 +626,17 @@
       row.artFadeFootM = [r3(row.fineM[0] * 0.125), r3(row.fineM[0] * 0.333)];
       row.relFadeFootM = [r3(row.fineM[1] * 0.125), r3(row.fineM[1] * 0.333)];
     }
+    // RN-1900. The LIVE mid-field state and the two footprint bands its own
+    // fades act between, read off the material rather than restated from the
+    // arm's argument list, so a rung that silently failed to apply is a visible
+    // disagreement in the report and not an invisible duplicate frame.
+    if (hasMid) {
+      row.mid = art.getMid();
+      row.midM = art.getMidM().map(r3);
+      row.midFadeFootM = row.midM.map((m) => [r3(m * 0.125), r3(m * 0.333)]);
+      row.artCoarseM = r3(art.getArtCoarseM());
+      row.coarseFadeFootM = [r3(row.artCoarseM * 0.125), r3(row.artCoarseM * 0.333)];
+    }
     out.push(row);
     if (A.png === true || (Array.isArray(A.png) && A.png.includes(name))) {
       shots[name] = await new Promise((res) => {
@@ -517,9 +674,20 @@
   if (A.cost === true && costTerm === 'fade' && !hasFineM) {
     return { valid: false, why: 'costTerm fade needs __ofTerrainArt.setFineM' };
   }
-  if (A.cost === true && (costTerm === 'fade' || hasFine)) {
+  if (A.cost === true && costTerm === 'mid' && !hasMid) {
+    return { valid: false, why: 'costTerm mid needs __ofTerrainArt.setMid' };
+  }
+  if (A.cost === true && (costTerm === 'fade' || costTerm === 'mid' || hasFine)) {
+    // RN-1900. `{"costTerm":"mid"}` prices THIS LANE, both halves at once,
+    // through the identical drift-cancelling machinery: `b` is the mid layer's
+    // amplitude and `a` is the bump's coarse-octave fade wavelength, so the OFF
+    // phase is (0, ART_FINE_M) -- the pre-RN-1900 ground exactly -- and the ON
+    // phase is the shipped pair. Both together rather than separately because
+    // they are one change and the question a cost number answers is whether to
+    // ship it, not which half of it to ship.
     const phase = async (b, a) => {
-      if (costTerm === 'fade') art.setFineM(b, a);
+      if (costTerm === 'mid') { art.setMid(b, BOOT_MID[1]); art.setArtCoarseM(a); }
+      else if (costTerm === 'fade') art.setFineM(b, a);
       else art.setFine(b, a);
       await sleep(0.5);                    // settle; no recompile, it is a uniform
       const samples = [];
@@ -551,14 +719,17 @@
     // order, and the residual spread across the N pairs is published so a
     // reader can see whether the answer is resolvable at all rather than being
     // handed a number that is not.
-    const want2 = A.costArms ?? (costTerm === 'fade'
-      ? [['derived', MD.art, MD.relief]]
-      : [['both', FD.bump, FD.alb], ['bump', FD.bump, 0], ['alb', 0, FD.alb]]);
+    const want2 = A.costArms ?? (costTerm === 'mid'
+      ? [['mid', BOOT_MID[0], BOOT_COARSE_M]]
+      : costTerm === 'fade'
+        ? [['derived', MD.art, MD.relief]]
+        : [['both', FD.bump, FD.alb], ['bump', FD.bump, 0], ['alb', 0, FD.alb]]);
     // The BASELINE phase: all-off for the detail layer, the pre-RN-1855 pair
     // for the fade. Named `offs` throughout because it is the same role in the
     // same arithmetic and renaming half a published report is worse than one
     // line of prose saying what it is.
-    const OFF = costTerm === 'fade' ? [MD.artPre, MD.reliefPre] : [0, 0];
+    const OFF = costTerm === 'mid' ? [0, COARSED.pre]
+      : costTerm === 'fade' ? [MD.artPre, MD.reliefPre] : [0, 0];
     const reps = A.reps ?? 4;
     cost = { reps, secs: A.secs ?? 4, term: costTerm, baseline: OFF,
       offs: [], pairs: {} };
@@ -603,7 +774,13 @@
       // assuming it: RN-152 lost a whole pair to `--starlight=0` going
       // unforwarded with both sides running the feature on, and this lane's
       // canonical-shot re-take is exactly that shape of pair.
-      hasFineM, fineM: MD, bootFineM: BOOT_FINE_M },
+      hasFineM, fineM: MD, bootFineM: BOOT_FINE_M,
+      // RN-1900. Same shape and same reason: the boot state read before any arm
+      // ran, so a run launched with `--groundmidamp=` proves the flag arrived
+      // rather than assuming it (RN-152 lost a whole pair to a flag going
+      // unforwarded with both sides running the feature on).
+      hasMid, mid: MIDD, coarse: COARSED, bootMid: BOOT_MID,
+      bootMidM: BOOT_MID_M, bootArtCoarseM: BOOT_COARSE_M },
     rangeAtRow: { top: r2(rangeAtRow(0.50)), box: r2(rangeAtRow(0.66)),
       bottom: r2(rangeAtRow(0.95)) },
     arms: out, cost,

@@ -184,6 +184,57 @@
       },
       why: 'the dug voxel face at arm\'s length, RN-1258\'s subject',
     },
+    // RN-1900. THE EIGHTH SHOT, AND THE SUBJECT NO CANONICAL SHOT COULD SEE.
+    //
+    // RN-1859 measured that a change moving the 18 to 44 m band by 40 to 60 per
+    // cent of iqr at three sites is INVISIBLE to every published baseline this
+    // project has, because every rectangle in the manifest sits on a machine,
+    // on a structure, or on ground within 5 m of the eye at a footprint under
+    // 0.02 m (rendering.md section 2.1.7a). That is a hole in the shot set, and
+    // this closes it: the mid field, at a standing eye, with the ground and
+    // nothing else in the strips.
+    //
+    // THE POSE IS PLAINS AT YAW 150 AND IT WAS CHOSEN BY MEASUREMENT, NOT TASTE.
+    // The same site at the RN-1857 yaw of 300 puts two dark loose-stone rocks
+    // and the far tree line inside the 35 m strip, and the signature is
+    // textbook: on this lane's own pair the 35 m strip's iqr moved +36 per cent
+    // while its row std moved +1.5 per cent, i.e. a robust statistic saw the
+    // term and a non-robust one was swamped by a handful of very dark outliers.
+    // At yaw 150 the same three strips are clean ground to the horizon and the
+    // two statistics agree. The rejected yaw is recorded rather than deleted
+    // because "the mid field did not move at 35 m" was a real reading, and it
+    // was a reading about the RECTANGLE.
+    //
+    // PROPS OFF, `groundnear.js`'s rule and its reason verbatim: at a standing
+    // eye pitched into the ground the understorey covers most of the frame, and
+    // a claim about the GROUND cannot be settled through somebody else's leaf
+    // cards.
+    //
+    // `box` IS THE 27 m STRIP AS A COMMITTED FRACTION, so this shot has a
+    // headline number of the same shape every other shot has, and `r18c`/`r35c`
+    // are its two neighbours. They were computed by inverting the flat-plane
+    // range map at the eye this pose actually stands at (1.62 m, not the 2.0 m
+    // the teleport asks for), a pitch of -10 and a 60 degree FOV, and they are
+    // committed so a verifier reproduces them rather than grid-searching them
+    // back out of the PNG (RN-1727's own correction). `rangeRects` below places
+    // the same three LIVE off this capture's own observer; the report prints
+    // `rangeM` for both, so if the terrain ever moves the eye the two disagree
+    // out loud instead of one of them quietly naming the wrong range.
+    midfield: {
+      scenario: 'walk', needsSandbox: false,
+      lat: -7.9675, lon: 116.53189, yaw: 150, pitch: -10,
+      sunDot: 0.70, sunTol: 0.06,
+      props: false,
+      box: [0.1500, 0.3975332, 0.8500, 0.4030888],   // the 27 m strip
+      rangeRects: [18, 27, 35],
+      rangeRowsPx: 5,
+      extra: {
+        r18c: [0.1500, 0.4236282, 0.8500, 0.4291838],
+        r27c: [0.1500, 0.3975332, 0.8500, 0.4030888],
+        r35c: [0.1500, 0.3855162, 0.8500, 0.3910718],
+      },
+      why: 'the MID FIELD at 18 / 27 / 35 m, the band no other shot can see',
+    },
     machine: {
       scenario: 'walk', needsSandbox: false,
       sunDot: 0.45, sunTol: 0.02,
@@ -650,7 +701,13 @@
   // it can be re-applied there with nothing left to drift it before `grab()`.
   let stationClockTarget;
 
-  if (name === 'forestfloor') {
+  // RN-1900. `midfield` takes `forestfloor`'s setup verbatim (teleport, spin to
+  // convergence, pin the sun AFTER the teleport because the solve is against
+  // the observer's own up, then look), at its own site, yaw and pitch. Sharing
+  // the branch rather than copying it is deliberate: the two shots differ only
+  // in the manifest row, and a second hand-written copy of this sequence is how
+  // one of them ends up pinning the sun before the teleport.
+  if (name === 'forestfloor' || name === 'midfield') {
     const w0 = of.world();
     of.teleport(S.lat, S.lon, 2.0);
     await sleep(2.0);
@@ -658,6 +715,11 @@
     while (!of.world().chunks.converged && spin++ < 240) await sleep(0.5);
     await sleep(1.0);
     sun = pin();                     // AFTER the teleport: the solve is against
+    // RN-1900. `midfield` declares `props: false` and this is where it lands,
+    // on `voxelface`'s precedent and its reason (a claim about the ground
+    // cannot be settled through somebody else's leaf cards). `forestfloor`
+    // declares nothing, so it is untouched.
+    if ((A.props ?? S.props) === false) of.propsVisible(false);
     of.look(S.yaw, S.pitch);         // the observer's own up, which just moved
     setup = { teleported: true, converged: of.world().chunks.converged,
       biome: of.world().biome, tickAdvanced: of.world().tick > w0.tick };
@@ -1227,6 +1289,67 @@
    */
   const EXTRA = { ...(S.extra ?? {}), ...(A.extra ?? {}) };
 
+  /**
+   * RN-1900. RANGE-PLACED RECTANGLES, AND THE COMMITTED FRACTIONS BESIDE THEM.
+   *
+   * `groundnear.js` already places a strip by inverting its own flat-plane
+   * `rangeAtRow`, and its note says exactly why a hand-written fraction is not
+   * good enough on its own: at a standing eye the ground past 15 m is
+   * compressed into a few dozen rows just under the horizon, and where those
+   * rows are is a function of the eye height the TERRAIN gives (this pose asks
+   * for 2.0 m and stands at 1.62 m), the pitch and the FOV. A fraction names
+   * one range and reads another the moment the ground moves a few centimetres.
+   *
+   * But a probe that only ever COMPUTES its rectangles leaves the next reader
+   * grid-searching them back out of a PNG, which is the exact complaint RN-1727
+   * fixed for the voxel face's two ground patches. So this does both, and the
+   * disagreement between them is the instrument: `rNN` is computed live from
+   * the observer this capture actually had, `rNNc` is the committed fraction
+   * measured on the build this lane shipped, and the report prints `rangeM` for
+   * both. Equal numbers mean the pose reproduced; unequal numbers mean the eye
+   * moved and say by how much, instead of silently mislabelling a strip.
+   *
+   * Thin (5 rows) and wide, for groundnear's reason: a strip 1120 px across is
+   * 5,600 samples, while one tall enough to feel comfortable would span a factor
+   * of two in range and average away the very gradient it is placed to resolve.
+   */
+  const RANGE_ROWS = A.rangeRowsPx ?? S.rangeRowsPx ?? 5;
+  let rangeAtRow = null;
+  let footAtRow = null;
+  if (Array.isArray(S.rangeRects) || Array.isArray(A.rangeRects)) {
+    const list = A.rangeRects ?? S.rangeRects;
+    const obs = of.world().observer;
+    const eyeM = obs.altM;
+    const pitchDeg = obs.pitchDeg;
+    const fovDeg = A.fovDeg ?? S.fovDeg ?? 60;
+    const half = Math.tan((fovDeg * Math.PI / 180) / 2);
+    rangeAtRow = (fy) => {
+      const ndc = 1 - 2 * fy;
+      const depress = -(pitchDeg * Math.PI / 180) - Math.atan(ndc * half);
+      return depress <= 1e-3 ? Infinity : eyeM / Math.tan(depress);
+    };
+    footAtRow = (fy, H) => {
+      const dy = 1 / Math.max(1, H);
+      const a = rangeAtRow(fy - dy / 2);
+      const b = rangeAtRow(fy + dy / 2);
+      return (Number.isFinite(a) && Number.isFinite(b)) ? Math.abs(a - b) : Infinity;
+    };
+    const rowAtRange = (r) => {
+      const ndc = Math.tan(-(pitchDeg * Math.PI / 180) - Math.atan(eyeM / r)) / half;
+      return (1 - ndc) / 2;
+    };
+    const h = RANGE_ROWS / (2 * (A.rangeH ?? 900));
+    for (const r of list) {
+      const fy = rowAtRange(r);
+      if (!(fy > h && fy < 1 - h)) {
+        return { valid: false, shot: name, why: `rangeRects ${r} m falls off the`
+          + ` frame at eye ${r2(eyeM)} m, pitch ${r2(pitchDeg)}, fov ${fovDeg}`
+          + ` (fy ${r3(fy)}); that is a pose problem, not something to clamp` };
+      }
+      EXTRA[`r${r}`] = [A.rangeX ?? 0.15, fy - h, A.rangeX1 ?? 0.85, fy + h];
+    }
+  }
+
   /** Every named rectangle this shot declares, decoded off ONE capture. */
   const readAll = (g) => {
     const b = [S.box[0] * g.W, S.box[1] * g.H, S.box[2] * g.W, S.box[3] * g.H];
@@ -1396,12 +1519,48 @@
     const e = [f[0] * W, f[1] * H, f[2] * W, f[3] * H];
     extraPx[k] = e.map((v) => Math.round(v));
     extraStat[k] = stat(e[0], e[1], e[2], e[3]);
+    // RN-1900. The RANGE and the pixel FOOTPRINT this rectangle actually landed
+    // at, printed for every extra once a shot declares `rangeRects`, so a
+    // committed fraction (`r27c`) and a live-placed strip (`r27`) can be read
+    // against each other. `footM` is the vertical arm of the max() the shader's
+    // fades read and is NOT the same statement as the range: at a grazing angle
+    // it grows as the SQUARE of the range, so two boxes a factor of two apart
+    // in range are a factor of four apart in the variable the term sees.
+    if (rangeAtRow !== null) {
+      extraStat[k].rangeM = r2(rangeAtRow((f[1] + f[3]) / 2));
+      extraStat[k].footM = r3(footAtRow((f[1] + f[3]) / 2, H));
+    }
   }
   const png = await new Promise((res) => {
     const fr = new FileReader();
     fr.onload = () => res(fr.result);
     fr.readAsDataURL(blob);
   });
+  // RN-1900. AN OPTIONAL UPSCALED CROP OF THE SAME CAPTURE, because this lane's
+  // subject is twenty pixel rows tall and a 1600x900 frame of it is a
+  // deliverable nobody can judge. `{"crop":[x0,y0,x1,y1],"cropScale":4}` in
+  // fractions of the frame. NEAREST-NEIGHBOUR (imageSmoothingEnabled false) on
+  // purpose: a smoothed upscale would invent exactly the mid-frequency content
+  // the frame is being examined for, which is the picture-side version of the
+  // instrument traps this repo catalogues. Off the SAME capture, so it is the
+  // same pixels the numbers above were read from and never a second frame.
+  let cropPng = null;
+  if (Array.isArray(A.crop) && A.crop.length === 4) {
+    const k = Math.max(1, Math.round(A.cropScale ?? 4));
+    const sx = Math.round(A.crop[0] * W); const sy = Math.round(A.crop[1] * H);
+    const sw = Math.max(1, Math.round((A.crop[2] - A.crop[0]) * W));
+    const sh = Math.max(1, Math.round((A.crop[3] - A.crop[1]) * H));
+    const cv = new OffscreenCanvas(sw * k, sh * k);
+    const c2 = cv.getContext('2d');
+    c2.imageSmoothingEnabled = false;
+    c2.drawImage(await createImageBitmap(blob), sx, sy, sw, sh, 0, 0, sw * k, sh * k);
+    const cb = await cv.convertToBlob({ type: 'image/png' });
+    cropPng = await new Promise((res) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.readAsDataURL(cb);
+    });
+  }
 
   const s = of.stats();
   const obs = of.world().observer;
@@ -1444,6 +1603,6 @@
         p99: r2(s.frameMs.p99) },
       passMs: { near: r2(s.passMs.near), post: r2(s.passMs.post),
         total: r2(s.passMs.total) } },
-    setup, log, png,
+    setup, log, png, cropPng,
   };
 })(typeof OF_ARGS === 'undefined' ? {} : OF_ARGS)

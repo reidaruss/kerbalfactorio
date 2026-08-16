@@ -66,6 +66,10 @@
 
 import { TERRAIN_ART_FINE, FINE_CHUNK_M, FINE_LUM_REF }
   from './TerrainFine.glsl.js';
+// RN-1900. The NINTH term, the mid-field layer, on TerrainFine's precedent and
+// for the same 2.2 rule 1 reason. Same leaf discipline: TerrainMid imports
+// nothing, this file imports and re-exports it.
+import { TERRAIN_ART_MID, MID_WA, MID_WB } from './TerrainMid.glsl.js';
 
 /**
  * Hash and value noise. Dave Hoskins' hash13, which is float-only (no integer
@@ -231,11 +235,23 @@ export const TERRAIN_ART_STRATA = /* glsl */`
  * one line below for the surface gradient, so the correct fade costs a length
  * and a smoothstep. Nyquist says a feature is representable while the sample
  * spacing is under half its wavelength; the fade therefore runs from an eighth
- * of the finest octave to a third of it, i.e. it is fully out well before the
- * point at which the signal could fold. `OF_ART_FINE_M` is that wavelength and
- * is passed in rather than duplicated, because a fade keyed on a stale copy of
- * the frequency it protects is a negative control made of a constant copied
- * from the thing it watches, which standing rule 11 already has a scar from.
+ * of the wavelength it is given to a third of it, i.e. it is fully out well
+ * before the point at which the signal could fold. That wavelength is the
+ * `fineM` ARGUMENT and is passed in rather than duplicated, because a fade
+ * keyed on a stale copy of the frequency it protects is a negative control made
+ * of a constant copied from the thing it watches, which standing rule 11
+ * already has a scar from.
+ *
+ * RN-1900 CORRECTS THIS PARAGRAPH ON TWO WORDS. It said `OF_ART_FINE_M`, which
+ * RN-1855 deleted in the same commit that made the fade derived: there is no
+ * such define any more, the value arrives as `uArtFineM` through the argument,
+ * and a docstring naming a dead define is how the next lane greps for an
+ * authority that does not exist. And it said "the finest octave", which is what
+ * the ONE call site happened to pass and is not what this function requires:
+ * `ofArtBumpG` fades whatever height it is handed against whatever wavelength
+ * it is handed, and RN-1900's split relies on that, calling it twice with one
+ * octave and one wavelength each. What the CALLER must guarantee is that
+ * `fineM` is the finest wavelength IN THE HEIGHT IT PASSES.
  *
  * This also subsumes the distance guard it replaces: a terrain triangle a few
  * pixels wide at 200 m has a large footprint by construction, so it is faded
@@ -247,12 +263,26 @@ export const TERRAIN_ART_BUMP = /* glsl */`
   // to differentiate at pixel scale can supply a band-limited pair instead.
   // Everything else, the footprint fade and the surface-gradient algebra, is
   // unchanged to the character and is shared by both entry points.
+  // RN-1900. fineM <= 0 means THE CALLER HAS ALREADY FADED, and it is not a
+  // way to switch the guard off. A caller with a height made of octaves at
+  // different wavelengths cannot be served by one fade (that is the defect this
+  // lane found in hB), and it cannot pre-fade the HEIGHT either, because a
+  // per-pixel weight inside a screen derivative contributes a grad(w) term that
+  // belongs to the weight and not to the ground -- RN-961's own finding, which
+  // lit a ridge along every cell boundary until the two GRADIENTS were blended
+  // instead of the two heights. So the supported shape is: weight each octave's
+  // GRADIENT by that octave's own fade, sum, and pass the sum here with fineM 0.
+  // Passing 0 with an unfaded gradient would alias, and the only thing stopping
+  // that is that the two call sites which do it are three lines away from their
+  // own smoothsteps.
   vec3 ofArtBumpG(vec3 n, vec3 pos, float hx, float hy, float amp, float fineM) {
     if (amp <= 0.0) return n;
     vec3 sx = dFdx(pos);
     vec3 sy = dFdy(pos);
     float footM = max(length(sx), length(sy));
-    amp *= 1.0 - smoothstep(fineM * 0.125, fineM * 0.333, footM);
+    if (fineM > 0.0) {
+      amp *= 1.0 - smoothstep(fineM * 0.125, fineM * 0.333, footM);
+    }
     if (amp <= 0.0) return n;
     vec3 r1 = cross(sy, n);
     vec3 r2 = cross(n, sx);
@@ -331,8 +361,13 @@ export const RELIEF_FINE_TILES = 0.1244;
  *    protecting 4.2 m, i.e. a wavelength that had stopped existing, and the
  *    fade constant was therefore 2.0x too large. `ofArtBumpG` is fully faded at
  *    `fineM * 0.333`, so the term stayed live out to a 1.40 m footprint against
- *    a real Nyquist limit of 1.03 m: 1.33x PAST the fold point, where the
- *    intended design is 1.5x inside it.
+ *    a real Nyquist limit of 1.033 m: 1.354x PAST the fold point, where the
+ *    intended design is 1.5x inside it. (RN-1900 corrects the figure, which
+ *    read 1.33x: 1.33 is the RELIEF term's overshoot, 0.45 * 0.333 = 0.1499
+ *    against a 0.1125 m fold, and the art term's own is 4.2 * 0.333 = 1.3986
+ *    against 1.0332, i.e. 1.354x. The two are close enough that one was
+ *    transcribed for the other, which is why both are now written with their
+ *    arithmetic beside them.)
  *
  * Derived from the octave count, so a tessellation change or a swept octave
  * cannot leave the fade behind again. This is the mirror image of WG-192's own
@@ -344,6 +379,37 @@ export const RELIEF_FINE_TILES = 0.1244;
  * **28.93 / 14.0 = 2.0664 m at the shipped depth.**
  */
 export const ART_FINE_M = FINE_CHUNK_M / ART_OCT_FINE;
+
+/**
+ * RN-1900. THE BUMP'S COARSE OCTAVE, IN METRES, DERIVED THE SAME WAY, AND IT
+ * EXISTS BECAUSE THE COARSE OCTAVE WAS BEING RETIRED AT ITS SIBLING'S NYQUIST
+ * POINT.
+ *
+ * `hB` is a SUM of two octaves, 2.066 m at weight 0.9 and 5.458 m at weight
+ * 0.5, and until this lane it went into ONE `ofArtBump` call with ONE fade,
+ * `uArtFineM`, which is the FINER of the two. So the 5.458 m octave was fully
+ * gone at a 0.688 m footprint (about 30 m at a standing eye) when its own
+ * Nyquist point, at the identical 1.5x margin every fade in this material uses,
+ * is a 1.818 m footprint (about 49 m). A factor of 2.64 in footprint and 1.63
+ * in range, thrown away.
+ *
+ * THIS IS NOT A NEW OBSERVATION, IT IS ONE THIS MATERIAL ALREADY MADE AND ONLY
+ * APPLIED TO THE OTHER TERM. TerrainFine's `ofArtFineHc` note: "Handing it the
+ * whole sum therefore retires the 0.22 m clod octave at the 0.048 m grit
+ * octave's Nyquist point, which is a factor of 4.6 of reach thrown away ... Two
+ * calls, two fades, each protecting its own content." The near-field layer was
+ * built with two calls from the start; the vnoise bump it sits on never got the
+ * same treatment, and the 5.458 m octave is exactly the mid-field wavelength
+ * RN-1900 is about, so the first half of this lane's fix is a term the ground
+ * already had and could not show.
+ *
+ * DERIVED, not written, for ART_FINE_M's reason exactly: the octave count is a
+ * define the noise call site reads too, so the wavelength and the fade that
+ * protects it cannot be two numbers that agreed once.
+ *
+ * **28.93 / 5.3 = 5.4585 m at the shipped depth.**
+ */
+export const ART_COARSE_M = FINE_CHUNK_M / ART_OCT_COARSE;
 
 /**
  * The relief texture's finest authored wavelength IN METRES, feeding
@@ -1012,6 +1078,10 @@ export const TEX_FINE_REPEATS = 47.0;
 export { TERRAIN_ART_FINE, FINE_A, FINE_R, FINE_B, FINE_W, FINE_CHUNK_M,
   FINE_M, FINE_BUMP, FINE_ALB, FINE_LUM_REF } from './TerrainFine.glsl.js';
 
+// RN-1900. The mid-field layer, re-exported for the identical reason.
+export { TERRAIN_ART_MID, MID_A_M, MID_B_M, MID_WA, MID_WB, MID_ALB }
+  from './TerrainMid.glsl.js';
+
 // RN-1855. OF_ART_FINE_M and OF_RELIEF_FINE_M are GONE rather than left behind,
 // on RN-1005's rule exactly: they are uniforms now (uArtFineM, uReliefFineM),
 // and a dead define that still compiles is how a lane ends up sweeping one
@@ -1027,6 +1097,12 @@ export const TERRAIN_ART_PARS = `#define OF_ART_OCT_FINE ${ART_OCT_FINE.toFixed(
   + `#define OF_TEX_SCALE_GAIN ${TEX_SCALE_GAIN.toFixed(2)}\n`
   + `#define OF_TEX_FINE ${TEX_FINE_REPEATS.toFixed(1)}\n`
   + `#define OF_ROUGH_GRAIN ${ROUGH_GRAIN.toFixed(1)}\n`
+  // RN-1900. The mid-field layer's two octave weights. DEFINES and not
+  // uniforms, and TerrainMid's MID_WA docstring says why: the balance between
+  // them is not a live question, while the two WAVELENGTHS and the amplitude
+  // are, and those are uniforms (uMidM, uMidAmp).
+  + `#define OF_MID_WA ${MID_WA.toFixed(2)}\n`
+  + `#define OF_MID_WB ${MID_WB.toFixed(2)}\n`
   // RN-1005. OF_REL_CELL and OF_REL_CELL_NOISE are GONE rather than left
   // behind: they are uniforms now (uReliefCell, uReliefCellNoise), and a dead
   // define that still compiles is exactly how a lane ends up sweeping one
@@ -1034,4 +1110,7 @@ export const TERRAIN_ART_PARS = `#define OF_ART_OCT_FINE ${ART_OCT_FINE.toFixed(
   // remain the boot defaults, in TypeScript, with one home each.
   + TERRAIN_ART_NOISE + TERRAIN_ART_MACRO + TERRAIN_ART_STRATA + TERRAIN_ART_BUMP
   + TERRAIN_ART_WET + TERRAIN_ART_TEX + TERRAIN_ART_RELIEF + TERRAIN_ART_FINE
+  // RN-1900. AFTER TERRAIN_ART_NOISE, which is not cosmetic: ofArtMid calls
+  // ofArtVnoise and GLSL ES 1.0 requires a function to be declared before use.
+  + TERRAIN_ART_MID
   + TERRAIN_ART_SPEC;
