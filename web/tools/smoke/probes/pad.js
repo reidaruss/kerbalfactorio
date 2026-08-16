@@ -355,13 +355,43 @@
       }
     }
   };
-  {
+  // GP-967's PAIRED CONTROL, TAKEN BEFORE THE PAD EXISTS. The same standoff and
+  // the same single `aimAt(padC)` that section 3b reads after the pad is down,
+  // read here on the bare platform. Without this pair, an "after" reading that
+  // resolves the wrong block proves only that something is wrong, and GP-937
+  // attributed exactly that reading to the pad's body without ever taking the
+  // "before". Logged unconditionally and asserted in 3b against its own pair.
+  const standOffPad = async () => {
     const STANDOFF_M = 3;
     const standAt = { x: padC.x - site.north.x * STANDOFF_M,
       y: padC.y - site.north.y * STANDOFF_M, z: padC.z - site.north.z * STANDOFF_M };
     const cr = Math.hypot(standAt.x, standAt.y, standAt.z) || 1;
     of.teleport(latDeg(standAt.y, cr), Math.atan2(standAt.z, standAt.x) * D, 0);
     await sleep(0.6);
+  };
+  // How far along the CURRENT aim ray the first solid of ANY kind sits, marched
+  // in probe space with `of.solidBuild` (which tests every solid, unfiltered, and
+  // is the walker's own question). This is the instrument that says whether a
+  // vantage is genuinely occluded, as opposed to merely believed to be: -1 means
+  // the ray reaches 24 m of `REACH_M` without meeting anything solid.
+  const firstSolidT = () => {
+    const a = aimRay();
+    for (let t = 0.2; t <= 24; t += 0.2) {
+      if (of.solidBuild(a.origin[0] + a.dir[0] * t, a.origin[1] + a.dir[1] * t,
+        a.origin[2] + a.dir[2] * t) === true) return +t.toFixed(2);
+    }
+    return -1;
+  };
+  await standOffPad();
+  await aimAt(padC);
+  await sleep(0.2);
+  const gBefore = ghost();
+  const tSolidBefore = firstSolidT();
+  log.push(`GP-967 control, ONE aim at [${i0},${j0},0] with NO pad placed: `
+    + `addr ${JSON.stringify(gBefore?.addr)} (ok ${gBefore?.ok}), `
+    + `first solid on the ray ${tSolidBefore} m`);
+  {
+    await standOffPad();
     await aimAtPadBlock();
   }
   await sleep(0.2);
@@ -382,6 +412,199 @@
   const pad = pads.list[pads.list.length - 1];
   if (pad === undefined) return { valid: false, fails, log, why: 'no pad placed' };
   log.push(`pad #${pad.id} site ${pad.siteId} cell ${pad.i},${pad.j},${pad.level}`);
+
+  // ======================================================================
+  // 3b. GP-967. THE OCCLUDED AIM, WHICH GP-937 COULD ONLY WORK AROUND.
+  //
+  // GP-937 measured that once pad #1 is down, EVERY vantage that looks at its
+  // own block resolves a different block off the pad's flank -- five were
+  // tried, all wrong the same way -- and re-aimed the overlap control at a
+  // second, unobstructed block rather than fix it.
+  //
+  // GP-968 fixed it, AND NOT BY CHANGING ANYTHING ABOUT THE PAD. The cause is
+  // `MIN_PLACE_M` in `StructurePlacement.aimHit`: a hit inside 3.2 m was pushed
+  // out to `FALLBACK_M` (6.0 m) instead of to the 3.2 m that rejected it, which
+  // on the 4 m module lands in the next cell. The pair below is what proves the
+  // pad was never the cause: the SAME standoff and the SAME one aim, read once
+  // with no pad in the world and once with pad #1 standing on the block, return
+  // the same answer. (The candidate fix that DID target the pad, GP-966, was
+  // built, measured to move nothing here, and reverted; its numbers are in
+  // `aimHit`'s header.)
+  //
+  // So this stands exactly where GP-937 stood, aims at pad #1's OWN block
+  // centre, and asserts the ghost names that block. THERE IS NO HILL-CLIMB
+  // HERE ON PURPOSE: `aimAtPadBlock`'s sweep exists to nudge past a flat-plane
+  // tolerance, and letting it run would let a sweep that happened to stumble
+  // onto the right cell stand in for an aim that resolved it. One aim, one
+  // read.
+  //
+  // ITS ON-SCENE CONTROL IS SECTION 4 BELOW, unchanged: `of.solidBuild` still
+  // finds the pad's deck, launch table and tower solid. That is what separates
+  // "the aim stopped reading addresses off the pad" from "the pad stopped being
+  // solid", and only the first of those is what changed.
+  {
+    const STANDOFF_M = 3;
+    const standAt = { x: padC.x - site.north.x * STANDOFF_M,
+      y: padC.y - site.north.y * STANDOFF_M, z: padC.z - site.north.z * STANDOFF_M };
+    const cr = Math.hypot(standAt.x, standAt.y, standAt.z) || 1;
+    of.teleport(latDeg(standAt.y, cr), Math.atan2(standAt.z, standAt.x) * D, 0);
+    await sleep(0.5);
+    await aimAt(padC);
+    await sleep(0.2);
+    const gOcc = ghost();
+    const tSolidAfter = firstSolidT();
+    log.push(`GP-967 occluded aim at pad #${pad.id}'s own block `
+      + `[${i0},${j0},0]: addr ${JSON.stringify(gOcc?.addr)}, `
+      + `first solid on the ray ${tSolidAfter} m (was ${tSolidBefore} m with no `
+      + `pad), ghost ${JSON.stringify(gOcc)}`);
+    // THE VANTAGE IS REALLY OCCLUDED, asserted rather than assumed. Without
+    // this the pair below is vacuous: two identical readings prove nothing if
+    // the pad was never in the ray to begin with, and "believed occluded" is
+    // exactly what GP-937 had.
+    check('GP-967 fixture: the placed pad genuinely intersects this aim ray, '
+      + 'so the vantage really is occluded',
+      tSolidAfter >= 0 && (tSolidBefore < 0 || tSolidAfter < tSolidBefore - 1e-9),
+      `before ${tSolidBefore} m, after ${tSolidAfter} m`);
+    // ONE CAUSE WAS FOUND AND FIXED, AND ONE IS STILL OPEN. GP-968 alone made
+    // this answer right: the near-hit push-out now goes to `MIN_PLACE_M` rather
+    // than `FALLBACK_M`. GP-966, which would have stopped the aim reading an
+    // address off a pad's FLANK, was built, measured to move nothing here, and
+    // REVERTED (see line ~430 above and `StructurePlacement.aimHit`'s header),
+    // so the flank misread is NOT closed -- this file measures it live in the
+    // GP-969 block below, at `[-2,-4,3]`. These assertions therefore credit
+    // GP-968 only, and they pass because the hit at this standoff is inside the
+    // clamp and never reaches the flank path at all.
+    //
+    // FIRST, THE ABSOLUTE CELL. Before GP-968 this read `[-3,-2,0]` for
+    // `[-3,-3,0]` from every vantage tried, with no pad in the world at all.
+    check('GP-968: ONE aim at the block centre resolves THAT block, with no '
+      + 'hill-climb and no pad in the world',
+      wantsBlock(gBefore), JSON.stringify(gBefore?.addr));
+    check('GP-967: and aiming across the placed 28 m pad resolves it too',
+      wantsBlock(gOcc), JSON.stringify(gOcc?.addr));
+    // SECOND, THE PAIR. Placing a pad must not move the answer at all.
+    check('GP-967: the placed 28 m pad does NOT move the block the aim '
+      + 'resolves -- same standoff, same one aim, same answer',
+      gOcc !== null && gBefore !== null && gOcc.addr !== null
+        && gBefore.addr !== null && gOcc.addr[0] === gBefore.addr[0]
+        && gOcc.addr[1] === gBefore.addr[1] && gOcc.addr[2] === gBefore.addr[2],
+      `no pad ${JSON.stringify(gBefore?.addr)} -> pad `
+        + `${JSON.stringify(gOcc?.addr)}`);
+    // AND IT IS REFUSED BY OVERLAP, which is the sentence GP-937 wanted and
+    // could not get: the true block is the one pad #1 is standing on.
+    check('GP-967: and that block is refused BY OVERLAP, naming the pad that '
+      + 'is standing on it',
+      gOcc !== null && gOcc.ok === false
+        && new RegExp(`too close to launch pad #${pad.id}`).test(gOcc.reason),
+      gOcc?.reason);
+  }
+
+  // GP-969, REWRITTEN AFTER A FRESH-CONTEXT VERIFIER FALSIFIED ITS FIRST
+  // VERSION. THE LESSON IS ABOUT THE SWEEP, NOT ABOUT THE PAD.
+  //
+  // The first version of this block swept the pad's vertical at TWO COLUMNS,
+  // `ds` 0 and `ds` +8, reported a collision crown of 2.0 m against a 28 m mesh,
+  // and concluded that the pad's `col_*` proxies are a knee-high stub wearing a
+  // fourteen-storey silhouette. **That was the instrument, not the pad.**
+  // `col_LaunchTower` sits at pad-local x about -8, the exact MIRROR of the one
+  // off-centre column sampled, and it spans 2.00 to 28.00 m; `padProxies`
+  // (LaunchPadModule.ts) adopts every `col_` node except `col_LaunchClamp`, so
+  // the tower is in the marched set and always was. Two columns through a 24 m
+  // plan is not a crown, it is two columns.
+  //
+  // So the sweep now scans the WHOLE PLAN, descending, and stops at the first
+  // height that has any solid anywhere in it -- and it publishes WHERE, because
+  // a crown with no location is the same unfalsifiable number the first version
+  // shipped. What survives is the corrected fact: the pad's collider reaches its
+  // mesh crown, and the pad IS a tall body to the aim.
+  //
+  // NONE OF THAT REVIVES THE OCCLUSION PREMISE, which is a separate measurement
+  // and still stands: with NO pad in the world at all, the same standoff and the
+  // same one aim resolve the same block, so the misresolve GP-937 attributed to
+  // the pad was never the pad's. See GP-968 in `StructurePlacement.aimHit`.
+  {
+    // Section 4's own `at(du, ds, df)` arithmetic, needed here first. Section 4
+    // keeps its copy: this one exists before the pad's side axis is derived
+    // there, and duplicating three cross-product lines is cheaper than moving a
+    // block of assertions around them.
+    const sd = { x: pad.up.y * pad.fwd.z - pad.up.z * pad.fwd.y,
+      y: pad.up.z * pad.fwd.x - pad.up.x * pad.fwd.z,
+      z: pad.up.x * pad.fwd.y - pad.up.y * pad.fwd.x };
+    const atPad = (du, ds, df) => of.solidBuild(
+      pad.pos.x + pad.up.x * du + sd.x * ds + pad.fwd.x * df,
+      pad.pos.y + pad.up.y * du + sd.y * ds + pad.fwd.y * df,
+      pad.pos.z + pad.up.z * du + sd.z * ds + pad.fwd.z * df);
+    // The full 24 m plan at 1 m, descending in 0.5 m. HALF is the pad's own
+    // half-span read off the module rather than typed, so a re-formed pad is
+    // still swept edge to edge.
+    const HALF_M = m.spanM / 2;
+    let crownM = 0, crownAt = null;
+    for (let du = 28; du >= 0.5 && crownM === 0; du -= 0.5) {
+      for (let ds = -HALF_M; ds <= HALF_M && crownM === 0; ds += 1) {
+        for (let df = -HALF_M; df <= HALF_M && crownM === 0; df += 1) {
+          if (atPad(du, ds, df) === true) { crownM = du; crownAt = [ds, df]; }
+        }
+      }
+    }
+    // A REAL AIM AT THE TOWER THE SWEEP JUST FOUND, not at the pad centre. The
+    // first version aimed 15 m above the centre, where nothing but the launch
+    // mount at 2 m lives, and read "no solid" as a fact about the pad.
+    const STAND_M = 14, UP_M = crownM * 0.6;
+    const twr = crownAt === null ? { s: 0, f: 0 } : { s: crownAt[0], f: crownAt[1] };
+    const tgt = { x: pad.pos.x + pad.up.x * UP_M + sd.x * twr.s + pad.fwd.x * twr.f,
+      y: pad.pos.y + pad.up.y * UP_M + sd.y * twr.s + pad.fwd.y * twr.f,
+      z: pad.pos.z + pad.up.z * UP_M + sd.z * twr.s + pad.fwd.z * twr.f };
+    const sa = { x: tgt.x - site.north.x * STAND_M,
+      y: tgt.y - site.north.y * STAND_M, z: tgt.z - site.north.z * STAND_M };
+    const cr = Math.hypot(sa.x, sa.y, sa.z) || 1;
+    of.teleport(latDeg(sa.y, cr), Math.atan2(sa.z, sa.x) * D, 0);
+    await sleep(0.5);
+    await aimAt(tgt);
+    await sleep(0.2);
+    const tTower = firstSolidT();
+    const gTower = ghost();
+    log.push(`GP-969: pad mesh height ${m.heightM} m, COLLISION crown ${crownM} m `
+      + `at side/fwd ${JSON.stringify(crownAt)}; a real aim from ${STAND_M} m `
+      + `back at ${UP_M.toFixed(1)} m up THAT column meets its first solid at `
+      + `${tTower} m, ghost addr ${JSON.stringify(gTower?.addr)} ok `
+      + `${gTower?.ok} "${gTower?.reason}"`);
+    // OPEN, MEASURED, AND DELIBERATELY NOT ASSERTED EITHER WAY. This is the one
+    // case GP-966 was built for and the A/B at the 3 m standoff could not see: a
+    // flank hit BEYOND `MIN_PLACE_M`, which only the tower offers. The level in
+    // that addr is `padBlockAt` reading the hit's height as a storey
+    // (`round(l.z / storey)`, clamped to MAX_LEVEL), so a pad ghost is addressed
+    // at a storey the platform does not have.
+    //
+    // It is NOT asserted green here because it is not fixed, and it is not
+    // asserted red because a probe that gates on a defect goes green the day
+    // somebody fixes it. It is published, with its reason string, so the next
+    // lane inherits a reading instead of a suspicion. The assertion belongs on
+    // this line the day the storey stops being invented.
+    //
+    // THE SEVERITY IS WORSE THAN THIS ONE READING SHOWS, and the distinction
+    // matters to whoever takes the `basePart` pass. On THIS base the misread is
+    // legibility only: `[-2,-4,3]` refuses structurally, because level 3 has no
+    // decks and an invented storey cannot manufacture the 36 real deck parts
+    // `missingDecks` counts. But that is a property of this fixture, not of the
+    // defect. On a base that genuinely HAS a 6 x 6 platform at the invented
+    // level, the same flank read resolves a LEGAL, GREEN ghost at a cell the
+    // player never aimed at -- and `overlapping()` only rejects pads sharing a
+    // level, so a pad already standing at level 0 does not refuse it either.
+    // The real worst case is therefore a wrong-but-placeable pad that looks
+    // correct right up to the press, which is a different class from a confusing
+    // refusal. Any fix should be judged against THAT case, and a multi-storey
+    // fixture is what would demonstrate it.
+    check('GP-969: the collision crown REACHES the mesh height, so the pad '
+      + 'proxies are not the knee-high stub a two-column sweep reported',
+      crownM >= m.heightM - 1, `${crownM} m of ${m.heightM} m`);
+    check('GP-969 fixture: the crown is OFF the pad centre line, which is why '
+      + 'sampling the centre and one side walked straight past it',
+      crownAt !== null && Math.abs(crownAt[0]) > 1,
+      JSON.stringify(crownAt));
+    check('GP-969: and a real aim up that column DOES meet the pad, so the pad '
+      + 'is a genuine tall body to the aim march',
+      tTower > 0, `${tTower} m`);
+  }
 
   await sleep(0.2);
   // GP-935 to GP-949, RE-DIAGNOSED: GP-924's "march-tolerance class" GUESS

@@ -154,8 +154,15 @@ TEST(survival_status_distinguishes_prereq_from_cost) {
 // -----------------------------------------------------------------------------
 // D3. DW-29's MILESTONE: the autopilot is EARNED and then bought. Science alone
 //     never buys it, and the refusal names the deed rather than the cost.
+//
+//     GP-965: THE DEED IS BOARDING THE STATION. It was `ReachedOrbit` until the
+//     tech and Reid's task-39 ordering ruling were reconciled; `ReachedOrbit` is
+//     now this test's negative control, which is the strongest place for it,
+//     because reaching orbit is a rung the player passes ON THE WAY to the
+//     station and an autopilot that opened there would be available for the
+//     hand-flown mission it exists to sit behind.
 // -----------------------------------------------------------------------------
-TEST(survival_autopilot_needs_the_orbit_flown_by_hand) {
+TEST(survival_autopilot_needs_the_station_boarded_by_hand) {
   SliceRegistry reg = makeSurvivalReg();
   TechTree tree = survivalTechTree();
   ResearchState rs(tree);
@@ -174,9 +181,9 @@ TEST(survival_autopilot_needs_the_orbit_flown_by_hand) {
   CHECK(!rs.canResearch(techs::FlightAutopilot, science));
   ResearchStatus s = rs.status(techs::FlightAutopilot, science);
   CHECK(s.block == ResearchBlock::MilestoneMissing);
-  CHECK(s.milestone == milestones::ReachedOrbit);
+  CHECK(s.milestone == milestones::StationBoarded);
   CHECK(!rs.milestoneMet(techs::FlightAutopilot));
-  CHECK(!rs.hasMilestone(milestones::ReachedOrbit));
+  CHECK(!rs.hasMilestone(milestones::StationBoarded));
 
   const uint32_t before = science.count(items::AutomationScience);
   CHECK(!rs.tryResearch(techs::FlightAutopilot, science));
@@ -188,12 +195,25 @@ TEST(survival_autopilot_needs_the_orbit_flown_by_hand) {
   CHECK(rs.status(techs::FlightAutopilot, science).block
         == ResearchBlock::MilestoneMissing);
 
-  // The right one does, and it is monotonic and dedup-safe.
+  // GP-965's OWN NEGATIVE CONTROL, and the one that encodes the ruling:
+  // REACHING ORBIT IS NOT ENOUGH. This is the state a player is in when they
+  // have flown to orbit and are on their way to Anchorage, which is precisely
+  // the mission task 39 says must be hand flown, so the autopilot must still be
+  // shut here.
   CHECK(rs.setMilestone(milestones::ReachedOrbit));
-  CHECK(!rs.setMilestone(milestones::ReachedOrbit));   // already earned
-  // 3, not 2: RuinInvestigated (granted above for Electrification), then
-  // LandedOffWorld, then ReachedOrbit.
-  CHECK(rs.milestones().size() == 3);
+  CHECK(rs.hasMilestone(milestones::ReachedOrbit));
+  CHECK(!rs.canResearch(techs::FlightAutopilot, science));
+  CHECK(rs.status(techs::FlightAutopilot, science).block
+        == ResearchBlock::MilestoneMissing);
+  CHECK(rs.status(techs::FlightAutopilot, science).milestone
+        == milestones::StationBoarded);
+
+  // The right one does, and it is monotonic and dedup-safe.
+  CHECK(rs.setMilestone(milestones::StationBoarded));
+  CHECK(!rs.setMilestone(milestones::StationBoarded));   // already earned
+  // 4, not 3: RuinInvestigated (granted above for Electrification), then
+  // LandedOffWorld, then ReachedOrbit, then StationBoarded.
+  CHECK(rs.milestones().size() == 4);
   CHECK(rs.canResearch(techs::FlightAutopilot, science));
   CHECK(rs.tryResearch(techs::FlightAutopilot, science));
   CHECK(rs.isUnlocked(techs::FlightAutopilot));
@@ -384,8 +404,15 @@ TEST(survival_tree_shape_and_id_space) {
   // this asserts the direction rather than the presence: exactly one of the two
   // carries a milestone, and it is the autopilot.
   CHECK(tree.tech(techs::LaunchFacilities)->requiresMilestone == kNoMilestone);
+  // GP-965. THE FAR END MOVED FURTHER OUT, and this line is the tech-tree half
+  // of the reconciliation `FlightAuto.ts` already shipped: the autopilot's deed
+  // is boarding the station, which is what `story_line_outline_v1.txt` awards
+  // it for and what Reid's task-39 ruling orders it behind.
   CHECK(tree.tech(techs::FlightAutopilot)->requiresMilestone
-        == milestones::ReachedOrbit);
+        == milestones::StationBoarded);
+  // AND IT IS NOT THE ORBIT ANY MORE, asserted by name so a revert is loud.
+  CHECK(tree.tech(techs::FlightAutopilot)->requiresMilestone
+        != milestones::ReachedOrbit);
   // L7 (GP-546 to GP-549). Electrification carries its OWN milestone, distinct
   // from the autopilot's, so a save with one earned and not the other is a
   // real and reachable state rather than the two ids silently meaning the
@@ -445,6 +472,8 @@ TEST(survival_tree_shape_and_id_space) {
   // Electrification restored above via restoreUnlocked with NO milestone set
   // proves the same: restore bypasses the gate rather than earning it.
   CHECK(!rs.hasMilestone(milestones::ReachedOrbit));
+  // GP-965: and the one the autopilot actually reads now.
+  CHECK(!rs.hasMilestone(milestones::StationBoarded));
   CHECK(!rs.hasMilestone(milestones::RuinInvestigated));
 }
 
