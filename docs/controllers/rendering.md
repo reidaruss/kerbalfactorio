@@ -715,6 +715,65 @@ shot should be treated as a baseline or a target until the hull's drawn pose
 is instrumented and shown to track the live carrier frame. See RN-1810 in
 `docs/web/NUMBERS.md`.
 
+**REPRODUCIBILITY RESTORED (CE-115 to CE-117, 2026-08-15, `lane/station-pose`).
+THE GRADE IS STILL NOT PUBLISHED, AND THE REASON HAS CHANGED.**
+
+The suspect above was right about the class and one hop off about the target.
+The DRAWN HULL has one live writer: `installAndMountStation`'s install-time
+`view.place` is overwritten by `CarrierMount`'s watcher within one frame, and
+the two are bitwise equal at the install tick anyway. **The second live
+authority was the station's PUBLISHED ATTITUDE**: `of.station().axes` was
+`stationQuat(pos)`, and this shot AIMS ITS CAMERA WITH IT
+(`of.station().axes.along` -> `fwd` -> `of.look`) while standing on geometry
+posed at `poseAt(t) . local`. Measured (`probes/stationpose.js`): **0.230 deg
+apart at tick 121 growing linearly to 1.373 deg at tick 721, 0.00190 deg/tick
+and unbounded over an orbit, with the positions agreeing to 0 m exactly.** Fixed
+by making `stationAxes` read the mounted solid; after, 0 to 2.7e-6 deg and flat.
+The driven-clock hypothesis is falsified rather than left open (`drawn` +30 over
+`of.run(1.0, 30)` and +15 while paused). See core-engine.md section 5n.
+
+**THE SCENE SWAP IS GONE. A LIGHTING BAND IS NOT, AND THIS ENTRY PUBLISHES THE
+BAND RATHER THAN THE BEST RUN**, because the best run is exactly what RN-1810
+had to retract. All captures on a locally built, `vite preview`-served
+(127.0.0.1, sentinel-verified), real D3D11 headless Chrome.
+
+| tree | captures | box luma | ratio |
+|---|---|---|---|
+| pre-fix, RN-1810's verifier | 4 | 2.46, 40.29, 30.98, 2.89 | **16.4** |
+| pre-fix, RN-1800 | 3 | 21.78, 3.73, 5.69 | 5.8 |
+| fixed, base `8b324ee` | 3 consecutive | **14.84** three times, rgb 14.68/15.21/11.69, p50 7.64, loFrac 0.883, hiFrac 0.004, identical to every published digit | **1.00** |
+| fixed, base `8b324ee` | 9 across the session | 13.81 to 15.47 | 1.12 |
+| fixed, **rebased onto `ac6c38f`** (terrain relief merged) | 3 | 15.52, 13.82, 15.89 | **1.15** |
+
+**The identical-to-the-digit triple did NOT survive the rebase, and that is
+reported rather than quietly re-run until it did.** On the rebased tree the
+residual tracks the whole frame: `world.luma` 31.43 / 47.55 / 38.68 and
+`world.loFrac` 0.511 to 0.615 move together with the box, on captures whose
+camera eye, look direction, `elapsed`-since-stamp (272), `eyeDistM` (4.32),
+`yawDeg` (255.35) and `sunBearingDeg` (49.09) are all identical to full float
+precision. The planet is most of the IBL a sealed hull 400 km up receives, so
+how much terrain has streamed by capture time reaches the hull's fill light.
+**That is a terrain-streaming determinism question, not a pose question**, it is
+a 15 per cent band rather than a 16.4x scene swap, and it is named here as the
+next thing standing between this shot and a target grade.
+
+**AND THE FRAMING CONSTANTS ARE NOW STALE BY EXACTLY THE BUG, WHICH IS THIS
+DOMAIN'S CALL AND IS DELIBERATELY NOT MADE HERE.** The yaw solve moves from
+**244.15 to 255.35 deg** because it is now solved against the attitude the hull
+is really drawn with. `yawOff: 45`, `back: true` and `pitch: 3` were chosen
+against the pre-fix bearing, so the reproducible frame is the station's INTERIOR
+(a hall of riveted panels, a floor, no stars:
+`docs/screenshots/CE115_station_repro.png`, one of the three identical captures,
+confirmed by eye) while this entry's own MUST SHOW says "a lit, readable hull
+against the star field". **So the grade stays UNMEASURED for one more pass, on a
+framing reason and a fill-light reason rather than on the instrument reason it
+was marked for**: re-choose `yawOff` against the corrected bearing, settle the
+terrain-streaming band above, then re-take three. A lane doing that should sweep
+`yawOff` with
+`--evalargs='{"shot":"station","yawOff":N}'` rather than solving it on paper;
+the aim is 45 deg off aft from the vestibule socket at station-local
+(3.47, 0, 1.98) and the blown bulkhead is the way out.
+
 ## 2.8 THE LOOK AUDIT (RN-1710 to RN-1726, 2026-08-15, `lane/look-audit`). WHAT STILL READS UNFINISHED, RANKED
 
 All seven canonical shots re-captured at current `main` on real Windows D3D11
