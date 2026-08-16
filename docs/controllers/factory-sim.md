@@ -291,6 +291,62 @@ the screen does not" gaps: belt direction, machine port faces, and why a machine
   `.fix` are finished English composed inline at five branches; nothing asserts on them. When
   D-FS-97's enum lands, both should migrate behind it rather than a third vocabulary appearing.
 
+### FS-159 to FS-163 (2026-08-16) — the electric smelter could not be powered at all
+
+`lane/esmelter-power`. A real player-facing defect, latent since FS-73 rescaled the machine set
+to 4 m, found by the FS-144 clash retune and confirmed independently by a fresh-context verifier
+that swept all 289 offsets in a 17x17 block around one pole and found **zero** legal cells on
+which an electric smelter attaches. On a tier-0 grid, on a single site, there was no layout that
+could power one.
+
+- **D-FS-159. The supply radius is measured from the pole's CENTRE to the machine's NEAREST
+  FACE, not to its centre.** Two rules were measuring the same pair of machines with two
+  different rulers. The placement rule spaces machines by their HOUSINGS, so the closest legal
+  cell for footprint `f` beside a 1 m pole is `ceil((1 + f) / 2)` cells; the power rule compared
+  centre to centre against 2.5 m. Coverage was therefore a function of how BIG a machine is
+  rather than how CLOSE it is: at their own closest legal cells the 2 m generator (2 cells,
+  2.000 m), the 4 m esmelter (3 cells, 3.000 m) and the 8 m assembler (5 cells, 5.000 m) all
+  stand the same **0.500 m** of clear air from the pole and got three different answers. Face
+  distance collapses them to one answer and is what "5x5 supply area" in `power.h`'s header
+  always meant. `power.h` `Node` gains `halfExtentMm`, `addConsumer` a defaulted trailing
+  `footprintM`, `automation.h::connectToGrid` supplies it. **A zero half-extent is exactly the
+  old rule**, so every pre-existing caller and every raw-grid test is unchanged.
+- **D-FS-160. `poleClassDef`'s 2.5 m is UNCHANGED, and re-deriving it was rejected on its own
+  arithmetic.** Deriving the radius from "the largest consumer's closest legal cell" is the fix
+  this defect invites. It needs > 3.000 m today and > 5.010 m the moment the 8 m assembler draws
+  watts, and 5.010 m is larger than the Medium pole (3.5 m) and over half the Substation
+  (9.0 m). It destroys the pole ladder and still strands the next machine that gets rescaled.
+  The number was never wrong; the thing it was compared against was.
+- **D-FS-161. /core mirrors the footprint table (`buildKindFootprintM`) and the mirror is
+  CHECKED.** The client owns `FactoryKinds.ts::FOOTPRINT` and cannot reach `addConsumer` without
+  a new wasm export, which is an `of_abi_version` strict-equality handshake the release lane
+  owns. So /core carries a copy, exactly as `GeneratorSpec::typeId` mirrors ASSET-SPECS. An
+  unchecked copy is how FS-73 caused this, so `probes/power.js`'s COVERAGE section derives the
+  mating cells from FOOTPRINT read live out of the running client and asserts /core's own
+  network id against them. Drift fails a probe instead of killing a machine quietly.
+  Also rejected: reusing `of_net_set_placement`'s `boundCm`, which is a circumscribed
+  render-culling radius (`FOOTPRINT x 70`) owned by the render lane, does not exist for
+  generators, and is stamped on a separate cadence from placement.
+- **D-FS-162. Generators stay POINTS, deliberately.** They already reach (2.000 m against
+  2.500 m) and there is no larger generator kind to strand, so there is no defect here. Widening
+  them to 3.5 m would silently re-attach generators in already-saved worlds and would eat
+  `genpole.js`'s off-grid control, which only guards 0.6 m above the radius. That is the balance
+  change FS-73 declined to make without this lane's number, and it wants its own pass.
+- **D-FS-163. The claim is bounded to a SINGLE SITE.** `machineClash` skips pairs on different
+  sites while `FactoryCommit` uses one anchor for the whole plan, so two machines straddling a
+  site boundary (`SITE_REACH_M` 64) are never clash-checked against each other. Nobody has
+  constructed that case and it is degenerate, but "no legal layout of any shape" would be
+  over-broad and the headers say so.
+
+Coverage at the closest legal cell, before -> after: belt 1 m/1 cell YES->YES, generator
+2 m/2 cells YES->YES, **miner, smelter, esmelter and chest 4 m/3 cells NO->YES**, **assembler
+8 m/5 cells NO->YES**. Every kind of 4 m and up was stranded; all are now covered with ~1.5 m of
+margin. `power.js` green (`attached: 4 consumer(s)`, and its headline
+`demand 120000 W / capacity 90000 W / q16 49152` case reachable for the first time), `gp49.js`,
+`buildghost.js`, `machineports.js`, `factoryshot.js` unregressed, ctest 42/42, tsc and vite
+clean. **ABI stays 26, SAVE_VERSION stays 5, and `dist`/`expected.json` are not committed, so
+the served build does not carry this until the release lane rebuilds the wasm.**
+
 ## 4. Architecture & approach
 - **Sim layout:** components in SoA arrays; systems iterate contiguously. Entities placed on terrain surfaces (world-gen) at grid-snapped or free 3D transforms.
 - **Belts:** a belt *segment* stores a flow plus discrete item slots as positions along the segment; only segment heads/tails interact with inserters/machines, avoids per-item objects. Rendering instances item meshes from this state (or a flow texture at distance).
