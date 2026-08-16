@@ -2055,6 +2055,13 @@ def _stone_albedo(w, h, height, aux):
 #     reading as a repeat: a regular course grid is what the eye EXPECTS from
 #     masonry, so the repeat it can still find is the per-block TONE
 #     signature, not the geometry.
+#     ** RN-1970 CORRECTED THE SECOND HALF OF THAT SENTENCE AND KEPT THE
+#     FIRST. The per-block tone was not the anti-tiling term, it WAS the
+#     tiling term: ten independent draws over a ten-block tile average four
+#     at a time down a column and cannot be flat, so the tile shipped with a
+#     light half and a dark half and a 35 m cella laid 19.6 copies of it.
+#     Diagnosis, the arithmetic, the four terms that replace it and the gate
+#     that can finally see any of it are all at THE TONE FIELD below. **
 #
 # THE ANTI-REPEAT ARGUMENT, STATED AS A MEASUREMENT RATHER THAN A HOPE. At
 # 1.8 m the ruin still carries 19.6 tiles across. Three things are done about
@@ -2071,6 +2078,14 @@ def _stone_albedo(w, h, height, aux):
 #   3. The staining is DIRECTIONAL (it runs down from bed joints), which is
 #      the one cue in this family that tells the eye which way is up and is
 #      therefore the one an isotropic fracture field could never give it.
+#   4. RN-1970. THE TONE IS BLENDED ACROSS THE FACE, and it carries a
+#      per-course term and two within-block terms that are column-neutral by
+#      construction. Measured on the shipped map, the column-averaged luma of
+#      this tile fell from 7.13 counts to 3.35 and its correlation at half
+#      the tile from -0.68 to -0.04, with the per-block contrast held to the
+#      same 0.247 it had before. Items 1 to 3 were all correct and none of
+#      them was sufficient, because all three are about the BOND and the
+#      repeat that survived was in the PIGMENT.
 #
 # WHY THE ALBEDO IS ALLOWED TO AGREE WITH THE HEIGHT HERE, WHEN RN-742 SAYS
 # IT MUST NOT. `_stone_albedo`'s rule is that pigment must not reproduce the
@@ -2130,6 +2145,309 @@ ASHLAR_JOINT_DEPTH = 0.34     # relief units. Six times the largest face
                               # the unarguable structure of this field: the
                               # hierarchy argument `_stone_height` makes for
                               # facets over grain, one subject along.
+
+# ---------------------------------------------------------------------------
+# THE TONE FIELD (RN-1970). WHAT RN-1835 LEFT, MEASURED RATHER THAN GUESSED.
+#
+# That pass wrote down, correctly, that per-block tone is "the anti-tiling
+# term ... the only one that varies at the block frequency". Its own verifier
+# then measured the opposite outcome with an instrument the height-based
+# selftest does not carry: COLUMN-AVERAGED AUTOCORRELATION of the rendered
+# wall, i.e. average the luma down every column of the wall face into one
+# signal along it, remove the mean, and correlate. Ashlar read 0.372 at the
+# 1.8 m tile against `stone`'s 0.144 and `concrete`'s -0.011, so the family
+# with the LEAST low-frequency height contrast (0.0830 against stone's
+# 0.1352) rendered as the MOST repetitive of the three.
+#
+# RUN OFFLINE ON THE SHIPPED ALBEDO, the same column average measures a
+# standard deviation of 7.13 counts of luma for `masonry` against 2.36 for
+# `concrete` and 3.36 for `stone`, and its autocorrelation reaches -0.68 at
+# half the tile. A correlation of about minus one at half a period is the
+# signature of ONE CYCLE PER TILE: the tile has a light half and a dark half,
+# and a 35 m cella lays 19.6 copies of that across itself. That is the
+# repeat, and it is entirely in the albedo -- the heightfield is untouched by
+# everything below.
+#
+# WHY THE OLD DRAW PRODUCED IT, AND IT IS ARITHMETIC AND NOT TASTE. The tile
+# holds four courses of two or three blocks, so about ten blocks, and each
+# drew ONE independent hash at +-0.21. A column of the wall crosses four of
+# them, so the column average is a four-sample mean of an independent draw:
+# its standard deviation is 0.21/sqrt(3)/2 = 0.061 of the level, about 9
+# counts, and with only ten segments across the tile almost all of that power
+# sits at the tile's own fundamental. Nothing was wrong with any one number;
+# ten of them averaged four at a time simply cannot be flat by luck.
+#
+# WHAT CANNOT BE DONE ABOUT IT, STATED FIRST so the next lane does not spend
+# its block finding out. Write P(u) for the column-averaged tone and v for
+# the vector of per-block draws. P is linear in v, with one row per segment
+# of the tile and one column per block, and the matrix is about 10 x 10. Its
+# null space is NOT empty but everything in it is a PER-COURSE constant
+# (give course c an offset a_c with sum w_c a_c = 0 and P is flat exactly),
+# so the only tone variation that is column-neutral BY CONSTRUCTION is
+# variation that does not distinguish blocks within a course. Per-block
+# contrast and a perfectly flat column average are mutually exclusive on a
+# ten-block tile. This is why the fix below is four terms and not one.
+#
+# THE FOUR TERMS, in the order they buy the most:
+#   1. THE BLOCKS ARE BLENDED ACROSS THE FACE instead of drawn independently.
+#      Each course gets a balanced LADDER of tones rather than n independent
+#      hashes, and the assignment of the ladder to that course's blocks is
+#      chosen, over all permutations of all four courses at once, to minimise
+#      the sum of squares of the column average. This is a real trade
+#      practice and not a numerical trick: a mason working off a stack of
+#      stone of mixed colour spreads the light and the dark across the face
+#      by eye, and a wall where they were not spread is a wall that reads as
+#      patchy. It keeps every per-block step at full amplitude and only
+#      decides WHICH block gets which tone.
+#   2. A PER-COURSE TONE. One course of a wall really is often a different
+#      bed or a different quarry. It is the exact null-space direction above,
+#      so it is free against this metric: it is subtracted to a zero
+#      course-height-weighted mean and then contributes NOTHING to the column
+#      average, at any amplitude. It is also the second SCALE, which the
+#      family had none of: block, course, wall.
+#   3. A BEDDING GRADIENT THROUGH EACH BLOCK, hashed per block in sign and
+#      strength. Sedimentary stone is bedded and a block laid on its natural
+#      bed carries that layering horizontally, so the gradient runs down the
+#      block, i.e. along v. A field that is a zero-mean function of v within
+#      a course contributes EXACTLY ZERO to a column average, so this is the
+#      second free term, and it is what stops two blocks that drew the same
+#      ladder rung from being the same object.
+#   4. A BEDDING STRATUM: one lighter or darker band across each block at a
+#      hashed height, width and sign, with its own mean removed so it too is
+#      column-neutral. This is the per-block FEATURE, as opposed to the
+#      per-block level: RN-1835's blocks were identical to each other except
+#      for five scalars, and a wall of blocks that differ only in level is
+#      still a wall of one block.
+#
+# THE CONSUMER TRADE, MEASURED RATHER THAN ASSERTED, because RN-953 and
+# RN-1780 both failed by moving a family without asking what else wears it and
+# RN-1835 fixed that by writing the trade down BEFORE the code. `masonry` is
+# worn by the ruin and the foundation; the launch pad left for `concrete` at
+# RN-1815, so there is one fewer scale to satisfy here than that lane had.
+#
+#   THE RUIN gets the whole win. The cella is 35.2 m long and 11.4 m tall,
+#   i.e. 19.6 tiles across and about 25 courses up, so every column of it
+#   averages many courses and that is exactly the average the blend flattens.
+#
+#   THE FOUNDATION DECK IS 4.00 x 4.00 x 0.50 m AND IT IS TWO DIFFERENT
+#   SURFACES, which is the whole answer and is not visible without splitting
+#   them. Its TOP - the face a floor is actually judged on - is 4 m square, so
+#   at 1.8 m it lays 2.2 tiles in BOTH axes and sees all four courses twice
+#   over. It gets the full result: the light-half/dark-half fundamental that
+#   made two adjacent decks read as two copies of one thing is gone. Its EDGE
+#   is 4.00 x 0.50 m, and 0.50 m is 0.28 of a tile, i.e. about ONE course laid
+#   2.2 times along. THAT BAND IS A TRADE AND IT IS A REAL ONE. Balancing the
+#   four-course sum necessarily ANTI-correlates the courses - that is what
+#   balancing means - so each course on its own is pushed toward its extremes.
+#   Measured per course, column-averaged luma in counts with the correlation
+#   at half a tile beside it, before -> after:
+#     course 0   10.65 / -0.25  ->  11.51 / -0.27
+#     course 1    5.18 / -0.42  ->  16.78 / -0.90
+#     course 2    9.48 / -0.47  ->  14.10 / -0.62
+#     course 3   14.63 / -0.64  ->  15.52 / -0.87
+#   against the same tile's four-course figure of 7.14 / -0.687 -> 3.34 /
+#   -0.059, all ten rows taken at 256 px so they are one scale (the shipped
+#   512 reads 7.125 / -0.684 -> 3.348 / -0.045 on the four-course row). The
+#   phenomenon is not new (course 3 already read 14.63 at -0.64 and course 1's
+#   5.18 was luck, not design), but it is louder, and on a 0.5 m band it is
+#   the only thing there.
+#
+# TWO WAYS OF BUYING THAT BACK WERE MEASURED AND BOTH REFUSED, recorded so the
+# next lane does not re-run them.
+#   (a) A SMALLER LADDER IN TWO-BLOCK COURSES, on the real argument that a
+#       course of two long ashlars is one lift from one delivery. At 0.62 for
+#       n = 2 and 1.24 for n = 3, RMS held, it moved the loud courses the
+#       right way (16.78 -> 12.74, 15.52 -> 11.49) and the quiet ones the
+#       wrong way by more (11.51 -> 17.95, 14.10 -> 17.69), and it cost the
+#       four-course figure outright: -0.045 -> -0.242. A wash on the trade and
+#       a loss on the thing this lane exists for.
+#   (b) THE PER-COURSE CORRELATION AS A TIE-BREAK in the search, weighted by
+#       course height, swept at 0.02, 0.05, 0.12 and 0.30. The first three
+#       changed NOTHING - not one digit of any of the ten numbers - and 0.30
+#       took the four-course figure from -0.05 to -0.70. There is no tie to
+#       break: four courses of two or three blocks leave the primary objective
+#       a unique winner by a clear margin, so the assignment is decided before
+#       any secondary term is consulted. That is a fact about the bond and it
+#       would take more blocks per course to change, which is a heightfield
+#       edit and out of scope here.
+#
+# WHAT IS DELIBERATELY NOT DONE HERE. Variation at scales LARGER than the
+# tile - a weathered patch four metres across, a damp corner - cannot be
+# authored into a tiling map at all, by definition: every field in this file
+# has the tile's period. It needs a consumer-side term (a world-space
+# modulation in the surface shader, which `Surfaces.ts` has no
+# `onBeforeCompile` for today, so it is a new hook on every family's
+# material and not a masonry edit). Priced and recorded as owed rather than
+# smuggled in behind a texture change.
+#
+# THE AMPLITUDES ARE HELD TO RN-1835'S, NOT RAISED, and that is deliberate to
+# the digit. RN-1732 is this project's own recorded trap for exactly this
+# edit: an amplitude raise scores better on a spread statistic while
+# photographing worse. So the per-block term is calibrated to reproduce the
+# per-block tone standard deviation THIS FAMILY ACTUALLY SHIPPED, 0.2470
+# measured on the field being replaced, and not to the 0.2887 of the uniform
+# distribution it was drawn from - the shipped value is lower because ten
+# draws of a ten-block tile are a small sample, and stratifying them (see the
+# ladder in `_ashlar_tone_table`) removes that sampling error and would have
+# handed the family 31 per cent more per-block contrast for free. 0.765 puts
+# it back. Measured after the change: per-block tone std 0.247, i.e. the same
+# number to three decimals, and the whole albedo's luma std 17.06 -> 17.7,
+# which is the four per cent the three NEW terms cost and nothing else.
+ASHLAR_TONE_BLOCK = 0.765  # the ladder, RMS-matched to the field it replaces
+ASHLAR_TONE_COURSE = 0.22  # the course's own bed
+ASHLAR_TONE_BED = 0.30     # the bedding gradient down a block
+ASHLAR_TONE_BAND = 0.27    # the stratum across a block
+ASHLAR_TONE_CLAMP = 0.72   # a guard on the tails and not a working limit:
+                           # the four terms reach 0.55 together at the very
+                           # worst, so this clips nothing on the shipped bond
+                           # and exists so a later retune cannot drive the
+                           # pigment past the palette without noticing.
+
+
+def _perms(n):
+    """Every permutation of range(n), in a fixed order. Written out rather
+    than imported so the module's import list stays the four it has and so
+    the ORDER is this file's own: `_ashlar_tone_table` breaks ties by first
+    found, and a tie broken differently is a different shipped byte."""
+    if n <= 1:
+        return [(0,)] if n == 1 else [()]
+    out = []
+    for i in range(n):
+        for rest in _perms(n - 1):
+            out.append((i,) + tuple(j if j < i else j + 1 for j in rest))
+    return out
+
+
+def _ashlar_tone_table(w, h, rowc, colc, blend=True):
+    """The per-block pigment draw, BLENDED ACROSS THE FACE (RN-1970).
+
+    Returns `(blk, crs, bed, band)`:
+      `blk[key]`   this block's rung of its course's ladder, in [-0.5, 0.5].
+      `crs[c]`     course c's own offset, with a zero course-height-weighted
+                   mean, so it is column-neutral exactly.
+      `bed[key]`   the bedding gradient's signed strength, in [-1, 1].
+      `band[key]`  `(centre, halfWidth, signedStrength)` for the stratum.
+
+    THE SEARCH IS EXHAUSTIVE AND IT IS SMALL: two or three blocks a course
+    over four courses is at most 6^4 = 1296 assignments, each scored by
+    summing the square of the column average over the tile's width. An
+    exhaustive search has the property a hill climb does not, which is that
+    the answer does not depend on where it started, so the shipped bytes are
+    a function of the bond alone.
+
+    IT MINIMISES THE COLUMN AVERAGE AND NOT THE VARIANCE OF THE TONES. The
+    ladder is fixed before the search runs, so every candidate has exactly
+    the same set of tones and exactly the same per-block contrast; the only
+    thing being chosen is which block wears which. Nothing here can trade the
+    family's defining property away to score better, which is the failure
+    mode a metric-driven edit has to be built against.
+
+    `blend` IS SELFTEST-ONLY, the same convention `_stone_planes`'s `rounded`
+    and `_ore_height`'s `rotated` use. False restores RN-1835's independent
+    per-block hash in place of the ladder and the search, and leaves
+    everything else identical, so 7q's negative control differs from the
+    shipped field in exactly the one term it is making a claim about."""
+    # Course row weights. `rowc` is authoritative rather than `edges`: what
+    # matters to a column average is how many ROWS a course actually occupies
+    # at this resolution, which is the quantised version of its height.
+    wc = [0.0] * ASHLAR_COURSES
+    for y in range(h):
+        wc[rowc[y][0]] += 1.0 / h
+    keys_of = []
+    for c in range(ASHLAR_COURSES):
+        seen = []
+        for x in range(w):
+            k = colc[c][x][0]
+            if k not in seen:
+                seen.append(k)
+        keys_of.append(sorted(seen))
+    # THE LADDER, AND ITS RUNGS ARE STRATA MIDPOINTS RATHER THAN ENDPOINTS.
+    # The obvious ladder puts the n tones at the two ends and evenly between
+    # them, and it is wrong for a reason worth writing down: with n = 2 that
+    # sends BOTH blocks of a course to an extreme, so its root-mean-square is
+    # 0.5 against the 0.289 of the uniform draw it replaces, and the family
+    # would silently gain 73 per cent more per-block contrast under cover of
+    # an anti-repeat change. The rungs are instead the midpoints of the n
+    # equal strata of the same uniform distribution, (k + 0.5)/n - 0.5, which
+    # is stratified sampling and not a compromise: it is what "spread the
+    # stack evenly" means. Their RMS is sqrt(n^2 - 1) / (n * sqrt(12)), so
+    # the n / sqrt(n^2 - 1) factor restores it EXACTLY to the draw's own,
+    # 1.155 at n = 2 and 1.061 at n = 3. sqrt is the one transcendental-free
+    # root the module header allows and it runs four times per build.
+    #
+    # A course's own SPAN is hashed about 1.0, because some courses really
+    # are cut from one even bed and some from a mixed one, and a wall where
+    # every course is equally varied is its own kind of pattern. It is
+    # centred on 1.0 rather than on 0.775 so the hash moves the variety
+    # between courses without moving the family's mean contrast.
+    #
+    opts = []
+    for c in range(ASHLAR_COURSES):
+        n = len(keys_of[c])
+        span = 0.78 + 0.44 * _hash01(c, 11, 9391)
+        if n > 1:
+            span *= n / math.sqrt(n * n - 1.0)
+            rung = [span * ((k + 0.5) / n - 0.5) for k in range(n)]
+        else:
+            rung = [0.0]
+        # Precompute, per permutation, that course's contribution to the
+        # column average, so the search itself is only additions.
+        vecs = []
+        for p in _perms(n):
+            val = {}
+            for k in range(n):
+                val[keys_of[c][k]] = rung[p[k]]
+            vecs.append(([val[colc[c][x][0]] * wc[c] for x in range(w)],
+                         [val[keys_of[c][k]] for k in range(n)]))
+        opts.append(vecs)
+    best = [None, None]
+
+    def _walk(c, acc, choice):
+        if c == ASHLAR_COURSES:
+            e = 0.0
+            for x in range(w):
+                e += acc[x] * acc[x]
+            if best[0] is None or e < best[0]:
+                best[0] = e
+                best[1] = list(choice)
+            return
+        for vi in range(len(opts[c])):
+            vec = opts[c][vi][0]
+            _walk(c + 1, [acc[x] + vec[x] for x in range(w)], choice + [vi])
+
+    blk = {}
+    if blend:
+        _walk(0, [0.0] * w, [])
+        for c in range(ASHLAR_COURSES):
+            vals = opts[c][best[1][c]][1]
+            for k, key in enumerate(keys_of[c]):
+                blk[key] = vals[k]
+    else:
+        for c in range(ASHLAR_COURSES):
+            for key in keys_of[c]:
+                blk[key] = _hash01(key, 3, 8677) - 0.5
+    # The course offset, made column-neutral by removing its own
+    # course-height-weighted mean. This is exact, not approximate: after the
+    # subtraction sum(wc[c] * crs[c]) is zero, so every column of the wall
+    # receives the same total from this term whatever its amplitude.
+    crs = [_hash01(c, 12, 9433) - 0.5 for c in range(ASHLAR_COURSES)]
+    m = 0.0
+    for c in range(ASHLAR_COURSES):
+        m += wc[c] * crs[c]
+    crs = [v - m for v in crs]
+    bed = {}
+    band = {}
+    for c in range(ASHLAR_COURSES):
+        for key in keys_of[c]:
+            bed[key] = 2.0 * _hash01(key, 13, 9479) - 1.0
+            # The stratum is held clear of both arrises: centre in
+            # [0.22, 0.78] against a half width of at most 0.18, so the bump
+            # is wholly inside the block and its mean over the course really
+            # is the analytic one the pixel loop subtracts.
+            band[key] = (0.22 + 0.56 * _hash01(key, 14, 9533),
+                         0.06 + 0.12 * _hash01(key, 15, 9587),
+                         2.0 * _hash01(key, 16, 9631) - 1.0)
+    return blk, crs, bed, band
 
 
 def _ashlar_partition(w, h):
@@ -2192,7 +2510,7 @@ def _ashlar_partition(w, h):
     return rowc, colc
 
 
-def _ashlar_height(w, h):
+def _ashlar_height(w, h, blend=True):
     """(height, aux). Coursed ashlar: dressed blocks in level courses, a
     chamfered recessed joint at every boundary, per-block set height and set
     tilt, tooling on the faces, and spall on the arrises of the worn blocks.
@@ -2211,9 +2529,19 @@ def _ashlar_height(w, h):
     more are published because they are per-BLOCK facts the pixel loop cannot
     re-derive without redoing the partition: `joint` (the whole recess,
     INCLUDING the chamfer, which is the shape), `mortar` (the mortar bed
-    ALONE, which is the material), `tone` (this block's hashed pigment draw)
-    and `wear` (this block's hashed weathering, which drives both how far its
+    ALONE, which is the material), `tone` (the pigment field, see below) and
+    `wear` (this block's hashed weathering, which drives both how far its
     arris is rounded and how dirty its face is).
+
+    `tone` IS SIGNED AND IT IS NO LONGER ONE NUMBER PER BLOCK (RN-1970). It
+    is a deviation about zero, clamped to +-ASHLAR_TONE_CLAMP, carrying the
+    four terms `_ashlar_tone_table`'s header sets out: the blended block
+    ladder, the course's own bed, and two within-block bedding terms that are
+    column-neutral by construction. NOT ONE BYTE OF THE HEIGHTFIELD DEPENDS
+    ON IT - it was never read by `z` and it is not read by `_ashlar_masks` -
+    so this whole change moves the albedo PNG alone and leaves the normal and
+    the ORM byte-identical, which is the cheapest possible proof that the
+    courses, the joints, the chamfer and the spall all survived it.
 
     `joint` AND `mortar` ARE TWO DIFFERENT MASKS AND CONFLATING THEM WAS THE
     FIRST VERSION'S DEFECT. The recess is 20 mm of mortar plus up to 39 mm of
@@ -2224,6 +2552,8 @@ def _ashlar_height(w, h):
     colour, and only the gap between two blocks is a different material."""
     tile = FAMILY_TILE_M["masonry"]
     rowc, colc = _ashlar_partition(w, h)
+    t_blk, t_crs, t_bed, t_band = _ashlar_tone_table(w, h, rowc, colc,
+                                                      blend)
     hw_bed = 0.5 * ASHLAR_JOINT_BED_M / tile
     hw_head = 0.5 * ASHLAR_JOINT_HEAD_M / tile
     draft = ASHLAR_DRAFT_M / tile
@@ -2249,12 +2579,35 @@ def _ashlar_height(w, h):
             key, dhead, lu = crow[x]
             # Per-block draws. One hash call each, on the block key, so every
             # texel of a block agrees to the bit about what block it is on.
-            bt = _hash01(key, 3, 8677)       # tone
             bw = _hash01(key, 4, 8731)       # weathering
             bs = _hash01(key, 5, 8783)       # set height
             bx = _hash01(key, 6, 8837)       # set tilt, u
             by = _hash01(key, 7, 8893)       # set tilt, v
-            tone[i] = bt
+            # THE PIGMENT (RN-1970). Four terms, and the last two are
+            # functions of `lv` alone within the course, so their mean down a
+            # block is zero and they add nothing whatever to the column
+            # average the tile repeat lives in. `lv` runs 0 at the top of the
+            # course to 1 at its foot (see `_ashlar_albedo`'s orientation
+            # derivation), so the gradient's sign is a real up/down statement
+            # about the block and not an arbitrary one.
+            bc_, bhw_, bsg_ = t_band[key]
+            dband = lv - bc_
+            if dband < 0.0:
+                dband = -dband
+            # ...with its own analytic mean over the course removed. The bump
+            # 1 - smoothstep(0, t, |lv - c|) integrates to exactly t over
+            # lv in [0, 1] when it is clear of both ends, which `t_band`
+            # guarantees, so the subtraction is exact and not fitted.
+            bband = (1.0 - _smoothstep(0.0, bhw_, dband)) - bhw_
+            tv = (ASHLAR_TONE_BLOCK * t_blk[key]
+                  + ASHLAR_TONE_COURSE * t_crs[c]
+                  + ASHLAR_TONE_BED * t_bed[key] * (lv - 0.5)
+                  + ASHLAR_TONE_BAND * bsg_ * bband)
+            if tv > ASHLAR_TONE_CLAMP:
+                tv = ASHLAR_TONE_CLAMP
+            elif tv < -ASHLAR_TONE_CLAMP:
+                tv = -ASHLAR_TONE_CLAMP
+            tone[i] = tv
             wear[i] = bw
             # The joint. Distance is displaced by the arris wander before the
             # profile is taken, and the draft WIDENS with the block's own
@@ -2679,9 +3032,16 @@ def _ashlar_albedo(w, h, height, aux):
     piece of one bed of one quarry: the change happens AT the joint and not
     across it. A continuous noise field of the same amplitude reads as damp
     patches on a single slab; the same amplitude as a step function on the
-    bond reads as stone that was cut and carried. It is also the term that
-    hides the tile, because it is the only one that varies at the block
-    frequency, which is the frequency the geometry already announces.
+    bond reads as stone that was cut and carried.
+
+    IT IS ALSO WHERE THE TILE REPEAT LIVED, which is the opposite of what
+    this docstring said before RN-1970 and is the same term either way. The
+    pigment arrives here through `aux["tone"]`, which is now a SIGNED field
+    carrying four terms rather than one hash per block; the reasoning, the
+    measurements and the gate are at THE TONE FIELD, above
+    `_ashlar_tone_table`. Nothing about the paragraph above changed: the
+    change still happens at the joint, and the per-block step still carries
+    the same 0.247 of contrast it did.
 
     THE STAINING IS THE DIRECTIONAL TERM. Rain sheds off a bed joint and runs
     down the face below it, so the TOP of each block darkens and the streak
@@ -2738,13 +3098,18 @@ def _ashlar_albedo(w, h, height, aux):
             m = _smoothstep(0.20, 0.80, mortar[i])
             bt = tone[i]
             bw = wear[i]
-            # Per-block value. +-0.21 about 1.0. `_stone_albedo`'s bedding
-            # term carries 0.34 peak-to-peak as a CONTINUOUS field; the same
-            # amplitude as a step function on the bond is far more visible,
-            # because the eye reads an edge and not a gradient, so this is
-            # deliberately larger than that and still inside what one bed of
-            # one quarry actually spans.
-            v = 1.0 + (bt - 0.5) * 0.42
+            # The pigment. +-0.21 about 1.0 for a block at the end of its
+            # course's ladder, unchanged from RN-1835 -- the gain and the
+            # ladder's own half-width are both 1.0 x 0.42 / 2 there -- and up
+            # to +-0.30 once the course, the bedding gradient and the stratum
+            # are on top of it. `_stone_albedo`'s bedding term carries 0.34
+            # peak-to-peak as a CONTINUOUS field; the same amplitude as a step
+            # function on the bond is far more visible, because the eye reads
+            # an edge and not a gradient, so this is deliberately larger than
+            # that and still inside what one bed of one quarry actually spans.
+            # `tone` is now SIGNED and centred on zero (RN-1970), so what was
+            # `(bt - 0.5)` is `bt`.
+            v = 1.0 + bt * 0.42
             v += (fleck[i] - 0.5) * 0.10
             # Weathering, CONTINUOUS across the blocks. Two fields at two
             # periods: soiling darkens, and it darkens more on a worn block.
@@ -2775,7 +3140,7 @@ def _ashlar_albedo(w, h, height, aux):
             # one quarry still differ in iron content: that is the second
             # per-block channel and it separates neighbours the value term
             # happens to draw close together.
-            warm = (1.0 - m) * (0.014 + 0.072 * bt)
+            warm = (1.0 - m) * (0.014 + 0.072 * _clamp01(bt + 0.5))
             out[o] = int(round(255.0 * _clamp01(
                 v * (1.0 + warm - 0.14 * grn))))
             out[o + 1] = int(round(255.0 * _clamp01(
@@ -6452,6 +6817,78 @@ def selftest():
           "above sets out (`_stone_albedo` measures 0.07, `panel`'s "
           "deliberately-correlated albedo 0.29, an albedo that IS the height "
           "1.00)" % (r_res, len(face_i), len(sums), r_face))
+
+    # 7q. THE TONE REPEAT (RN-1970), AND THE REASON THIS CHECK EXISTS AT ALL
+    #     IS THAT NOTHING IN THIS FILE COULD SEE IT. Every masonry check above
+    #     reads the HEIGHTFIELD - 7n the course anisotropy, 7o the two joint
+    #     masks, 7e's low-frequency contrast on the field the pad wore - and
+    #     `masonry`'s defining anti-tiling property is in the ALBEDO. RN-1835
+    #     shipped a per-block tone that repeated hard enough for a fresh
+    #     verifier to call the family the most repetitive of the three
+    #     architectural ones, and it did so with every gate here green and
+    #     UNMOVED, because the heightfield was not the thing that was wrong.
+    #     A family whose defining property no gate measures is one edit from
+    #     a silent regression, so the property gets an instrument.
+    #
+    #     THE INSTRUMENT IS THE VERIFIER'S OWN, run on the map instead of on
+    #     a frame: average the luma DOWN every column into one signal along
+    #     the wall, remove its mean, and correlate it with itself. Two numbers
+    #     come off it and both are needed.
+    #       `colStd`   how loud that signal is, in counts of luma. This is
+    #                  the amplitude of the light-and-dark banding a wall of
+    #                  copies shows, and it is what the eye integrates.
+    #       `a[half]`  the correlation at HALF the tile. A value near minus
+    #                  one is the signature of ONE CYCLE PER TILE, i.e. the
+    #                  tile having a light half and a dark half, which is the
+    #                  worst thing a 19.6-repeat wall can carry and exactly
+    #                  what was shipped.
+    #
+    #     THE BOUND IS AGAINST MASONRY ITSELF AND NOT AGAINST ANOTHER FAMILY,
+    #     which is 7e's own rule applied one row down. For scale, and as
+    #     context rather than as a limit, `concrete` measures 2.37 and -0.311
+    #     on the same instrument at the same size: its correlation is worse
+    #     than the bound below and it does not matter, because it rides on a
+    #     signal two thirds the amplitude. The two numbers are read together.
+    #
+    #     THE NEGATIVE CONTROL IS THE PREVIOUS SHIPPED FIELD. `blend=False`
+    #     restores RN-1835's independent per-block hash and changes nothing
+    #     else, so the control differs from the shipped bond in exactly the
+    #     term under test, and it must FAIL - otherwise this check is
+    #     measuring the arithmetic and not the bond.
+    def _colacorr(alb, n):
+        col = [0.0] * n
+        for y in range(n):
+            b = 3 * y * n
+            for x in range(n):
+                o = b + 3 * x
+                col[x] += (0.2126 * alb[o] + 0.7152 * alb[o + 1]
+                           + 0.0722 * alb[o + 2])
+        col = [v / n for v in col]
+        m = sum(col) / n
+        d = [v - m for v in col]
+        v0 = sum(v * v for v in d)
+        if v0 <= 0:
+            return 0.0, 0.0
+        half = n // 2
+        ac = 0.0
+        for i in range(n):
+            ac += d[i] * d[(i + half) % n]
+        return math.sqrt(v0 / n), ac / v0
+
+    q_std, q_ac = _colacorr(ash_a, s)
+    ctl_h, ctl_aux = _ashlar_height(s, s, blend=False)
+    ctl_std, ctl_ac = _colacorr(_ashlar_albedo(s, s, ctl_h, ctl_aux), s)
+    check("masonry tone does not repeat with the tile",
+          abs(q_ac) <= 0.20 and q_std < 0.75 * ctl_std,
+          "column-averaged luma std %.3f counts and correlation %+.3f at "
+          "half the tile (need |corr| <= 0.20 and std under 0.75 x the "
+          "control's %.3f); `concrete` reads 2.37 / -0.311 here for scale"
+          % (q_std, q_ac, ctl_std))
+    check("unblended tone control fails", ctl_ac <= -0.40,
+          "RN-1835's independent per-block draw, everything else identical: "
+          "std %.3f, correlation %+.3f at half the tile, correctly outside "
+          "the |corr| <= 0.20 rule. A tile with a light half and a dark half "
+          "is what this check exists to refuse" % (ctl_std, ctl_ac))
 
     # 8. Every palette role is either mapped or explicitly flat. Catches the
     #    standing-rule-11 failure of a check that passes on what it never

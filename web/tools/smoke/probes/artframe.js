@@ -20,6 +20,11 @@
 //   voxelface    RN-1258's sixth shot: a dug pit's cut face at arm's length,
 //                the one surface in the game the world does not draw until
 //                the player has struck it.
+// A seventh is not the campaign plan's and says so in its own manifest row:
+//   ruinwall     RN-1970's shot, the ruin's masonry square on at walking
+//                distance. Six shots at 20 px/m cannot judge a per-block
+//                surface property, which is how a family shipped a repeat
+//                nobody photographed.
 //
 // ==========================================================================
 // WHY THIS FILE EXISTS AT ALL, given `artshot.js` and the `*shot.js` family
@@ -508,6 +513,58 @@
       },
       why: 'the ruin at approach, the structure high-water mark, whole silhouette',
     },
+    // RN-1970. THE SEVENTH SHOT, and it exists because six of them are taken
+    // at a range where a wall is 20 px/m and none of them could have judged
+    // the thing this lane was sent to fix. `ruin` frames the whole temple at
+    // 34 m, which is the right frame for a silhouette and the wrong one for a
+    // SURFACE: a 1.8 m tile is 38 px there, so the per-block tone that carried
+    // the family's repeat is four pixels of one block.
+    //
+    // SQUARE ON A LONG FACE, OFF THE SITE'S OWN `wall` SOCKET AND NOT OFF A
+    // GUESSED BEARING. The first version of this shot built the four side
+    // normals from `quat` and stood at a radius from `sitePos`; `standAt`
+    // dropped the walker ONTO THE STYLOBATE and photographed the colonnade
+    // from inside, which is a picture of the pose being wrong rather than of
+    // the wall. `of.ruins().list[0].points.wall` is a point the site itself
+    // publishes on a cella wall, so its tangential offset from `sitePos` IS
+    // the outward normal and its height above grade IS a sensible aim, both
+    // measured off the placed instance rather than assumed about the model.
+    //
+    // WHICH OF THE TWO LONG FACES IS A SUN QUESTION AND IT IS ANSWERED WITH
+    // THE SUN. The body-frame direction is `dirForT` at the pinned `sunT`
+    // (SkyPass: normalize(cos 2 pi t, 0.42, sin 2 pi t)), and the face used is
+    // whichever of the socket's own side and its mirror faces INTO it.
+    // Choosing by measured luma would be the classifier-depends-on-the-
+    // quantity-under-test trap `aimAt` above already refuses.
+    //
+    // 5.0 m IS THE STANDOFF AND IT IS A COMPROMISE STATED RATHER THAN HIDDEN.
+    // A player reads this wall from two to eight metres. Closer than about
+    // four and the frame holds under two tiles, which is too few for the
+    // column instrument to say anything about a repeat; further and the block
+    // detail this shot exists for starts going back into the mip chain.
+    ruinwall: {
+      scenario: 'walk', needsSandbox: false,
+      sunDot: 0.35, sunTol: 0.02,
+      standoffM: 5.0,
+      box: [0.2000, 0.2000, 0.8000, 0.8000],
+      extra: {
+        // COMMITTED AFTER A GRID, not written by eye, which is RN-1839's own
+        // rule about this file one shot along. The pose puts a hard shadow
+        // edge down the left of the frame and the deck along the bottom, and
+        // a rectangle holding either measures the shadow: the first
+        // candidates read column-averaged std 39.6 and 53.6 counts on a wall
+        // whose sunlit run reads 8.45. The two below are the sunlit face
+        // alone, and `loFrac` 0.027 and 0.013 are the evidence for that
+        // rather than the claim.
+        //   `wall`     the sunlit upper face, and the rectangle the column
+        //              instrument is read on.
+        //   `wallLow`  the same face lower down, where the rain wash off the
+        //              bed joints and the arris spall live.
+        wall: [0.5625, 0.0556, 0.9875, 0.6111],
+        wallLow: [0.6250, 0.6111, 0.9750, 0.7778],
+      },
+      why: 'the ruin wall at walking distance, square on a sunlit long face',
+    },
     basedusk: {
       scenario: 'walk', needsSandbox: true,
       // dot 0.20 is `lookdev.js`'s OWN dusk rung (`wantDots` [null, 0.20, -0.02,
@@ -970,6 +1027,68 @@
       belt: belt !== null, sunSide, framed };
   }
 
+  if (name === 'ruinwall') {
+    if (typeof of.ruins !== 'function') return { valid: false, why: 'no of.ruins' };
+    await of.run(0.5, 60);
+    const R0 = of.ruins();
+    if (R0 === null || R0.count < 1) {
+      return { valid: false, shot: name, why: 'no ruin instance drawn', ruins: R0 };
+    }
+    const inst = R0.list[0];
+    const up = inst.up;
+    const wp = inst.points ? inst.points.wall : null;
+    if (!Array.isArray(wp) || wp.length !== 3) {
+      return { valid: false, shot: name,
+        why: 'the site publishes no points.wall to stand square on',
+        points: inst.points };
+    }
+    // The socket's offset from the site centre, split into the part along the
+    // local up (its height on the wall) and the part across it (the wall's own
+    // outward normal, and the radius the face sits at).
+    const off = sub(wp, inst.sitePos);
+    const upM = dot(off, up);
+    const tan = addk(off, up, -upM);
+    const radM = len(tan);
+    if (radM < 1.0) {
+      return { valid: false, shot: name,
+        why: 'points.wall is on the site axis, so it names no face', off };
+    }
+    const n0 = norm(tan);
+    // The sun's body-frame direction at the CURRENT pin. `pin()` has already
+    // run once above; it runs again after the move because the elevation solve
+    // is against the observer's own up and the observer is about to travel.
+    const sunVec = () => {
+      const a = 2 * Math.PI * of.stats().sky.sunT;
+      return norm([Math.cos(a), 0.42, Math.sin(a)]);
+    };
+    const faceFor = () => {
+      const sd = sunVec();
+      const d0 = dot(n0, sd);
+      const n = d0 >= dot([-n0[0], -n0[1], -n0[2]], sd)
+        ? n0 : [-n0[0], -n0[1], -n0[2]];
+      return { n, litDot: r3(dot(n, sd)),
+        target: addk(addk(inst.sitePos, n, radM), up, upM) };
+    };
+    let face = faceFor();
+    const want = A.standoffM ?? S.standoffM;
+    const stand = addk(addk(face.target, face.n, want), up, A.dropM ?? 6);
+    const at = of.standAt(stand[0], stand[1], stand[2]);
+    if (at === null) return { valid: false, shot: name, why: 'standAt refused', stand };
+    await sleep(1.5);
+    let spin = 0;
+    while (!of.world().chunks.converged && spin++ < 240) await sleep(0.5);
+    sun = pin();                     // the observer moved, so the solve moved
+    face = faceFor();                // ...and so, fractionally, did the face
+    const framed = aimAt(face.target, [8, 4, 0, -4, -8],
+      of.world().observer.yawDeg, [90, 16, 4, 1]);
+    const r1 = of.ruins().list[0];
+    setup = { standoffM: r2(gd(of.aim().origin, face.target)), wantStandoffM: want,
+      wallRadM: r2(radM), wallUpM: r2(upM),
+      faceNormal: face.n.map(r3), litDot: face.litDot,
+      lod: r1.lod, distM: r2(r1.distM), footprintM: inst.footprintM,
+      framed, converged: of.world().chunks.converged };
+  }
+
   if (name === 'ruin') {
     if (typeof of.ruins !== 'function') return { valid: false, why: 'no of.ruins' };
     await of.run(0.5, 60);           // one real frame, so distM and the LOD rung
@@ -1353,7 +1472,84 @@
       p05: r2(q(0.05)), p50: r2(q(0.50)), p95: r2(q(0.95)),
       iqr: r2(q(0.75) - q(0.25)),
       loFrac: r3(lo / n), hiFrac: r3(hi / n),
+      col: colOn(d, w, h),
     };
+  };
+
+  /**
+   * RN-1970. THE TILING INSTRUMENT FOR A WALL, additive: every field above is
+   * unchanged and every number any earlier pass published against a rectangle
+   * here still means what it meant.
+   *
+   * `iqr` and the percentile row are BLIND TO WHICH FREQUENCY BAND the detail
+   * sits in - RN-1732 is this repo's own recorded scar from exactly that - and
+   * a tiling repeat is a statement about one band and nothing else. This is
+   * the metric a fresh-context verifier used to catch two lanes overstating a
+   * look change, reimplemented here so it is taken through the same manifest
+   * and the same capture as everything else in the report.
+   *
+   * COLUMN-AVERAGED, WHICH IS THE WHOLE POINT AND IS THE OPPOSITE OF
+   * `groundnear.js`'s ROW-WISE version of the same idea. That instrument reads
+   * ground at a grazing angle, where one row is one iso-range slice and a
+   * column smears many scales together. A WALL is the other case: it is seen
+   * near square on, its world scale is nearly constant down a column, and the
+   * repeat runs ALONG it. Averaging each column to one number therefore keeps
+   * the horizontal periodicity intact and cancels everything that varies only
+   * up the wall - which is exactly right, because a feature constant along u
+   * cannot contribute to a repeat a player can count.
+   *
+   *   `std`   the column-averaged signal's own standard deviation in counts of
+   *           luma, i.e. HOW LOUD the light-and-dark banding across the wall
+   *           is. A correlation on a signal that is not there means nothing,
+   *           so this number is published first and read first.
+   *   `peak`  the largest LOCAL maximum strictly after the first local
+   *           minimum, with `lag` in pixels. groundnear.js's rule, reused
+   *           rather than re-derived: the global maximum over a band is always
+   *           at its lower edge, because a smooth signal decays monotonically,
+   *           so a bare maximum reads blur and not repetition.
+   *
+   * The band is [4, floor(w/3)] by default: a lag past a third of the
+   * rectangle is two samples of one period and cannot be believed.
+   * `{"colBand":[lo,hi]}` overrides it for a rectangle whose world scale is
+   * known, which is how a tile lag in metres becomes a lag in pixels.
+   */
+  const colOn = (d, w, h) => {
+    const col = new Float64Array(w);
+    for (let j = 0; j < h; ++j) {
+      for (let i = 0; i < w; ++i) {
+        const o = (j * w + i) * 4;
+        col[i] += 0.2126 * d[o] + 0.7152 * d[o + 1] + 0.0722 * d[o + 2];
+      }
+    }
+    let m = 0;
+    for (let i = 0; i < w; ++i) { col[i] /= h; m += col[i]; }
+    m /= w;
+    let v0 = 0;
+    for (let i = 0; i < w; ++i) { col[i] -= m; v0 += col[i] * col[i]; }
+    const std = Math.sqrt(v0 / w);
+    const band = Array.isArray(A.colBand) ? A.colBand : null;
+    const minLag = Math.max(1, Math.round(band ? band[0] : 4));
+    const maxLag = Math.min(w - 2, Math.round(band ? band[1] : Math.floor(w / 3)));
+    if (v0 < 1e-9 || maxLag <= minLag + 1) {
+      return { std: r2(std), minLag, maxLag, lag: null, peak: null };
+    }
+    const c = (L) => {
+      let s = 0;
+      for (let i = 0; i + L < w; ++i) s += col[i] * col[i + L];
+      return s / v0;
+    };
+    const cur = new Float64Array(maxLag + 2);
+    for (let L = minLag; L <= maxLag + 1 && L <= w - 1; ++L) cur[L] = c(L);
+    let firstMin = minLag;
+    while (firstMin + 1 <= maxLag && cur[firstMin + 1] < cur[firstMin]) firstMin++;
+    let bl = null; let bp = -2;
+    for (let L = firstMin + 1; L < maxLag; ++L) {
+      if (cur[L] >= cur[L - 1] && cur[L] >= cur[L + 1] && cur[L] > bp) {
+        bp = cur[L]; bl = L;
+      }
+    }
+    return { std: r2(std), minLag, maxLag, firstMin,
+      lag: bl, peak: bl === null ? null : r3(bp) };
   };
 
   /**
