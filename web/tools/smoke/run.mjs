@@ -205,6 +205,20 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // restores the flat amplitude across every biome exactly, which is the
   // control that makes the rule falsifiable rather than assumed.
   'groundfinelum',
+  // RN-1900, the MID-FIELD layer, the ninth surface-art term. `groundmid=0`
+  // restores the pre-RN-1900 ground exactly and is the BEFORE half of every
+  // pair this term is judged by; `groundmidamp=` sweeps its amplitude,
+  // `groundmidm=12.4,4.7` its two wavelengths IN METRES (its coordinate is
+  // planet-centred metres, so unlike every repeat count in this material these
+  // are not secretly a function of maxDepth), and `groundmidlum=0` restores the
+  // flat amplitude across every biome so RN-1735's luminance rule is falsifiable
+  // on this term rather than inherited on faith.
+  // `artcoarsem=` is the vnoise bump's COARSE octave's fade wavelength; setting
+  // it to 2.0664, i.e. equal to the fine one, is the pre-RN-1900 single-fade
+  // bump and is that half of the lane's negative control.
+  // Registered in the same commit that introduces them, per this list's own
+  // rule and RN-152's scar.
+  'groundmid', 'groundmidamp', 'groundmidm', 'groundmidlum', 'artcoarsem',
   // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
   // night exactly); `starlightamp=` sweeps it.
   // RN-952, the DAYLIGHT floor underneath it, which had no control at all and

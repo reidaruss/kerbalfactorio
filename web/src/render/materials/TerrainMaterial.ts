@@ -29,7 +29,11 @@ import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 import { RELIEF_GRAD_UV, REL_SWING_DEFAULT, REL_CELL, REL_CELL_NOISE,
   FINE_BUMP, FINE_ALB, FINE_A, FINE_R, FINE_B, FINE_W, FINE_CHUNK_M,
   FINE_LUM_REF, ART_FINE_M, RELIEF_FINE_M,
-  ART_FINE_M_PRE1855, RELIEF_FINE_M_PRE1855 }
+  ART_FINE_M_PRE1855, RELIEF_FINE_M_PRE1855,
+  // RN-1900. The bump's coarse-octave wavelength and the mid-field layer's
+  // three constants, imported from where they are derived and documented for
+  // the identical one-authority reason.
+  ART_COARSE_M, MID_A_M, MID_B_M, MID_ALB }
   from './TerrainArt.glsl.js';
 import { FAR_SCALE } from '../Scenes.js';
 
@@ -328,6 +332,28 @@ function fineAmpFromQuery(): THREE.Vector2 {
   );
 }
 
+/**
+ * RN-1900. The mid-field layer's amplitude and its luminance-rule weight, on
+ * `fineAmpFromQuery`'s pattern exactly, including RN-150's dead-default guard
+ * (`Number(null)` is 0 and 0 is finite, so a missing parameter must read as
+ * MISSING and never as an amplitude of zero; this file has shipped that bug
+ * twice and the failure is silent in the worst direction).
+ *
+ * `?groundmid=0` is the WHOLE-TERM control and is what the before half of every
+ * RN-1900 pair is taken with. `?groundmidlum=0` restores the flat amplitude
+ * across every biome, a hard 0 or 1 on `reliefGrad`'s precedent, because what 0
+ * restores is a KNOWN state and an intermediate value would be a blend of two
+ * derivations rather than either of them.
+ */
+function midAmpFromQuery(): THREE.Vector2 {
+  const p = new URLSearchParams(self.location.search);
+  const all = p.get('groundmid') === '0' ? 0 : 1;
+  return new THREE.Vector2(
+    all * ampParam(p, 'groundmidamp', MID_ALB),
+    p.get('groundmidlum') === '0' ? 0 : 1,
+  );
+}
+
 function specAmpFromQuery(): THREE.Vector2 {
   const p = new URLSearchParams(self.location.search);
   const all = p.get('terrainspec') === '0' ? 0 : 1;
@@ -487,6 +513,33 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   const reliefFineM: THREE.IUniform<number> = {
     value: fineMFromQuery('relieffinem', RELIEF_FINE_M),
   };
+  // RN-1900. The vnoise bump's COARSE octave's wavelength, the third member of
+  // the same family and shared the same way. `?artcoarsem=2.0664` (i.e. equal
+  // to ART_FINE_M) reproduces the pre-RN-1900 single-fade bump exactly, which
+  // is why this exists as a uniform at all rather than only as a constant.
+  const artCoarseM: THREE.IUniform<number> = {
+    value: fineMFromQuery('artcoarsem', ART_COARSE_M),
+  };
+  // RN-1900. The mid-field layer's amplitude and its luminance-rule weight,
+  // shared by reference into both materials for the one-authority reason artAmp
+  // is. `?groundmid=0` is the whole-term isolator and the BEFORE half of every
+  // pair this term is judged by; `?groundmidamp=` sweeps it;
+  // `?groundmidlum=0` restores the flat amplitude across every biome exactly,
+  // which is what makes RN-1735's rule falsifiable on this term too rather than
+  // inherited on faith.
+  const midAmp = midAmpFromQuery();
+  // RN-1900. The layer's two wavelengths IN METRES (not repeats: its coordinate
+  // is planet-centred metres, so a metre is a metre at every depth and on every
+  // body, and WG-192's cells-are-secretly-maxDepth trap cannot reach it).
+  // `?groundmidm=12.4,4.7` sweeps them; a malformed or non-positive pair takes
+  // the boot default rather than being clamped into a state nothing documents,
+  // which is `triple`'s own rule one field up.
+  const midM = ((): THREE.Vector2 => {
+    const v = new URLSearchParams(self.location.search).get('groundmidm');
+    const n = (v ?? '').split(',').map(Number);
+    return (n.length === 2 && n.every((x) => Number.isFinite(x) && x > 0))
+      ? new THREE.Vector2(n[0], n[1]) : new THREE.Vector2(MID_A_M, MID_B_M);
+  })();
   // RN-961. Shared by reference into both materials for the one-authority
   // reason artAmp is: a control that reached the near material and not the far
   // one would make the negative control a statement about one scene only.
@@ -559,6 +612,9 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uReliefGradUv: reliefGradUv,
       uArtFineM: artFineM,
       uReliefFineM: reliefFineM,
+      uArtCoarseM: artCoarseM,
+      uMidAmp: { value: midAmp },
+      uMidM: { value: midM },
       uReliefSwing: reliefSwing,
       uReliefCell: reliefCell,
       uReliefCellNoise: reliefCellNoise,
@@ -657,6 +713,55 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       return [artFineM.value, reliefFineM.value];
     },
     getFineM(): [number, number] { return [artFineM.value, reliefFineM.value]; },
+    /** RN-1900. The vnoise bump's COARSE octave's fade wavelength, at runtime,
+     *  on setFineM's precedent and for its reason: this correction is judged at
+     *  range, and a pair whose two halves are two page loads differs by two
+     *  streamed chunk sets and two sun solves as well as by the term. Setting
+     *  it EQUAL to `uArtFineM` is the pre-RN-1900 single-fade bump. */
+    setArtCoarseM(m: number): number {
+      if (Number.isFinite(m) && m > 0) artCoarseM.value = m;
+      return artCoarseM.value;
+    },
+    getArtCoarseM(): number { return artCoarseM.value; },
+    artCoarseMDefault(): { present: boolean; value: number; pre: number } {
+      const p = new URLSearchParams(self.location.search);
+      return { present: p.get('artcoarsem') !== null, value: ART_COARSE_M,
+        // The BEFORE half: the coarse octave faded at the FINE octave's
+        // wavelength, which is what the single call did. Read from the same
+        // export the fine fade's own default is read from, never transcribed
+        // (standing rule 11).
+        pre: ART_FINE_M };
+    },
+    /** RN-1900. THE MID-FIELD LAYER, amplitude and luminance weight together,
+     *  and its two wavelengths. Runtime for setFineM's reason exactly: the term
+     *  is judged between 18 and 45 m, where every candidate differs from every
+     *  other by a smoothstep on the pixel footprint, and two page loads are two
+     *  scenes (RN-1000). */
+    setMid(amp: number, lum?: number): [number, number] {
+      if (Number.isFinite(amp) && amp >= 0) midAmp.x = amp;
+      if (lum !== undefined && Number.isFinite(lum)) midAmp.y = lum > 0.5 ? 1 : 0;
+      return [midAmp.x, midAmp.y];
+    },
+    getMid(): [number, number] { return [midAmp.x, midAmp.y]; },
+    setMidM(a: number, b: number): [number, number] {
+      if (Number.isFinite(a) && a > 0) midM.x = a;
+      if (Number.isFinite(b) && b > 0) midM.y = b;
+      return [midM.x, midM.y];
+    },
+    getMidM(): [number, number] { return [midM.x, midM.y]; },
+    /** RN-1900. The shipped defaults and whether the URL moved them, so an arm
+     *  restores the boot state from the source of truth and a sweep can assert
+     *  its own fixture before reading any rung (GP-142, RN-150). */
+    midDefault(): {
+      present: boolean; amp: number; lum: number; a: number; b: number;
+    } {
+      const p = new URLSearchParams(self.location.search);
+      return {
+        present: p.get('groundmid') !== null || p.get('groundmidamp') !== null
+          || p.get('groundmidm') !== null || p.get('groundmidlum') !== null,
+        amp: MID_ALB, lum: 1, a: MID_A_M, b: MID_B_M,
+      };
+    },
     /** RN-1855. The shipped defaults, whether the URL moved either, and the two
      *  PRE-FIX values, so an arm restores the before state from the source of
      *  truth rather than from a number typed into a probe (standing rule 11),

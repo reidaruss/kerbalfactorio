@@ -79,6 +79,28 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     // restore 4.2 and 0.45.
     uniform float uArtFineM;
     uniform float uReliefFineM;
+    // RN-1900. The vnoise bump's COARSE octave's own wavelength in metres, so
+    // the two octaves of hB are faded against their own Nyquist points instead
+    // of both against the finer one's. Boot default ART_COARSE_M
+    // (FINE_CHUNK_M / ART_OCT_COARSE = 5.4585 m), derived for uArtFineM's
+    // reason; ?artcoarsem= sweeps it, and setting it EQUAL to uArtFineM is the
+    // exact pre-RN-1900 single-fade behaviour and is the before half of this
+    // half of the lane's pair.
+    uniform float uArtCoarseM;
+    // RN-1900. THE MID-FIELD LAYER, the ninth surface-art term. x is the
+    // amplitude and is an isolator first (?groundmid=0 restores the pre-RN-1900
+    // ground exactly); y is the per-biome luminance rule's weight, on the
+    // near-field layer's uFineLum precedent and for the identical measured
+    // reason (one amplitude across a nine-fold spread of biome luminance is one
+    // term invisible at one site and shouting at another).
+    uniform vec2 uMidAmp;
+    // RN-1900. The layer's two wavelengths IN METRES. A uniform because the
+    // frequency is the live question this term is judged on and a define cannot
+    // be swept inside one page, one camera and one streamed chunk set
+    // (RN-843/RN-1000); and because the two footprint fades read this SAME
+    // vector, so the octave and the fade that protects it cannot become two
+    // numbers that agreed once, which is RN-1855's whole scar.
+    uniform vec2 uMidM;
     // RN-961. The ripple direction's swing in RADIANS, peak to peak, across
     // cells. 0 collapses every cell's rotation to the identity, which restores
     // the pre-RN-961 sample coordinate exactly, so ?reliefswing=0 is the
@@ -201,6 +223,23 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       // and reads as noise in the biome blend rather than as relief.
       float flat_ = clamp(dot(n, up), 0.0, 1.0);
 
+      // RN-1900. THE PIXEL FOOTPRINT, HOISTED, and hoisted for a correctness
+      // reason rather than to save two instructions. Three terms below fade on
+      // it and each used to compute it for itself inside its own branch; those
+      // branches are all bare-uniform ones today, so all three are legal, but
+      // the mid-field layer's own gate is NOT a uniform (it is the fade itself)
+      // and a dFdx inside non-uniform control flow is undefined by the rule
+      // RN-78 paid a full hunt for the sampled half of. Computed once here, in
+      // control flow that is uniform by construction, it is defined for every
+      // consumer and there is one authority for "how big is a pixel of ground"
+      // instead of three copies of one expression.
+      //
+      // It is the same quantity ofArtBumpG reads: max(|dFdx(pos)|,|dFdy(pos)|)
+      // in world metres. At a grazing pose the dFdy arm binds and grows as the
+      // SQUARE of the range, which is why every fade in this material is keyed
+      // on it and not on dist.
+      float footM = max(length(dFdx(vWorld)), length(dFdy(vWorld)));
+
       // SURFACE ART (RN-45). Compiled out of the scaled far scene entirely, and
       // faded to nothing well inside the near scene's own reach; both reasons
       // are in TerrainArt.glsl's header and they are not the same reason.
@@ -317,7 +356,9 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         fineMc = OF_FINE_CHUNK_M / max(uFineFreq.y, 1.0);
         if (uFineAmp.x > 0.0 || uFineAmp.y > 0.0) {
           fineLum = mix(1.0, ofArtFineLum(vBiomeColor), uFineLum);
-          float footM = max(length(dFdx(vWorld)), length(dFdy(vWorld)));
+          // RN-1900: footM is the hoisted one now, computed in uniform
+          // control flow at the top of the function. Identical expression,
+          // identical value, one authority.
           // The SAME curve ofArtBump fades on, keyed on the SAME wavelength, so
           // the albedo half and the normal half retire together and a reader
           // never has to hold two bands in their head. Nyquist: a feature is
@@ -389,6 +430,44 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         // arm's length exactly as much as a forest floor does, and coverSel
         // is the cover/rock selector, not a near/far one.
         albedo *= vec3(1.0) + uFineAmp.y * fineLum * fineFade * fineA * vTint.xyz;
+        // RN-1900. THE MID-FIELD LAYER, the ninth term, and the band it fills
+        // is the one every other detail term has already left by 27 m. See
+        // TerrainMid.glsl.ts for the measurement that says so (at 35 m turning
+        // the vnoise bump off is BIT-IDENTICAL, so the mid field's entire
+        // surface-art content out there is nothing at all) and for why this one
+        // is on pM when the near-field layer's header says pM is unusable.
+        //
+        // ALBEDO ONLY, and that is the pM argument in one line: nothing here is
+        // differentiated, so the 0.0625 m float32 quantum is a staircase in a
+        // VALUE (75 steps across the finer octave, invisible) rather than a
+        // dead screen derivative (RN-45's arcs). The mid field's NORMAL half is
+        // the two-fade split of the vnoise bump above, on the chunk UV where it
+        // has always been.
+        //
+        // ON THE SAME TINT AXIS the grain and the detail layer ride, for
+        // RN-1257's reason: a value-only modulation has one degree of freedom
+        // and cannot make ground drier here and damper there, which is most of
+        // what tonal patchiness at the several-metre scale reads as. Mean-
+        // preserving by the same construction, and ofArtMid is centred by its
+        // own (see its note on why the fine octave rides the coarse one
+        // multiplicatively and why that stays centred).
+        //
+        // THE LUMINANCE RULE IS THE DETAIL LAYER'S, SHARED RATHER THAN COPIED.
+        // RN-1735 measured that one flat amplitude over a nine-fold spread of
+        // biome luminance is +134% of contrast at Beach and 0% at Plains, and
+        // this term is multiplicative on the lit value in exactly the same way.
+        // ofArtFineLum already reads the palette through vBiomeColor, so it
+        // costs nothing here and cannot drift from the near-field layer's copy
+        // of the same rule, because there is only one.
+        //
+        // NOT gated on coverSel, for the detail layer's reason: a hillside of
+        // scree wants several-metre tonal patchiness as much as a meadow does,
+        // and coverSel is the cover/rock selector, not a near/far one.
+        if (uMidAmp.x > 0.0) {
+          float midLum = mix(1.0, ofArtFineLum(vBiomeColor), uMidAmp.y);
+          float mid = ofArtMid(pM, footM, uMidM);
+          albedo *= vec3(1.0) + uMidAmp.x * midLum * mid * vTint.xyz;
+        }
         // RN-148: the relief sample. UNCONDITIONAL like g1/g2 and for the same
         // measured reason (a fetch inside non-uniform control flow has
         // UNDEFINED LOD; RN-78 paid a full hunt for it). One scale, the 16
@@ -488,9 +567,42 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
           // halved the quad, the literals meant something new and the 4.2 did
           // not follow, and the fade spent a fortnight protecting a wavelength
           // that no longer existed.
-          float hB = (ofArtVnoise(vec3(vChunkUv * OF_ART_OCT_FINE, 0.5)) - 0.5) * 0.9
-                   + (ofArtVnoise(vec3(vChunkUv * OF_ART_OCT_COARSE, 7.1)) - 0.5) * 0.5;
-          n = ofArtBump(n, vWorld, hB, bumpW * 1.6, uArtFineM);
+          // RN-1900. ONE OCTAVE, ONE FADE, AND THE FADE IS ON THE GRADIENT.
+          //
+          // This was one ofArtBump call over the SUM of the two octaves with
+          // ONE fade, uArtFineM, the finer of the two. So the 5.458 m octave
+          // was retired at the 2.066 m octave's Nyquist point: gone at a
+          // 0.688 m footprint (about 30 m at a standing eye) where its own
+          // limit at the identical 1.5x margin is 1.818 m (about 49 m). A
+          // factor of 2.64 in footprint and 1.63 in range, on precisely the
+          // mid-field wavelength RN-1900 exists to restore, and it is the same
+          // correction TerrainFine's ofArtFineHc note already made for the
+          // near-field layer ("a factor of 4.6 of reach thrown away ... Two
+          // calls, two fades, each protecting its own content").
+          //
+          // TWO GRADIENTS BLENDED, NOT TWO CALLS AND NOT TWO PRE-FADED HEIGHTS,
+          // and both rejects are recorded because each is wrong in its own way.
+          // Two ofArtBump calls would perturb the normal twice, and
+          // surface-gradient perturbation does not commute, so the pre-RN-1900
+          // frame would be unreachable by any setting of the new uniform and
+          // this change would have no exact negative control. Pre-fading the
+          // two HEIGHTS and differentiating the sum is worse: the fade varies
+          // per pixel, so dFdx(w * h) carries a grad(w) * h term that
+          // belongs to the fade and not to the ground, which is RN-961's own
+          // finding and it lit a ridge along every cell boundary there.
+          // Weighting each octave's GRADIENT by its own fade is the form
+          // RN-961 settled on, and it collapses to the old expression exactly
+          // when the two fades are equal: (gf + gc) * f is dFdx(hB) * f, which
+          // is what the single call computed. ?artcoarsem=2.0664 is therefore
+          // the pre-RN-1900 bump to within floating-point op ordering.
+          float hBf = (ofArtVnoise(vec3(vChunkUv * OF_ART_OCT_FINE, 0.5)) - 0.5) * 0.9;
+          float hBc = (ofArtVnoise(vec3(vChunkUv * OF_ART_OCT_COARSE, 7.1)) - 0.5) * 0.5;
+          float fadeBf = 1.0 - smoothstep(uArtFineM * 0.125, uArtFineM * 0.333, footM);
+          float fadeBc = 1.0 - smoothstep(uArtCoarseM * 0.125, uArtCoarseM * 0.333, footM);
+          n = ofArtBumpG(n, vWorld,
+            dFdx(hBf) * fadeBf + dFdx(hBc) * fadeBc,
+            dFdy(hBf) * fadeBf + dFdy(hBc) * fadeBc,
+            bumpW * 1.6, 0.0);
         }
         // RN-148: the ASYMMETRIC relief drives the SAME surface-gradient bump
         // as a second, separable call, so ?groundrelief=0 and ?terrainbump=0
