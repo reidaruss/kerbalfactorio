@@ -210,7 +210,7 @@ FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384,
                # that block set; `bark` itself is untouched, still 384, still
                # byte-identical to its own prior bytes, and every tree keeps
                # the field chosen for it.
-               "timber": 384}
+               "timber": 384,
                # RN-1815. `concrete` takes `masonry`'s two numbers verbatim
                # and neither is re-derived, because the consumer set is the
                # same one masonry's own numbers were chosen against: an
@@ -610,7 +610,7 @@ FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6, "ore": 0.5,
                  # to 5.8 cm, which is the split and grain spacing of a cut
                  # branch. A haft is not fine-grained bark; it is the same
                  # wood seen from a third as far away.
-                 "timber": 0.35}
+                 "timber": 0.35,
                  # `concrete` 1.8 m, taken from `masonry` rather than
                  # re-derived: the consumer is the same 24 m pad masonry's
                  # own row already sized for (21.2 to 24.0 m of deck and

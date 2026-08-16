@@ -66,8 +66,7 @@ import { loadTexture } from '../../assets/Loaders.js';
 // sight strip's emissive map) join the union for the same reason paintchip
 // and rust did above.
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
-  | 'paintchip' | 'rust' | 'masonry' | 'ember' | 'timber'
-  | 'paintchip' | 'rust' | 'masonry' | 'concrete' | 'ember'
+  | 'paintchip' | 'rust' | 'masonry' | 'concrete' | 'ember' | 'timber'
   | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'flat';
 
 /**
