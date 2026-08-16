@@ -27,6 +27,7 @@
 //                      deadlock that shipped (FS-17).
 //   8. Determinism   — standing rule 4: two identical grids match bit for bit.
 // =============================================================================
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -214,6 +215,103 @@ TEST(a_consumer_no_pole_reaches_is_unpowered_not_free) {
   // cannot brown out machines it is not even connected to.
   CHECK(g.stats(0).demandW == 30000);
   CHECK(g.stats(0).consumerCount == 1);
+}
+
+// =============================================================================
+// 3b. FS-159: THE SUPPLY RADIUS REACHES A FACE, NOT A CENTRE.
+//
+// The test above is the POINT-machine rule and stays exactly as it was: a
+// consumer that declares no size is a point, and 3.0 m is outside 2.5 m. These
+// three add the rule for machines that DO have a width.
+//
+// The defect these pin: a 4 m electric smelter beside a 1 m pole cannot be
+// placed closer than ceil((1 + 4) / 2) = 3 cells by the placement rule's own
+// clash arithmetic, so measured centre to centre it could never be powered on a
+// tier-0 grid at all, while a 2 m generator at ITS closest legal cell (2 cells)
+// always could. Latent since FS-73 rescaled the machine set to 4 m.
+// =============================================================================
+
+// The closest legal cell for a machine of footprint `f` beside a 1 m pole, in
+// metres, on the shipped world's 1.002 m lattice. This is
+// `FactorySnap.ts::stepsFor` and it is the ONLY distance a player can actually
+// achieve, which is what makes it the distance worth testing.
+namespace {
+constexpr double kLatticeM = 1.002;
+double closestLegalCellM(double footprintM) {
+  const double cells = std::ceil((1.0 + footprintM) * 0.5);
+  return (cells < 1.0 ? 1.0 : cells) * kLatticeM;
+}
+}  // namespace
+
+TEST(a_machine_at_its_closest_legal_cell_is_powered_whatever_size_it_is) {
+  // Every placeable kind, at the closest cell the placement rule allows it,
+  // beside one tier-0 pole. Before FS-159 only the 2 m generator-sized row
+  // passed; a 4 m machine and an 8 m machine were both unreachable.
+  const double kFootprints[] = {1.0, 2.0, 4.0, 8.0};
+  for (double f : kFootprints) {
+    pw::PowerGrid g;
+    g.addPole(0, 0, 0);
+    const pw::NodeId gen =
+        g.addGenerator(0.5f, 0, 0, pw::burnerGeneratorSpec(sv::items::Coal));
+    g.insertFuel(gen, sv::items::Coal, 5);
+    const pw::NodeId m = g.addConsumer(
+        static_cast<float>(closestLegalCellM(f)), 0, 0, 30000,
+        static_cast<float>(f));
+    g.solve(0);
+    CHECK(g.networkOfNode(m) == 0);
+    CHECK(g.satisfactionOfNode(m) == 65536u);
+  }
+}
+
+TEST(coverage_is_measured_to_the_nearest_face_and_stops_there) {
+  // The rule is a rule and not a licence: reaching the face does not mean
+  // reaching forever. A 4 m machine is covered while its face is within the
+  // 2.5 m radius (centre <= 4.5 m) and drops off the grid one millimetre past.
+  pw::PowerGrid g;
+  g.addPole(0, 0, 0);
+  const pw::NodeId in = g.addConsumer(4.5f, 0, 0, 30000, 4.0f);
+  const pw::NodeId out = g.addConsumer(0, 4.501f, 0, 30000, 4.0f);
+  g.solve(0);
+  CHECK(g.networkOfNode(in) == 0);
+  CHECK(g.networkOfNode(out) == pw::kNoNetwork);
+}
+
+TEST(a_consumer_that_declares_no_size_is_still_a_point) {
+  // The back-compat guarantee, stated as a test rather than left as a comment:
+  // the SAME distance that a 4 m machine reaches from is off-grid for a caller
+  // that never described its machine. Every pre-FS-159 caller is in this row.
+  pw::PowerGrid g;
+  g.addPole(0, 0, 0);
+  const pw::NodeId sized = g.addConsumer(3.006f, 0, 0, 30000, 4.0f);
+  const pw::NodeId point = g.addConsumer(0, 3.006f, 0, 30000);
+  g.solve(0);
+  CHECK(g.networkOfNode(sized) == 0);
+  CHECK(g.networkOfNode(point) == pw::kNoNetwork);
+}
+
+TEST(an_electric_smelter_beside_a_pole_actually_smelts) {
+  // THE DEFECT, end to end through the layer the game calls, and the one test
+  // that would have caught it: a player places a pole, places an electric
+  // smelter as close to it as the game allows, fuels the generator, and the
+  // smelter must MAKE IRON. Before FS-159 it made none, forever, on any layout
+  // a tier-0 grid could produce.
+  au::BuildableNetwork net;
+  net.enableGrid();
+  net.placePole(0, 0, 0);
+  const au::GeneratorId g =
+      net.placeBurnerGenerator(2.004f, 0, 0, sv::items::Coal);  // its own cell
+  net.insertFuel(g, sv::items::Coal, 5);
+  au::BuildId s = net.placeElectricSmelter(
+      sv::items::RawIron, sv::items::Iron,
+      static_cast<float>(closestLegalCellM(4.0)), 0, 0);
+  net.sim().feedMachine(s.entity, 5);
+  net.stepN(600);
+
+  CHECK(net.networkOfBuild(s) == 0);
+  CHECK(net.satisfactionQ16Of(s) == 65536u);
+  CHECK(net.producedCountOf(sv::items::Iron) == 5u);
+  // And the demand reached the network, which is the panel's half of the story.
+  CHECK(net.networkStats(0).consumerCount == 1);
 }
 
 // =============================================================================

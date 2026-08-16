@@ -88,6 +88,41 @@ struct BuildId {
 };
 
 // =============================================================================
+// HOW WIDE A BUILDING IS, in metres. Data, not code: a new kind is a row.
+//
+// FS-159 needs this because the power grid's supply radius reaches a machine's
+// nearest FACE and not its centre (see poleClassDef in power.h for why), and a
+// face is a thing only a machine with a WIDTH has. Nothing else in /core asks.
+//
+// THE AUTHORITY IS `web/src/game/FactoryKinds.ts::FOOTPRINT`, mirrored here the
+// same way and for the same reason `GeneratorSpec::typeId` mirrors ASSET-SPECS:
+// the caller that knows the number cannot reach this call without a new wasm
+// export, and a new export is a client/wasm ABI handshake the release lane owns.
+//
+// THE MIRROR IS CHECKED RATHER THAN TRUSTED, which is the part that matters: an
+// unchecked copy of this table is exactly how FS-73 stranded the smelter. The
+// check is `probes/power.js`'s COVERAGE section — it derives the mating cells
+// from FOOTPRINT read live out of the running client, stands a smelter on each
+// one, and asserts /core's own network id for it. If these two tables ever
+// disagree by enough to matter, that probe goes red instead of a machine going
+// quietly dead.
+//
+// The map is total over BuildKind and agrees with FOOTPRINT on every row. Note
+// an ELECTRIC smelter is a `Smelter` here, and both smelter rungs are 4 m, so
+// the missing distinction cannot cost anything.
+inline float buildKindFootprintM(BuildKind k) {
+  switch (k) {
+    case BuildKind::Belt:      return 1.0f;   // FOOTPRINT.belt
+    case BuildKind::Miner:     return 4.0f;   // FOOTPRINT.miner
+    case BuildKind::Smelter:   return 4.0f;   // FOOTPRINT.smelter / .esmelter
+    case BuildKind::Container: return 4.0f;   // FOOTPRINT.chest
+    case BuildKind::Assembler: return 8.0f;   // FOOTPRINT.assembler
+    case BuildKind::None:      break;
+  }
+  return 0.0f;  // unknown kind: a point, i.e. the pre-FS-159 rule
+}
+
+// =============================================================================
 // BuildableNetwork — the API the UE placement layer calls.
 //
 //   placeMinerOnDeposit / placeBelt / placeSmelter / placeAssembler  -> BuildId
@@ -326,7 +361,11 @@ class BuildableNetwork {
   void connectToGrid(const BuildId& b, float x, float y, float z,
                      int32_t ratedDrawW) {
     if (!b.valid()) return;
-    const power::NodeId node = grid_.addConsumer(x, y, z, ratedDrawW);
+    // The machine's own width goes with it: the supply radius is measured to a
+    // FACE (FS-159), and a consumer registered without one is a point that a
+    // pole it is physically touching can fail to reach.
+    const power::NodeId node =
+        grid_.addConsumer(x, y, z, ratedDrawW, buildKindFootprintM(b.kind));
     consumers_.push_back(Consumer{b.entity, node});
     if (b.kind == BuildKind::Miner) sim_.setMinerPower(b.entity, ratedDrawW);
     gridEpoch_ = 0;  // topology changed: re-map on the next step

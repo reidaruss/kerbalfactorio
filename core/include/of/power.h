@@ -115,6 +115,51 @@ inline int64_t ApplyQ16(int64_t value, uint32_t q16) {
 // sit on a metric site grid with tiles 1.002 m apart (FS-17) and belt-to-machine
 // reach is 2.25 m. A 2.5 m supply radius therefore covers the machine a pole is
 // standing next to and its immediate neighbours, and nothing surprising.
+//
+// WHAT THE RADIUS IS MEASURED TO, and FS-159's whole subject. It is the distance
+// from the POLE'S CENTRE to the MACHINE'S NEAREST FACE, not to the machine's
+// centre. The word "area" in the paragraph above was always the intent — a
+// Factorio pole covers a 5x5 patch of TILES and a machine is supplied when its
+// footprint overlaps that patch — but the code compared centre to centre, which
+// is a different rule the moment machines stop being points.
+//
+// It is a different rule in a way that made the electric smelter UNPOWERABLE.
+// The placement rule spaces two machines by their HOUSINGS (a cell is legal when
+// the footprints do not overlap, `MachinePlacement.ts::footprintsOverlap`), so
+// the closest legal cell for a machine of footprint f beside a 1 m pole is
+// ceil((1 + f) / 2) cells. Every 4 m and 8 m machine therefore parks with the
+// SAME 0.5 m of clear air against the pole, and its CENTRE lands at f/2 further
+// out than the generator's does. Measured centre to centre, coverage was a
+// function of how BIG a machine is rather than how CLOSE it is:
+//
+//   kind        f    closest legal cell   centre    face    centre<=2.5?
+//   generator   2    2 cells              2.004 m   0.504 m  yes
+//   esmelter    4    3 cells              3.006 m   0.506 m  NO
+//   assembler   8    5 cells              5.010 m   0.510 m  NO
+//
+// Three machines touching the same pole just as closely, three different
+// answers. Measuring to the nearest face collapses them back to one answer,
+// which is the property that makes the rule survive the next rescale: FS-73
+// doubled the machine set and silently moved the esmelter across this line.
+//
+// HOW COMPLETE THE DEFECT WAS, measured rather than argued: a fresh-context
+// verifier drove /core through the C ABI and swept all 289 offsets in a 17x17
+// block around one pole, keeping only the cells the placement rule allows. Legal
+// cells on which an electric smelter attached: ZERO. Not "hard to power" —
+// there was no layout ON A SINGLE SITE that could power one. The qualifier is
+// load-bearing and is the one hole that sweep left: `machineClash` skips pairs
+// on different sites, so two machines straddling a site boundary
+// (SITE_REACH_M 64) are never clash-checked against each other and could in
+// principle sit closer than the mating distance. Nobody has constructed that
+// case and it is degenerate, but it is why this paragraph does not say "no
+// layout of any shape".
+//
+// THE RADIUS ITSELF IS UNCHANGED at 2.5 m, deliberately. Re-deriving it as "the
+// largest consumer's closest legal cell" is the fix this defect invites and it
+// does not survive its own arithmetic: it needs > 3.006 m for the esmelter today
+// and > 5.010 m for the 8 m assembler the moment that draws watts, and 5.010 m
+// is larger than the Medium pole below (3.5 m) and over half the Substation
+// (9.0 m). The number was never wrong; the thing it was compared against was.
 // =============================================================================
 struct PoleClassDef {
   const char* name = "pole";
@@ -244,7 +289,7 @@ class PowerGrid {
     p.x = x; p.y = y; p.z = z;
     p.cls = cls;
     const PoleClassDef& d = poleClassDef(cls);
-    p.supplyR2Mm2 = radiusToSqMm(d.supplyRadiusM);
+    p.supplyRMm = toMm(d.supplyRadiusM);
     p.wireR2Mm2 = radiusToSqMm(d.wireReachM);
     p.alive = true;
     poles_.push_back(p);
@@ -271,6 +316,16 @@ class PowerGrid {
     return n;
   }
 
+  // A GENERATOR IS STILL A POINT, and that is a decision rather than an
+  // oversight. FS-159 made consumers footprint-aware because consumers were
+  // BROKEN: the 2 m generator already reaches its pole from its own closest
+  // legal cell (2.004 m against 2.5 m) and there is no larger generator kind to
+  // strand, so there is nothing here to fix. Giving it a half-extent would
+  // widen tier-0 generator coverage from 2.5 m to 3.5 m, which silently
+  // re-attaches generators in worlds already saved and is the balance change
+  // FS-73 declined to make without the power lane's number. It wants its own
+  // pass, with `probes/genpole.js` re-derived first: that probe's off-grid
+  // control only guards 0.6 m above the radius and a 1.0 m half-extent eats it.
   NodeId addGenerator(float x, float y, float z, const GeneratorSpec& spec) {
     Node n;
     n.x = x; n.y = y; n.z = z;
@@ -285,11 +340,18 @@ class PowerGrid {
   // A consumer's `ratedDrawW` is its nameplate: what it draws when it is doing
   // work. Its per-tick WANT is published separately via setDemand, because a
   // starved machine wants nothing and must not brown out its neighbours.
-  NodeId addConsumer(float x, float y, float z, int32_t ratedDrawW) {
+  //
+  // `footprintM` is the machine's WIDTH in metres, and it is what makes the
+  // supply radius reach the machine's nearest face rather than its centre (see
+  // the pole-class header). Zero means "a point", which is what every caller
+  // that does not know its own size gets and what the raw-grid tests use.
+  NodeId addConsumer(float x, float y, float z, int32_t ratedDrawW,
+                     float footprintM = 0.0f) {
     Node n;
     n.x = x; n.y = y; n.z = z;
     n.isGenerator = false;
     n.ratedDrawW = ratedDrawW;
+    n.halfExtentMm = footprintM > 0.0f ? toMm(footprintM * 0.5f) : 0;
     n.demandW = ratedDrawW;  // default: wants its nameplate until told otherwise
     n.alive = true;
     nodes_.push_back(n);
@@ -530,7 +592,11 @@ class PowerGrid {
   struct Pole {
     float x = 0, y = 0, z = 0;
     PoleClass cls = PoleClass::Small;
-    int64_t supplyR2Mm2 = 0;
+    // Supply reach in MILLIMETRES, not squared. Coverage adds the consumer's
+    // own half-extent before squaring, so the un-squared radius is the term the
+    // comparison actually needs; squaring it here and un-squaring it there
+    // would be a sqrt per node per pole per rebuild for nothing.
+    int64_t supplyRMm = 0;
     int64_t wireR2Mm2 = 0;
     bool alive = false;
     NetworkId network = kNoNetwork;
@@ -551,6 +617,12 @@ class PowerGrid {
     // consumer
     int32_t ratedDrawW = 0;
     int32_t demandW = 0;
+    // Half of the machine's footprint, in millimetres: the distance from its
+    // centre to its nearest face. A pole covers this node when the gap between
+    // them is within (supply radius + this). DEFAULTS TO ZERO, which is the
+    // old point-machine rule exactly, so a caller that does not describe its
+    // machine's size gets the behaviour it has always had.
+    int64_t halfExtentMm = 0;
   };
 
   struct Ring {
@@ -715,6 +787,16 @@ class PowerGrid {
     // Attach generators and consumers to the NEAREST covering pole. Ties break
     // to the lowest pole id, so the same layout always yields the same
     // attachment regardless of iteration order or float comparison luck.
+    //
+    // COVERED means the pole's supply radius reaches the machine's nearest
+    // FACE: centre distance <= supply radius + the machine's half-extent. The
+    // half-extent is 0 for a machine that never declared a size, so this is the
+    // old centre-to-centre rule for every such caller, bit for bit.
+    //
+    // NEAREST is still by CENTRE distance and deliberately so. The half-extent
+    // is a property of the machine and is therefore the same term against every
+    // pole, so it cannot reorder them; subtracting it would change no
+    // attachment and would only make the comparison harder to read.
     for (Node& n : nodes_) {
       n.network = kNoNetwork;
       if (!n.alive) continue;
@@ -724,7 +806,11 @@ class PowerGrid {
         if (!poles_[i].alive) continue;
         const int64_t d2 =
             sqDistMm2(n.x, n.y, n.z, poles_[i].x, poles_[i].y, poles_[i].z);
-        if (d2 > poles_[i].supplyR2Mm2) continue;
+        // Squared once, here, rather than kept squared on the pole: the reach
+        // depends on the NODE as well as the pole, so there is nothing to
+        // precompute. Still exact int64 — no float decides an attachment.
+        const int64_t reachMm = poles_[i].supplyRMm + n.halfExtentMm;
+        if (d2 > reachMm * reachMm) continue;
         if (bestPole == kInvalidId || d2 < best) {
           best = d2;
           bestPole = i;
