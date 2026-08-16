@@ -362,6 +362,60 @@ PALETTE = {
     # --- nature ---
     "Bark":         ("4E3B2A", 0.00, 0.95, 1.0, None),
     "BarkLight":    ("6B5238", 0.00, 0.92, 1.0, None),
+    # RN-1880 (look audit R4). THE TOOL HAFT IN THE FIRST-PERSON HAND.
+    #
+    # Split off `Bark` rather than re-tiled into it, for the reason texgen's
+    # ROLE_FAMILY row states: bark's field is sized for a trunk at 3 to 10 m
+    # and this is the one wood surface the player holds at 0.62 m. `Haft`
+    # wears the `timber` family (1097 texels/m against bark's 640).
+    #
+    # THE COLOUR IS BARK'S, UNCHANGED TO THE DIGIT, AND THAT IS A RECORDED
+    # NEGATIVE RESULT RATHER THAN AN OMISSION.
+    #
+    # The obvious move was RN-858's: the haft's lit face measures 78.2 counts
+    # of chroma at luma 133.7 in `forestfloor`, and RN-858 struck 93 counts at
+    # luma 147 off `Skin` as "a colour no person is", so 463E36 (chroma 36 ->
+    # 16, value held inside a count) was built, rendered and measured. It
+    # WORKED on the instrument -- the whole view model's `warm` fell 29.02 to
+    # 14.62 against a frame at 11.45 -- and it made the frame worse: the shaft
+    # came back a cool grey-white and read as bone or moulded plastic instead
+    # of wood, because taking the hue out of an object that is still four and
+    # a half times too bright leaves a pale neutral cylinder.
+    #
+    # WHY, AND IT IS THE WHOLE R4 FINDING IN ONE RATIO. The haft's rendered
+    # chroma-to-luma is `Bark`'s OWN to three decimals (0.585 against 0.585),
+    # so the peach the look audit saw is this palette row lit correctly by a
+    # light that is wrong, not a wrong palette row. Render pass 4 has no
+    # shadow map (`Boot.addLighting(scenes.viewModel, ..., hemi=false)`), so
+    # the view model never loses the sun when the world does: measured
+    # model-to-frame luma 2.76 in `forestfloor` and 3.36 in `machine`, both
+    # shaded sites, against 1.23 in `ruin`, which is open. Repainting a
+    # palette row to compensate for that is tuning away a measurement, and
+    # the open frame is the control that proves it would be wrong there.
+    #
+    # So `Haft` differs from `Bark` in exactly the two things that are this
+    # lane's to change: the FAMILY it wears (`timber`, 1097 texels/m against
+    # bark's 640) and its roughness. 0.90 rather than 0.95 because a haft is
+    # polished by a hand where a trunk is not.
+    "Haft":         ("4E3B2A", 0.00, 0.90, 1.0, None),
+    # The lashing and the grip wrap: ONE role for both, because they are one
+    # material (rawhide cord) doing two jobs on the same stick, and because
+    # the tools' contract allows three materials and this keeps them at three.
+    #
+    # IT REPLACES `Accent` ON THESE TWO ASSETS, WHICH IS THE POINT. `Accent`
+    # is FF8A1E, the most saturated row in this table, and RN-645 already
+    # removed exactly that colour from exactly this frame once ("under the
+    # corrected FOV it is the largest single block of colour in the
+    # first-person frame ... ART-DIRECTION.md names pastel and saturated
+    # primaries as the thing to unlearn"). It came back on the object the
+    # hand is holding. Rawhide is what actually lashes a stone head to a
+    # branch, so this is the honest object as well as the quieter one.
+    #
+    # 33291F is 32 counts of chroma at luma 42.1, a clear value step DOWN
+    # from the haft's 63.3 so the wrap reads as a band in silhouette rather
+    # than as a paint stripe, which is the same argument `ChitinBand` records
+    # for going darker than the shell instead of lighter.
+    "Rawhide":      ("33291F", 0.00, 0.86, 1.0, None),
     "Leaf":         ("4C7A38", 0.00, 0.80, 1.0, None),
     "LeafDeep":     ("2F4F26", 0.00, 0.84, 1.0, None),
     "LeafLight":    ("7FA84E", 0.00, 0.76, 1.0, None),

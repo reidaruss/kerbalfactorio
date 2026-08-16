@@ -66,7 +66,7 @@ import { loadTexture } from '../../assets/Loaders.js';
 // sight strip's emissive map) join the union for the same reason paintchip
 // and rust did above.
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
-  | 'paintchip' | 'rust' | 'masonry' | 'ember'
+  | 'paintchip' | 'rust' | 'masonry' | 'ember' | 'timber'
   | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'flat';
 
 /**
@@ -135,6 +135,16 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   Suit: 'suitfab', SuitDark: 'suitfab', SuitGrime: 'suitfab',
   Plate: 'suitplate',
   Bark: 'bark', BarkLight: 'bark',
+  // RN-1880 (look audit R4): the tool haft in the first-person hand, and the
+  // rawhide that lashes and wraps it. `Haft` is a SPLIT off `Bark`, on the
+  // same shape as RN-1780's `Masonry` split off `Rock`: bark's field is sized
+  // for a trunk at 3 to 10 m and this is the one wood surface the player
+  // holds at 0.62 m, where `timber`'s 1097 texels/m clears the ~1000 px/m
+  // first-person floor texgen's own FAMILY_SIZE block already set for
+  // `suitfab` and `suitplate`. `Rawhide` reuses `suitfab` for that floor's
+  // sake rather than adding a second family at the same distance.
+  // Moves in the same commit as texgen's table (RN-100's rule).
+  Haft: 'timber', Rawhide: 'suitfab',
   Coal: 'coarse', Copper: 'coarse',
   Iron: 'coarse', Regolith: 'coarse',
   Rubber: 'coarse', Sand: 'coarse', Soil: 'coarse',

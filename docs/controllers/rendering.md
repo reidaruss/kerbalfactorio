@@ -963,6 +963,93 @@ first and agreed **bit-identically on four rectangles across two shots**
 - **Fix and cost.** MEDIUM: a Blender rebuild of `player_fp_arms.glb` plus a
   skin and glove map. Needs Reid's ruling on the scope boundary first.
 
+#### R4 WORKED, RN-1875 to RN-1882, 2026-08-16, `lane/view-model`. TWO OF THE THREE CLAIMS ABOVE ARE WRONG, AND THE THING THAT READS UNFINISHED IS THE TOOL
+Dispatched anyway against A7, on Reid's standing directive: an unfinished thing
+in every frame contradicts "the game should look close to done" more than
+anything else on the queue.
+
+- **THE FRAME SHARE IS 3.54 TO 4.51 PER CENT, MEASURED, NOT 7.8.** The estimate
+  above is a bounding rectangle around two hands and a diagonal haft, and it is
+  roughly 2x the truth. It is now a per-pixel difference: the same shot captured
+  twice with `{"hideVm": true}` on the second, differenced at a threshold of 8
+  counts. `forestfloor` 50,980 px = **3.54 per cent**, `machine` 63,610 =
+  **4.42**, `ruin` 64,939 = **4.51**, `voxelface` 53,340 = **3.70**. The
+  instrument's own control: on `voxelface` the mask has **zero** pixels above
+  y = 0.75, and on `forestfloor` 156 of 50,980 (0.3 per cent). **Verifier
+  re-measurement, independent capture, masks 99.85 and 99.97 per cent clean:
+  `forestfloor` 3.81 per cent and `voxelface` 4.63 per cent**, both a bit above
+  this lane's own 3.54 and 3.70; the gap is real pose variation between
+  captures rather than an instrument fault, and the audit's published 7.8 per
+  cent is still roughly 2x either number.
+- **THERE IS NO BARE `OF_Skin` FOREARM IN ANY OF THE FIVE FRAMES.** `OF_Skin`
+  on `player_fp_arms.glb` is a 604 x 92 x 135 mm pair of wrist bands between the
+  cuff and the glove (RN-857), and at the shipped carry every one of them is
+  below the frame edge. **What is in the frame, reading as a flat untextured
+  tube, is the TOOL HAFT**, which is a different asset (`tool_common.py`) with a
+  different owner. An audit that names the wrong object routes the next lane to
+  the wrong file.
+- **AND THE HAFT'S COLOUR IS NOT THE DEFECT EITHER; THE LIGHT IS.** `forestfloor`,
+  real D3D11: the haft's lit face reads **luma 133.69 / warm 78.22 / sat 0.470**
+  against a frame at 29.90 / 11.45 / 0.456, and its shaded side reads **iqr
+  6.28** against the frame's 27.84. But its rendered chroma-to-luma ratio is
+  `Bark`'s **own authored ratio to three decimals (0.585 against 0.585)**, so
+  that peach is one palette row lit correctly by a light that is wrong.
+- **THE LIGHT, AND THIS IS THE REAL R4.** Render pass 4 has no shadow map
+  (`Boot.ts`: `addLighting(scenes.viewModel, sunDir, 3, false)`, `castShadow`
+  never set, no `ShadowRig`), so the view model never loses the sun when the
+  world does. Model luma against its own frame's luma, four canonical shots,
+  each an isolated mask: **`voxelface` 0.55, `ruin` 1.23, `forestfloor` 2.76,
+  `machine` 3.36.** A **6.1x spread in a quantity that should be ~1 in every
+  frame, and it changes sign**: 2.8x too bright standing in canopy shade, 1.8x
+  too DARK standing in a sunlit pit. **Verifier re-measurement on `voxelface`
+  and `forestfloor` reproduced the sign change with the world side matching
+  almost exactly: 0.56 and 2.53** against this lane's 0.55 and 2.76, which
+  moves the spread to 6.0x and the canopy-shade figure to 2.5x too bright; the
+  sunlit-pit figure stays 1.8x too dark. In the same `machine` frame the smelter, a
+  stock `MeshStandardMaterial` 5.19 m away in the near pass, reads box luma
+  19.58 / warm -4.17 while the same class of material at 0.62 m in pass 4 reads
+  105.91 / +37.83.
+- **SCOPE RULING TAKEN HERE AND STATED UP FRONT: no constant can fix a term
+  whose error changes sign, so the fill was NOT retuned.** Dimming
+  `VM_HEMI.intensity` would improve `forestfloor` and `machine` and break `ruin`
+  and `voxelface`, and `ruin`'s 1.23 is the positive control that proves the
+  absolute level is already right where the world is open. **A shadow term for
+  render pass 4 is renderer work and is owed** (§2.9). The chroma halving was
+  also built, rendered and REVERTED: it moved the whole model's `warm` 29.02 ->
+  14.62 against a frame at 11.45, and made the shaft read as bone rather than as
+  wood, because taking the hue out of an object still 4.5x too bright leaves a
+  pale neutral cylinder. `Haft` therefore ships `Bark`'s colour to the digit.
+- **WHAT LANDED, all static, none of it animation.** `timber`, a new texture
+  family that is `bark`'s recipe at a tile chosen from the CONSUMER's distance:
+  the haft carries **0.080 repeats** of bark across its 48 mm section (measured
+  off the shipped UVs, against R3's 0.78 on a boulder) so repeats are the wrong
+  instrument for a cylinder this thin, and the right one is the first-person
+  texel floor `texgen.FAMILY_SIZE` had already set for `suitfab` (1024) and
+  `suitplate` (960) and then left the tool held in that same hand outside at
+  **640**. `timber` is 384 px / 0.35 m = **1097 texels/m**, asserted bound in
+  the running client at `repeat` 2.8571 by `probes/vmsurface.js`. The haft is 12
+  flat-shaded sides on four rings instead of one 8-sided frustum (a facet at
+  15 px instead of 22), with a cord **grip wrap** on the 20 cm the fist actually
+  closes on, and the head lashing is off `Accent` (FF8A1E, the most saturated
+  row in the palette, which RN-645 already removed from this exact frame once)
+  onto `Rawhide` -> `suitfab`.
+- **Owed to the feel workstream, named with its measurement.** The fingers do
+  not close on the haft: the wrap gives them something to be closing on and the
+  bind pose still rests the hand on top of the shaft. That is a bind-pose and
+  clip change across all twelve `FP_*` clips and it is not an art-pass item.
+- **Frames.** `docs/screenshots/RN1875_{before,after}_{forestfloor,machine,voxelface}.png`
+  plus the `RN1875_novm_*` and `RN1875_after_novm_*` controls the masks are
+  differenced against, and the two REJECTED variants kept as evidence rather
+  than described: `RN1875_reject_chromahalf_forestfloor.png` (the grey-white
+  bone shaft) and `RN1875_reject_undercutbutt_forestfloor.png` (the
+  see-through eyelet, from a haft profile that narrowed at the butt while the
+  butt pointed at the camera). Negative control, off the `voxelface` pair: the changed
+  region is **entirely below y = 801** and `box` luma 86.81, `groundA` IQR
+  22.06 (luma 92.61), `groundB` IQR 18.42 (luma 97.73) are identical to the
+  digit either side, so the family addition and the two new palette rows
+  moved nothing but the tool. (`groundA` IQR 22.06 also reproduces R1's own
+  published 22.13 within 0.07.)
+
 ### R5. THE STATION SHOT IS NOT REPRODUCIBLE, SO THE STORYLINE'S CLIMAX DESTINATION HAS NO JUDGEABLE FRAME
 - **Measurement.** Six captures of the identical command. Box luma **21.78,
   3.73, 5.69** at `timeOfDay` 0.35 and **8.76, 10.48** at the shipped 0.60: a
@@ -1079,6 +1166,53 @@ shots exist. The written target grade **does not exist anywhere**: `grep -rn
 commissioned it. This audit therefore had no per-shot target to check against
 and used the recorded readings instead. Whoever runs the next wave should write
 the grades, or the same gap recurs at the next audit.
+
+## 2.9 OWED, ROUTED OUT OF R4 (RN-1875, 2026-08-16, `lane/view-model`)
+
+### THE VIEW-MODEL PASS HAS NO SHADOW TERM, AND IT IS THE LARGEST REMAINING LOOK DEFECT ON THE ONE ASSET IN EVERY FRAME
+`Frame.ts` renders `scenes.viewModel` as pass 4 with its own camera and depth
+range. Its lights are `Boot.ts`'s `addLighting(scenes.viewModel, sunDir, 3,
+false)` -- a `DirectionalLight` at the same 3.0 the near sun carries, with
+`castShadow` never set and no `ShadowRig` attached -- plus `Headlamp`'s
+`vmHemi` and the shared `SkyIbl`. So the arms and the held tool are lit by a
+sun **nothing can occlude**, in a frame whose world is shadowed by cascade 0.
+
+**The measurement, four canonical shots, model pixels isolated by the RN-1876
+`hideVm` control and differenced per pixel.** Model mean luma divided by the
+same frame's own mean luma outside the model:
+
+| shot | world luma | model luma | ratio |
+|---|---|---|---|
+| `voxelface` (sunlit pit, dot 0.88) | 98.55 | 54.20 | **0.55** |
+| `ruin` (open approach, dot 0.35) | 81.74 | 100.42 | **1.23** |
+| `forestfloor` (canopy shade, dot 0.70) | 29.92 | 82.71 | **2.76** |
+| `machine` (shaded site, dot 0.45) | 31.48 | 105.91 | **3.36** |
+
+**A 6.1x spread on a quantity that should be near 1 in every frame, and the
+error changes sign.** That is what makes it a missing TERM and not a mistuned
+constant, and it is why `lane/view-model` deliberately did not touch
+`VM_HEMI`: `ruin`'s 1.23 is the control proving the absolute level is already
+right wherever the sky is open, so any dimming that helped the two shaded
+frames would break the two that are correct.
+
+Second reading of the same fact, in one frame with no cross-shot comparison at
+all: on `machine`, the smelter is a stock `MeshStandardMaterial` 5.19 m away in
+the near pass and reads box luma **19.58 / warm -4.17**; the view model is the
+same class of material 0.62 m away in pass 4 and reads **105.91 / +37.83**.
+
+**What a fix would have to be.** Either cascade 0's shadow map read by a light
+in the view-model scene, or the occlusion at the player's eye sampled once per
+frame and applied as a scale on the pass-4 sun. The second is much the cheaper
+and `Headlamp` already owns the shape of it (`sunScale`, driven from
+`skyVis`), but `skyVis` is a ROCK-thickness oracle: it is 1.0 under a tree
+canopy, which is exactly the `forestfloor` case. Rendering domain, not an art
+wave.
+
+**Also owed, feel workstream (A7):** the hand does not close on the haft.
+RN-1880 put a cord grip wrap on the 20 cm the fist occupies, which gives the
+fingers something to be closing on, and the bind pose still rests the hand on
+top of the shaft rather than around it. Closing it is a bind-pose change plus a
+`fp_grip` retune across all twelve `FP_*` clips.
 
 ## 3. Key design decisions
 | # | Decision | Rationale | Status | Date |

@@ -289,7 +289,9 @@ export function registerSystems(s: Services, loop: Loop): void {
       // the shadow caster still sees it and the player still casts a shadow.
       s.rig.setOwnBodyVisible(p.view.mode === 'TP');
       // The arms ARE the first-person silhouette; in TP the pass draws nothing.
-      s.avatar.viewModel.visible = p.view.mode === 'FP';
+      // `debugHidden` (RN-1876) is the probe's per-pixel control frame; it is
+      // false in every shipped path, so this line is the one it was.
+      s.avatar.viewModel.visible = p.view.mode === 'FP' && !s.avatar.debugHidden;
     }
     // The body centre in engine space is simply -origin; the far scene puts it
     // at the scaled origin, which TerrainMaterials.update handles itself.

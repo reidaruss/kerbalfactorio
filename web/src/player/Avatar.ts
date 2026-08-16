@@ -53,6 +53,22 @@ export class Avatar {
   private toolSwaps = 0;
 
   /**
+   * RN-1876. A MEASUREMENT HANDLE, not a feature, and it exists because the
+   * look audit could only publish the view model's frame share as "roughly 7.8
+   * per cent as an upper bound (a bounding rectangle, so the covered area is
+   * less and this is stated as an estimate, not a measurement)".
+   *
+   * A bounding rectangle around two hands and a diagonal haft is mostly world:
+   * the honest number needs the SAME frame with the model out of it, so the
+   * two can be differenced per pixel. `Systems` writes `viewModel.visible`
+   * every frame from the camera mode, so a probe cannot simply clear the flag
+   * and capture; the suppression has to live where that write can read it.
+   *
+   * Default false, so every frame anyone has ever taken is unchanged.
+   */
+  debugHidden = false;
+
+  /**
    * `live` is `Config.anim` (`?anim=0`, RN-121). The guard sits HERE rather
    * than in `Systems.ts` so the frame loop needs no knowledge of the flag and
    * so the same constructor argument freezes any future rig this class grows.

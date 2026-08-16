@@ -278,6 +278,27 @@
       "texels_per_m": 960.0,
       "albedo_mean_linear": 0.685
     },
+    "timber": {
+      "normal": {
+        "file": "of_timber_n.png",
+        "bytes": 145547,
+        "sha256": "fae518140642f2fd6f0f64ec9f72e939e01b060fb6e7025016fe5cd06b360a2f"
+      },
+      "orm": {
+        "file": "of_timber_orm.png",
+        "bytes": 73510,
+        "sha256": "4d1a984a3abd3b119abfb1b7a9d27e92ce02749eb98d3bf20c2a27b03ff30c3c"
+      },
+      "albedo": {
+        "file": "of_timber_a.png",
+        "bytes": 38466,
+        "sha256": "b1b3ff311bc85c5486f1fb8b6565649fc09e8be3048b10c3bacd661e0463313e"
+      },
+      "tile_m": 0.35,
+      "size_px": 384,
+      "texels_per_m": 1097.142857142857,
+      "albedo_mean_linear": 0.2062
+    },
     "grass": {
       "albedo": {
         "file": "of_grass_a.png",
@@ -323,6 +344,7 @@
     "EmberEmissiveState": "ember",
     "Fang": "fur",
     "Grass": "grass",
+    "Haft": "timber",
     "Hazard": "panel",
     "Iron": "coarse",
     "IronOre": "ore",
@@ -333,6 +355,7 @@
     "Masonry": "masonry",
     "MasonryDark": "masonry",
     "Plate": "suitplate",
+    "Rawhide": "suitfab",
     "Regolith": "coarse",
     "Rock": "stone",
     "RockDark": "stone",
