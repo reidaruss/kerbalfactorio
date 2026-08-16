@@ -715,6 +715,48 @@ shot should be treated as a baseline or a target until the hull's drawn pose
 is instrumented and shown to track the live carrier frame. See RN-1810 in
 `docs/web/NUMBERS.md`.
 
+**REPRODUCIBILITY RESTORED (CE-115 to CE-117, 2026-08-15, `lane/station-pose`).
+THE GRADE IS STILL NOT PUBLISHED, AND THE REASON HAS CHANGED.**
+
+The suspect above was right about the class and one hop off about the target.
+The DRAWN HULL has one live writer: `installAndMountStation`'s install-time
+`view.place` is overwritten by `CarrierMount`'s watcher within one frame, and
+the two are bitwise equal at the install tick anyway. **The second live
+authority was the station's PUBLISHED ATTITUDE**: `of.station().axes` was
+`stationQuat(pos)`, and this shot AIMS ITS CAMERA WITH IT
+(`of.station().axes.along` -> `fwd` -> `of.look`) while standing on geometry
+posed at `poseAt(t) . local`. Measured (`probes/stationpose.js`): **0.230 deg
+apart at tick 121 growing linearly to 1.373 deg at tick 721, 0.00190 deg/tick
+and unbounded over an orbit, with the positions agreeing to 0 m exactly.** Fixed
+by making `stationAxes` read the mounted solid; after, 0 to 2.7e-6 deg and flat.
+The driven-clock hypothesis is falsified rather than left open (`drawn` +30 over
+`of.run(1.0, 30)` and +15 while paused). See core-engine.md section 5n.
+
+**THE SHOT NOW REPRODUCES.** Three consecutive captures on a locally built,
+`vite preview`-served, real D3D11 headless Chrome read box luma **14.84**, rgb
+**14.68 / 15.21 / 11.69**, warm **2.99**, sat **0.304**, p05 **3**, p50 **7.64**,
+p95 **53.42**, iqr **10.36**, loFrac **0.883**, hiFrac **0.004** -- identical to
+every published digit, three times running. Nine captures across the whole
+session span 13.81 to 15.47 (ratio **1.12**, against 16.4 before); the residual
+is whole-frame terrain streaming, which swings `world.luma` 10.96 to 44.63 and
+`world.loFrac` 0.53 to 0.92 OUTSIDE the box and is a separate, named thing.
+
+**AND THE FRAMING CONSTANTS ARE NOW STALE BY EXACTLY THE BUG, WHICH IS THIS
+DOMAIN'S CALL AND IS DELIBERATELY NOT MADE HERE.** The yaw solve moves from
+**244.15 to 255.35 deg** because it is now solved against the attitude the hull
+is really drawn with. `yawOff: 45`, `back: true` and `pitch: 3` were chosen
+against the pre-fix bearing, so the reproducible frame is the station's INTERIOR
+(a hall of riveted panels, a floor, no stars:
+`docs/screenshots/CE115_station_repro.png`, one of the three identical captures,
+confirmed by eye) while this entry's own MUST SHOW says "a lit, readable hull
+against the star field". **So the grade stays UNMEASURED for one more pass, on a
+framing reason rather than an instrument reason**: re-choose `yawOff` against
+the corrected bearing, re-take three, and the numbers above show the shot will
+hold still for it. A lane doing that should sweep `yawOff` with
+`--evalargs='{"shot":"station","yawOff":N}'` rather than solving it on paper;
+the aim is 45 deg off aft from the vestibule socket at station-local
+(3.47, 0, 1.98) and the blown bulkhead is the way out.
+
 ## 2.8 THE LOOK AUDIT (RN-1710 to RN-1726, 2026-08-15, `lane/look-audit`). WHAT STILL READS UNFINISHED, RANKED
 
 All seven canonical shots re-captured at current `main` on real Windows D3D11

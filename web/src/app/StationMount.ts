@@ -32,6 +32,19 @@
 // positive control, and every later tick turns the whole assembly with the
 // conic. The day physics stamps the record, this file does not change.
 //
+// CE-115 SETTLED WHICH OF THE TWO IS THE ANSWER, and it is this one. The
+// measured offset above makes the ASSEMBLY self-consistent; what it could not
+// do is stop `stationQuat` being asked directly, and `SpaceStation.stationAxes`
+// was doing exactly that -- publishing a live attitude nothing was drawn with,
+// 0.230 degrees out at tick 121 and 1.373 degrees out at tick 721 and growing
+// linearly (`probes/stationpose.js`). `stationAxes` reads the mounted solid
+// now. `stationQuat` CONSTRUCTS the authored frame at install and is the
+// fallback before one exists; it is no longer a live answer to which way the
+// station faces. The carrier's LVLH basis won because everything that rides the
+// station -- the collider, both gravity volumes, the rider's transport, the
+// docking port and the boarding test -- was already using it, and the only
+// holdout was the description handed to callers.
+//
 // ===========================================================================
 // AND IT DOES NOTHING TODAY, WHICH IS SAID HERE SO NOBODY READS IT AS THE
 // FEATURE.
@@ -53,7 +66,7 @@ import {
 } from '../world/FramePose.js';
 import * as THREE from 'three';
 import {
-  findStation, installStation, lastStationSolid, stationQuat,
+  findStation, installStation, lastStationSolid,
   stationStandLocal, type StationReport,
 } from '../game/SpaceStation.js';
 // CE-49. THE WALKER'S OWN NUMBERS, imported rather than retyped. A helper that
@@ -160,6 +173,23 @@ export function mountStationOn(mounts: CarrierMounts, frame: CarrierFrame,
       q.set(p.qx, p.qy, p.qz, p.qw);
       view.place([p.px, p.py, p.pz], q);
     }, 'station:view', local);
+    // CE-116. AND POSED HERE, ONCE, RATHER THAN BY THE CALLER.
+    //
+    // `installAndMountStation` used to call `view.place(st.pos,
+    // stationQuat(st.pos))` on the line before this function, which made the
+    // drawn hull the ONE thing in the assembly with two writers. The two agreed
+    // bitwise at the install tick (the solid is built with the same
+    // `stationQuat` of the same `pos`, so `local` absorbed exactly nothing) and
+    // that is precisely why it survived: a redundant writer that is correct on
+    // the day it is written is the shape PH-357 and CE-115 have now both paid
+    // for. Removed there, replaced by this, so `CarrierMount` is the only thing
+    // in the program that decides where the hull is.
+    //
+    // `syncWatchersAt` and not `syncAt`: the collision half is already exactly
+    // where `installStation` put it and re-posing it here would be a second
+    // write of the pose the offset was just measured against. The `drawn`
+    // counter genuinely advances, because the hull genuinely was posed.
+    m.syncWatchersAt(at);
   }
   return m;
 }
@@ -256,10 +286,15 @@ export function installAndMountStation(d: StationInstallDeps, tick: number)
   // between them. A station in orbit is in FREEFALL and its occupants have no
   // weight; the deck holding you up is a fact about the deck, not about gravity.
   installStationGravity(d.volumes, st.pos, d.gravityAccel(st.deckR));
-  // RN-821. THE MESH, posed from the SAME `st.pos` the collision solid was built
-  // from, with `stationQuat` read rather than rebuilt. The mount re-poses it
-  // every tick after this; this call is what makes the frame it starts on right.
-  d.view?.place(st.pos, stationQuat(st.pos));
+  // RN-821 / CE-116. THE MESH IS POSED BY THE MOUNT AND BY NOTHING ELSE.
+  //
+  // This line used to be `d.view?.place(st.pos, stationQuat(st.pos))`, on the
+  // argument that the mount "re-poses it every tick after this" and this call
+  // only fixed the frame it starts on. Both halves of that were true and it was
+  // still a second authority for the hull's pose: the comment was the only thing
+  // keeping the two spellings in agreement, and `mountStationOn` now poses the
+  // hull itself at the install tick through the same watcher every later tick
+  // goes through. One writer, no agreement to maintain.
   mountStation(d.core, d.carriers, d.mounts, d.view, tick);
   return st;
 }

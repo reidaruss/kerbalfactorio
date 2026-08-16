@@ -561,9 +561,44 @@ export function stateOfDocked(M: OfCoreModule, reg: VesselRegistry,
  * Standing rule 11: a probe that rebuilt the quaternion would agree with itself
  * whatever the station did, and the first `orbitdeck.js` proved that is not
  * hypothetical (it rebuilt the rotation, got the sign wrong, and passed).
+ *
+ * ===========================================================================
+ * CE-115. IT READS THE LIVE SOLID, BECAUSE `stationQuat(pos)` WAS A SECOND
+ * ATTITUDE AND IT WALKED AWAY FROM THE ONE EVERYTHING IS DRAWN WITH.
+ * ===========================================================================
+ *
+ * This used to be `stationQuat(pos)`, a POSITION-ONLY nadir lock whose roll is
+ * THREE's shortest-arc convention. Nothing that is drawn or collided with has
+ * been posed that way since CE-83: `CarrierMount` writes `poseAt(t) . local`
+ * onto the collision solid, both gravity volumes and the drawn hull, and
+ * `local` was measured ONCE at install as `poseAt(install)^-1 . authored`, so
+ * its roll rides the LVLH basis and is tied to prograde. The two agree at the
+ * install tick by construction and NOWHERE ELSE.
+ *
+ * MEASURED (`probes/stationpose.js`, before the fix, on the shipped station):
+ * 0.230 degrees apart at tick 121 growing linearly to 1.373 degrees at tick
+ * 721, i.e. 0.00190 degrees per tick with no bound on it, while the POSITIONS
+ * agreed to 0 m exactly. So the disagreement was pure attitude, and it was
+ * silent: this function was the answer `of.station().axes` published, which is
+ * what `artframe.js`'s station shot aims its camera with while standing on
+ * geometry posed the other way. A degree of aim error at a corridor mouth is
+ * the difference between a frame of the hull against the star field and a frame
+ * of the wall beside it, which is exactly the two captures that opened this.
+ *
+ * `stationQuat` KEEPS ITS ONE REAL JOB and loses the other. It CONSTRUCTS the
+ * authored frame -- `stationSolid` and `installStationGravity` build the
+ * install-tick geometry with it, and that geometry is what `local` is measured
+ * against, so it still decides which way the station faces the day it is
+ * installed. It is no longer an answer to "which way is it facing NOW".
+ *
+ * THE FALLBACK IS THE SAME ONE `stateOfDocked` ABOVE ALREADY DOCUMENTS, for the
+ * same case and no other: before `installStation` has run there is no solid,
+ * and a caller asking then gets the authored construction rather than a null or
+ * a throw.
  */
 export function stationAxes(pos: Vec3n): { up: Vec3n; along: Vec3n; across: Vec3n } {
-  const q = stationQuat(pos);
+  const solid = lastStationSolid();
+  const q = solid !== null ? solid.quat : stationQuat(pos);
   const v = (x: number, y: number, z: number): Vec3n => {
     const w = new THREE.Vector3(x, y, z).applyQuaternion(q);
     return [w.x, w.y, w.z];
