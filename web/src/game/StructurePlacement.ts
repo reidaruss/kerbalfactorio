@@ -22,9 +22,10 @@ import { CANTILEVER_STOREYS, MAX_CANTILEVER_CELLS } from './StructureTolerance.j
 import { SNAP_FRACTION, addrFromSocket, nearestSocket } from './StructureSnap.js';
 import { orient } from './Grid.js';
 import { labelOf } from '../player/Bindings.js';
-import { MAX_LEVEL, addrKey, addressAt, anchorOf, deckKey, footprintOf,
-  isDeck, wallKey, type Addr, type Site, type StructureKind }
+import { AIM_STEP_M, MAX_LEVEL, addrKey, addressAt, anchorOf, crownOf, deckKey,
+  footprintOf, isDeck, wallKey, type Addr, type Site, type StructureKind }
   from './StructureGrid.js';
+import type { Solid } from './StructureBody.js';
 import { FREE_KEY, type StructurePart, type Structures } from './Structures.js';
 import type { HudTarget } from '../ui/GameHud.js';
 import type { Vec3d } from '../world/PlanetBody.js';
@@ -38,7 +39,11 @@ import type { Vec3d } from '../world/PlanetBody.js';
  *  of a 20 x 20 m five-cell room from its own doorway, without walking. The
  *  march still steps at 0.2 m, so this is 120 oracle samples rather than 60, and
  *  it stops at the first hit either way. */
-const STEP_M = 0.2;
+// GP-1027: the step now lives in `StructureGrid` as `AIM_STEP_M`, because
+// `levelOf` carries it as a TOLERANCE and the march's step and the slack it
+// produces have to be one number. Aliased here so the march below still reads
+// as a march rather than as a grid import.
+const STEP_M = AIM_STEP_M;
 const REACH_M = 24.0;
 /** Where the ghost falls back to when the aim meets neither ground nor build.
  *  A cell and a half, keeping the quarter-of-reach ratio 3.0 had against 12. */
@@ -178,15 +183,52 @@ export function ghostPrompt(t: StructureTarget | null): HudTarget | null {
  * this function discarded the hit before the block was derived -- and the
  * reported symptom is GP-968 below, one constant away.
  *
- * WHAT IS THEREFORE STILL OPEN, AND IT IS NOW MEASURED RATHER THAN SUSPECTED.
+ * =============================================================================
+ * GP-1025. WHY GP-966 MEASURED NULL, AND IT IS "INCONCLUSIVE" RATHER THAN "NO".
+ * The distinction matters because the entry above spent it as a NO.
+ *
+ * "Two dists one line apart, same seed, same standoff, same single aim" is TWO
+ * BUILDS at ONE distance, and that distance was `pad.js`'s 3 m. The block just
+ * above records what the ray met there: 0.20 m with the pad and 3.00 m without.
+ * BOTH are inside `MIN_PLACE_M` (3.2 m), so both arms took the near-hit branch
+ * below, which throws the march result away and returns a ground point instead.
+ * The experiment did not weakly exercise the flank path. It never entered it.
+ * An A/B whose two arms both skip the code under test cannot return a negative,
+ * and the sentence it produced -- "a change to this function with no measurable
+ * consequence is a liability" -- does not follow from it, because "no measurable
+ * consequence" was a property of the standoff and not of the change.
+ *
+ * WHAT A CONCLUSIVE STANDOFF LOOKS LIKE, measured: `probes/padflank.js` stands
+ * 14 m back and the first solid on the ray is at 14.0 m, four times the clamp,
+ * so the march result is used and the two arms differ. That probe is also the
+ * multi-storey fixture the entry below asked for, and it turned the worst case
+ * from an argument into a number.
+ *
+ * AND GP-966 WAS THE WRONG FIX ANYWAY, WHICH THE NULL RESULT HID. `Solid`s a
+ * placement cannot stand on is not the set: a WALL IS A LEGAL BASE. `supported()`
+ * accepts a deck at level L over a wall at L-1, and DW-32 ships on aiming at a
+ * wall's TOP to put the next floor over it, so the wall has to stay in this
+ * march. The same body therefore has to give one answer for its crown and a
+ * different one for its face, and no filter over BODIES can do that. Measured on
+ * `padflank.js`'s boundary profile, one wall, aim walked up it:
+ *
+ *   aim z   1.0    2.0    2.5    3.0    3.5    3.8    3.95
+ *   hit u   0.978  1.995  2.514  3.024  3.561  3.852  3.993
+ *   level   0      0      0      0      0      1      1
+ *
+ * The level turns over at the CROWN and not at the body. That is GP-1027 in
+ * `StructureGrid.levelOf`, and it is where this defect was fixed.
+ * =============================================================================
+ *
+ * WHAT WAS THEREFORE STILL OPEN AFTER GP-969, AND IS NOW CLOSED BY GP-1027.
  * A flank hit that lands BEYOND `MIN_PLACE_M` is not covered by the measurement
  * above, and with the tower confirmed real that case exists and reproduces.
  * `probes/pad.js` stands a player 14 m back and aims 16.5 m up the tower column
  * the crown sweep found: the ray meets the pad at 19.6 m, well past the 3.2 m
- * clamp, so the march result IS used, and the ghost resolves `[-2,-4,3]`.
- * That trailing 3 is `padBlockAt` reading the hit's height as a STOREY
+ * clamp, so the march result IS used, and the ghost resolved `[-2,-4,3]`.
+ * That trailing 3 was `padBlockAt` reading the hit's height as a STOREY
  * (`round(l.z / storey)`, clamped to MAX_LEVEL) off a point on a vertical face,
- * so the pad is addressed at a storey the platform does not have.
+ * so the pad was addressed at a storey the platform does not have.
  *
  * ON THAT FIXTURE IT IS LEGIBILITY ONLY, AND THAT IS A PROPERTY OF THE FIXTURE
  * RATHER THAN OF THE DEFECT. `[-2,-4,3]` refuses structurally, because level 3
@@ -198,19 +240,37 @@ export function ghostPrompt(t: StructureTarget | null): HudTarget | null {
  * is a wrong-but-placeable pad that looks correct right up to the press, not a
  * confusing refusal, and any fix should be judged against that case.
  *
- * The reading is published in `pad.js` unasserted, with the reason string, so
- * the next lane inherits a number instead of a hunch. Reinstating `basePart` is
- * a candidate fix and would need its own verification pass across every
- * placement probe plus a multi-storey fixture to exercise the case above; a
- * change to the one function every placement in the game goes through does not
- * ship on the side of a correction.
+ * THE WORST CASE IS NOW A MEASUREMENT AND IT WAS EVERYTHING THE ARGUMENT SAID.
+ * `probes/padflank.js` builds the base the argument needed -- 6 x 6 at level 0
+ * by real aims, a wall on the centre cell's north edge by the real key, 6 x 6 at
+ * level 1 through `Structures.adopt` (the call `commitTarget` and
+ * `StructureSave.restore` both make), then a real `of.save()` and `of.load()` so
+ * every part under measurement came out of the shipped restore. Before GP-1027,
+ * from a fixed eye 14 m south with the hit 2.506 m up the wall's face: the ghost
+ * read `[-3,-3,1] ok TRUE missing 0`, and the press PUT A LAUNCH PAD ON THE
+ * ROOF, 1.994 m above the point the crosshair was on, through a ceiling the
+ * player cannot see past. Nothing refused it, exactly as predicted.
+ * After GP-1027 the same aim reads `[-3,-3,0]` and the pad lands on the floor
+ * under the crosshair, 2.006 m below the aimed point. `pad.js`'s own tower
+ * reading moved with it, from `[-2,-4,3] "36 of 36 cells have no foundation"` to
+ * `[-2,-4,4] "too high"`: the clamp removal made a refusal that had never once
+ * run in the shipped game reachable.
  *
- * The three other candidates, for the same reason: IGNORE ALL PLACED STRUCTURES
- * takes decks out too and deletes multi-storey aiming; RESOLVE THE GROUND BEHIND
- * A HIT ON THE PLACEMENT'S OWN KIND fixes pad-behind-pad and leaves machine,
- * ruin, antenna and station each to be found separately; A VISIBLE CUE names a
- * wrong cell without making it right. None of them addresses GP-968, which is
- * what was actually wrong.
+ * THE FOUR REJECTED CANDIDATES, and the first one is rejected on a NEW argument
+ * rather than on GP-966's null.
+ *   * `Solid.basePart`, ignore the solids a placement cannot stand on. A wall IS
+ *     one it can stand on (see GP-1025 above), so the wall stays in the march
+ *     and the flank case survives the fix. Filtering bodies cannot answer a
+ *     question about faces.
+ *   * IGNORE ALL PLACED STRUCTURES takes decks out too and deletes multi-storey
+ *     aiming outright.
+ *   * RESOLVE THE GROUND BEHIND A HIT whose body is not a legal base has the
+ *     same body-versus-face problem, and it changes WHERE the ghost is as well
+ *     as which storey it is on, which is a second behaviour to justify.
+ *   * A VISIBLE CUE names a wrong cell without making it right (GP-969's own
+ *     note), and a cue for a green ghost is a warning label on a bug.
+ * What shipped instead is one expression, in one place, that both derivations
+ * now share: `StructureGrid.levelOf`.
  * =============================================================================
  */
 /**
@@ -231,14 +291,21 @@ export function ghostPrompt(t: StructureTarget | null): HudTarget | null {
  * at the sky is 6 m of air over your own head.
  */
 export function aimHit(s: Structures, ray: { origin: Vec3d; dir: Vec3d }):
-{ p: Vec3d; found: boolean; overhead: boolean } {
+{ p: Vec3d; found: boolean; overhead: boolean; solid: Solid | null } {
   const o = ray.origin, d = ray.dir;
   let tGround = -1;
   for (let t = 0.6; t <= REACH_M; t += STEP_M) {
     const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t;
     if (Math.hypot(x, y, z) <= s.groundRadius(x, y, z)) { tGround = t; break; }
   }
-  const tSolid = s.bodies.rayHit(o, d, REACH_M, STEP_M);
+  // GP-1027. `rayPick` RATHER THAN `rayHit`, AND IT IS THE SAME MARCH. Both walk
+  // the ray at `STEP_M` and stop at the first sample inside a solid; `rayHit`
+  // asks `blocks`, which is `inside` over the same list with the same O(1)
+  // reject, so this returns the identical `t` and costs the same. What it also
+  // returns is WHICH body, and `levelOf` needs that body's crown to tell a hit
+  // on a top from a hit on a face. Nothing else in this function changed.
+  const pick = s.bodies.rayPick(o, d, REACH_M, STEP_M);
+  const tSolid = pick === null ? -1 : pick.t;
   if (tGround >= 0 || tSolid >= 0) {
     const raw = tGround >= 0 && tSolid >= 0 ? Math.min(tGround, tSolid)
       : tGround >= 0 ? tGround : tSolid;
@@ -282,15 +349,25 @@ export function aimHit(s: Structures, ray: { origin: Vec3d; dir: Vec3d }):
     // for a ray that hit NOTHING, borrowed by a branch about a ray that hit
     // something too close. Two different questions were sharing one constant.
     // =========================================================================
+    // GP-1027. THE NEAR-HIT BRANCH RETURNS A GROUND POINT, so it returns NO
+    // solid: `fallbackOnGround` puts the point on the surface in the direction
+    // the player is facing, and whatever the march touched at 0.2 m is not what
+    // that point is on. Saying otherwise here would hand `levelOf` a crown
+    // belonging to a body the returned point is nowhere near. THIS IS ALSO WHY
+    // GP-966's A/B COULD NOT MOVE: at that experiment's 3 m standoff every hit
+    // took this branch, so the march result was discarded in both arms.
     if (raw < MIN_PLACE_M) {
       return { p: fallbackOnGround(s, o, d, MIN_PLACE_M), found: true,
-               overhead: overheadOf(o, d) };
+               overhead: overheadOf(o, d), solid: null };
     }
+    // The solid is reported only when the SOLID is what was hit. Ground first
+    // means ground, and a ground point has no crown.
     return { p: { x: o.x + d.x * raw, y: o.y + d.y * raw, z: o.z + d.z * raw },
-             found: true, overhead: false };
+             found: true, overhead: false,
+             solid: pick !== null && raw === tSolid ? pick.solid : null };
   }
   return { p: fallbackOnGround(s, o, d, FALLBACK_M), found: false,
-           overhead: overheadOf(o, d) };
+           overhead: overheadOf(o, d), solid: null };
 }
 
 /**
@@ -376,7 +453,11 @@ export function resolveTarget(s: Structures, kind: StructureKind,
   // GP-37. The bare grid answers first, then a socket is allowed to overrule it.
   // The grid is kept as the fallback rather than replaced, because a player
   // aiming at open ground fifty metres from the base must still get an address.
-  let addr = addressAt(site, s.module, kind, hit, flip);
+  //
+  // GP-1027: the crown of the body the ray entered, in THIS site's frame, so the
+  // grid can tell a hit on a crown from a hit on a face. Null for a ground hit.
+  const crownU = aim.solid === null ? null : crownOf(site, aim.solid);
+  let addr = addressAt(site, s.module, kind, hit, flip, crownU);
   let snapped: string | null = null;
   const sock = nearestSocket(s.parts, s.sockets, hit,
     s.module.cellM * SNAP_FRACTION);

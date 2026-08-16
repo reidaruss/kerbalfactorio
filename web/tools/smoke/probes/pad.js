@@ -568,32 +568,28 @@
       + `back at ${UP_M.toFixed(1)} m up THAT column meets its first solid at `
       + `${tTower} m, ghost addr ${JSON.stringify(gTower?.addr)} ok `
       + `${gTower?.ok} "${gTower?.reason}"`);
-    // OPEN, MEASURED, AND DELIBERATELY NOT ASSERTED EITHER WAY. This is the one
-    // case GP-966 was built for and the A/B at the 3 m standoff could not see: a
-    // flank hit BEYOND `MIN_PLACE_M`, which only the tower offers. The level in
-    // that addr is `padBlockAt` reading the hit's height as a storey
-    // (`round(l.z / storey)`, clamped to MAX_LEVEL), so a pad ghost is addressed
-    // at a storey the platform does not have.
+    // GP-1027 CLOSED THIS AND THE ASSERTION IS NOW ON THE LINE THE OLD COMMENT
+    // RESERVED FOR IT. This is the one case GP-966 was built for and the A/B at
+    // the 3 m standoff could not see: a flank hit BEYOND `MIN_PLACE_M`, which
+    // only the tower offers. It USED to read `[-2,-4,3]`, `padBlockAt` rounding
+    // the hit's height to the nearest storey and then CLAMPING the result into
+    // range, so a pad was addressed at a storey the platform does not have and
+    // refused for the wrong reason ("36 of 36 cells have no foundation").
     //
-    // It is NOT asserted green here because it is not fixed, and it is not
-    // asserted red because a probe that gates on a defect goes green the day
-    // somebody fixes it. It is published, with its reason string, so the next
-    // lane inherits a reading instead of a suspicion. The assertion belongs on
-    // this line the day the storey stops being invented.
-    //
-    // THE SEVERITY IS WORSE THAN THIS ONE READING SHOWS, and the distinction
-    // matters to whoever takes the `basePart` pass. On THIS base the misread is
-    // legibility only: `[-2,-4,3]` refuses structurally, because level 3 has no
-    // decks and an invented storey cannot manufacture the 36 real deck parts
-    // `missingDecks` counts. But that is a property of this fixture, not of the
-    // defect. On a base that genuinely HAS a 6 x 6 platform at the invented
-    // level, the same flank read resolves a LEGAL, GREEN ghost at a cell the
-    // player never aimed at -- and `overlapping()` only rejects pads sharing a
-    // level, so a pad already standing at level 0 does not refuse it either.
-    // The real worst case is therefore a wrong-but-placeable pad that looks
-    // correct right up to the press, which is a different class from a confusing
-    // refusal. Any fix should be judged against THAT case, and a multi-storey
-    // fixture is what would demonstrate it.
+    // It now reads `[-2,-4,4] "too high"`, and BOTH halves of that moved:
+    //   * the level is `floor` of the hit height, because the ray stopped 11 m
+    //     below this body's crown and so hit a FACE, where nothing stands;
+    //   * and it is 4 rather than 3 because `Math.min(MAX_LEVEL, ...)` is gone
+    //     from the derivation, which is what makes `LaunchPadPlacement`'s own
+    //     `level > MAX_LEVEL` refusal reachable. That branch had never run.
+    // `probes/padflank.js` owns the worst case (a base that really HAS the
+    // storey, where this used to go GREEN); this line owns the tower.
+    check('GP-1027: a hit 11 m below this body\'s crown is a hit on its FACE, '
+      + 'so the ghost is no longer addressed at an invented storey and the '
+      + '"too high" refusal that had never once run now fires',
+      gTower !== null && gTower.addr !== null && gTower.addr[2] > 3
+        && gTower.ok === false && /too high/.test(gTower.reason ?? ''),
+      `${JSON.stringify(gTower?.addr)} "${gTower?.reason}"`);
     check('GP-969: the collision crown REACHES the mesh height, so the pad '
       + 'proxies are not the knee-high stub a two-column sweep reported',
       crownM >= m.heightM - 1, `${crownM} m of ${m.heightM} m`);
