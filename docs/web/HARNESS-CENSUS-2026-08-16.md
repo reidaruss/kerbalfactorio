@@ -844,6 +844,28 @@ to a clean verdict once contention was removed (`qolflight3.js` after,
 2-at-a-time first pass would be expected to distort and is recorded here as
 confirmation this class of caveat is real, not hypothetical.
 
+**CORRECTION, caught by an independent verifier before merge, recorded here
+rather than quietly fixed in place.** The first version of this section
+called `flyto.js`'s real invocation a TIMEOUT that "has not been observed
+to complete." That claim was false, and the cause was this lane's OWN
+instrument, not the probe: the re-classification script's timeout budget
+(120 s in the first, concurrent pass; 180 s in the first serial re-run) was
+TIGHTER than `probeall.mjs`'s own real default of 240 s, so both of this
+lane's own tests were killing a probe that a real sweep would never have
+capped. Three further isolated runs at a 300 s budget on this same
+software-rasterised box all completed with a real, GREEN verdict: 160 s,
+208 s and 201 s (`valid:true, reached:"staging", aboard:true, live:true,
+status:"ASCENT"`, full flight telemetry). The verifier's own two runs, on
+real NVIDIA hardware through ANGLE D3D11, completed faster still (about
+165 to 170 s), which is the expected direction, a hardware rasteriser doing
+less work per frame than this box's software one. The corrected row below
+replaces the false one. `qolbuild2.js`'s routed defect was checked for the
+same single-observation risk and is NOT the same failure mode: re-run twice
+more, before and after, both reproduced the IDENTICAL fail text and sample
+counts (`117 of 117` placement samples refused; `1 parts placed at pitch
++45`), so it is a deterministic, reproducible finding and stands as
+recorded.
+
 | Probe | Before (bare defaults, what every prior sweep actually ran) | After (true invocation) | Movement |
 |---|---|---|---|
 | `fpshot.js` | GREEN | GREEN | none: `--scenario=walk` equals the bare default |
@@ -863,19 +885,22 @@ confirmation this class of caveat is real, not hypothetical.
 | `qolflight3.js` | **RED**, `fixture failed to reach orbit: CLAMPED` | **GREEN** (confirmed 153 s in isolation) | **RED to GREEN.** Survival at spawn cannot clear the launch clamp; sandbox can |
 | `qolsandbox.js` | **NO_OUTPUT**, threw `ABANDONED, wrong mode; nothing below this line was measured` (`expect` defaults to `'sandbox'`, bare default boots survival) | **GREEN** (`--evalargs` now matches the mode actually booted) | **RED-shaped to GREEN** |
 | `qolbuild3.js` | **NO_OUTPUT**, 3 of 15 checks failed (`no ok=true structGhost in 99 of 99 samples`, cannot place a foundation with no materials) | **GREEN** | **RED-shaped to GREEN** |
-| `flyto.js` | **RED**, `valid: false (why: fixture 0 parts)` (cannot build the reference craft in survival) | **TIMEOUT**, confirmed at 181 s in isolation, no report | **RED to TIMEOUT, a genuine new finding.** At its real, intended invocation this probe has not been observed to complete inside 180 s; it is very plausible this is the first time anyone has actually run it as documented, since every prior sweep ran it at bare defaults where it failed fast on the missing fixture instead. Not chased further within this lane (same discipline BT-181 used for the undiagnosed NO_OUTPUT set): a dedicated timing measurement is unstarted work for whichever lane owns `flyto.js`'s scenario |
+| `flyto.js` | **RED**, `valid: false (why: fixture 0 parts)` (cannot build the reference craft in survival) | **GREEN** (`valid:true, reached:"staging", aboard:true, live:true, status:"ASCENT"`, full telemetry), confirmed 3/3 isolated runs at 160 s, 208 s and 201 s | **RED to GREEN.** Corrected: an earlier draft of this row called this a TIMEOUT. That was false and was this lane's own instrument bug (its re-classification script used a 120-180 s budget, tighter than `probeall.mjs`'s real 240 s default), not a probe defect; see the correction note above. The real margin against the runner's actual 240 s default is roughly 30 to 80 s on this software-rasterised box, positive but not huge, so a BT-130-style timing measurement and a possible `PROBEALL-TIMEOUT` override are still worth a future lane's time, as a MARGIN question, not a failure |
 | `qolbuild2.js` | NO_OUTPUT, threw on `found an aim at which the foundation preview is PLACEABLE` (no materials in survival) | NO_OUTPUT, threw on a DIFFERENT check, `a press aimed at the SKY places nothing :: 1 parts placed at pitch +45` | **Same class, different cause: a real, pre-existing, invocation-independent probe defect**, now reached for what may be the first time. Sandbox gets this probe past the fixture that used to hide its `place` stage's own sky-press negative control, which is REAL and RED on its own terms. Not this lane's defect to fix (it is a QOL survey content bug, not an invocation bug); routed to whichever lane owns `qolbuild2.js`'s `place` stage |
 
-Five of the twenty probes moved verdict CLASS (`navdraw.js`, `qolflight3.js`,
-`qolsandbox.js`, `qolbuild3.js` to GREEN; `flyto.js` to a new TIMEOUT), one
-surfaced a real defect it was previously too broken-in-a-different-way to
-reach (`qolbuild2.js`), eleven were already GREEN/NO_VERDICT under both
+Five of the twenty probes moved verdict CLASS, all of them to GREEN
+(`navdraw.js`, `qolflight3.js`, `qolsandbox.js`, `qolbuild3.js`, and
+`flyto.js` once this lane's own timing bug was corrected), one surfaced a
+real defect it was previously too broken-in-a-different-way to reach
+(`qolbuild2.js`), eleven were already GREEN/NO_VERDICT under both
 invocations and stay there, and three never actually ran wrong at all
 (`padflat.js`, `playerhealth.js`, `survivalrun.js`). Movement happened in
 both directions the brief asked to watch for: this file's own earlier
 amendment already showed 6 probes moving NO_VERDICT->RED and one to GREEN
-under the singular-`fail` fix (BT-177); this pass adds 4 more to GREEN and
-1 to a newly-visible TIMEOUT, on a completely different defect class.
+under the singular-`fail` fix (BT-177); this pass adds 5 more to GREEN, on a
+completely different defect class, plus this lane's own corrected mistake
+about `flyto.js` (a false TIMEOUT claim, caught before merge, see the
+correction note above).
 
 ### BT-195. The flip position, amended again
 
@@ -888,19 +913,23 @@ untouched by this pass. In addition:
   lane ran, which is itself worth naming: **a census taken on a fast-moving
   corpus is a snapshot, and every count in this file should be read as "as
   of its own timestamp," not "as of now."**
-- `flyto.js`'s real invocation surfaces a TIMEOUT that was invisible before
-  this fix (it used to fail fast on a missing fixture instead), which is a
-  new item for the undiagnosed-cost list BT-181 started, not a resolved one.
+- `flyto.js`'s real invocation is GREEN and completes (160 to 208 s across
+  three isolated runs), but the margin against `probeall.mjs`'s real 240 s
+  default is not large on a software-rasterised box, so a slower rasteriser
+  or a loaded box could still push it over: this is a MARGIN question for
+  the undiagnosed-cost list BT-181 started, not the failure this lane first
+  and wrongly reported.
 - `qolbuild2.js` is confirmed genuinely broken independent of invocation,
-  which is new information but not a blocker this lane can close (it is a
-  content bug in another domain's probe, routed rather than fixed here).
+  reproduced twice more with identical fail text and sample counts, which is
+  new information but not a blocker this lane can close (it is a content bug
+  in another domain's probe, routed rather than fixed here).
 
 **Recommended remaining checklist, additions only:**
 
 | Item | Owner |
 |---|---|
-| Give `flyto.js` a dedicated timing measurement at its real invocation (BT-130-style), the way `cantilever.js`/`machineports.js` got one | whichever lane owns `flyto.js`'s W11 scenario |
-| Diagnose `qolbuild2.js`'s `place` stage sky-press negative control, now reachable for the first time | whichever lane owns the QOL survey / build placement |
+| Give `flyto.js` a dedicated BT-130-style timing measurement (several runs, real hardware and this box both, to bound the margin) and consider a `PROBEALL-TIMEOUT` override if the margin is thin on the actual serving box | whichever lane owns `flyto.js`'s W11 scenario |
+| Diagnose `qolbuild2.js`'s `place` stage sky-press negative control, now reachable for the first time, reproduced twice | whichever lane owns the QOL survey / build placement |
 | Decide whether `survivalrun.js` needs its own `PROBEALL-TIMEOUT` override or stays outside the routine sweep entirely (it did not complete inside 420 s) | build-tooling, next lane, or Admin |
 
 ## Cross-reference
