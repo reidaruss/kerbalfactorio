@@ -365,6 +365,145 @@
       iqr: r2(q(0.75) - q(0.25)),
       loFrac: r3(lo / n), hiFrac: r3(hi / n) };
   };
+  // ======================================================================
+  // RN-1820. THE REPEAT INSTRUMENT: COLUMN-AVERAGED AUTOCORRELATION OF THE
+  // RENDERED WALL, PEAK-IN-BAND.
+  //
+  // WHY COLUMN-AVERAGED AND NOT ROW-WISE, which is the opposite of what
+  // `groundnear.js`'s `tiling` does and for the mirror-image reason. On
+  // GROUND at a grazing angle one ROW is one iso-range slice, so the row is
+  // the axis whose world scale is constant. On a WALL photographed square-on
+  // the roles swap: every COLUMN of the rectangle is one vertical slice of
+  // the same wall at the same range, so averaging each column down to a
+  // single number gives a 1-D profile ALONG the wall at constant scale.
+  //
+  // The averaging is not just a convenience, it is the whole selectivity of
+  // the instrument. `concrete` is built so that every loud feature is a
+  // HORIZONTAL line (board faces, their joints, the per-board cure tone, the
+  // lift lines) and a horizontal line contributes the SAME value to every
+  // column. Column-averaging therefore cancels exactly the content that
+  // cannot produce a horizontal repeat, and what survives is only the
+  // u-varying content - which is the content the eye counts along a 24 m
+  // wall. A 2-D or row-wise measure mixes the two and reads mostly board.
+  //
+  // WHY PEAK-IN-BAND AND NOT A FIXED LAG, which is a correction this file
+  // owes to the RN-1815 verifier: the wall is 24 m long and the eye is 7 m
+  // off it, so the pixels-per-metre along the wall falls by roughly 4x from
+  // the frame centre to its edges and the tile's period in PIXELS is a
+  // different number at every x. A single hard-coded lag samples one point
+  // of a curve whose peak has moved, which is how a 41 per cent reduction
+  // was once reported as "repeat eliminated". The band is stated in
+  // FRACTIONS of the rectangle width so it survives a resolution change, and
+  // it is wide enough to contain the 1.8 m period everywhere across the
+  // wall: at 1600 x 900 the rectangle is 1440 px, 1.8 m subtends about 200 px
+  // at the frame centre and about 50 px at its edges, and the band is
+  // [0.030, 0.190] -> 43 to 273 px.
+  //
+  // AND THE PEAK IS THE LARGEST LOCAL MAXIMUM AFTER THE FIRST LOCAL MINIMUM,
+  // NOT THE LARGEST VALUE IN THE BAND, which is `groundnear.js`'s own
+  // correction and NUMBERS.md's rule ("an autocorrelation's global maximum
+  // measures smoothness, never a repeat"). Measured on the shipped build the
+  // curve falls monotonically from 0.481 at lag 43 to 0.197 at lag 147 and
+  // then RISES again to a local maximum near lag 235: the first stretch is
+  // the wall's own broad shading and the mip blur, present on any smooth
+  // surface, and only the second feature is something a repeat can make and
+  // smoothness cannot. Reporting the band's raw maximum would score the
+  // blurriest wall best.
+  //
+  // THREE NUMBERS OFF ONE CURVE, because any one of them alone can be gamed.
+  // `peak` is the repeat spike. `bandMean` is the mean from the first local
+  // minimum to the top of the band, i.e. the FLOOR the spike stands on: a
+  // change that flattens the spike while leaving the floor where it was has
+  // moved the metric and not the picture. `corrLo` is the value at the
+  // bottom of the band, kept and named for what it is, a blur measure, so a
+  // "win" bought by softening the whole wall is visible instead of hidden.
+  //
+  // MEAN-REMOVAL ONLY, no detrend: the estimator is `groundnear.js`'s
+  // (biased, divided by the full-window energy) so the two numbers in this
+  // project mean the same thing, and any illumination gradient across the
+  // wall is a real thing in the frame and is present identically in both
+  // arms of a before/after pair.
+  const repeatOn = (cx, x0, y0, x1, y1) => {
+    const w = Math.max(2, Math.round(x1 - x0));
+    const h = Math.max(1, Math.round(y1 - y0));
+    const d = cx.getImageData(Math.round(x0), Math.round(y0), w, h).data;
+    const col = new Float64Array(w);
+    for (let j = 0; j < h; ++j) {
+      for (let i = 0; i < w; ++i) {
+        const o = (j * w + i) * 4;
+        col[i] += 0.2126 * d[o] + 0.7152 * d[o + 1] + 0.0722 * d[o + 2];
+      }
+    }
+    for (let i = 0; i < w; ++i) col[i] /= h;
+    const f0 = A.bandLo ?? 0.030;
+    const f1 = A.bandHi ?? 0.190;
+    const L0 = Math.max(2, Math.round(f0 * w));
+    const L1 = Math.min(Math.floor(w / 3), Math.round(f1 * w));
+    // THE EXTREMUM SEARCH RUNS ON A SMOOTHED CURVE AND THE FIRST VERSION OF
+    // THIS DID NOT, which cost a whole capture. `firstMin` walks downhill
+    // until the curve stops falling, and at lag resolution 1 the curve has
+    // half-count wobbles in it, so the walk stopped at lag 50 - seven lags
+    // in, on the steepest part of the smoothness decay - and the "largest
+    // local maximum after the first minimum" was then lag 51 at 0.456, i.e.
+    // the very number the local-maximum rule exists to avoid reporting. The
+    // features this curve really has are hundreds of lags wide; a 15-lag box
+    // is far narrower than any of them and wider than the wobble.
+    const SM = A.smoothLags ?? 15;
+    // TWO ARMS, BOTH REPORTED. `raw` removes only the mean, which is
+    // `groundnear.js`'s estimator exactly. `dt` removes a least-squares LINE,
+    // because a 24 m wall lit by one sun and receding to both sides carries a
+    // brightness RAMP across the frame that is a fact about the lighting and
+    // not a repeat, and a ramp puts a large positive constant under every lag
+    // in the band. Neither is privileged: they are quoted side by side so a
+    // reader can see whether a movement is in the repeat or in the ramp.
+    const arm = (detrend) => {
+      const p = Float64Array.from(col);
+      let sx = 0; let sy = 0; let sxx = 0; let sxy = 0;
+      for (let i = 0; i < w; ++i) { sx += i; sy += p[i]; sxx += i * i; sxy += i * p[i]; }
+      const den = w * sxx - sx * sx;
+      const b = detrend && den !== 0 ? (w * sxy - sx * sy) / den : 0;
+      const a = (sy - b * sx) / w;
+      for (let i = 0; i < w; ++i) p[i] -= a + b * i;
+      let v0 = 0;
+      for (let i = 0; i < w; ++i) v0 += p[i] * p[i];
+      if (v0 < 1e-9) return { peak: null, why: 'flat' };
+      const raw = new Float64Array(L1 - L0 + 1);
+      for (let L = L0; L <= L1; ++L) {
+        let s = 0;
+        for (let i = 0; i + L < w; ++i) s += p[i] * p[i + L];
+        raw[L - L0] = s / v0;
+      }
+      const sm = new Float64Array(raw.length);
+      const k = Math.max(0, Math.floor(SM / 2));
+      for (let i = 0; i < raw.length; ++i) {
+        let s = 0; let n = 0;
+        for (let j = Math.max(0, i - k); j <= Math.min(raw.length - 1, i + k); ++j) {
+          s += raw[j]; n++;
+        }
+        sm[i] = s / n;
+      }
+      const at = (L) => sm[L - L0];
+      let firstMin = L0;
+      while (firstMin + 1 <= L1 && at(firstMin + 1) < at(firstMin)) firstMin++;
+      let bp = null; let bl = null;
+      for (let L = firstMin + 1; L < L1; ++L) {
+        if (at(L) >= at(L - 1) && at(L) >= at(L + 1)
+            && (bp === null || at(L) > bp)) { bp = at(L); bl = L; }
+      }
+      let acc = 0; let n = 0;
+      for (let L = firstMin; L <= L1; ++L) { acc += at(L); n++; }
+      const curve = [];
+      for (let L = L0; L <= L1; L += 8) curve.push([L, r3(at(L))]);
+      return { corrLo: r3(at(L0)), firstMin,
+        lag: bl, peak: bp === null ? null : r3(bp),
+        bandMean: r3(acc / Math.max(1, n)),
+        rms: r2(Math.sqrt(v0 / w)),
+        curve: A.curve === true ? curve : undefined };
+    };
+    return { w, h, band: [L0, L1], smooth: SM,
+      raw: arm(false), dt: arm(true) };
+  };
+
   let stats = null;
   if (A.stats !== false) {
     const blob = await of.screenshot();
@@ -381,6 +520,18 @@
       stats.box[k].rect = [Math.round(f[0] * bmp.width),
         Math.round(f[1] * bmp.height), Math.round(f[2] * bmp.width),
         Math.round(f[3] * bmp.height)];
+    }
+    // RN-1820. The repeat measure runs on the rectangles that are a WALL seen
+    // along its length, which is the only shape the column average means
+    // anything on. `wall` is the skirt's 24 m plinth face; an invocation can
+    // add its own through `repeatOn` in `--evalargs`.
+    const RPT = A.repeatRects ?? ['wall'];
+    stats.repeat = {};
+    for (const k of RPT) {
+      const f = RECT[k];
+      if (!f) continue;
+      stats.repeat[k] = repeatOn(cx, f[0] * bmp.width, f[1] * bmp.height,
+        f[2] * bmp.width, f[3] * bmp.height);
     }
   }
 

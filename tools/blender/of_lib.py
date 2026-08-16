@@ -598,6 +598,38 @@ PALETTE = {
     "Concrete":     ("878680", 0.00, 0.94, 1.0, None),
     "ConcreteDark": ("63615B", 0.00, 0.88, 1.0, None),
     "ConcreteSoot": ("35322E", 0.00, 0.97, 1.0, None),
+    #
+    # RN-1820. TWO MORE VALUES OF THE SAME MATERIAL, AND THEY EXIST FOR A
+    # DEFECT NO TILING MAP CAN REACH.
+    #
+    # The RN-1815 verifier's third finding against the skirt: "the tone is
+    # uniform across all 24 m, with no pour-to-pour variation. A wall that
+    # size is poured in lifts and each lift cures slightly differently. Add
+    # that variation at the lift scale, not as noise." That is a statement
+    # about a length THIRTEEN TIMES the texture's period. `concrete` tiles at
+    # 1.8 m, so every macro term the map could carry repeats 13.3 times along
+    # this wall and is by construction the opposite of pour-to-pour variation:
+    # authoring it in the map would add exactly the countable repeat the same
+    # verifier's other finding is about. The variation has to live above the
+    # tile, and the only thing above the tile is the material assignment.
+    #
+    # SO THE PLINTH IS SPLIT INTO POUR BAYS (see `ground()` in
+    # build_launch_pad.py) and the bays wear three values of one material.
+    # THE NAMES ARE THE PHYSICAL CAUSE, not a lightness ranking: cement paste
+    # cures darker than the sand in the mix, so a RICH bay (more cement) comes
+    # out a shade deeper and a LEAN one a shade paler, which is the ordinary
+    # reason two pours off two trucks do not match. Nine counts of luma either
+    # side of `ConcreteDark`, i.e. a little under a tenth:
+    #   ConcreteLean 6C6A64  luma 106.0, chroma 8
+    #   ConcreteDark 63615B  luma  97.0, chroma 8   (unchanged, the middle bay)
+    #   ConcreteRich 5A5853  luma  88.0, chroma 7
+    # THE CHROMA DOES NOT MOVE and that is the guardrail on this pair: the
+    # whole argument for the `concrete` hexes above is that portland concrete
+    # is a cool near-neutral, and a "variation" that reached for hue would
+    # undo it three bays at a time. Only value varies, and by a step small
+    # enough that no single bay reads as a different material.
+    "ConcreteLean": ("6C6A64", 0.00, 0.88, 1.0, None),
+    "ConcreteRich": ("5A5853", 0.00, 0.88, 1.0, None),
     # RN-1815. SOOT ON STEEL, and it is a role rather than a retune of
     # `SteelRust` because they are two different deposits that happen in two
     # different places on the same trench.
@@ -624,7 +656,75 @@ PALETTE = {
     # same thing about the same substrate. RN-1494 recorded the converse of
     # this as a silent failure - "`rust` wired to a grey role renders grey
     # rust" - and grey rust is precisely what soot on corroded steel is.
-    "Soot":         ("2B2724", 0.02, 0.98, 1.0, None),
+    #
+    # RN-1820. THE VALUE IS LIFTED 2B2724 -> 48413C, AND THE REASON IS A
+    # MEASURED DEFECT AND NOT A CHANGE OF MIND ABOUT WHAT SOOT IS.
+    #
+    # RN-1815 disclosed its own cost and routed it here: on real D3D11 from
+    # the south mouth the liner rectangle went luma 51.33 -> 22.96 and loFrac
+    # 0.142 -> 0.609, i.e. 61 per cent of the near liner became near-black and
+    # the surface lost its form. The pass's own verifier read it as "the near
+    # liner is crushed" and "soot should read as deposit ON a surface, not as
+    # absence of surface", which is exactly RN-859's rule failing in the
+    # direction the role was built to satisfy: `Soot` wears `rust` so the
+    # oxidised steel reads THROUGH the carbon, and at 2B2724 in a trench
+    # interior there is not enough light coming back off it for anything to
+    # read through anything.
+    #
+    # THE FIRST ATTEMPT AT THIS LIFT WAS BUILT, MEASURED AND REFUSED, AND IT
+    # IS THE REASON THE HEX BELOW IS BLUE. Scaling all three channels by one
+    # number (2B2724 -> 48413C, chosen so the render lands near luma 40) does
+    # exactly what it says to the BASE colour - (max - min) / max is 0.163
+    # before and 0.167 after - and it put the rendered liner at luma 32.05 at
+    # **sat 0.363 and warm 15.04**, against the 0.245 / 5.46 that RN-1815's
+    # verifier named as the win to keep. The photograph agreed with the
+    # number: the near liner came back as an orange oxide panel, which is the
+    # "rust paint" finding returning the moment the value did.
+    #
+    # WHY, AND IT IS AN ARCHITECTURE FACT NOT A TUNING ONE. `Surfaces.ts`
+    # divides `albedo_mean_linear` out of the map, and that quantity is a
+    # SCALAR: three then composes `material.color x map`, so a family's own
+    # HUE passes straight through to every role that wears it. Measured off
+    # the shipped bytes, `of_rust_a.png` has mean linear RGB
+    # 0.28924 / 0.18160 / 0.09950, i.e. a **2.907 : 1 linear R/B skew**. That
+    # is correct and wanted for `SteelRust`, which is oxide. It is inherited,
+    # unasked, by every other role on the family - and `Soot` is on the family
+    # deliberately (RN-859's rule, the flake relief must read through the
+    # deposit), so `Soot` was buying an orange multiplier with it.
+    #
+    # RN-1815's 0.245 was therefore not a property of 2B2724. It was a
+    # property of 2B2724 BEING TOO DARK TO SEE: at that value the additive
+    # blue of the sky ambient (fitted at 0.0037 / 0.0051 / 0.0056 linear from
+    # two builds of this exact frame) was most of the pixel and it cancelled
+    # the map's orange. Restoring the value necessarily restores the orange.
+    # The two halves of the verifier's ask - "bring the form back" and "keep
+    # sat 0.245 and warm 5.46" - cannot both be met by any grey hex on this
+    # family, which is why one dial is not enough.
+    #
+    # SO THE HEX CANCELS THE MAP AND THIS IS NOT A SWATCH OF SOOT. It is a
+    # MULTIPLIER, and it is derived: normalise the map's mean to green
+    # (1.5927 / 1.0 / 0.5479) and ask for a base whose product with it is
+    # neutral, i.e. a base in the reciprocal ratio 0.628 / 1.0 / 1.825; then
+    # set the level so the product renders near luma 38 (linear 0.06507 /
+    # 0.09191 / 0.12464). That is 485663. The check that the derivation is
+    # about the MAP and not about this trench's light: folding the map into
+    # the fit above leaves the per-channel light gain at 0.169 / 0.156 / 0.164
+    # - equal to within 8 per cent - so the warm cast was the texture, end to
+    # end, and cancelling it leaves the surface as neutral as the light is.
+    #
+    # WHY NOT MOVE `Soot` OFF `rust`. `panel` measures 1.021 linear R/B and
+    # would need no cancellation, and it is the wrong surface: the liner is
+    # burnt, eroded plate and `panel` is clean plate with rivets, so the
+    # flake relief that RN-859's rule exists to preserve would go. A `soot`
+    # family of its own is three more PNGs, about 4 MiB of VRAM, to say the
+    # same thing about the same substrate that `rust` already says - the exact
+    # spend RN-1815 refused, and refusing it is still right.
+    #
+    # ROUGHNESS AND METALNESS ARE UNCHANGED at 0.98 / 0.02: they are what make
+    # this read as loose powder rather than as paint, the finding is about
+    # value and hue, and moving four dials at once would leave no way to say
+    # which one worked.
+    "Soot":         ("485663", 0.02, 0.98, 1.0, None),
     # RN-1780. THE FIREBOX PEEP AND SIGHT STRIP (look audit R6). A role of its
     # own, not a re-point of `EmissiveState`: the name still ENDS WITH
     # "EmissiveState" on purpose, because `MachineFx.ts` (`mat.name.endsWith(

@@ -460,8 +460,14 @@ ROLE_FAMILY = {
     # control joints), `ConcreteSoot` the deposit on both - which wears THIS
     # family and not the soot's own, by RN-859's rule: what is under the
     # dirt has to read through it.
+    # RN-1820 adds `ConcreteLean`/`ConcreteRich`, the plinth's pour bays. They
+    # are the SAME material at two more values (see of_lib.PALETTE), so they
+    # take the same family and the same three PNGs: the whole point of doing
+    # the pour-to-pour variation in the palette rather than in the map is that
+    # it costs no texture memory at all.
     "Concrete": "concrete", "ConcreteDark": "concrete",
-    "ConcreteSoot": "concrete",
+    "ConcreteSoot": "concrete", "ConcreteLean": "concrete",
+    "ConcreteRich": "concrete",
     # --- rust, second consumer: SOOT on steel (RN-1815) -------------------
     # `Soot` deliberately shares `SteelRust`'s family. See of_lib.PALETTE's
     # `Soot` row: the steel under a flame trench's carbon IS oxidised, so the
@@ -2411,8 +2417,56 @@ def _ashlar_masks(w, h, height, aux):
 # is between a fifth and a third of that first pass, and the CHARACTER moved
 # into the albedo, which is where a real wall keeps it: concrete is a tonal
 # surface, not a relief one.
+#
+# RN-1820 RE-BALANCES THE TWO AXES AND THE FINDING IS WORTH QUOTING BEFORE THE
+# NUMBERS. The pad's fresh-context verifier, on the shipped wall: "the skirt
+# reads as blockwork rather than a monolithic pour: its vertical joints are as
+# strong and continuous as the horizontal board lines. On a real poured wall
+# the horizontal form-board lines dominate and the vertical panel joints are
+# fewer, weaker and offset."
+#
+# It is right and the arithmetic says so. As shipped the primary panel joint
+# fell 0.055 and the board joints 0.030, so the LOUDEST single line on the
+# wall was a vertical one, the secondary panel joint at 0.45 of full depth
+# came to 0.0248 and was within a fifth of a board line, and both verticals
+# ran the full height of the tile without a break. A 0.15 m horizontal grid
+# crossed by an unbroken 0.90 m vertical grid is a drawing of coursed blocks,
+# which is the failure this family was minted to get away from, arrived at
+# from the other side. The header above already names this trap once ("drawn
+# at one depth they gave the wall a square grid ... which reads as laid
+# blocks") and the fix it made - a 45 per cent secondary - was too small.
+#
+# THREE CHANGES, ONE PER WORD OF THE FINDING.
+#   FEWER    the secondary panel joint drops 0.45 -> 0.28 of full depth, so
+#            the 0.90 m line is a quarter of the 1.80 m one rather than half
+#            of it, and the rhythm the eye finds is the sheet joint.
+#   WEAKER   the panel joint falls 0.055 -> 0.030 and the board joint rises
+#            0.030 -> 0.044, which inverts the ordering: the deepest line on
+#            the wall is now horizontal, by 1.47x, and the secondary vertical
+#            is 0.0084, a FIFTH of a board line instead of five sixths of one.
+#   OFFSET   there are now TWO lift lines per tile instead of one, at v = 0
+#            and v = 0.5, and the panel joints JOG 0.175 in u between them.
+#            That is what formwork actually does - the next lift's sheets are
+#            struck and re-set, and they do not land on the last lift's joints
+#            - and it means no vertical line on this wall is continuous for
+#            more than 0.9 m of height. It is also why the second lift line
+#            has to exist: a jog needs a place to happen, and the shipped
+#            field had exactly one v-discontinuity and it was on the wrap.
+#
+# THE SELFTEST NUMBER MOVES WITH IT AND IN THE RIGHT DIRECTION: "concrete
+# boards cross v" measures sum |dz/dv| / sum |dz/du| and its bound is 1.50.
+# Every one of the three changes above pushes that ratio up, so the gate that
+# guards the family's whole orientation argument is a gate this pass tightens
+# rather than one it has to be excused from.
 CONC_BOARDS = 12            # board faces across the tile -> 150 mm boards
-CONC_PANEL_U = (0.0, 0.5)   # form panel joints -> one every 0.90 m
+# (u, depth fraction). The sheet joint at full depth and the intermediate
+# where the next stud backing bears at a quarter of it.
+CONC_PANELS = ((0.0, 1.0), (0.5, 0.28))
+CONC_PANEL_Z = 0.030        # the sheet joint's depth (RN-1815 shipped 0.055)
+CONC_BOARD_Z = 0.044        # a board joint's depth (RN-1815 shipped 0.030)
+CONC_LIFT_V = (0.0, 0.5)    # two pours per tile -> a lift line every 0.90 m
+CONC_LIFT_Z = 0.034         # the trough where two pours meet
+CONC_PANEL_JOG = (0.0, 0.175)   # the upper lift's sheets sit 0.315 m across
 CONC_JOINT_HALF = 0.0022    # half a panel joint's gap -> 7.9 mm
 CONC_JOINT_FALL = 0.0042    # ...the face falls away over a further 7.6 mm
 CONC_BOARD_HALF = 0.0011    # half a board joint's gap -> 4.0 mm
@@ -2483,41 +2537,60 @@ def _concrete_height(w, h):
         # across each board and the joints stand proudest. 4*bf*(1-bf) peaks
         # at 1.0 mid-board and is 0 at both joints.
         board_z -= cup[bi] * 4.0 * bf * (1.0 - bf)
-        board_z -= 0.030 * (1.0 - _smoothstep(CONC_BOARD_HALF,
-                                              CONC_BOARD_HALF
-                                              + CONC_BOARD_FALL, dvj))
-        # THE LIFT LINE, on the tile boundary in v. Two pours met here, so the
-        # lower one's top is a hair proud of the upper one's foot and there is
-        # a shallow trough between them. It is the only v-feature bigger than
-        # a board joint and it sits on the wrap, which is `panel`'s own trick
-        # (the tile edge IS a seam, so the repeat has nowhere to show).
-        dlift = _wrap_dist(v, 0.0)
-        board_z -= 0.026 * (1.0 - _smoothstep(0.0030, 0.0110, dlift))
+        board_z -= CONC_BOARD_Z * (1.0 - _smoothstep(CONC_BOARD_HALF,
+                                                     CONC_BOARD_HALF
+                                                     + CONC_BOARD_FALL, dvj))
+        # THE LIFT LINES. Two pours met here, so the lower one's top is a hair
+        # proud of the upper one's foot and there is a shallow trough between
+        # them. RN-1815 had ONE, on the tile boundary, which is `panel`'s own
+        # trick (the tile edge IS a seam, so the repeat has nowhere to show).
+        # RN-1820 adds a second at v = 0.5 because the panel joints have to
+        # JOG somewhere and a jog needs a lift to happen at; the wrap keeps
+        # its line, so the trick is kept and doubled rather than traded away.
+        # 0.90 m lifts on a 1.55 m wall means the skirt shows two of them,
+        # which is what a wall this height is actually poured in.
+        dlift = min(_wrap_dist(v, s) for s in CONC_LIFT_V)
+        board_z -= CONC_LIFT_Z * (1.0 - _smoothstep(0.0030, 0.0110, dlift))
+        # WHICH LIFT THIS ROW IS IN, and therefore how far across the panel
+        # joints have been re-set. Integer-indexed off CONC_LIFT_V so the
+        # field stays periodic in v by construction, the same way `bi` does.
+        li = 0
+        for k in range(1, len(CONC_LIFT_V)):
+            if v >= CONC_LIFT_V[k]:
+                li = k
+        jog = CONC_PANEL_JOG[li % len(CONC_PANEL_JOG)]
         for x in range(w):
             u = (x + 0.5) / w
             i = base + x
             z = 1.0 + board_z
-            # -- the form panel joint. The one loud u-varying feature, and it
-            #    is at the panel pitch on purpose (see the family header).
-            # THE TWO JOINTS ARE NOT EQUAL, and the first version's were.
-            # Drawn at one depth they gave the wall a square grid of 0.90 m
-            # cells against the 0.15 m board lines, which reads as laid
-            # blocks - the failure mode next door, arrived at from the other
-            # side. Real formwork has a hierarchy: the joint between two form
-            # SHEETS is a real gap, the line where the next sheet's stud
-            # backing bears is much fainter. u = 0 is the sheet joint at full
-            # depth and u = 0.5 is the intermediate at 45 per cent of it, so
-            # the primary rhythm is 1.80 m (and lands on the tile wrap, where
-            # `panel` puts its own seams) and the 0.90 m one is a subdivision
-            # of it rather than its equal.
+            # -- the form panel joint, the only loud u-varying feature, at the
+            #    panel pitch on purpose (see the family header). Real formwork
+            #    has a hierarchy: the joint between two form SHEETS is a real
+            #    gap, the line where the next sheet's stud backing bears is
+            #    much fainter. u = 0 is the sheet joint at full depth and
+            #    u = 0.5 the intermediate at 28 per cent of it, so the primary
+            #    rhythm is 1.80 m (and lands on the tile wrap, where `panel`
+            #    puts its own seams) and the 0.90 m one is a subdivision of it
+            #    rather than its equal.
+            #
+            #    RN-1820: BOTH ARE SHIFTED BY `jog`, WHICH IS A FUNCTION OF
+            #    THE LIFT. The joints therefore break at every lift line, so
+            #    the longest unbroken vertical on this wall is one lift tall
+            #    (0.90 m) instead of the whole tile, and no vertical line
+            #    survives a 1.55 m skirt from kerb to ledge. That is the
+            #    "offset" half of the blockwork finding, and it is also the
+            #    only one of the three changes that touches the REPEAT: after
+            #    column-averaging the rendered wall, one full-strength line
+            #    per period becomes two half-height lines 0.315 m apart, which
+            #    spreads the autocorrelation feature instead of sharpening it.
             du = CONC_JOINT_HALF + CONC_JOINT_FALL + 1.0
             weight = 1.0
-            for k, s in enumerate(CONC_PANEL_U):
-                d = _wrap_dist(u, s)
+            for (s, wgt) in CONC_PANELS:
+                d = _wrap_dist(u, s + jog)
                 if d < du:
                     du = d
-                    weight = 1.0 if k == 0 else 0.45
-            z -= 0.055 * weight * (1.0 - _smoothstep(
+                    weight = wgt
+            z -= CONC_PANEL_Z * weight * (1.0 - _smoothstep(
                 CONC_JOINT_HALF, CONC_JOINT_HALF + CONC_JOINT_FALL, du))
             # ...and the grout that leaked through it and set as a fin. Only
             # where the laitance field says the form was slack, so the fin is
@@ -2791,9 +2864,24 @@ def _concrete_albedo(w, h, height, aux):
             live = _smoothstep(start[k], start[k] + 0.10, v) \
                 * (1.0 - 0.55 * _smoothstep(start[k] + 0.10, 1.0, v))
             row.append(((base_u[k] + o0 + (o1 - o0) * t) % 1.0, live, half[k]))
-        # THE LIFT LINE, on the tile boundary. `_wrap_dist` to v = 0, so the
-        # band is continuous across the wrap.
-        lift = 1.0 - _smoothstep(0.006, 0.030, _wrap_dist(v, 0.0))
+        # THE LIFT LINES, one on the tile boundary and one at mid-tile.
+        # `_wrap_dist` to v = 0, so the lower band is continuous across the
+        # wrap. RN-1820 doubled them in the height field and the albedo has to
+        # agree: a relief trough with no tone change at it reads as a scratch,
+        # and the whole reason a lift line is visible on a real wall is that
+        # the two pours either side of it cured to different colours.
+        lift = 1.0 - _smoothstep(0.006, 0.030,
+                                 min(_wrap_dist(v, s) for s in CONC_LIFT_V))
+        # ...and the pours THEMSELVES differ, which is the same statement one
+        # scale up and the v-axis half of RN-1820's pour-to-pour finding (the
+        # 24 m half is in the palette, as bay roles: see of_lib's
+        # `ConcreteLean`/`ConcreteRich`). It is a step function on the lift
+        # index, not a gradient, because a pour has an edge.
+        li = 0
+        for k in range(1, len(CONC_LIFT_V)):
+            if v >= CONC_LIFT_V[k]:
+                li = k
+        cure = (_hash01(li, 97, 33161) - 0.5) * 0.052
         for x in range(w):
             u = (x + 0.5) / w
             i = base + x
@@ -2815,7 +2903,12 @@ def _concrete_albedo(w, h, height, aux):
             #    BANDING is the largest single term, which is the honest
             #    claim about a board-marked wall and also the one that costs
             #    nothing in repeat (it varies in v only).
-            val = 1.0 + board[y] * 0.060
+            # RN-1820 raises the board banding 0.060 -> 0.072 for the same
+            # reason the board JOINT got deeper: the finding is that the
+            # horizontal lines have to dominate the vertical ones, and tone is
+            # where this family keeps most of its character, so an emphasis
+            # fix that moved only the relief would be doing half the job.
+            val = 1.0 + board[y] * 0.072 + cure
             val += (grime[i] - 0.5) * 0.14 + (fines[i] - 0.5) * 0.08
             # A RUN IS A DARK STREAK WITH A FAINT LIGHT CORE, and that ratio
             # is the whole difference between weathering and wax. Authored

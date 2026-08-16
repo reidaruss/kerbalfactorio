@@ -414,6 +414,79 @@ def rail_run(mb, a, b, z_deck, role="Steel", spacing=4.0, mid_rail=True):
 # ---------------------------------------------------------------------------
 
 
+# RN-1820. THE POUR BAYS, AND WHY A TILING MAP COULD NOT HAVE DONE THIS.
+#
+# The RN-1815 verifier's third finding against the skirt: "the tone is uniform
+# across all 24 m, with no pour-to-pour variation. A wall that size is poured
+# in lifts and each lift cures slightly differently. Add that variation at the
+# lift scale, not as noise."
+#
+# That length is the whole difficulty. `concrete` tiles at 1.8 m, so ANY term
+# the texture carries repeats 13.3 times along this wall: a macro tone field
+# authored in the map is, by construction, a 1.8 m period pretending to be a
+# 6 m one, and it would be adding countable repeat to the wall whose countable
+# repeat is the OTHER open finding. Above the tile there is exactly one dial
+# left, the material assignment, so the plinth is poured in bays the way the
+# real thing is and the bays wear three values of one material
+# (of_lib's `ConcreteDark` and the `ConcreteLean`/`ConcreteRich` either side
+# of it, +-9 counts of luma at unchanged chroma).
+#
+# THE CUTS ARE UNEQUAL AND THE TWO BANKS DO NOT AGREE, both on purpose. Equal
+# bays are a metronome and a metronome is the defect one octave down; and the
+# west bank is 24.0 m against the east's 21.2, so giving them the same bay
+# count would be the one arrangement that says "generated". Four pours west at
+# 7.0 / 6.0 / 5.5 / 5.5 m and three east at 6.4 / 7.6 / 7.2 m, with no two
+# neighbours sharing a value, is a day's work a concrete gang would recognise.
+#
+# WHAT IT COSTS, priced rather than found later. Five more boxes, 60
+# triangles, LOD0 4256 -> 4316 against a 4400 budget; two more materials in
+# the file, 12 -> 14, i.e. two more draw calls on ONE instance; zero texture
+# memory, because all three roles share the three `of_concrete_*` PNGs that
+# already ship.
+#
+# AND IT IS LOD0 ONLY, WHICH IS A DECISION AND NOT AN OVERSIGHT. `ground(
+# detail=False)` keeps one `ConcreteDark` box per bank, so LOD1 stays at 2024
+# triangles and 10 primitives and does not eat its own 76-triangle headroom
+# for a 9-count tone step nobody can resolve at LOD1 range. The pop at the
+# switch is bounded by that same 9 counts, which is smaller than the tone step
+# the boards already carry across a lift line. LOD2 drops the trench's soot
+# gradient for the identical reason (RN-1815) and this follows it.
+PLINTH_BAYS = {
+    # (cuts measured in Y from the bank's own start, role for each bay)
+    -1.0: ((7.0, "ConcreteLean"), (6.0, "ConcreteRich"),
+           (5.5, "ConcreteDark"), (5.5, "ConcreteLean")),
+    +1.0: ((6.4, "ConcreteDark"), (7.6, "ConcreteLean"),
+           (7.2, "ConcreteRich")),
+}
+
+
+def plinth_bays(y0, y1, detail):
+    """[(y0, y1, role)] for one bank's plinth: the pour bays at LOD0, one
+    undivided `ConcreteDark` box below it.
+
+    THE LAST BAY IS SNAPPED TO `y1` RATHER THAN ACCUMULATED TO IT. The widths
+    in `PLINTH_BAYS` are hand-written metres and the banks are 24.00 and 21.20
+    long, so a bare running sum leaves the final cut wherever float addition
+    of four decimals lands - and the pad's own `tolerance_m` is 0.005, which a
+    sum of four hand-written numbers is not guaranteed to hold. Snapping the
+    end makes the asset's OUTER dimension exact by construction and puts the
+    whole of any rounding error inside the last pour, where it is invisible."""
+    # WHICH BANK, read off the geometry rather than passed in: only the west
+    # bank runs to the far edge (`y1 == HALF`); the east one stops at the
+    # stair notch. Deriving it here keeps `ground()`'s loop reading as the one
+    # loop over two banks that it is.
+    bays = PLINTH_BAYS[-1.0 if y1 >= HALF - 1e-9 else +1.0]
+    if not detail:
+        return [(y0, y1, "ConcreteDark")]
+    out = []
+    y = y0
+    for i, (span, role) in enumerate(bays):
+        nxt = y1 if i == len(bays) - 1 else y + span
+        out.append((y, nxt, role))
+        y = nxt
+    return out
+
+
 def ground(mb, detail=True):
     """Two concrete banks with a 6 m channel between them.
 
@@ -446,8 +519,10 @@ def ground(mb, detail=True):
     # West bank: full 24 m of Y. East bank stops short of the stair notch.
     for sx, y0, y1 in ((-1.0, -HALF, HALF), (1.0, -HALF, STAIR_S)):
         cy, dy = (y0 + y1) * 0.5, y1 - y0
-        mb.box((HALF - TR_HW, dy, CAP_Z),
-               (sx * (HALF + TR_HW) * 0.5, cy, CAP_Z * 0.5), "ConcreteDark")
+        for by0, by1, role in plinth_bays(y0, y1, detail):
+            mb.box((HALF - TR_HW, by1 - by0, CAP_Z),
+                   (sx * (HALF + TR_HW) * 0.5, (by0 + by1) * 0.5,
+                    CAP_Z * 0.5), role)
         # The cap is inset on the OUTER and END faces only. Its trench face
         # stays flush at |x| = TR_HW so the mount can abut it exactly: two
         # coincident faces with opposite normals are invisible under backface

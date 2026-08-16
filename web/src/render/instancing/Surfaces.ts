@@ -187,7 +187,13 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   // tile only the horizontal axis can ever be counted, and every loud feature
   // in this family varies along v. `Masonry` stays for the ruin and the
   // foundation deck. Moves in the same commit as texgen's table (RN-100).
+  // RN-1820 adds `ConcreteLean`/`ConcreteRich`: the plinth's POUR BAYS, the
+  // same material at +-9 counts of luma. They are palette rows and nothing
+  // else - same family, same three PNGs, zero texture memory - because the
+  // finding they answer is that the tone is uniform over 24 m and a 1.8 m
+  // tiling map cannot say anything at 6 m without saying it 13 times.
   Concrete: 'concrete', ConcreteDark: 'concrete', ConcreteSoot: 'concrete',
+  ConcreteLean: 'concrete', ConcreteRich: 'concrete',
   // RN-1815: soot on steel shares `SteelRust`'s family on purpose. The steel
   // under a flame trench's carbon is oxidised, so the flake relief has to
   // read through the deposit (RN-859's rule, where SuitGrime reused suitfab

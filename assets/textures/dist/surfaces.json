@@ -78,23 +78,23 @@
     "concrete": {
       "normal": {
         "file": "of_concrete_n.png",
-        "bytes": 249481,
-        "sha256": "624a8e2aabfb10a27a01b4624879b7aff6b4cb07a3ed3a54e182970276f7e6b6"
+        "bytes": 249106,
+        "sha256": "fb9eb8ddebf951293697333cef15929f7b23628b30b0169cd7b16ca3462c5704"
       },
       "orm": {
         "file": "of_concrete_orm.png",
-        "bytes": 159086,
-        "sha256": "d9d3ca4053e604f3b7898c63944af0e6f7fc6751b274296edeac1b129bb6030a"
+        "bytes": 158885,
+        "sha256": "91a72e792e5f716a2934da444689f44f48fb6588d48f7bef8a46fc718da1df25"
       },
       "albedo": {
         "file": "of_concrete_a.png",
-        "bytes": 137892,
-        "sha256": "c296d1b17861f6b922441bda0ed3b0cc372911f872ea7afefe7b96a65d07267a"
+        "bytes": 138840,
+        "sha256": "30afd652433bb94900153e1a4b860f1bd4987961db1bd40a15b62bc2c2c3fca7"
       },
       "tile_m": 1.8,
       "size_px": 512,
       "texels_per_m": 284.44444444444446,
-      "albedo_mean_linear": 0.2208
+      "albedo_mean_linear": 0.2231
     },
     "ember": {
       "normal": {
@@ -362,6 +362,8 @@
     "CoalSeam": "ore",
     "Concrete": "concrete",
     "ConcreteDark": "concrete",
+    "ConcreteLean": "concrete",
+    "ConcreteRich": "concrete",
     "ConcreteSoot": "concrete",
     "Copper": "coarse",
     "CopperOre": "ore",
