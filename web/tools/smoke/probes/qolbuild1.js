@@ -2,6 +2,20 @@
 // player can READ off the screen. Records DRAWN text, never model state alone.
 // Stages via --evalargs={"stage":"..."}: menu | hotbar | pack
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/qolbuild1.js
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("...run.mjs only fails a
+// run on console errors and failed requests: thirteen green stages
+// supported exactly zero statements...") as the command, which held zero
+// real flags, so every prior sweep ran this at the runner's bare defaults.
+// `--sandbox=1` per `qolflight1.js`'s own stated rationale for the same
+// family ("the full part catalogue is needed"): every stage here reads the
+// build menu and hotbar as shipped, not after any crafting, so a fresh
+// survival pack would report an empty catalogue rather than the QOL
+// question the survey exists to ask.
+//
 // GP-401. EVERY STAGE NOW ASSERTS, AND A FAILED ASSERTION THROWS. Before this
 // pass the file returned a bag of readings and no claims at all, and the runner
 // printed `smoke: PASS` for a probe that returned `fails: ['DELIBERATE

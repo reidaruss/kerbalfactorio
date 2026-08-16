@@ -2,8 +2,19 @@
 //
 // Run it TWICE, and the pair is the point:
 //
-//   run.mjs --sandbox=1              -> hostile false, nothing can hurt you
-//   run.mjs --sandbox=1 --combat=1   -> hostile true, everything below lands
+//   node tools/smoke/run.mjs --sandbox=1 --evalfile=tools/smoke/probes/playerhealth.js
+//   node tools/smoke/run.mjs --sandbox=1 --combat=1 --evalfile=tools/smoke/probes/playerhealth.js
+//
+// BT-190: this probe's first line used to be prose ("run.mjs --sandbox=1
+// -> hostile false..."), missing the leading `node`, so `extractCmd()`'s old
+// first-match rule accepted it as the command anyway (it is the FIRST line
+// mentioning `run.mjs`) and, by coincidence, `flagsOf()` still recovered the
+// one real flag it carried (`--sandbox=1`) because the sentence happened to
+// contain a well-formed `--flag=value` token. So this is the one probe in
+// the affected set whose OLD behaviour and NEW behaviour are the same
+// invocation; only the documentation was fiction, not the run. Recorded
+// rather than skipped, because "the parser was broken and it happened not
+// to matter here" is still a finding this sweep exists to produce.
 //
 // DW-31 says sandbox is for playtesting without grind, and the same probe
 // passing in both modes with OPPOSITE outcomes is what proves the mode is a

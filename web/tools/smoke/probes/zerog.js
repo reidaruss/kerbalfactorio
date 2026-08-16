@@ -1,5 +1,18 @@
 // APPARENT ZERO G: THE MEASUREMENT, THEN THE MODEL (PH-98 to PH-102).
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/zerog.js
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("...the generator back
+// on, the player back on the ground. run.mjs settles on...") as the
+// command, which held zero real flags, so every prior sweep ran this at
+// the runner's bare defaults. The flags above match the station-carrier
+// family this file drives (`of.station()`, `of.standAboard()`), the same
+// `--scenario=walk --sandbox=1` `probes/orbitdeck.js`, `probes/airlock.js`
+// and `probes/stationwalk.js` all document, for the same reason: the claim
+// is about orbital gravity and carrier frames, not the survival economy.
+//
 // Reid: "if I did an EVA outside of my rocket you should float around like you
 // would in real life. Apparent 0 g in orbit."
 //

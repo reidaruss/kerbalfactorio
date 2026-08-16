@@ -1,5 +1,17 @@
 // qolhandsafe.js: GP-604 and GP-605. THE TWO DESTRUCTIVE-AND-SILENT GESTURES.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/qolhandsafe.js
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("GP-609. A FAILED CHECK
+// NOW THROWS... Measured directly against `run.mjs`...") as the command,
+// which held zero real flags, so every prior sweep ran this at the runner's
+// bare defaults. No sandbox: this probe only ever places a foundation and a
+// belt from the default build menu, the same class `controls.js`'s
+// unaffected sibling places a wall from at plain `--scenario=walk`, and the
+// claim under test is what Escape and Mouse2 draw, not the economy.
+//
 // Both were found by playing, not by reading, and both share a shape: an action
 // that changes the world and draws nothing about it. A probe that reads state
 // cannot see either, because the state changes are CORRECT. What was wrong is

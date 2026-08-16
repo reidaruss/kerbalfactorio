@@ -3,6 +3,19 @@
 // --evalargs={"stage":"place"|"slope"|"drill"|"onore"|"belt"|"machine"
 //                     |"chest"|"power"|"pad"}
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/qolbuild2.js
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("...a returned `fails:
+// [...]` or `valid:false` exits 0 and run.mjs prints `smoke: PASS`...") as
+// the command, which held zero real flags, so every prior sweep ran this at
+// the runner's bare defaults. `--sandbox=1` per `qolflight1.js`'s own
+// rationale for the same family: several stages here place an assembler, a
+// chest, a generator and a launch pad straight from the build menu with no
+// crafting step, which needs the full catalogue unlocked to reach the UI
+// question this survey is actually asking.
+//
 // GP-401. EVERY STAGE ASSERTS AND A FAILED ASSERTION THROWS, because a returned
 // `fails: [...]` or `valid:false` exits 0 and run.mjs prints `smoke: PASS`: the
 // runner only fails on console errors and failed requests. A throw rejects

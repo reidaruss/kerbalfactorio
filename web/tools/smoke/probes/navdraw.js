@@ -1,6 +1,18 @@
 // navdraw.js: GP-610. THE THIRTEEN FIELDS PHYSICS PUBLISHED ARE NOW DRAWN, AND
 // THIS PROBE READS THE SCREEN RATHER THAN THE READOUT.
 //
+//   node tools/smoke/run.mjs --sandbox=1 --settle=25 \
+//        --evalfile=tools/smoke/probes/navdraw.js
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("GP-609: a failed check
+// throws... Measured against `run.mjs`...") as the command, which held zero
+// real flags, so every prior sweep ran this at the runner's bare defaults.
+// The invocation above is copied verbatim from `probes/phnav.js`, whose
+// exact fixture (build a reference stack in the VAB, roll it out, board it)
+// this file's own comment says it lifted "adapted only where it names that
+// probe's own helpers": the two files need the same world.
+//
 // `probes/phnav.js` already proves the FIELDS EXIST and carry the right values;
 // it is physics' fixture and this does not duplicate it. The gap it cannot
 // close is the one this lane owns: a field that is published and never drawn is

@@ -19,37 +19,12 @@ import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const args = new Map();
-for (const a of process.argv.slice(2)) {
-  const m = /^--([^=]+)(?:=(.*))?$/.exec(a);
-  if (m) args.set(m[1], m[2] ?? '1');
-}
-const url = args.get('url') ?? 'http://127.0.0.1:4262/';
-const tree = resolve(args.get('tree') ?? join(here, 'tree'));
-const only = args.get('only');           // comma list of probe basenames
-const limit = Number(args.get('limit') ?? 0);
-const timeoutMs = Number(args.get('timeout') ?? 240000);
-// GP-982: forwarded to run.mjs only if given, so the runner's own default (30 s)
-// stays the single place the cadence is defined. `--heartbeat=0` silences it.
-const heartbeat = args.has('heartbeat') ? Number(args.get('heartbeat')) : null;
-const outFile = args.get('results') ?? join(here, 'results.jsonl');
-// BT-130: where each probe's raw stdout is captured. See the `cap` comment in
-// run() for why this exists instead of an in-memory string.
-const stdoutDir = args.get('stdoutdir') ?? join(here, 'stdout');
-mkdirSync(stdoutDir, { recursive: true });
-// Sharding exists to get the CENSUS quickly. It costs measurement quality:
-// several probes assert frame time or draw cost, and INSTRUMENTS.md is explicit
-// that timings are worthless while other work runs on the machine. Contention
-// makes a probe FAIL, not pass, so a GREEN under a shard is trustworthy and a
-// RED is not. Every red from a sharded sweep is re-run serially before it goes
-// on the list.
-const shard = Number(args.get('shard') ?? 0);
-const shards = Number(args.get('shards') ?? 1);
-
-const probeDir = join(tree, 'web', 'tools', 'smoke', 'probes');
-const runner = join(tree, 'web', 'tools', 'smoke', 'run.mjs');
-const webDir = join(tree, 'web');
+// BT-190: the sweep's MAIN FLOW (arg parsing, directory creation, spawning
+// probes) is guarded below (search `if (isMain)`), after every pure function
+// this file defines, so `verify-extractcmd.mjs` can
+// `import { extractCmd, PROSE_ONLY_INVOCATION } from './probeall.mjs'` for
+// the parser alone without also running a sweep or requiring `--tree`.
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 
 // ---- BT-115 to BT-129: the extractCmd-null audit ---------------------------
 // CE-86 found that a probe documenting no invocation returns `null` from
@@ -111,19 +86,60 @@ function timeoutOverrideMs(src) {
 
 // ---- extract the documented invocation from the header comment -------------
 // The command sits in a `//` block, one flag per token, with `\` continuations.
-function extractCmd(src) {
+//
+// BT-190: the old version took the FIRST `//` line that merely MENTIONED
+// `run.mjs`, with no check that the line actually STARTED an invocation. A
+// probe whose only such line was prose ("run.mjs's own --out screenshot
+// happens after settle()...") returned that prose as `cmd`; `flagsOf()` then
+// reduced it to whatever `--flag` tokens happened to appear in the sentence
+// (usually none, since url/out/evalfile are excluded from `flags` and prose
+// rarely contains a real flag by accident), so the probe queued and ran at
+// the runner's bare defaults while this file believed it had a documented
+// command. A mechanical corpus scan (BT-190, superseding BT-184's manual
+// count of 19) found **20** probes carrying this trap beyond `airlock.js`
+// (BT-183) and `orbitdeck.js` (BT-176), which were fixed by hand before this
+// parser fix existed: 16 with no real invocation anywhere in the file, and 4
+// -- not 3 -- where a real invocation exists further down but the first
+// prose match short-circuited before ever reaching it (`artshot.js`,
+// `flyto.js`, `popshot.js`, plus `padflat.js`, missed by the manual BT-184
+// pass because it is a probe added to the corpus after that census).
+//
+// THE FIX, proven both ways in `tools/smoke/verify-extractcmd.mjs`: a candidate
+// line must actually START an invocation (`node ... run.mjs`, matched
+// against the WHOLE trimmed comment body, not merely contain the substring
+// `run.mjs` anywhere in a sentence), tried in file order so a real command
+// later in the file wins over prose earlier in it. A file with `run.mjs`
+// mentioned only in prose -- no line anywhere starts a real invocation --
+// now returns the LOUD sentinel `PROSE_ONLY_INVOCATION` instead of silently
+// falling through to `flagsOf('')`'s empty array, so it is named in the
+// census as a probe that needs a real header written, exactly the class
+// `UNRECOGNISED_VERDICT_SHAPE` (BT-175) named for `verdictOf()`'s gap rather
+// than let it default. A file with no `run.mjs` mention anywhere (a genuine
+// two-phase fixture with no invocation to document) is unaffected and still
+// returns plain `null`, which `excludedReason()` or `NO_DOCUMENTED_CMD`
+// already handle correctly.
+const REAL_INVOCATION_START = /^node\b[\s\S]*run\.mjs\b/;
+export const PROSE_ONLY_INVOCATION = Symbol('PROSE_ONLY_INVOCATION');
+export function extractCmd(src) {
   const lines = src.split(/\r?\n/);
-  let i = lines.findIndex((l) => /^\s*\/\/.*run\.mjs/.test(l));
-  if (i === -1) return null;
-  const parts = [];
-  for (; i < lines.length; i++) {
+  let sawMention = false;
+  for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
-    if (!/^\s*\/\//.test(l)) break;
-    const body = l.replace(/^\s*\/\/\s?/, '');
-    parts.push(body.replace(/\\\s*$/, ''));
-    if (!/\\\s*$/.test(body)) break;
+    if (!/^\s*\/\/.*run\.mjs/.test(l)) continue;
+    sawMention = true;
+    const firstBody = l.replace(/^\s*\/\/\s?/, '').trim();
+    if (!REAL_INVOCATION_START.test(firstBody)) continue; // prose that merely says the words
+    const parts = [];
+    for (let j = i; j < lines.length; j++) {
+      const lj = lines[j];
+      if (!/^\s*\/\//.test(lj)) break;
+      const body = lj.replace(/^\s*\/\/\s?/, '');
+      parts.push(body.replace(/\\\s*$/, ''));
+      if (!/\\\s*$/.test(body)) break;
+    }
+    return parts.join(' ');
   }
-  return parts.join(' ');
+  return sawMention ? PROSE_ONLY_INVOCATION : null;
 }
 
 const PLACEHOLDER = /^(\.\.\.|<.*>|\$.*|\.\.\.\.)$/;
@@ -176,7 +192,7 @@ function flagsOf(cmd) {
 // five recognised (name, type) pairs above reaches the check below at all.
 const VERDICT_LOOKALIKE = /^(valid|invalid|ok|okay|pass|passed|fail|failed|failure|failures|error|errors|success|succeeded)$/i;
 
-function verdictOf(ev) {
+export function verdictOf(ev) {
   if (ev === undefined || ev === null || typeof ev !== 'object') return { cls: 'NO_VERDICT', fails: [] };
   const hasFails = Array.isArray(ev.fails);
   const bools = ['valid', 'ok', 'pass'].filter((k) => typeof ev[k] === 'boolean');
@@ -267,7 +283,12 @@ function safeStdoutName(probeFile) {
   return probeFile.replace(/\.js$/, '').replace(/[^A-Za-z0-9_.-]/g, '_') + '.stdout.json';
 }
 
-function run(cmd, argv, cwd, probeFile, runTimeoutMs) {
+// BT-190: `stdoutDir` is a parameter, not a closure over module-scope state,
+// so this function (and everything above it) can be imported by
+// `verify-extractcmd.mjs` without also importing the side-effecting main
+// flow below, which used to run at module-load time regardless of whether
+// the file was executed directly or imported for its parser.
+function run(cmd, argv, cwd, probeFile, runTimeoutMs, stdoutDir) {
   return new Promise((res) => {
     const t0 = Date.now();
     const soPath = join(stdoutDir, safeStdoutName(probeFile));
@@ -328,6 +349,39 @@ function run(cmd, argv, cwd, probeFile, runTimeoutMs) {
   });
 }
 
+if (isMain) {
+const here = dirname(fileURLToPath(import.meta.url));
+const args = new Map();
+for (const a of process.argv.slice(2)) {
+  const m = /^--([^=]+)(?:=(.*))?$/.exec(a);
+  if (m) args.set(m[1], m[2] ?? '1');
+}
+const url = args.get('url') ?? 'http://127.0.0.1:4262/';
+const tree = resolve(args.get('tree') ?? join(here, 'tree'));
+const only = args.get('only');           // comma list of probe basenames
+const limit = Number(args.get('limit') ?? 0);
+const timeoutMs = Number(args.get('timeout') ?? 240000);
+// GP-982: forwarded to run.mjs only if given, so the runner's own default (30 s)
+// stays the single place the cadence is defined. `--heartbeat=0` silences it.
+const heartbeat = args.has('heartbeat') ? Number(args.get('heartbeat')) : null;
+const outFile = args.get('results') ?? join(here, 'results.jsonl');
+// BT-130: where each probe's raw stdout is captured. See the `cap` comment in
+// run() for why this exists instead of an in-memory string.
+const stdoutDir = args.get('stdoutdir') ?? join(here, 'stdout');
+mkdirSync(stdoutDir, { recursive: true });
+// Sharding exists to get the CENSUS quickly. It costs measurement quality:
+// several probes assert frame time or draw cost, and INSTRUMENTS.md is explicit
+// that timings are worthless while other work runs on the machine. Contention
+// makes a probe FAIL, not pass, so a GREEN under a shard is trustworthy and a
+// RED is not. Every red from a sharded sweep is re-run serially before it goes
+// on the list.
+const shard = Number(args.get('shard') ?? 0);
+const shards = Number(args.get('shards') ?? 1);
+
+const probeDir = join(tree, 'web', 'tools', 'smoke', 'probes');
+const runner = join(tree, 'web', 'tools', 'smoke', 'run.mjs');
+const webDir = join(tree, 'web');
+
 const done = new Set();
 if (existsSync(outFile)) {
   for (const l of readFileSync(outFile, 'utf8').split(/\r?\n/)) {
@@ -351,6 +405,16 @@ for (const f of files) {
   }
   const probeTimeoutMs = timeoutOverrideMs(src) ?? timeoutMs;
   const cmd = extractCmd(src);
+  if (cmd === PROSE_ONLY_INVOCATION) {
+    // BT-190: named LOUDLY and never queued, even under --nodocs. This is not
+    // "no invocation documented" (NO_DOCUMENTED_CMD's honest case, where
+    // --nodocs is a deliberate weaker-evidence fallback); it is "a comment
+    // mentions run.mjs but never actually starts a command", which used to
+    // run silently at bare defaults while this file's own census called it
+    // documented. A probe landing here needs a real header written, not a run.
+    if (shard === 0) appendFileSync(outFile, JSON.stringify({ probe: f, cls: 'PROSE_ONLY_INVOCATION' }) + '\n');
+    continue;
+  }
   if (!cmd) {
     // --nodocs runs the probes that document NO invocation, at the runner's
     // defaults. Their verdicts are reported in their own bucket and are weaker
@@ -386,7 +450,7 @@ for (const q of queue) {
   // heartbeat in `run()`.
   console.error(`[${n}/${queue.length}] ${q.f} running (budget `
     + `${Math.round((q.timeoutMs ?? timeoutMs) / 1000)}s)`);
-  const r = await run(process.execPath, argv, webDir, q.f, q.timeoutMs ?? timeoutMs);
+  const r = await run(process.execPath, argv, webDir, q.f, q.timeoutMs ?? timeoutMs, stdoutDir);
   // BT-130: stdout is read back from disk, not from a capped in-memory
   // string, so a big-but-complete report (propshadow.js: 8.4 MB) parses the
   // same as a small one. `r.soTruncated` is only ever true against
@@ -440,3 +504,4 @@ for (const q of queue) {
   console.error(`[${n}/${queue.length}] ${q.f} done exit=${r.code} runner=${rec.runnerSaysPass ? 'PASS' : 'FAIL'} verdict=${v.cls}${v.fails.length ? ` (${v.fails.length})` : ''} ${Math.round(r.ms / 1000)}s`);
 }
 console.error('probeall: done');
+} // isMain

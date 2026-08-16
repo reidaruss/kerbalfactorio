@@ -739,9 +739,202 @@ survey that resolves itself.
 | Reconcile the census document's "35" claim against the 33 this lane could ground in its own text | build-tooling, next amendment |
 | The flip itself | **Admin decision**, not this lane's, unchanged from the original brief |
 
+## Amendment 2026-08-16 (BT-190 to BT-195): the invocation-fiction sweep closed, `lane/invocation-sweep`
+
+BT-184's manual scan named "19 more probes" with `extractCmd()`'s prose-match
+trap. This amendment closes that item: the parser is fixed at the cause, a
+mechanical corpus scan replaces the manual count, every affected probe now
+carries a real documented invocation, and every one was re-run at its true
+flags to see whether its recorded verdict still holds.
+
+### BT-190. `extractCmd()` fixed, proven both ways
+
+`probeall.mjs`'s `extractCmd()` used to take the FIRST `//` line merely
+MENTIONING `run.mjs`, with no check that the line actually STARTED a
+command. Fixed: a candidate line must match `/^node\b[\s\S]*run\.mjs\b/`
+against its whole trimmed comment body, tried in file order so a real
+command later in the file beats prose earlier in it. A file whose only
+`run.mjs`-mentioning line is prose now returns the LOUD sentinel
+`PROSE_ONLY_INVOCATION` (a new census bucket, never queued, not silently
+folded into `NO_DOCUMENTED_CMD`) instead of the old silent flags-collapse.
+`web/tools/smoke/verify-extractcmd.mjs` proves this on four synthetic
+fixtures (prose-only refused; a real command later in the file found despite
+earlier prose; a file with no mention at all still returns plain `null`; an
+already-correct header is unaffected) and then runs the fixed parser over
+the live corpus. `node tools/smoke/verify-extractcmd.mjs`, all four checks
+pass.
+
+### BT-191. The real affected set is 20, not 19
+
+BT-184's manual six-file sample was extrapolated to "19 more"; a mechanical
+scan (the same one `verify-extractcmd.mjs` runs) over all 320 current probe
+files found **20**, one more than claimed and not on BT-184's list:
+
+- **16 with no real invocation anywhere in the file** (BT-184's count, names
+  confirmed unchanged): `fpshot.js`, `keycollide.js`, `lookdev.js`,
+  `navdraw.js`, `platetile.js`, `playerhealth.js`, `qolbuild1.js`,
+  `qolbuild2.js`, `qolbuild3.js`, `qolflight3.js`, `qolhandsafe.js`,
+  `qolsandbox.js`, `rockpose.js`, `stationwalk.js`, `survivalrun.js`,
+  `zerog.js`.
+- **4 where a real invocation exists further down the file but the first
+  prose match reached it first**, not 3: `artshot.js`, `flyto.js`,
+  `popshot.js`, and **`padflat.js`, missed by BT-184's manual pass because it
+  is a probe added to the corpus after that census was written** (the corpus
+  is 320 files now, not 316; the other four new files are unrelated probes
+  from other lanes working concurrently and are not part of this trap).
+
+The probe count moving under a lane is exactly the failure BT-184 itself
+named as a risk ("any verdict this census reports carries the same asterisk
+until re-derived") and is why this amendment re-derives the set mechanically
+rather than trusting the prior list.
+
+### BT-192. Every affected probe now carries a real, chosen invocation
+
+The 4 in the second bucket needed no edit: the parser fix alone finds their
+existing real command, which their own authors already wrote correctly, just
+never reached. The 16 in the first bucket had no invocation to find, so each
+was read in full and given one, chosen from the probe's own content (not
+copied from a neighbour without reading), with the reasoning recorded in the
+probe's own header comment:
+
+| Probe | Chosen invocation | Why |
+|---|---|---|
+| `fpshot.js`, `keycollide.js`, `platetile.js`, `qolhandsafe.js`, `rockpose.js` | `--scenario=walk` | On-foot, no economy claim; matches `controls.js`'s unaffected sibling convention |
+| `lookdev.js` | `--scenario=walk --sandbox=1` | Multi-minute sun-elevation instrument, same shape `artframe.js` documents `--sandbox=1` for |
+| `navdraw.js` | `--sandbox=1 --settle=25` | Fixture copied verbatim from `phnav.js`, which this probe's own header says it lifted its rocket-build sequence from |
+| `playerhealth.js` | `--sandbox=1` (first of its documented pair) | The prose the old parser matched happened to carry this exact flag already; see BT-193 |
+| `qolbuild1.js`, `qolbuild2.js`, `qolbuild3.js`, `qolflight3.js` | `--scenario=walk --sandbox=1` | Build/fly from the full part catalogue with no crafting step, `qolflight1.js`'s own stated rationale for the same family |
+| `qolsandbox.js` | `--sandbox=1` and `--scenario=walk` (documented pair, `--evalargs` matching `expect`) | The probe's own header already said "run it with `--sandbox=1` and again WITHOUT"; the fix matches `--evalargs.expect` to the mode actually booted, which the old prose match never did |
+| `stationwalk.js`, `zerog.js` | `--scenario=walk --sandbox=1` | Same station-carrier family as `orbitdeck.js`/`airlock.js`, fixed at BT-176/BT-183 under the same flags |
+| `survivalrun.js` | `--scenario=walk` | The probe's own header already stated this exact invocation in prose (`npm run probe:survival` drives it at `--scenario=walk` and NO sandbox); the fix states it directly as a real command too |
+
+### BT-193. `playerhealth.js` and `survivalrun.js`: the parser was broken and it happened not to matter
+
+Two of the 20 are worth naming separately because re-deriving their true
+flags did not change what they were actually running at:
+
+- **`playerhealth.js`**: the old parser's prose match was the sentence
+  `run.mjs --sandbox=1 -> hostile false...`, missing the leading `node` but
+  containing a well-formed `--sandbox=1` token, which `flagsOf()` recovered
+  by coincidence. Old and new both resolve to `--sandbox=1`.
+- **`survivalrun.js`**: its own header states the intended invocation is
+  `--scenario=walk` with NO sandbox flag, which is also the runner's bare
+  default (`scenario` defaults to `'walk'` client-side when absent,
+  `web/src/app/Config.ts:414`). So the probe never actually ran wrong; only
+  its documentation was fiction.
+
+Both are still counted in the 20 and still got the loud
+`PROSE_ONLY_INVOCATION` treatment fixed, because "the parser was broken and
+it happened not to matter here" is itself a finding this sweep exists to
+produce, not a reason to skip a file.
+
+### BT-194. Reclassification: every affected probe re-run at its true invocation
+
+Built locally (`sync-wasm`, `sync-assets`, `tsc --noEmit`, `vite build`),
+served `vite preview --port 48213 --host 127.0.0.1 --strictPort` (loopback
+only, per this lane's own binding rule), ownership proven by fetching a
+sentinel file written into this lane's own `dist` before trusting any
+reading, torn down by the port's own owning PID when done. Every RED,
+TIMEOUT or NO_OUTPUT reading below was re-confirmed in ISOLATION (no second
+probe running concurrently) before being trusted, per NUMBERS.md's own rule
+that a timing-sensitive reading under contention is not evidence until
+re-run alone; three of the six borderline readings below moved from TIMEOUT
+to a clean verdict once contention was removed (`qolflight3.js` after,
+`zerog.js` before, `stationwalk.js` both), which were exactly what a
+2-at-a-time first pass would be expected to distort and is recorded here as
+confirmation this class of caveat is real, not hypothetical.
+
+**CORRECTION, caught by an independent verifier before merge, recorded here
+rather than quietly fixed in place.** The first version of this section
+called `flyto.js`'s real invocation a TIMEOUT that "has not been observed
+to complete." That claim was false, and the cause was this lane's OWN
+instrument, not the probe: the re-classification script's timeout budget
+(120 s in the first, concurrent pass; 180 s in the first serial re-run) was
+TIGHTER than `probeall.mjs`'s own real default of 240 s, so both of this
+lane's own tests were killing a probe that a real sweep would never have
+capped. Three further isolated runs at a 300 s budget on this same
+software-rasterised box all completed with a real, GREEN verdict: 160 s,
+208 s and 201 s (`valid:true, reached:"staging", aboard:true, live:true,
+status:"ASCENT"`, full flight telemetry). The verifier's own two runs, on
+real NVIDIA hardware through ANGLE D3D11, completed faster still (about
+165 to 170 s), which is the expected direction, a hardware rasteriser doing
+less work per frame than this box's software one. The corrected row below
+replaces the false one. `qolbuild2.js`'s routed defect was checked for the
+same single-observation risk and is NOT the same failure mode: re-run twice
+more, before and after, both reproduced the IDENTICAL fail text and sample
+counts (`117 of 117` placement samples refused; `1 parts placed at pitch
++45`), so it is a deterministic, reproducible finding and stands as
+recorded.
+
+| Probe | Before (bare defaults, what every prior sweep actually ran) | After (true invocation) | Movement |
+|---|---|---|---|
+| `fpshot.js` | GREEN | GREEN | none: `--scenario=walk` equals the bare default |
+| `keycollide.js` | GREEN | GREEN | none: same reason |
+| `platetile.js` | GREEN | GREEN | none: same reason |
+| `qolhandsafe.js` | GREEN | GREEN | none: same reason |
+| `rockpose.js` | NO_VERDICT (report-only probe) | NO_VERDICT | none: same reason |
+| `padflat.js` | GREEN | GREEN | none: same reason (see BT-191, its real command was always `--scenario=walk`) |
+| `playerhealth.js` | GREEN | GREEN | none (BT-193: old and new are the same invocation) |
+| `survivalrun.js` | TIMEOUT, no report inside 420 s | TIMEOUT, no report inside 420 s (same invocation, BT-193) | none: this probe is a multi-minute full economic loop by design: not completed inside any budget tested, unstarted work, not this lane's to chase |
+| `artshot.js` | GREEN | GREEN | none in verdict class; this is a report-only screenshot probe, but it is the first time its own `--evalargs` (lat/lon/pitch/props) actually reached it rather than being silently dropped |
+| `popshot.js` | NO_VERDICT | NO_VERDICT | none in class; same caveat, `--scenario=surface` and its own `--evalargs` never reached it before |
+| `lookdev.js` | GREEN | GREEN | none in class; confirms the instrument itself is sound under both the wrong and the right flags |
+| `stationwalk.js` | GREEN (107 s, isolated) | GREEN (106 s, isolated) | none: this probe's own claims (P1-P6) do not depend on survival vs sandbox |
+| `zerog.js` | GREEN (70 s, isolated) | GREEN (confirmed GREEN, 84 s) | none: same reason |
+| `navdraw.js` | **NO_OUTPUT**, threw `ABANDONED, never boarded, so nothing below was measured` (no VAB parts in survival) | **GREEN** | **RED-shaped to GREEN.** Previously this probe had never actually been run in a state where it could board a rocket |
+| `qolflight3.js` | **RED**, `fixture failed to reach orbit: CLAMPED` | **GREEN** (confirmed 153 s in isolation) | **RED to GREEN.** Survival at spawn cannot clear the launch clamp; sandbox can |
+| `qolsandbox.js` | **NO_OUTPUT**, threw `ABANDONED, wrong mode; nothing below this line was measured` (`expect` defaults to `'sandbox'`, bare default boots survival) | **GREEN** (`--evalargs` now matches the mode actually booted) | **RED-shaped to GREEN** |
+| `qolbuild3.js` | **NO_OUTPUT**, 3 of 15 checks failed (`no ok=true structGhost in 99 of 99 samples`, cannot place a foundation with no materials) | **GREEN** | **RED-shaped to GREEN** |
+| `flyto.js` | **RED**, `valid: false (why: fixture 0 parts)` (cannot build the reference craft in survival) | **GREEN** (`valid:true, reached:"staging", aboard:true, live:true, status:"ASCENT"`, full telemetry), confirmed 3/3 isolated runs at 160 s, 208 s and 201 s | **RED to GREEN.** Corrected: an earlier draft of this row called this a TIMEOUT. That was false and was this lane's own instrument bug (its re-classification script used a 120-180 s budget, tighter than `probeall.mjs`'s real 240 s default), not a probe defect; see the correction note above. The real margin against the runner's actual 240 s default is roughly 30 to 80 s on this software-rasterised box, positive but not huge, so a BT-130-style timing measurement and a possible `PROBEALL-TIMEOUT` override are still worth a future lane's time, as a MARGIN question, not a failure |
+| `qolbuild2.js` | NO_OUTPUT, threw on `found an aim at which the foundation preview is PLACEABLE` (no materials in survival) | NO_OUTPUT, threw on a DIFFERENT check, `a press aimed at the SKY places nothing :: 1 parts placed at pitch +45` | **Same class, different cause: a real, pre-existing, invocation-independent probe defect**, now reached for what may be the first time. Sandbox gets this probe past the fixture that used to hide its `place` stage's own sky-press negative control, which is REAL and RED on its own terms. Not this lane's defect to fix (it is a QOL survey content bug, not an invocation bug); routed to whichever lane owns `qolbuild2.js`'s `place` stage |
+
+Five of the twenty probes moved verdict CLASS, all of them to GREEN
+(`navdraw.js`, `qolflight3.js`, `qolsandbox.js`, `qolbuild3.js`, and
+`flyto.js` once this lane's own timing bug was corrected), one surfaced a
+real defect it was previously too broken-in-a-different-way to reach
+(`qolbuild2.js`), eleven were already GREEN/NO_VERDICT under both
+invocations and stay there, and three never actually ran wrong at all
+(`padflat.js`, `playerhealth.js`, `survivalrun.js`). Movement happened in
+both directions the brief asked to watch for: this file's own earlier
+amendment already showed 6 probes moving NO_VERDICT->RED and one to GREEN
+under the singular-`fail` fix (BT-177); this pass adds 5 more to GREEN, on a
+completely different defect class, plus this lane's own corrected mistake
+about `flyto.js` (a false TIMEOUT claim, caught before merge, see the
+correction note above).
+
+### BT-195. The flip position, amended again
+
+**Still not ready, and this pass adds reasons rather than removing any.**
+The prior amendment's four blockers (§ "The flip position, restated") are
+untouched by this pass. In addition:
+
+- The corpus is not the stable 316 the original census counted; it is 320
+  now, four probes added by other lanes working concurrently while this
+  lane ran, which is itself worth naming: **a census taken on a fast-moving
+  corpus is a snapshot, and every count in this file should be read as "as
+  of its own timestamp," not "as of now."**
+- `flyto.js`'s real invocation is GREEN and completes (160 to 208 s across
+  three isolated runs), but the margin against `probeall.mjs`'s real 240 s
+  default is not large on a software-rasterised box, so a slower rasteriser
+  or a loaded box could still push it over: this is a MARGIN question for
+  the undiagnosed-cost list BT-181 started, not the failure this lane first
+  and wrongly reported.
+- `qolbuild2.js` is confirmed genuinely broken independent of invocation,
+  reproduced twice more with identical fail text and sample counts, which is
+  new information but not a blocker this lane can close (it is a content bug
+  in another domain's probe, routed rather than fixed here).
+
+**Recommended remaining checklist, additions only:**
+
+| Item | Owner |
+|---|---|
+| Give `flyto.js` a dedicated BT-130-style timing measurement (several runs, real hardware and this box both, to bound the margin) and consider a `PROBEALL-TIMEOUT` override if the margin is thin on the actual serving box | whichever lane owns `flyto.js`'s W11 scenario |
+| Diagnose `qolbuild2.js`'s `place` stage sky-press negative control, now reachable for the first time, reproduced twice | whichever lane owns the QOL survey / build placement |
+| Decide whether `survivalrun.js` needs its own `PROBEALL-TIMEOUT` override or stays outside the routine sweep entirely (it did not complete inside 420 s) | build-tooling, next lane, or Admin |
+
 ## Cross-reference
 
-[NUMBERS.md](NUMBERS.md) BT-155 to BT-189 for the allocation and usage split.
+[NUMBERS.md](NUMBERS.md) BT-155 to BT-195 for the allocation and usage split.
 [../controllers/build-tooling.md](../controllers/build-tooling.md) for the
 subagent-log entry. [INSTRUMENTS.md](INSTRUMENTS.md) for `mapwork.js`'s prior
 history, cited above rather than repeated.

@@ -2,6 +2,20 @@
 // curve DO to a frame, measured in a way that can see the thing ART-DIRECTION.md
 // is actually complaining about.
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/lookdev.js
+//
+// BT-190: this probe never carried a real invocation; `extractCmd()`'s old
+// first-match rule took a prose line further down ("the probe: run.mjs
+// JSON-serialises whatever the probe returns...") as the command, which
+// held zero real flags, so every prior sweep ran this at the runner's bare
+// defaults. `--sandbox=1` is chosen here rather than assumed from a
+// neighbour: this instrument runs a many-minute sun-elevation sweep
+// (`sunSamples` up to 480, plus a chunk/scatter drain per rung) with the
+// camera parked at a teleported site, exactly the shape `artframe.js`
+// documents `--sandbox=1` for, so the measurement is not exposed to
+// survival danger or an economy tick it never asked about.
+//
 // WHY NOT `of.framehash`. framehash publishes per-tile MEAN LUMINANCE and
 // nothing else, and INSTRUMENTS.md's pale-disc entry is exactly the failure that
 // produces: a luma-only profile read ~0 on a plainly visible disc because the
