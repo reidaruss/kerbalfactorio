@@ -2271,6 +2271,195 @@ ASHLAR_JOINT_DEPTH = 0.34     # relief units. Six times the largest face
 #       would take more blocks per course to change, which is a heightfield
 #       edit and out of scope here.
 #
+# ---------------------------------------------------------------------------
+# RN-2010. THE CHEQUER THE PARAGRAPHS ABOVE CREATED, AND THE SECOND TERM.
+#
+# Everything above is right and it was still half a fix, which its own
+# verifier caught and its author did not. Read the trade recorded two
+# paragraphs up again: "balancing the four-course sum necessarily
+# ANTI-correlates the courses - that is what balancing means". That sentence
+# is the defect, written down correctly, and then priced only as a per-course
+# amplitude cost on the foundation's 0.5 m edge. It is not only an amplitude
+# cost. ANTI-CORRELATION BETWEEN ADJACENT COURSES IS A CHEQUERBOARD, and on
+# the 35 m cella, where the fix was supposed to be a pure win, the wall went
+# from reading as a light half and a dark half to reading as a block-scale
+# chequer. Measured on the signed `tone` field, the mean correlation between
+# the column profiles of ADJACENT courses went +0.612 on RN-1835's shipped
+# field to MINUS 0.630 on RN-1970's. Smaller than the banding it replaced and
+# more masonry-plausible, but new, and NOTHING MEASURED IT: 7q reads the
+# column average, and a chequer is precisely what a flat column average looks
+# like, so 7q cannot see this defect BY CONSTRUCTION. 7r now can.
+#
+# THE BUDGET IS FIXED AND ONLY ITS ROUTING IS FREE, WHICH IS THE WHOLE FIX.
+# If the column average is flat then sum_c w_c P_c(u) = 0, and a sum of C
+# zero-mean signals that cancels has its pairwise correlations summing to
+# about -C: over all C(C-1)/2 pairs the MEAN correlation is pinned near
+# -1/(C-1), i.e. -0.333 at four courses, whatever the assignment. Measured
+# over all six pairs the shipped field reads -0.276, which is that floor and
+# is not negotiable without giving the column average back. So the total
+# anti-correlation cannot be reduced. WHAT IS FREE IS HOW IT IS DISTRIBUTED
+# ACROSS COURSE SEPARATIONS, and that is entirely a property of the
+# assignment, which costs nothing.
+#
+# AND THE ONE-TERM SEARCH SPENT THAT FREEDOM AS BADLY AS IT IS POSSIBLE TO
+# SPEND IT. This bond admits 3, 2, 3 and 2 blocks in its four courses, so 6 x
+# 2 x 6 x 2 = 144 assignments (the 6^4 = 1296 in `_ashlar_tone_table` is the
+# bound, not this bond's count). Enumerated offline, all 144: the assignment
+# RN-1970 ships is the minimiser of the column energy AND, SIMULTANEOUSLY,
+# THE GLOBAL WORST OF ALL 144 ON ADJACENT-COURSE CORRELATION. It loads -0.630
+# onto adjacent pairs and pays for it with a POSITIVE +0.506 on the (0, 2)
+# pair, which is the chequer stated as arithmetic: courses alternate. That is
+# not bad luck. An objective that is blind to an axis will happily run to the
+# end of it, and this one did.
+#
+# THE FIX IS ONE MORE TERM IN THE SAME EXHAUSTIVE SEARCH, and it is a
+# ROUTING rule rather than a target: penalise adjacent pairs only for the
+# anti-correlation they carry IN EXCESS of the all-pairs mean, i.e.
+#     score = mean(colAvg^2) + ASHLAR_TONE_SPREAD * max(0, allC2C - adjC2C)^2
+# The clip at zero is load bearing and is not tidiness. Driving adjacent
+# correlation BELOW the all-pairs mean does not remove the pattern, it moves
+# it: the anti-correlation has to go somewhere, and pushing it onto the (0, 2)
+# and (1, 3) pairs is a TWO-COURSE period, which is a coarser stripe and not
+# an absence of one. The goal is that the unavoidable anti-correlation is
+# ISOTROPIC IN COURSE SEPARATION, so it has no period for the eye to lock
+# onto at nineteen repeats. That is what "spread it evenly" means and it is
+# the only thing here worth aiming at.
+#
+# WHAT IT COSTS, AND THE HONEST ANSWER IS NOTHING MEASURABLE. In the ladder
+# term alone the winner moves from the assignment scoring 0.004015 on
+# mean(colAvg^2) to the one scoring 0.004556: thirteen per cent more column
+# energy, six and a half per cent more column amplitude, in exchange for
+# adjacent-course correlation -0.633 -> -0.301 against an all-pairs mean of
+# -0.275. Adjacent and all-pairs now agree to 0.026, which is the isotropy the
+# paragraph above asks for, so -0.301 is not a residual chequer: it IS the
+# -1/(C-1) floor, paid evenly.
+#
+# THAT PREDICTED COST DOES NOT SHOW UP IN THE SHIPPED MAP, AND THE PREDICTION
+# IS LEFT ABOVE RATHER THAN QUIETLY REPLACED. Measured end to end on the 512 px
+# albedo the column-averaged luma std goes 3.348 -> 3.042 counts and the
+# correlation at half the tile -0.045 -> -0.014, i.e. BOTH IMPROVE, where the
+# ladder arithmetic says the first should have risen about six per cent. The
+# reason is that the rendered column profile is the ladder plus the weathering
+# fields, which carry a column signal of their own at periods 7 and 11, and the
+# new assignment's residual happens to oppose it where the old one reinforced
+# it. THAT IS LUCK AND IT IS NAMED AS LUCK: it is worth about 0.3 counts, it is
+# not a mechanism, and a later bond would not inherit it. What is not luck is
+# the size of the margin - 3.04 and 3.35 are both an order of magnitude clear
+# of RN-1835's 7.125 / -0.684, so the banding does not come back either way,
+# which was the whole risk of this pass.
+#
+# THE WEIGHT IS NOT A TUNED KNOB AND THAT IS CHECKED RATHER THAN HOPED.
+# Swept over the full 144, every value of ASHLAR_TONE_SPREAD from 0.005 to
+# 7.5 selects the SAME assignment - a factor of 1500, three decades. Below
+# 0.005 the old chequered winner comes back; above 7.5 it tips to the
+# over-corrected assignment with adjacent -0.082 against all-pairs -0.219,
+# which is the two-course stripe the clip exists to refuse. 0.20 sits at the
+# geometric centre of the window. A parameter whose answer is constant across
+# three decades is a switch, and RN-1977(b) is the reason that distinction is
+# drawn explicitly: that sweep found a term whose first three values changed
+# NOT ONE DIGIT and whose fourth wrecked the primary, i.e. a genuine knob with
+# no safe setting, and it was correctly refused. This one is the opposite
+# shape and the difference is measured, not asserted.
+#
+# WHY THE PER-COURSE TONE CANNOT ABSORB THIS, ruled out before the search was
+# touched because it is the obvious first idea. `crs[c]` is the null-space
+# direction and it is free against the COLUMN metric, so it looks like the
+# natural place to put a correction. It is useless here for a one-line reason:
+# it is a CONSTANT down a course, and Pearson correlation is invariant under
+# adding a constant to either series. It cannot change adjacent-course
+# correlation at any amplitude whatever. What it would do is add exactly the
+# horizontal banding RN-1970 removed. Not attempted, and recorded so the next
+# lane does not attempt it either. The two within-block terms (`bed`, `band`)
+# are ruled out by the same kind of argument one step along: both are
+# zero-mean over the course's own rows by construction, so both contribute
+# NOTHING to a course profile and cannot move this number either. The
+# assignment is the only lever the tile has, which is why the fix is in the
+# search and not in a new field.
+#
+# THE RENDERED PAIR, real D3D11 on an RTX 4060 Ti, both arms ONE VARIABLE
+# APART: the two builds differ in `of_masonry_a.png` and its manifest row and
+# in nothing else at all (the arms were taken by swapping those two files under
+# a running server, so not one byte of JavaScript, geometry or any other
+# texture moved between them). RE-TAKEN WITH ENEMIES SUPPRESSED, see the
+# contamination note below; all four arms report vitals 150/150 with zero hurt
+# events and `peaceful` clearing three live enemies, so the arms are the same
+# simulation moment as well as the same build. BOTH negative controls are
+# BIT-IDENTICAL across the pair in every published field including `col`: sky
+# 111.51 / 98.04 / 111.12 / 126.26, iqr 14.00, col.std 3.43; hill 71.57 /
+# 35.56 / 74.11 / 90.24, iqr 19.56, col.std 4.36.
+#
+# ONE RUN-TO-RUN OBSERVATION, KEPT BECAUSE IT BOUNDS THE NOISE FLOOR RATHER
+# THAN BECAUSE IT AFFECTS ANYTHING. An intermediate take of this same pair, on
+# the base before the view-model-light landing, had `hill` drift 0.03 counts of
+# luma and 0.04 of col.std between the arms (71.54 / 4.32 against 71.57 /
+# 4.36) where `sky` held exactly. It did not reproduce on the committed take
+# and every masonry figure was identical across both takes to the last digit,
+# so it is a ~0.04 per cent flicker on one control and not a mechanism. It is
+# recorded so that a later lane reading "bit-identical" here knows the control
+# has been seen to move once, and by how little.
+#
+#   ruin.cella, 34 m, THE SHOT THE CHEQUER WAS SEEN IN
+#              col.std 5.89 -> 4.62, col.peak 0.479 -> 0.419, iqr 32.41 ->
+#              33.56, p05 104.12 -> 106.60, p50 143.24 -> 139.74, p95 174.80
+#              -> 176.58, luma 141.53 -> 141.02.
+#   ruinwall.wall, 5 m
+#              col.std 8.45 -> 7.47, col.peak 0.396 -> 0.345, iqr 43.84 ->
+#              54.53, luma 93.43 -> 98.34.
+#   ruinwall.wallLow, 5 m, AND THIS ONE IS AN OWED CORRECTION (RN-2018)
+#              col.std 21.66 -> 16.87, col.peak 0.830 -> 0.521, iqr 50.03 ->
+#              28.20, luma 107.58 -> 96.13.
+#
+# WHY wallLow IS CALLED OUT. It is the lane's own second committed rectangle
+# and RN-1970 REGRESSED IT WITHOUT QUOTING IT: against RN-1835 it went col.std
+# 18.76 -> 21.66, col.peak 0.649 -> 0.830 and luma 79.14 -> 107.58, and the
+# report named the first two nowhere. RN-1978 did write down, correctly, that
+# the rectangle is 84,000 px at 5 m, i.e. about two tiles and three blocks, so
+# it is a three-sample view of WHICH BLOCK DREW WHICH TONE and which block
+# draws which is exactly what that pass changed - but "not a claim at that
+# width" is a reason to quote a number with its error bar, not a reason to omit
+# it. Re-measured here on this box: the regression is repaired and then some,
+# with col.std 16.87 and col.peak 0.521 both now BETTER than RN-1835's own
+# 18.76 / 0.649, and luma 96.13 sitting between the two. THE SAME WIDTH CAVEAT
+# APPLIES TO THIS PASS AND IS NOT WAIVED BECAUSE THE NUMBER MOVED THE RIGHT
+# WAY: RN-2010 also changes which block wears which tone, so three blocks is
+# still three blocks. It is quoted because it is owed, and the 34 m `cella`
+# figure is the one this lane rests on.
+#
+# THE CONTAMINATION, AND THE HARNESS DEFECT UNDER IT, WHICH MATTERS MORE THAN
+# THE NUMBER (RN-2018). This lane's first 5 m pair was rejected by its verifier
+# because BOTH SAVED FRAMES ARE A GIANT SPIDER AT THE LENS, with the player's
+# health reading 89/150 on one arm and 107/150 on the other. That rejection was
+# correct and the frames were unpublishable. But the reason the numbers under
+# them did not move when the pair was re-taken with the enemies cleared is a
+# defect in `artframe.js`'s harness and not luck: **the published statistics
+# and the saved screenshot are not the same frame.** `run.mjs` runs the probe,
+# which measures its rectangles off the canvas at its own capture instant, and
+# THEN advances `settle(20)` more frames before `page.screenshot`. A spider
+# closing on the camera crosses that gap easily. Re-taken clean, `wall` and
+# `wallLow` reproduce to the last digit in every published field, because the
+# creature had not yet reached the right-hand side of the frame when the
+# measurement was taken - while `box` (86.22 -> 90.79) and `world` (73.79 ->
+# 75.70) DID move, because it was already in those, which is the same fact seen
+# from the other side. So: the screenshots were contaminated, `box` and `world`
+# were contaminated, and `wall`, `wallLow` and every `ruin` rectangle were not.
+# **A screenshot from this harness is an illustration and is NOT evidence for
+# the numbers beside it**, and that is a general property of every `artframe`
+# shot ever published, not a fact about this lane. The remedy applied here is
+# to clear enemies in the probe's own freeze block, next to the wind clock,
+# where they always belonged.
+#
+# THE LONGER BOND, PRICED AND REFUSED. The -1/(C-1) floor says the honest way
+# to shrink the anti-correlation is MORE COURSES PER TILE: at C = 6 the floor
+# is -0.20 rather than -0.333, and there is more room to route it. That is a
+# change to ASHLAR_COURSES, which is the bond, which is the HEIGHTFIELD - and
+# this whole pass moves one albedo PNG and leaves masonry's normal and ORM
+# byte-identical, which is the cheapest available proof that the courses, the
+# mortar bed, the head joint, the chamfer and the spall all survived it. It
+# also re-cuts every course height and block count, i.e. it re-authors the
+# family rather than correcting it, and 0.45 m courses are the real course
+# height of a real ashlar temple wall while 0.30 m courses are not. Refused
+# on those grounds, not on effort.
+#
 # WHAT IS DELIBERATELY NOT DONE HERE. Variation at scales LARGER than the
 # tile - a weathered patch four metres across, a damp corner - cannot be
 # authored into a tiling map at all, by definition: every field in this file
@@ -2278,7 +2467,12 @@ ASHLAR_JOINT_DEPTH = 0.34     # relief units. Six times the largest face
 # modulation in the surface shader, which `Surfaces.ts` has no
 # `onBeforeCompile` for today, so it is a new hook on every family's
 # material and not a masonry edit). Priced and recorded as owed rather than
-# smuggled in behind a texture change.
+# smuggled in behind a texture change. RN-2010 re-confirms RN-1979's pricing
+# and adds one thing to it: the supra-tile term is NOT the answer to the
+# chequer either, because the chequer is a WITHIN-tile routing property and it
+# is fixed within the tile for free. A world-space term would have hidden it
+# under a larger signal rather than removed it.
+# ---------------------------------------------------------------------------
 #
 # THE AMPLITUDES ARE HELD TO RN-1835'S, NOT RAISED, and that is deliberate to
 # the digit. RN-1732 is this project's own recorded trap for exactly this
@@ -2291,17 +2485,63 @@ ASHLAR_JOINT_DEPTH = 0.34     # relief units. Six times the largest face
 # ladder in `_ashlar_tone_table`) removes that sampling error and would have
 # handed the family 31 per cent more per-block contrast for free. 0.765 puts
 # it back. Measured after the change: per-block tone std 0.247, i.e. the same
-# number to three decimals, and the whole albedo's luma std 17.06 -> 17.7,
-# which is the four per cent the three NEW terms cost and nothing else.
+# number to three decimals (and RN-2010 does not touch it: that pass changes
+# WHICH block wears which rung and no rung's value, so the per-block contrast
+# is invariant under it by construction).
+#
+# THE WHOLE-ALBEDO COST, CORRECTED (RN-2019). The line above this one used to
+# read "17.06 -> 17.7, which is the four per cent the three NEW terms cost".
+# BOTH NUMBERS WERE WRONG. Measured on the shipped map at 512 px with the
+# file's own channel-average convention, the whole albedo's luma std goes
+# 16.65 -> 18.58 at 192 px and 17.06 -> 18.94 at 512, i.e. ELEVEN per cent and
+# not four. 17.7 appears to have been an intermediate reading taken before the
+# stratum landed and was never re-taken; nothing was recomputed to check it.
+# It is quoted here rather than quietly overwritten because the header is the
+# only place a later lane would look, and a header that is 7 counts of luma
+# optimistic about its own cost is exactly the kind of thing NUMBERS.md rule 5
+# exists to stop.
+#
+# AND THE FAMILY GOT DARKER, WHICH IS A BRIGHTNESS CHANGE AND NOT A WASH
+# (RN-2020). Whole-albedo mean falls 123.63 -> 117.20 counts at 192 px, i.e.
+# 5.4 per cent darker, and that is NOT rounding: RN-1835's ten independent
+# draws happened to average +0.148 of a tone unit LIGHT once weighted by the
+# area each block covers, and the balanced ladder has an area-weighted mean of
+# essentially zero by construction. So the ladder did not darken the stone, it
+# removed a bias the old field was carrying by luck. The change is correct and
+# it is also real: `albedo_mean_linear` moves 0.2115 -> 0.1893 and divides it
+# back out for the renderer, so the LIT result is held, but anything that
+# samples these texels raw sees 5.4 per cent less. Named here because a family
+# brightness change that nobody writes down is one a later lane re-discovers
+# as a regression.
+#
+# AND RN-2010 MOVES IT AGAIN, BY LESS, WHICH IS ALSO NAMED HERE RATHER THAN
+# ONLY IN THE LANE DOCS. Re-routing which block wears which rung changes the
+# AREA-weighted mean of the ladder even though the SET of rungs is identical,
+# because blocks differ in size: whole-albedo mean 117.09 -> 116.03 counts at
+# 512 px, another 0.9 per cent, and `albedo_mean_linear` 0.1893 -> 0.1857 with
+# it. Same mechanism as above and the same reason for writing it down. Note
+# what this does NOT touch: the per-block contrast the family is calibrated on
+# is the spread of the rungs, which the search cannot alter, and it holds at
+# 0.246 against RN-1974's 0.247.
 ASHLAR_TONE_BLOCK = 0.765  # the ladder, RMS-matched to the field it replaces
 ASHLAR_TONE_COURSE = 0.22  # the course's own bed
 ASHLAR_TONE_BED = 0.30     # the bedding gradient down a block
 ASHLAR_TONE_BAND = 0.27    # the stratum across a block
-ASHLAR_TONE_CLAMP = 0.72   # a guard on the tails and not a working limit:
-                           # the four terms reach 0.55 together at the very
-                           # worst, so this clips nothing on the shipped bond
-                           # and exists so a later retune cannot drive the
-                           # pigment past the palette without noticing.
+ASHLAR_TONE_CLAMP = 0.72   # a guard on the tails and not a working limit.
+                           # MEASURED (RN-2021), not estimated: the largest
+                           # |tv| any texel of the shipped bond reaches is
+                           # 0.587, so this clips nothing and has a 0.133
+                           # margin. The comment here used to say 0.55, which
+                           # was a hand sum of the four gains and not a
+                           # measurement; 7r re-measures it every run so it
+                           # cannot drift again.
+ASHLAR_TONE_SPREAD = 0.20  # RN-2010. THE SECOND TERM OF THE SEARCH, and the
+                           # reason it exists is that ONE objective picked the
+                           # worst possible bond on the axis it did not
+                           # measure. See `_ashlar_tone_table`. Any value in
+                           # [0.005, 7.5] selects the same assignment out of
+                           # the 144 the bond admits - a factor of 1500 - so
+                           # this is a switch and not a tuned knob.
 
 
 def _perms(n):
@@ -2318,8 +2558,9 @@ def _perms(n):
     return out
 
 
-def _ashlar_tone_table(w, h, rowc, colc, blend=True):
-    """The per-block pigment draw, BLENDED ACROSS THE FACE (RN-1970).
+def _ashlar_tone_table(w, h, rowc, colc, mode="blend"):
+    """The per-block pigment draw, BLENDED ACROSS THE FACE (RN-1970) AND
+    SPREAD ACROSS THE COURSES (RN-2010).
 
     Returns `(blk, crs, bed, band)`:
       `blk[key]`   this block's rung of its course's ladder, in [-0.5, 0.5].
@@ -2329,24 +2570,55 @@ def _ashlar_tone_table(w, h, rowc, colc, blend=True):
       `band[key]`  `(centre, halfWidth, signedStrength)` for the stratum.
 
     THE SEARCH IS EXHAUSTIVE AND IT IS SMALL: two or three blocks a course
-    over four courses is at most 6^4 = 1296 assignments, each scored by
-    summing the square of the column average over the tile's width. An
-    exhaustive search has the property a hill climb does not, which is that
-    the answer does not depend on where it started, so the shipped bytes are
-    a function of the bond alone.
+    over four courses is at most 6^4 = 1296 assignments (this bond's own
+    3/2/3/2 gives 144), each scored by the two terms below. An exhaustive
+    search has the property a hill climb does not, which is that the answer
+    does not depend on where it started, so the shipped bytes are a function
+    of the bond alone.
 
-    IT MINIMISES THE COLUMN AVERAGE AND NOT THE VARIANCE OF THE TONES. The
-    ladder is fixed before the search runs, so every candidate has exactly
-    the same set of tones and exactly the same per-block contrast; the only
-    thing being chosen is which block wears which. Nothing here can trade the
-    family's defining property away to score better, which is the failure
-    mode a metric-driven edit has to be built against.
+    IT SCORES TWO THINGS AND NOT ONE, AND THE SECOND ONE IS RN-2010'S WHOLE
+    POINT. `mean(colAvg^2)` is RN-1970's objective: how flat the tone is when
+    averaged down every column, which is the light-half/dark-half banding a
+    19.6-repeat wall shows. Minimising it ALONE picked, out of all 144
+    assignments this bond admits, the one with the GLOBAL WORST
+    adjacent-course correlation, because balancing four courses against each
+    other anti-correlates them and nothing was watching where the
+    anti-correlation landed. Adjacent courses in anti-phase is a
+    CHEQUERBOARD. The second term is `max(0, allC2C - adjC2C)^2`, which
+    charges adjacent pairs only for the anti-correlation they carry in excess
+    of the all-pairs mean, i.e. it does not try to remove anti-correlation
+    (that is pinned near -1/(C-1) by the flat column average and cannot be
+    removed) but forces it to be spread evenly over course separations so it
+    has no period. The header above has the arithmetic and the sweep.
 
-    `blend` IS SELFTEST-ONLY, the same convention `_stone_planes`'s `rounded`
-    and `_ore_height`'s `rotated` use. False restores RN-1835's independent
-    per-block hash in place of the ladder and the search, and leaves
-    everything else identical, so 7q's negative control differs from the
-    shipped field in exactly the one term it is making a claim about."""
+    IT MINIMISES A ROUTING AND NOT THE VARIANCE OF THE TONES. The ladder is
+    fixed before the search runs, so every candidate has exactly the same set
+    of tones and exactly the same per-block contrast; the only thing being
+    chosen is which block wears which. Nothing here can trade the family's
+    defining property away to score better, which is the failure mode a
+    metric-driven edit has to be built against - and it is worth noting that
+    this property is what made RN-2010 CHEAP: the chequer was fixed by
+    re-routing tones that were already there, at no cost in contrast at all.
+
+    `mode` IS SELFTEST-ONLY except for its default, the same convention
+    `_stone_planes`'s `rounded` and `_ore_height`'s `rotated` use. Each of
+    the three controls differs from the shipped field in exactly one term, so
+    each gate is making a claim about the term it names:
+      "blend"    SHIPPED. Both objective terms.
+      "flat"     RN-1970's one-term objective, everything else identical.
+                 This is what shipped between RN-1970 and RN-2010 and it is
+                 7r's FIRST negative control: it is the chequer, and it must
+                 fail 7r while still passing 7q.
+      "raw"      RN-1835's independent per-block hash in place of the ladder
+                 and the search. 7q's negative control: it is the banding,
+                 and it must fail 7q.
+      "chequer"  A SYNTHETIC two-tone chequerboard, not a search outcome at
+                 all: every block is driven to +-0.5 by the parity of its
+                 course and its index within the course. 7r's SECOND negative
+                 control, and the reason it exists is that "flat" and the
+                 shipped field share a search, so a gate proved only against
+                 "flat" is a gate proved against one bond. This one is the
+                 phenomenon in its pure form and depends on no hash."""
     # Course row weights. `rowc` is authoritative rather than `edges`: what
     # matters to a column average is how many ROWS a course actually occupies
     # at this resolution, which is the quantised version of its height.
@@ -2391,24 +2663,89 @@ def _ashlar_tone_table(w, h, rowc, colc, blend=True):
         else:
             rung = [0.0]
         # Precompute, per permutation, that course's contribution to the
-        # column average, so the search itself is only additions.
+        # column average, so the search itself is only additions; and its
+        # profile mean-removed to unit norm, so a course-to-course
+        # correlation is one dot product (RN-2010). The unit profile is taken
+        # from the UNWEIGHTED profile, but `wc[c]` is a positive scalar and
+        # Pearson is scale invariant, so either would give the same number.
         vecs = []
         for p in _perms(n):
             val = {}
             for k in range(n):
                 val[keys_of[c][k]] = rung[p[k]]
-            vecs.append(([val[colc[c][x][0]] * wc[c] for x in range(w)],
-                         [val[keys_of[c][k]] for k in range(n)]))
+            prof = [val[colc[c][x][0]] for x in range(w)]
+            pm = sum(prof) / w
+            dev = [v - pm for v in prof]
+            nrm = math.sqrt(sum(v * v for v in dev))
+            unit = [v / nrm for v in dev] if nrm > 0 else None
+            vecs.append(([prof[x] * wc[c] for x in range(w)],
+                         [val[keys_of[c][k]] for k in range(n)],
+                         unit))
         opts.append(vecs)
+    # The course-to-course correlation table, precomputed once per PAIR of
+    # courses rather than once per candidate: 88 dot products here against
+    # 144 x 6 in the walk, and it keeps the leaf O(1) in the tile width.
+    cor = {}
+    adjacent = {}
+    for a in range(ASHLAR_COURSES):
+        for b in range(a + 1, ASHLAR_COURSES):
+            sep = b - a
+            if sep > ASHLAR_COURSES - sep:
+                sep = ASHLAR_COURSES - sep
+            adjacent[(a, b)] = (sep == 1)
+            tab = []
+            for ia in range(len(opts[a])):
+                ua = opts[a][ia][2]
+                row = []
+                for ib in range(len(opts[b])):
+                    ub = opts[b][ib][2]
+                    if ua is None or ub is None:
+                        row.append(0.0)
+                    else:
+                        row.append(sum(ua[x] * ub[x] for x in range(w)))
+                tab.append(row)
+            cor[(a, b)] = tab
+    n_adj = sum(1 for k in adjacent if adjacent[k])
+    n_all = len(adjacent)
     best = [None, None]
+
+    def _score(acc, choice):
+        """(primary, adjC2C, allC2C, score). `primary` is the mean square of
+        the column average, which is RN-1970's whole objective; `score` adds
+        RN-2010's excess-anti-correlation term to it."""
+        e = 0.0
+        for x in range(w):
+            e += acc[x] * acc[x]
+        e /= w
+        s_adj = 0.0
+        s_all = 0.0
+        for a in range(ASHLAR_COURSES):
+            for b in range(a + 1, ASHLAR_COURSES):
+                r = cor[(a, b)][choice[a]][choice[b]]
+                s_all += r
+                if adjacent[(a, b)]:
+                    s_adj += r
+        adjc = s_adj / n_adj if n_adj else 0.0
+        allc = s_all / n_all if n_all else 0.0
+        # Only the EXCESS is charged. Adjacent correlation BELOW the all-pairs
+        # mean is not an improvement, it is the same pattern at a two-course
+        # period, so buying it with column energy would be a straight loss.
+        d = allc - adjc
+        pen = d * d if d > 0.0 else 0.0
+        return e, adjc, allc, e + ASHLAR_TONE_SPREAD * pen
 
     def _walk(c, acc, choice):
         if c == ASHLAR_COURSES:
-            e = 0.0
-            for x in range(w):
-                e += acc[x] * acc[x]
-            if best[0] is None or e < best[0]:
-                best[0] = e
+            e, adjc, allc, sc = _score(acc, choice)
+            # "flat" is RN-1970's one-term objective, kept runnable as 7r's
+            # first negative control; "chequer" maximises the very thing the
+            # shipped objective spreads, so it is the phenomenon on purpose.
+            if mode == "flat":
+                sc = e
+            elif mode == "chequer":
+                sc = adjc
+            if best[0] is None or sc < best[0]:
+                best[0] = sc
                 best[1] = list(choice)
             return
         for vi in range(len(opts[c])):
@@ -2416,16 +2753,51 @@ def _ashlar_tone_table(w, h, rowc, colc, blend=True):
             _walk(c + 1, [acc[x] + vec[x] for x in range(w)], choice + [vi])
 
     blk = {}
-    if blend:
+    if mode == "raw":
+        for c in range(ASHLAR_COURSES):
+            for key in keys_of[c]:
+                blk[key] = _hash01(key, 3, 8677) - 0.5
+    elif mode == "chequer":
+        # NOT a search outcome and not a hash: a literal two-tone chequer, so
+        # 7r's second control depends on nothing this file could get wrong in
+        # the same way twice.
+        #
+        # IT HAS TO BE KEYED ON THE BLOCK'S POSITION AND NOT ON ITS INDEX,
+        # which the first version of this control got wrong and which is worth
+        # leaving written down. Alternating on `(course + indexWithinCourse)`
+        # looks like a chequer and measures +0.05, i.e. nothing at all,
+        # because the four courses hold 3, 2, 3 and 2 blocks at three
+        # different phases, so "the second block of course 1" and "the second
+        # block of course 2" are not above one another and the parity means
+        # nothing spatially. A chequer is a statement about WHERE the tone is
+        # on the wall. So: one square wave per tile along u, shifted half a
+        # period on odd courses, evaluated at each block's own centre. That is
+        # a 2 x 2 chequer over the tile, its column average very nearly
+        # cancels (the four course weights are 0.266, 0.281, 0.214, 0.240, so
+        # the two phases carry 0.479 against 0.521), and it is therefore
+        # EXACTLY the shape 7q cannot see and 7r must.
+        for c in range(ASHLAR_COURSES):
+            # The block's centre, taken as the texel whose within-block
+            # coordinate is nearest 0.5. Read off the partition rather than
+            # averaged, so a block that wraps the tile edge is handled by the
+            # same code as one that does not.
+            mid = {}
+            for x in range(w):
+                key, _dh, lu = colc[c][x]
+                e = lu - 0.5
+                if e < 0.0:
+                    e = -e
+                if key not in mid or e < mid[key][0]:
+                    mid[key] = (e, (x + 0.5) / w)
+            for key in keys_of[c]:
+                u = (mid[key][1] + 0.5 * (c % 2)) % 1.0
+                blk[key] = 0.5 if u < 0.5 else -0.5
+    else:
         _walk(0, [0.0] * w, [])
         for c in range(ASHLAR_COURSES):
             vals = opts[c][best[1][c]][1]
             for k, key in enumerate(keys_of[c]):
                 blk[key] = vals[k]
-    else:
-        for c in range(ASHLAR_COURSES):
-            for key in keys_of[c]:
-                blk[key] = _hash01(key, 3, 8677) - 0.5
     # The course offset, made column-neutral by removing its own
     # course-height-weighted mean. This is exact, not approximate: after the
     # subtraction sum(wc[c] * crs[c]) is zero, so every column of the wall
@@ -2510,7 +2882,7 @@ def _ashlar_partition(w, h):
     return rowc, colc
 
 
-def _ashlar_height(w, h, blend=True):
+def _ashlar_height(w, h, tone_mode="blend"):
     """(height, aux). Coursed ashlar: dressed blocks in level courses, a
     chamfered recessed joint at every boundary, per-block set height and set
     tilt, tooling on the faces, and spall on the arrises of the worn blocks.
@@ -2553,7 +2925,7 @@ def _ashlar_height(w, h, blend=True):
     tile = FAMILY_TILE_M["masonry"]
     rowc, colc = _ashlar_partition(w, h)
     t_blk, t_crs, t_bed, t_band = _ashlar_tone_table(w, h, rowc, colc,
-                                                      blend)
+                                                      tone_mode)
     hw_bed = 0.5 * ASHLAR_JOINT_BED_M / tile
     hw_head = 0.5 * ASHLAR_JOINT_HEAD_M / tile
     draft = ASHLAR_DRAFT_M / tile
@@ -6850,11 +7222,20 @@ def selftest():
     #     than the bound below and it does not matter, because it rides on a
     #     signal two thirds the amplitude. The two numbers are read together.
     #
-    #     THE NEGATIVE CONTROL IS THE PREVIOUS SHIPPED FIELD. `blend=False`
+    #     THE NEGATIVE CONTROL IS THE PREVIOUS SHIPPED FIELD. `tone_mode="raw"`
     #     restores RN-1835's independent per-block hash and changes nothing
     #     else, so the control differs from the shipped bond in exactly the
     #     term under test, and it must FAIL - otherwise this check is
     #     measuring the arithmetic and not the bond.
+    #
+    #     AND THIS CHECK IS HALF THE INSTRUMENT, WHICH RN-2010 FOUND OUT THE
+    #     EXPENSIVE WAY. A flat column average is necessary and it is NOT
+    #     sufficient: a block-scale CHEQUERBOARD has a flat column average by
+    #     construction, so 7q scores it clean. Run 7r below on the field this
+    #     check passed between RN-1970 and RN-2010 and it reads -0.633. The
+    #     two checks are orthogonal and both are load bearing, which the
+    #     controls demonstrate rather than assert: "raw" FAILS 7q and PASSES
+    #     7r, "flat" PASSES 7q and FAILS 7r.
     def _colacorr(alb, n):
         col = [0.0] * n
         for y in range(n):
@@ -6876,8 +7257,9 @@ def selftest():
         return math.sqrt(v0 / n), ac / v0
 
     q_std, q_ac = _colacorr(ash_a, s)
-    ctl_h, ctl_aux = _ashlar_height(s, s, blend=False)
-    ctl_std, ctl_ac = _colacorr(_ashlar_albedo(s, s, ctl_h, ctl_aux), s)
+    ctl_h, ctl_aux = _ashlar_height(s, s, tone_mode="raw")
+    ctl_a = _ashlar_albedo(s, s, ctl_h, ctl_aux)
+    ctl_std, ctl_ac = _colacorr(ctl_a, s)
     check("masonry tone does not repeat with the tile",
           abs(q_ac) <= 0.20 and q_std < 0.75 * ctl_std,
           "column-averaged luma std %.3f counts and correlation %+.3f at "
@@ -6889,6 +7271,184 @@ def selftest():
           "std %.3f, correlation %+.3f at half the tile, correctly outside "
           "the |corr| <= 0.20 rule. A tile with a light half and a dark half "
           "is what this check exists to refuse" % (ctl_std, ctl_ac))
+
+    # 7r. THE CHEQUER (RN-2011), AND IT IS THE AXIS 7q CANNOT SEE BY
+    #     CONSTRUCTION. 7q bounds the column average. A block-scale
+    #     CHEQUERBOARD - adjacent courses in tonal anti-phase - has a flat
+    #     column average BY DEFINITION, because that is what the two phases
+    #     cancelling means, so 7q scores a chequer clean and did: the field
+    #     shipped between RN-1970 and RN-2010 passes 7q on both legs (3.35
+    #     counts, -0.045) while reading -0.633 here. Worse, 7q's own objective
+    #     is what CREATED it - flattening the column average forces the
+    #     courses to anti-correlate, and with nothing watching where that
+    #     anti-correlation landed the search took the global worst of the 144
+    #     assignments this bond admits. An optimiser drives whatever it is
+    #     scored on to the end of the range it is not scored on, so the second
+    #     axis needs a gate of its own or the first one is a liability.
+    #
+    #     THE INSTRUMENT. Split the signed `tone` field by course, average
+    #     each course DOWN its own rows into one profile along the wall, and
+    #     take the Pearson correlation between profiles. `tone` and not the
+    #     rendered luma because `tone` is the quantity the search actually
+    #     drives, and a gate one step removed from the optimiser's own
+    #     variable is a gate that can be gamed by accident; the luma figure is
+    #     reported beside it and moves the same way. Two numbers:
+    #       `adjC2C`   the mean over the four ADJACENT (cyclic) course pairs.
+    #                  This is the chequer: courses that alternate.
+    #       `allC2C`   the mean over all six pairs. THIS IS NOT FREE AND IS
+    #                  NOT THE TARGET. A flat column average means the courses
+    #                  sum to nothing, and C zero-mean signals that cancel have
+    #                  their pairwise correlations pinned near -1/(C-1), i.e.
+    #                  -0.333 at four courses. It is the floor, and it is the
+    #                  reference the bound is taken against.
+    #
+    #     SO THE BOUND IS RELATIVE AND THAT IS THE POINT. Demanding adjC2C
+    #     near zero would demand the impossible, or rather would buy it by
+    #     dumping the anti-correlation on the (0,2) and (1,3) pairs, which is
+    #     the same pattern at a two-course period. What is actually required
+    #     is that the unavoidable anti-correlation is ISOTROPIC in course
+    #     separation, so it has no period to lock onto: adjC2C must not sit
+    #     materially below allC2C. 0.15 of allowance, with an absolute floor
+    #     of -0.45 as a second leg so a field that wrecks allC2C too cannot
+    #     satisfy the relative rule by dragging the reference down with it.
+    #     The margin is not fine: the shipped bond sits at -0.026 of excess
+    #     against the 0.15 allowed, and the two controls at -0.354 and -0.365,
+    #     so anything from 0.03 to 0.35 draws the same line.
+    #
+    #     WHAT 0.15 ACTUALLY ALLOWS AT FOUR COURSES, because the constant is
+    #     misleading if read at face value and the algebra is three lines.
+    #     `allC2C` is not independent of `adjC2C`: at C = 4 there are four
+    #     adjacent pairs and two separation-2 pairs, so
+    #         allC2C = (4*adj + 2*sep2) / 6
+    #     and the rule `adj >= allC2C - 0.15` reduces to
+    #         adj >= sep2 - 0.45.
+    #     So the bound is a statement about the ONLY free contrast this bond
+    #     has - adjacent against separation-2 - and the allowance on it is
+    #     0.45 and not 0.15, i.e. THREE TIMES LOOSER THAN IT READS. That is
+    #     left as it is rather than tightened, for two reasons. It still
+    #     separates cleanly: shipped sits at adj -0.301 against sep2 -0.223,
+    #     a margin of 0.372 inside the 0.45, while "flat" is adj -0.633
+    #     against sep2 +0.429 and fails by 0.612. And the relative form is the
+    #     one that stays correct if ASHLAR_COURSES ever changes, where a
+    #     hand-picked absolute constant would not. Stated so the next lane
+    #     reads the bound it has rather than the bound the number suggests.
+    #
+    #     TWO NEGATIVE CONTROLS, because one of them shares a search with the
+    #     shipped field and a gate proved against one bond is not proved.
+    #       "flat"     RN-1970's one-term objective, i.e. THE FIELD THAT IS
+    #                  SHIPPED TODAY. Everything else identical. It must fail.
+    #       "chequer"  A synthetic 2 x 2 chequer over the tile that is not a
+    #                  search outcome and reads no hash at all. It must fail.
+    #
+    #     THE BLINDNESS CLAIM RESTS ON "flat" ALONE, AND THE FIRST VERSION OF
+    #     THIS COMMENT OVERSTATED IT ON BOTH HALVES. It said the chequer
+    #     control scores -0.010 on 7q's instrument, "a BETTER column
+    #     autocorrelation than the shipped field's". Neither part survives at
+    #     the 192 px this selftest actually runs: the chequer prints -0.021
+    #     against the shipped -0.018, which is very slightly WORSE and not
+    #     better, and -0.010 was the 512 px reading quoted at the wrong
+    #     resolution. Worse, the chequer does not pass 7q at all - its column
+    #     std of 4.953 is over 7q's own 0.75 x control bound of 4.030 - so it
+    #     was never an example of something 7q waves through.
+    #
+    #     "flat" IS THE EXACT CASE AND IT NEEDS NO EMBELLISHMENT: it passes 7q
+    #     on BOTH legs (std 3.350 under the 4.030 bound, correlation -0.043
+    #     inside |corr| <= 0.20) and fails 7r at -0.630. A field that clears
+    #     the old gate on every leg and is a chequerboard is the whole argument
+    #     for this check existing, and it was shipped. The chequer control's
+    #     job is narrower and it still does it: it proves 7r responds to the
+    #     phenomenon in a pure form that no search and no hash produced.
+    def _c2c(aux_t, n):
+        rc, cc = _ashlar_partition(n, n)
+        rows = [[] for _ in range(ASHLAR_COURSES)]
+        for y in range(n):
+            rows[rc[y][0]].append(y)
+        prof = []
+        for c in range(ASHLAR_COURSES):
+            p = [0.0] * n
+            for y in rows[c]:
+                b = y * n
+                for x in range(n):
+                    p[x] += aux_t[b + x]
+            prof.append([v / len(rows[c]) for v in p])
+        s_adj = s_all = 0.0
+        n_adj = n_all = 0
+        for a in range(ASHLAR_COURSES):
+            for b in range(a + 1, ASHLAR_COURSES):
+                r = _pearson(prof[a], prof[b])
+                s_all += r
+                n_all += 1
+                sep = b - a
+                if sep > ASHLAR_COURSES - sep:
+                    sep = ASHLAR_COURSES - sep
+                if sep == 1:
+                    s_adj += r
+                    n_adj += 1
+        return s_adj / n_adj, s_all / n_all
+
+    def _c2c_luma(alb, n):
+        return _c2c([(0.2126 * alb[3 * i] + 0.7152 * alb[3 * i + 1]
+                      + 0.0722 * alb[3 * i + 2]) for i in range(n * n)], n)
+
+    r_adj, r_all = _c2c(ash_aux["tone"], s)
+    r_ladj, _r_lall = _c2c_luma(ash_a, s)
+    check("masonry courses do not chequer",
+          r_adj >= r_all - 0.15 and r_adj >= -0.45,
+          "adjacent-course tone correlation %+.3f against an all-pairs mean "
+          "of %+.3f, i.e. %+.3f of excess (need >= -0.15, and adjacent >= "
+          "-0.45). The all-pairs figure is the -1/(C-1) = -0.333 floor a flat "
+          "column average forces and is not a defect; the rule is that the "
+          "adjacent pairs do not carry more than their share of it. On the "
+          "rendered albedo's luma the same statistic reads %+.3f"
+          % (r_adj, r_all, r_adj - r_all, r_ladj))
+
+    for _m, _why in (("flat", "RN-1970's one-term objective, i.e. the field "
+                              "shipped before RN-2010"),
+                     ("chequer", "a synthetic 2 x 2 tonal chequer, no search "
+                                 "and no hash")):
+        _h, _ax = _ashlar_height(s, s, tone_mode=_m)
+        _adj, _all = _c2c(_ax["tone"], s)
+        _cstd, _cac = _colacorr(_ashlar_albedo(s, s, _h, _ax), s)
+        # WOULD 7q HAVE CAUGHT THIS ONE? Computed rather than asserted, on
+        # 7q's own two legs, because the honest answer differs between the two
+        # controls and an earlier version of this message claimed the stronger
+        # one for both. `flat` clears 7q completely and is the whole argument
+        # for 7r existing; the synthetic `chequer` is over 7q's std bound and
+        # so is NOT an example of something 7q waves through.
+        _q_ok = abs(_cac) <= 0.20 and _cstd < 0.75 * ctl_std
+        check("%s chequer control fails" % _m,
+              _adj < _all - 0.15,
+              "%s: adjacent %+.3f against all-pairs %+.3f, %+.3f of excess, "
+              "correctly outside the >= -0.15 rule. On 7q's instrument the "
+              "same field reads std %.3f and correlation %+.3f at half the "
+              "tile, so 7q %s"
+              % (_why, _adj, _all, _adj - _all, _cstd, _cac,
+                 ("PASSES it on both legs and this is exactly why 7q alone "
+                  "was not enough" if _q_ok else
+                  "would refuse it too, on the std leg (%.3f over the 0.75 x "
+                  "control bound of %.3f) - so this control proves 7r "
+                  "RESPONDS to a pure chequer, and `flat` above is the one "
+                  "that proves 7q cannot SEE one"
+                  % (_cstd, 0.75 * ctl_std))))
+
+    # 7s. THE CLAMP IS NOT DOING ANY WORK, MEASURED (RN-2021). Its comment
+    #     claimed the four tone terms "reach 0.55 together at the very worst",
+    #     which was a hand sum of the gains and not a reading; the actual
+    #     extreme on the shipped bond is 0.587. The number was harmless - the
+    #     clamp is 0.72 either way - but an unmeasured worst case in a comment
+    #     is how a later retune discovers the clamp is live only from the
+    #     photograph, so it is measured here every run. Both legs matter: if
+    #     the extreme ever reaches the clamp then `tone` is being clipped and
+    #     the per-block ladder no longer means what the header says it does.
+    t_ext = max(abs(v) for v in ash_aux["tone"])
+    check("masonry tone clamp is slack",
+          t_ext < ASHLAR_TONE_CLAMP - 0.02,
+          "the largest |tone| on the shipped bond is %.3f against a clamp of "
+          "%.2f, so %d of %d texels are clipped and the headroom is %.3f"
+          % (t_ext, ASHLAR_TONE_CLAMP,
+             sum(1 for v in ash_aux["tone"]
+                 if abs(v) >= ASHLAR_TONE_CLAMP - 1e-9), s * s,
+             ASHLAR_TONE_CLAMP - t_ext))
 
     # 8. Every palette role is either mapped or explicitly flat. Catches the
     #    standing-rule-11 failure of a check that passes on what it never

@@ -560,6 +560,34 @@
         //              instrument is read on.
         //   `wallLow`  the same face lower down, where the rain wash off the
         //              bed joints and the arris spall live.
+        //
+        // `wallLow` IS 84,000 px, ABOUT TWO TILES AND THREE BLOCKS, AND THAT
+        // IS A WIDTH THIS FILE HAS TO KEEP SAYING OUT LOUD (RN-2018). At three
+        // blocks the rectangle is largely a reading of WHICH BLOCK DREW WHICH
+        // TONE, so any masonry change that re-assigns tones moves it by more
+        // than the change is worth, in whichever direction the three blocks
+        // happen to land. That is a reason to quote it WITH the caveat, and
+        // RN-1970 instead left it out: it regressed this rectangle col.std
+        // 18.76 -> 21.66 and col.peak 0.649 -> 0.830 against RN-1835 and named
+        // neither figure in its report, while quoting `wall` and `cella`,
+        // which had both improved. Measured across the same one-variable pair,
+        // masonry albedo only:
+        //   RN-1835 -> RN-1970   col.std 18.76 -> 21.66, peak 0.649 -> 0.830,
+        //                        luma 79.14 -> 107.58
+        //   RN-1970 -> RN-2010   col.std 21.66 -> 16.87, peak 0.830 -> 0.521,
+        //                        iqr 50.03 -> 28.20, luma 107.58 -> 96.13
+        // i.e. repaired past where it started. THE CAVEAT IS NOT WAIVED BY THE
+        // SIGN OF THE MOVE. Three blocks is three blocks in both directions,
+        // and `ruin.cella` at 34 m is the rectangle a tone-repeat claim should
+        // rest on, because 19.6 tiles is a population and three blocks is not.
+        //
+        // THE RN-2010 ROW ABOVE IS THE RE-TAKEN, ENEMY-SUPPRESSED PAIR. Its
+        // first version was rejected because both saved frames were a spider
+        // at the lens (89/150 and 107/150 health). Re-taken clean, these two
+        // rectangles reproduce to the last digit, `box` and `world` do not,
+        // and the reason is the timing gap documented at the `peaceful` block
+        // below: the creature was in the centre of frame when the measurement
+        // was taken and had filled it by the time the screenshot was.
         wall: [0.5625, 0.0556, 0.9875, 0.6111],
         wallLow: [0.6250, 0.6111, 0.9750, 0.7778],
       },
@@ -779,6 +807,60 @@
   // change under test. lookdev.js's rule; the wind clock alone would otherwise
   // put a few thousand moving pixels into every pair.
   if (window.__ofWind) window.__ofWind.freeze(A.windT ?? 40);
+
+  // ENEMIES ARE A THING THAT MOVES ON ITS OWN AND THIS BLOCK MISSED THEM
+  // (RN-2018). They are exactly the wind clock's failure mode with legs, and
+  // they cost this file a published number. RN-2010's `ruinwall` pair was
+  // taken with a live hostile spider in front of the camera in BOTH arms: two
+  // of its legs cross the `wallLow` rectangle diagonally and MOVE between the
+  // arms, so 16.1 per cent of that rectangle's pixels differ by more than 20
+  // counts, its near-black fraction goes 0.556 to 0.623, and 79 to 82 per cent
+  // of it is not masonry at all. Player health read 89/150 on one arm against
+  // 107/150 on the other, which is the tell in one number: THOSE WERE TWO
+  // DIFFERENT SIMULATION MOMENTS, not one scene with a texture swapped. The
+  // build was one variable apart and the SCENE was not, and no amount of care
+  // over the manifest fixes that. `peaceful` both stops further dispatch and
+  // clears what is already out (Cheats.ts `togglePeaceful` -> `setPeaceful`),
+  // so it is the whole remedy rather than half of it.
+  //
+  // IT RUNS FOR EVERY SHOT AND NOT ONLY THE RUIN ONES, deliberately: a look
+  // frame is never improved by a wandering enemy, and a shot that happens to
+  // be clean today is one nest-tick away from not being. The cost is one cheat
+  // flag on a throwaway probe world. `of.cheat` is absent in some builds and
+  // returns a receipt rather than throwing, so this neither assumes it exists
+  // nor swallows the outcome: the receipt is published on the eval under
+  // `peaceful`, so a frame taken WITHOUT suppression says so in its own JSON
+  // instead of looking identical to one taken with it.
+  //
+  // ================= THE DEFECT UNDERNEATH, WHICH IS GENERAL =================
+  // THE PUBLISHED STATISTICS AND THE SAVED SCREENSHOT ARE NOT THE SAME FRAME,
+  // and that is true of every shot this file has ever published. `run.mjs`
+  // does: run this probe (which measures its rectangles off the canvas at its
+  // own capture instant) -> `settle(20)` -> `page.screenshot`. Anything moving
+  // in the world advances across that gap.
+  //
+  // RN-2010's rejected pair is the worked example and it cuts BOTH ways, which
+  // is the part worth keeping. The screenshots are a spider filling the frame
+  // and are worthless. But re-taken with `peaceful`, `wall` and `wallLow`
+  // reproduce TO THE LAST DIGIT in every published field, while `box` (86.22
+  // -> 90.79) and `world` (73.79 -> 75.70) move: the creature was already in
+  // the centre of the frame when the measurement was taken, and had not
+  // reached the right-hand wall rectangles until after it. So the numbers were
+  // not all contaminated and the screenshots were all worthless, and NEITHER
+  // could have been inferred from the other.
+  //
+  // Read a screenshot from this harness as an ILLUSTRATION of the shot, never
+  // as evidence for the numbers beside it. If a frame has to be evidence, the
+  // scene must hold still, which is what this block is for; `settle` cannot be
+  // moved before the probe without breaking every shot that drives the world.
+  // ==========================================================================
+  let peaceful = null;
+  try {
+    peaceful = (typeof of.cheat === 'function') ? of.cheat('peaceful') : 'no of.cheat';
+  } catch (e) {
+    peaceful = 'threw: ' + (e && e.message ? e.message : String(e));
+  }
+
   await sleep(0.6);
   of.build(0);                       // no build ghost over the frame
 
@@ -2073,6 +2155,22 @@
   }
   return {
     valid: true, shot: name, why: S.why,
+    // RN-2018. The enemy-suppression receipt, published rather than assumed,
+    // so a frame taken without it is distinguishable from one taken with it in
+    // the JSON alone. See the `peaceful` block above for the pair it cost.
+    peaceful,
+    // The player's health at the capture. Not decoration: it is the cheapest
+    // single tell that two arms were the SAME simulation moment, and it is the
+    // one that caught RN-2010's contaminated pair (89/150 against 107/150).
+    // `of.game().vitals` is `PlayerVitals.report()`, so `hp`/`maxHp` are the
+    // book's own fields and not a probe's reconstruction of them.
+    vitals: (() => {
+      try {
+        const v = of.game ? of.game().vitals : null;
+        return v ? { hp: v.hp, maxHp: v.maxHp, deaths: v.deaths,
+          hurtEvents: v.hurtEvents } : null;
+      } catch (e) { return null; }
+    })(),
     frame: { w: W, h: H },
     boxPx: bx.map((v) => Math.round(v)),
     box: stat(bx[0], bx[1], bx[2], bx[3]),
