@@ -162,6 +162,26 @@
     await craftN('Burner generator', 1) === 1);
   await press('Tab');
   await sleep(0.3);
+  // GP-998. GP-506 made coal `requiresToolFor` (gameplay.h), so a bare-hand
+  // swing at a CoalSeam node (kind 2) is refused ToolRequired rather than
+  // paid less, regardless of sandbox: `of.craft`/`of.harvest` here call
+  // straight through to `game.craft`/`game.harvest` (DebugGameplay.ts), not
+  // through `GameplayActions.craft`'s `freeBuild` grant branch, so this
+  // probe's own pickaxe is paid for out of the pack like any other recipe.
+  // TWO SWEEPS WITH THE PICKAXE CRAFTED BETWEEN THEM, the same correction
+  // GP-890 made in controls.js/machinepanel.js/machineshot.js. Wood and loose
+  // stone (kinds 0, 1) stay ungated so the pickaxe (Stone x2 + Wood x1) has a
+  // bare-hand path; nothing else in this probe needs them, so the budget is
+  // just enough for the pickaxe with margin.
+  let wood = 0;
+  for (const n of of.nodes()) {
+    if (n.kind !== 0 && n.kind !== 1) continue;
+    if ((pack().Wood ?? 0) >= 5 && (pack().Stone ?? 0) >= 5) break;
+    for (let k = 0; k < 5; ++k) if (of.harvest(n.index).ok) wood++;
+  }
+  const pickaxe = of.craft(0);   // Stone x2 + Wood x1
+  check('the pickaxe was crafted, so a coal swing is legal', pickaxe,
+    JSON.stringify(pack()));
   // COAL OUT OF THE GROUND, because a fuel that arrives by fiat proves nothing
   // about the burn, and because `generatorOffGrid` is false without it.
   let coal = 0;

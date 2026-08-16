@@ -97,21 +97,50 @@
     await craftN('Burner generator', 1) === 1);
   check('the electric smelter is craftable in sandbox',
     await craftN('Electric smelter', 4) === 4);
+  // GP-999. GP-506 made coal and iron `requiresToolFor` (gameplay.h), so a
+  // bare-hand swing at a CoalSeam/IronOre node (kinds 2, 3) is refused
+  // ToolRequired rather than paid less, regardless of sandbox: `of.craft`/
+  // `of.harvest` here call straight through to `game.craft`/`game.harvest`
+  // (DebugGameplay.ts), not through `GameplayActions.craft`'s `freeBuild`
+  // grant branch, so this probe's own pickaxe is paid for out of the pack
+  // like any other recipe. TWO SWEEPS WITH THE PICKAXE CRAFTED BETWEEN THEM,
+  // the same correction GP-890 made in controls.js/machinepanel.js/
+  // machineshot.js. Wood and loose stone (kinds 0, 1) stay ungated so the
+  // pickaxe (Stone x2 + Wood x1) has a bare-hand path.
+  let wood = 0;
+  for (const n of of.nodes()) {
+    if (n.kind !== 0 && n.kind !== 1) continue;
+    if ((pack().Wood ?? 0) >= 5 && (pack().Stone ?? 0) >= 5) break;
+    for (let k = 0; k < 5; ++k) if (of.harvest(n.index).ok) wood++;
+  }
+  const pickaxe = of.craft(0);   // Stone x2 + Wood x1
+  check('the pickaxe was crafted, so coal and iron swings are legal', pickaxe,
+    JSON.stringify(pack()));
   // Coal for the generator, out of the ground, because a fuel that arrives by
   // fiat proves nothing about the burn.
   // Coal for the generator and raw iron for the smelters, both out of the
   // ground: a fuel that arrives by fiat proves nothing about the burn.
+  //
+  // BUDGETED, where the pre-fix loop was not (a second finding this same
+  // lane made fixing build.js): once the pickaxe above makes these two swings
+  // stop being refused, an unbounded "40 swings per IronOre node, every node
+  // in reach" drove Raw iron to 1,035 on the very first try, eleven of the
+  // pack's 20 fixed slots (Inventory::kDefaultSlots, gameplay.h) at Raw
+  // iron's 100-count stack cap, and starved the electric-smelter crafts of
+  // room to land. 300 Raw iron (four smelters, several refeeds, real margin)
+  // and 100 Coal (one generator's fuel, same margin) are both far short of
+  // that.
   let coal = 0;
   let ore = 0;
   for (const n of of.nodes()) {
-    if (n.kind === 2) for (let k = 0; k < 8; ++k) {
+    if (n.kind === 2 && (pack().Coal ?? 0) < 100) for (let k = 0; k < 8; ++k) {
       if (of.harvest(n.index).ok) coal++;
     }
     // FAR more iron than coal, because four hand-fed smelters eat 20 units a
     // press and the first run of this probe quietly ran the pack dry mid-sweep:
     // every hopper was empty at the reading, demand was 0, and the panel
     // correctly reported a base that was doing nothing.
-    if (n.kind === 3) for (let k = 0; k < 40; ++k) {
+    if (n.kind === 3 && (pack()['Raw iron'] ?? 0) < 300) for (let k = 0; k < 40; ++k) {
       if (of.harvest(n.index).ok) ore++;
     }
   }
@@ -162,6 +191,17 @@
   // every E press hits it and no hopper is ever loaded), and the generator
   // needs to be inside a supply area too, which is easy to forget because it
   // supplies rather than consumes.
+  // NOT FIXED HERE, RECORDED INSTEAD (GP-999's own scope is the tool gate
+  // above, not this): every bearing in this layout now lands "too close to
+  // #1 pole" (`FactoryGhost.ts`'s GP-49 neighbour-clash refusal), confirmed
+  // by running this file's pre-fix content unmodified against the SAME
+  // server: the generator and all four smelters are refused, only the three
+  // poles land, and every downstream power assertion fails as a consequence.
+  // `gp49.js` itself shows the identical symptom in its own negative control
+  // (the SAME smelter placed further out is also refused now), so this is one
+  // shared, pre-existing defect in the fixed distances/pitches several probes
+  // hardcode for "clearly separated", not something the tool-gate fix touched
+  // or introduced.
   const layout = [
     [4, 0, -50],     // pole, almost under the feet
     [5, 35, -40],    // generator, inside that pole's supply area

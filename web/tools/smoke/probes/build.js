@@ -65,15 +65,54 @@
   const yaw = of.world().observer.yawDeg;
 
   // --- stock the pack, by harvesting, which is the only way a player can -----
+  // GP-995. TWO SWEEPS WITH THE PICKAXE CRAFTED BETWEEN THEM, the same
+  // correction GP-890 made in controls.js/machinepanel.js/machineshot.js.
+  // The loop this replaces already included kind 1 (Rock), unlike the other
+  // five probes in this cluster, but it carried the SAME missing step: no
+  // pickaxe was ever crafted between the bare-hand sweep and the gated one,
+  // so GP-506's `requiresToolFor` still refused every Coal/IronOre swing
+  // (ToolRequired) and the furnace craft below came up short of Raw iron.
+  //
+  // A BUDGET IS REQUIRED HERE, and skipping it (this file's first attempt at
+  // this fix) is its own recorded finding: `Inventory` (gameplay.h) has 20
+  // fixed slots and Wood/Stone each cap a stack at 100, so the ORIGINAL
+  // unbudgeted loop (8 swings on every reachable Tree/Rock node, no limit)
+  // drove Wood to 1,300 and Stone to 700, thirteen slots and seven slots,
+  // ALL TWENTY, with zero left for the pickaxe's own new stack. `of.craft(0)`
+  // then failed with `CRAFT_BLOCK.PackFull` (block 3, confirmed by reading
+  // `of.game().recipes[0]`), a second and different way to never reach a
+  // furnace, masked in the pre-fix build because the coal/iron refusal always
+  // reported first. The budgets below are sized off gameplay.h's own structure
+  // bill (Foundation 40 Stone, Floor 20 Wood + 20 Stone, Wall 12 Wood, Door
+  // 16 Wood + 4 Iron) for what this file actually places (two foundations, two
+  // walls, one door, one cantilever floor) plus the pickaxe and furnace, with
+  // real margin, while staying far short of a 100-count stack.
   let harvests = 0;
-  for (const n of of.nodes()) {
-    if (![0, 1, 2, 3].includes(n.kind)) continue;
-    for (let k = 0; k < 8; ++k) if (of.harvest(n.index).ok) harvests++;
-  }
+  const packCount = (name) =>
+    (of.game().carried.find((c) => c.name === name)?.count ?? 0);
+  const KIND_ITEM = { 0: 'Wood', 1: 'Stone', 2: 'Coal', 3: 'Raw iron' };
+  // Named `harvestSweep`, not `sweep`: this file already has an aim `sweep`
+  // for ghost placement below, and shadowing it silently would have redefined
+  // the wrong function under a real head-first read.
+  const harvestSweep = (kinds, want) => {
+    for (const n of of.nodes()) {
+      if (!kinds.includes(n.kind)) continue;
+      if (kinds.every((k) => packCount(KIND_ITEM[k]) >= want[KIND_ITEM[k]])) break;
+      if (packCount(KIND_ITEM[n.kind]) >= want[KIND_ITEM[n.kind]]) continue;
+      for (let k = 0; k < 8; ++k) if (of.harvest(n.index).ok) harvests++;
+    }
+  };
+  harvestSweep([0, 1], { Wood: 200, Stone: 300 });  // Tree, Rock: bare-hand
+  const pickaxe = of.craft(0);                      // Stone x2 + Wood x1
+  harvestSweep([2, 3], { Coal: 20, 'Raw iron': 40 }); // CoalSeam, IronOre: gated
   const named = () => Object.fromEntries(of.game().carried.map((c) => [c.name, c.count]));
-  log.push(`stocked in ${harvests} swings: ${JSON.stringify(named())}`);
+  log.push(`stocked in ${harvests} swings (pickaxe ${pickaxe}): ${JSON.stringify(named())}`);
 
   // --- one iron ingot, through the furnace, because a door needs one ---------
+  if (!pickaxe) {
+    return fail('could not craft the pickaxe, so no ore could be legally mined',
+      { pack: named() });
+  }
   if (!of.craft(2)) return fail('could not craft the furnace', { pack: named() });
   of.look(yaw, -18);
   await sleep(0.2);

@@ -377,6 +377,22 @@ left exactly as `lane/harness-census` recorded it on 2026-08-16. What follows
 is what changed, why, and the new evidence, so a reader can see both what was
 believed then and what is known now.
 
+**A known staleness at merge time, not re-verified here:** while this lane's
+final merge with `main` was in progress, `lane/toolgate-cluster` landed
+(`docs/web/NUMBERS.md`'s GP-995 to GP-1009 row) fixing the exact pre-GP-506
+stocking-loop defect that `build.js`, `furnace.js`, `furnacelit.js` and
+`genpole.js` are classified RED for below (`"could not craft the
+furnace"`/`"coal was mined for the generator: 0"`). That row's own account
+says four of those five are now genuinely fixed; `power.js` stays RED for a
+separate, unrelated reason (a placement-clash retune, not the tool gate),
+confirmed by that lane itself. **This amendment's RED entries for those four
+probes describe the tree as it stood when this lane tested it, not the tree
+this merge produces**; re-verifying them is not repeated here, `NUMBERS.md`'s
+GP-995 row is the current, authoritative account. This is ordinary lane
+interleaving (the same shape as the original census's own "BT-116 reds are
+closed" table), named explicitly rather than left for a reader to discover
+by noticing the file changed under the claim.
+
 ### Cause
 
 This lane's brief was BT-160's own recommended path: fix `verdictOf()`'s
