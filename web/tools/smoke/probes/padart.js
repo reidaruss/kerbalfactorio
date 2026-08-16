@@ -221,20 +221,65 @@
   const east = site.east;
   const north = site.north;
   const shot = A.shot ?? 'walk';
-  // [east, north, eye height above the surface, aim height above the deck]
-  const V = { walk: [22.0, -22.0, 2.0, 8.0],
-    close: [14.0, -14.0, 2.0, 5.0],
-    high: [30.0, -34.0, 16.0, 10.0] }[shot] ?? [22.0, -22.0, 2.0, 8.0];
+  // [east, north, eye height above the surface, aim height above the deck,
+  //  aim east offset, aim north offset]
+  //
+  // RN-1815 adds the last two and two shots, and both additions exist because
+  // the three original framings answer "what does the pad look like" and the
+  // pad's two OWED look items are not answerable from any of them:
+  //
+  //   skirt   6 m off the south face at standing eye, aimed level. The outer
+  //           skirt is the largest single surface in the walk and close shots
+  //           and it fills this one, which is the distance the repeat was
+  //           called visible at. `close` sees the same wall but spends most of
+  //           the frame on the tower and the sky.
+  //   trench  the SOUTH TRENCH MOUTH, standing outside the platform on the
+  //           trench axis and aiming INTO it, which is the only eye position
+  //           in the game that sees the deflector, the liner bands and the
+  //           trench floor at once.
+  //
+  // A THIRD TRAP, ON TOP OF THE TWO THIS FILE ALREADY RECORDS, AND IT IS WHY
+  // `trench` IS TAKEN AT 1.75 m RATHER THAN FROM ABOVE THE LIP. `of.teleport`
+  // does not just interpret its third argument as a height above the TERRAIN
+  // (trap (1) below): the observer is a physics body and it FALLS. Asking for
+  // 6.5 m, which would have looked down the trench over the near lip and
+  // shown its whole length, lands the eye back on the ground with no
+  // complaint from the probe and no clue in the report - the returned
+  // `obs.altM` is the settled value, not the requested one, so the frame is
+  // simply a different shot with the same name. `high`'s own 16.0 has been
+  // doing this since RN-1696 and its frame is a ground-level one. Nothing
+  // here can stand on the 2 m deck, so the mouth is the read, and it is
+  // where a walking player sees the trench from anyway.
+  //
+  // The aim offsets are what make `trench` possible at all. Every earlier shot
+  // aims at the pad's centre column, and a camera on the trench axis aiming at
+  // the centre at deck height photographs the launch table's underside rather
+  // than the trench it is standing in front of.
+  const V = { walk: [22.0, -22.0, 2.0, 8.0, 0.0, 0.0],
+    close: [14.0, -14.0, 2.0, 5.0, 0.0, 0.0],
+    high: [30.0, -34.0, 16.0, 10.0, 0.0, 0.0],
+    skirt: [-19.0, -2.0, 1.75, 1.10, 0.0, 0.0],
+    trench: [0.0, -18.0, 1.75, 1.05, 0.0, 0.0] }[shot]
+    ?? [22.0, -22.0, 2.0, 8.0, 0.0, 0.0];
+  // An invocation override, so a candidate framing is one `--evalargs` rather
+  // than a source edit. `artframe.js`'s `extra` rule in the other direction:
+  // measure a candidate before committing it.
+  const Vx = Array.isArray(A.V) ? A.V : V;
   const eye = {
-    x: P[0] + east.x * V[0] + north.x * V[1],
-    y: P[1] + east.y * V[0] + north.y * V[1],
-    z: P[2] + east.z * V[0] + north.z * V[1],
+    x: P[0] + east.x * Vx[0] + north.x * Vx[1],
+    y: P[1] + east.y * Vx[0] + north.y * Vx[1],
+    z: P[2] + east.z * Vx[0] + north.z * Vx[1],
   };
   const er = Math.hypot(eye.x, eye.y, eye.z) || 1;
-  of.teleport(latDeg(eye.y, er), Math.atan2(eye.z, eye.x) * D, V[2]);
+  of.teleport(latDeg(eye.y, er), Math.atan2(eye.z, eye.x) * D, Vx[2]);
   await sleep(2.0);
-  const look = { x: P[0] + up[0] * V[3], y: P[1] + up[1] * V[3],
-    z: P[2] + up[2] * V[3] };
+  const ae = Vx[4] ?? 0.0;
+  const an = Vx[5] ?? 0.0;
+  const look = {
+    x: P[0] + up[0] * Vx[3] + east.x * ae + north.x * an,
+    y: P[1] + up[1] * Vx[3] + east.y * ae + north.y * an,
+    z: P[2] + up[2] * Vx[3] + east.z * ae + north.z * an,
+  };
   await aimAt(look);
   await emptyHand();
   await aimAt(look);
@@ -242,8 +287,106 @@
   if (A.hideUi !== false) hideUi();
   await sleep(1.2);
 
+  // ======================================================================
+  // RN-1815. THE NUMBERS COME BACK WITH THE FRAME, `artframe.js`'s rule and
+  // its `statOn` idiom verbatim (luma, mean RGB, warm = meanR - meanB, sat,
+  // p05/p50/p95, iqr, loFrac, hiFrac) so a pad reading is comparable with
+  // every other art reading in the project. A pair of PNGs cannot say by how
+  // much a surface moved, and both of this pass's owed items are claims about
+  // a surface rather than about an arrangement.
+  //
+  // The rectangles are COMMITTED per shot (RN-1728's finding: an audit whose
+  // boxes live only in a report has to be grid-searched back out by whoever
+  // verifies it), in FRACTIONS of the frame so they survive a resolution
+  // change, and an invocation may add or override one through `extra`.
+  // ======================================================================
+  const RECTS = {
+    // `wall` is the plinth's outer face and nothing else: below the cap's
+    // 0.20 m ledge, above the steel kerb, and 900 px of a 24 m run of the
+    // surface the verifier called "a repeating dark aggregate or rock tile".
+    // `kerb` (the steel edge angle under it) and `tank` (the propellant tank
+    // behind it) are NEGATIVE CONTROLS: neither wears a role this pass
+    // touches, both are in the same frame under the same light, and a change
+    // that moves either of them has moved the scene rather than the skirt.
+    skirt: { wall: [0.050, 0.440, 0.950, 0.630],
+      kerb: [0.300, 0.675, 0.700, 0.700],
+      tank: [0.695, 0.045, 0.800, 0.280] },
+    // Down the trench from its south mouth.
+    //   all    the whole trench interior: both walls, the floor and the
+    //          deflector. The headline rectangle, and it is deliberately the
+    //          one that CANNOT be gamed by moving a colour from one zone to
+    //          another - if the trench still reads orange anywhere large, its
+    //          saturation stays up.
+    //   liner  the sunlit east wall's lower band, which is the single
+    //          surface the "rust paint" finding was about. It spans the
+    //          gradient's own threshold, so after RN-1815 it holds oxide at
+    //          the mouth and soot beyond it in one rectangle: saturation must
+    //          fall AND spread must rise, which one uniform colour cannot do.
+    //   upper  the east wall's UPPER band, one metre above `liner` in the
+    //          same light. `SteelDark` on `panel`, untouched by this pass by
+    //          construction, so it is the negative control.
+    //   floor  the trench floor slab.
+    //   core   the trench's centre at the deflector, lit by bounce alone.
+    trench: { all: [0.020, 0.460, 0.680, 0.640],
+      liner: [0.581, 0.533, 0.669, 0.606],
+      upper: [0.585, 0.435, 0.665, 0.485],
+      floor: [0.219, 0.556, 0.500, 0.633],
+      core: [0.300, 0.478, 0.500, 0.513] },
+    walk: {}, close: {}, high: {},
+  };
+  const r2 = (x) => (Number.isFinite(x) ? Number(x.toFixed(2)) : null);
+  const r3 = (x) => (Number.isFinite(x) ? Number(x.toFixed(3)) : null);
+  const statOn = (cx, x0, y0, x1, y1) => {
+    const w = Math.max(1, Math.round(x1 - x0));
+    const h = Math.max(1, Math.round(y1 - y0));
+    const d = cx.getImageData(Math.round(x0), Math.round(y0), w, h).data;
+    const n = w * h;
+    let sr = 0; let sg = 0; let sb = 0; let ssat = 0;
+    let lo = 0; let hi = 0;
+    const lum = new Float64Array(n);
+    for (let i = 0; i < n; ++i) {
+      const r = d[i * 4]; const g = d[i * 4 + 1]; const b = d[i * 4 + 2];
+      sr += r; sg += g; sb += b;
+      const mx = Math.max(r, g, b); const mn = Math.min(r, g, b);
+      ssat += mx === 0 ? 0 : (mx - mn) / mx;
+      const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      lum[i] = y;
+      if (y < 255 * 0.10) lo++;
+      if (y > 255 * 0.80) hi++;
+    }
+    lum.sort();
+    const q = (f) => lum[Math.min(n - 1, Math.max(0, Math.round(f * (n - 1))))];
+    const mr = sr / n; const mg = sg / n; const mb = sb / n;
+    return { px: n,
+      luma: r2(0.2126 * mr + 0.7152 * mg + 0.0722 * mb),
+      rgb: [r2(mr), r2(mg), r2(mb)],
+      warm: r2(mr - mb), sat: r3(ssat / n),
+      p05: r2(q(0.05)), p50: r2(q(0.50)), p95: r2(q(0.95)),
+      iqr: r2(q(0.75) - q(0.25)),
+      loFrac: r3(lo / n), hiFrac: r3(hi / n) };
+  };
+  let stats = null;
+  if (A.stats !== false) {
+    const blob = await of.screenshot();
+    const bmp = await createImageBitmap(blob);
+    const cv = new OffscreenCanvas(bmp.width, bmp.height);
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    cx.drawImage(bmp, 0, 0);
+    const RECT = { ...(RECTS[shot] ?? {}), ...(A.extra ?? {}) };
+    stats = { W: bmp.width, H: bmp.height,
+      world: statOn(cx, 0, 0, bmp.width, bmp.height), box: {} };
+    for (const [k, f] of Object.entries(RECT)) {
+      stats.box[k] = statOn(cx, f[0] * bmp.width, f[1] * bmp.height,
+        f[2] * bmp.width, f[3] * bmp.height);
+      stats.box[k].rect = [Math.round(f[0] * bmp.width),
+        Math.round(f[1] * bmp.height), Math.round(f[2] * bmp.width),
+        Math.round(f[3] * bmp.height)];
+    }
+  }
+
   return {
-    valid: true, shot, log,
+    valid: true, shot, V: Vx, log, stats,
+    post: window.__ofPost ? window.__ofPost.state().post : null,
     obs: of.world().observer,
     padView: of.game().padView,
   };

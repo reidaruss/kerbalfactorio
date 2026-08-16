@@ -67,6 +67,7 @@ import { loadTexture } from '../../assets/Loaders.js';
 // and rust did above.
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
   | 'paintchip' | 'rust' | 'masonry' | 'ember' | 'timber'
+  | 'paintchip' | 'rust' | 'masonry' | 'concrete' | 'ember'
   | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'flat';
 
 /**
@@ -175,6 +176,25 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   // the smelter's hearth surround stay on `Rock`/`RockDark` -> `stone`.
   // Moves in the same commit as texgen's table (RN-100's rule).
   Masonry: 'masonry', MasonryDark: 'masonry',
+  // RN-1815: the launch pad leaves `masonry` for a POURED family of its own.
+  // RN-1780 fixed masonry's world SCALE and deliberately reused stone's
+  // generator, so masonry is still a field of 22 cm fractured facets - right
+  // for a quarried ruin, wrong for a pad whose surfaces were cast against
+  // formwork. The pad's verifier read its 2 m outer skirt as "a repeating
+  // dark aggregate or rock tile rather than poured concrete". `concrete`
+  // carries board marks, form panel joints, tie holes, blowholes and stains
+  // instead, and it answers the "visible repeat" half of that finding by
+  // ORIENTATION: the pad's skirt is 24 m long and 1.55 m tall, so at a 1.8 m
+  // tile only the horizontal axis can ever be counted, and every loud feature
+  // in this family varies along v. `Masonry` stays for the ruin and the
+  // foundation deck. Moves in the same commit as texgen's table (RN-100).
+  Concrete: 'concrete', ConcreteDark: 'concrete', ConcreteSoot: 'concrete',
+  // RN-1815: soot on steel shares `SteelRust`'s family on purpose. The steel
+  // under a flame trench's carbon is oxidised, so the flake relief has to
+  // read through the deposit (RN-859's rule, where SuitGrime reused suitfab
+  // so the weave reads through the dirt); the role differs by palette only,
+  // which is where the dark near-neutral matte lives.
+  Soot: 'rust',
   // RN-157: the ore SEAM roles (Admin's ruling: ore-in-rock and refined-item
   // are different substances that coincidentally shared a colour; OF_Iron and
   // friends stay untouched on the items). The `ore` family is vein banding

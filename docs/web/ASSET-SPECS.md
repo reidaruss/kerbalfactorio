@@ -352,6 +352,24 @@ what replaced it.
 |---|---|---|---|---|---|
 | `panel` | plate seams, rivets, bolt heads, a weld bead, rubs, grime | 512 x 512 | 1.50 m | 341 px/m | Steel, SteelDark, SteelLight, Accent, Hazard, Plate, Suit, SuitDark, SuitAccent |
 | `coarse` | chipped facets and granular relief | 384 x 384 | 0.75 m | 512 px/m | Rock, RockDark, Regolith, Sand, Soil, Coal, Bark, BarkLight, Rubber, Iron, Copper |
+| `concrete` (RN-1815) | POURED: board marks, form panel joints, tie holes, blowholes, spalls showing aggregate, rain runs | 512 x 512 | 1.80 m | 284 px/m | Concrete, ConcreteDark, ConcreteSoot |
+
+**`concrete` is the family that answers "which axis can the player count", and that
+question belongs in this section rather than in a build script** (RN-1815). Its two
+numbers are `masonry`'s and are not re-derived: the consumer is the same
+architecture-scale surface judged from a standing eye. What is new is the rule the
+tile's CONTENT follows. UVs are box-projected world metres and `_bark_height`'s
+derivation fixes the axis to the digit (v = 1 - Y on both horizontal-normal faces),
+so on the launch pad's 24 m x 1.55 m skirt a 1.8 m tile lays 13.3 repeats along the
+wall and 0.86 of one up it: **the horizontal axis is the only one a repeat can ever
+be counted on, and a feature that varies only in v is free.** So the loud features
+(board faces at 150 mm, their joints, the per-board step and cure tone, the lift
+line) all vary in v, and the one loud u-varying feature is the form panel joint,
+placed every 0.90 m - half the tile - so the rhythm the eye finds is one formwork
+genuinely has. Two `texgen.py selftest` checks hold it: the field must change at
+least 1.5x faster along v than along u (measured 2.08), and its low-frequency
+contrast must be under half `masonry`'s (measured 0.0311 against 0.1352). The same
+reasoning is available to any future family whose consumer is long and short.
 
 Each family ships `of_<family>_n.png` (tangent-space normal, OpenGL +Y) and
 `of_<family>_orm.png` (R = occlusion, G = roughness, B = metalness), plus one
