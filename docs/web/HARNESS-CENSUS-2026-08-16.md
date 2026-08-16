@@ -71,6 +71,12 @@ for exactly once:
 | EXCLUDED | 12 | self-declared two-phase helper, correctly skipped (BT-115's own mechanism) |
 | TRUNCATED_OUTPUT | 0 | BT-130's stdout-to-disk fix held; nothing hit the 800 MB safety cap |
 
+**These original counts are left as this lane recorded them; they are not the
+current truth.** See the "Amendment" section at the end of this document
+(2026-08-15, `lane/verdict-convention`, BT-175 to BT-189) for the corrected
+counts (219 GREEN / 39 RED / 24 NO_VERDICT / 22 NO_OUTPUT / 12 EXCLUDED) and
+the re-sweep evidence behind each change.
+
 304 probes actually ran through the runner (217+35+30+22); 12 more were
 recorded EXCLUDED without running, matching BT-115's audit exactly
 (`bodydig.js`, `chestsave.js`, `damagesave.js`, `eva.js`, `mtnbore.js`,
@@ -362,9 +368,240 @@ is made.
   raw report per probe). Available in the worktree for any lane that wants
   to re-derive a claim in this file rather than re-run the sweep.
 
+## Amendment (2026-08-15, `lane/verdict-convention`, BT-175 to BT-189)
+
+**This is an amendment, not a silent rewrite.** Every count and table above is
+left exactly as `lane/harness-census` recorded it on 2026-08-16. What follows
+is what changed, why, and the new evidence, so a reader can see both what was
+believed then and what is known now.
+
+### Cause
+
+This lane's brief was BT-160's own recommended path: fix `verdictOf()`'s
+missing singular-`fail` convention and `orbitdeck.js`'s missing `--sandbox=1`
+flag, then re-sweep only the affected set to confirm the fix surfaces exactly
+the six known probes and moves nothing else. That work is items 1 to 3 below.
+Partway through, the coordinator added three more items surfaced by a
+same-day cross-lane finding and by this lane's own re-sweep: the loopback-
+shadows-wildcard trap (`NUMBERS.md`, recorded by Admin 2026-08-15/16), the
+`machineports.js` 43 ms margin, and the requirement to re-run every RED
+serially per `probeall.mjs`'s own header comment (lines 38-43: "every red
+from a sharded sweep is re-run serially before it goes on the list": the
+original census never actually did this for its 35). Items 4 to 6 below are
+that work.
+
+### 1. `verdictOf()` now recognises five conventions, not four
+
+Confirmed by grepping every probe for how it actually returns (not assumed
+from one example): `fails: [...]` (array), `valid`/`ok`/`pass` (booleans),
+and the missed fifth, a singular truthy string `fail` from an early-return
+guard shaped `const fail = (why, extra) => ({ fail: why, ...extra })`. Fixed
+in `web/tools/smoke/probeall.mjs`'s `verdictOf()`. While in there, an
+unrecognised-but-verdict-shaped key (a near-miss name, or a right name with
+the wrong type) now returns a new, LOUD `UNRECOGNISED_VERDICT_SHAPE` class
+naming the offending key, instead of silently falling into `NO_VERDICT`:
+the exact failure mode that let the singular-`fail` gap go unnoticed as long
+as it did. A real report-only probe's keys (`texW`, `drawCalls`,
+`footprintM`, ...) never match this pattern, confirmed against all 24
+legitimately report-only probes in the re-sweep below: none tripped it.
+
+### 2. `orbitdeck.js`'s missing invocation
+
+The probe carried no `// node tools/smoke/run.mjs ...` header at all: the
+old `extractCmd()` matched the first comment line containing the substring
+`run.mjs`, which was a prose sentence 56 lines down with zero `--` flags, so
+the probe ran undocumented and its own opening guard
+(`if (!of.sandbox().sandbox) return { fail: 'run this with --sandbox=1', ... }`)
+failed every time. Added the standard header block (`--scenario=walk
+--sandbox=1`, the same convention `decksink.js` and `clickonce.js` already
+use, `clickonce.js`'s BT-11x note being the named precedent) ahead of the
+prose paragraph that used to be matched by mistake.
+
+### 3. Parser-fix re-sweep: the affected set, before and after
+
+Built once (`npm ci`, `sync-wasm`, `sync-assets`, `tsc --noEmit` clean, `vite
+build` clean). Served `vite preview --port 4650 --strictPort --host
+127.0.0.1`, 2 concurrent shards, 38 probes: all 30 originally-NO_VERDICT
+probes, a 5-probe GREEN control (`controls.js`, `digore.js`, `craftfull.js`,
+`balance.js`, `moonsite.js`), a 3-probe RED control (`genpole.js`,
+`mapwork.js`, `playthrough.js`). Ownership of the port was proven before
+trusting it: a unique sentinel file was written into `web/dist` and fetched
+back over HTTP first, per the loopback-shadows-wildcard rule below.
+
+| Probe | Before | After |
+|---|---|---|
+| `airlock.js` | NO_VERDICT | **RED** ("the ramp is not the length the fringe predicts") |
+| `build.js` | NO_VERDICT | **RED** ("could not craft the furnace") |
+| `furnace.js` | NO_VERDICT | **RED** ("could not craft the furnace") |
+| `furnacelit.js` | NO_VERDICT | **RED** ("could not craft the furnace") |
+| `portmigrate.js` | NO_VERDICT | **RED** ("the smelter would not go down at the head") |
+| `orbitdeck.js` | NO_VERDICT | **GREEN** (both fixes together clear it) |
+| the other 24 NO_VERDICT probes | NO_VERDICT | NO_VERDICT, unchanged (confirmed legitimately report-only; none tripped `UNRECOGNISED_VERDICT_SHAPE`) |
+| GREEN control (5) | GREEN | GREEN, unchanged |
+| RED control (3) | RED | RED, unchanged |
+
+This is the parser change proven both ways: a probe reporting the singular
+`fail` convention is now RED, and every probe reporting one of the other
+four conventions is classified exactly as before. Full per-probe records:
+`web/tools/smoke/resweep/shard0.jsonl`, `shard1.jsonl` (this lane's own
+worktree, not committed, same convention as the original census's raw
+artifacts).
+
+### 4. `machineports.js`'s timeout margin
+
+The original census's `PROBEALL-TIMEOUT: 420000` override finished at
+420043 ms, 43 ms of margin under real contention, not a margin. Raised to
+`600000`, the same value already used by `cantilever.js`'s own override,
+recorded in the probe's own header comment.
+
+### 5. Every RED re-run serially, per `probeall.mjs`'s own rule
+
+`probeall.mjs` says explicitly that a RED from a sharded sweep is not
+trustworthy until re-run serially; the original census never did this for
+its 35. This lane did, plus the 5 newly-surfaced REDs from item 3 (38
+probes total: 33 of the census's named REDs it could ground in the document
+text, covering both previously-known reds `animgate.js`/`discovery.js`, plus
+the 5 from item 3; **see the note on the "35" count below**).
+
+**A server died mid-run and the reading up to that point was voided, not
+kept.** Another lane's teardown killed every preview server on the box
+partway through the first serial attempt (port 4650): 3 probes had already
+returned genuine verdicts (`airlock.js`, `animgate.js`, `beltturn.js`, all
+RED), then the connection dropped. The next 19 probes returned instant
+`exit=1`/`NO_OUTPUT` because there was nothing to connect to, and the
+remaining 14 were never attempted. Per the loopback-shadows-wildcard rule,
+that reading is void, not a verdict: it was discarded, not reported. A
+fresh server was started on a new port (4715), ownership proven again via a
+freshly-written sentinel fetched back over HTTP, and the 21 void plus 14
+unattempted (35 probes) were re-run. **The server's liveness was
+independently re-confirmed by fetching the sentinel every 15 s for the
+entire re-run**, so the next finding is not another dead-server artifact:
+
+- 32 of the 35 returned clean, real verdicts on the first re-attempt.
+- 3 (`phrcskeys.js`, `phrendezvous.js`, `playthrough.js`) hit the shared
+  240 s timeout with **no parseable output**, deep in the serial queue,
+  while the sentinel confirmed the server was alive and answering the whole
+  time. Re-run in isolation (just these 3, wider 360 s wrapper budget, same
+  live server): all 3 returned genuine RED verdicts at 209 s, 251 s, and
+  209 s wall time, comfortably real reds, not fixture failures, but two of
+  the three exceed the shared 240 s default even alone. This reads as
+  resource accumulation over a long serial run (many sequential Chrome
+  launches), not concurrent-shard contention, which is a different harness
+  caveat than any previously named. **Flagged, not fixed**: no
+  `PROBEALL-TIMEOUT` override was added without the kind of dedicated
+  standalone measurement BT-130 did for `cantilever.js`/`machineports.js`;
+  that measurement is unstarted future work.
+
+**Final serial-confirmed table (38 checked):**
+
+| Result | Count | Detail |
+|---|---:|---|
+| Confirmed RED, as classified | 32 | includes `animgate.js`, `discovery.js` (both previously known) |
+| Confirmed RED after a false NO_OUTPUT read | 3 | `phrcskeys.js`, `phrendezvous.js`, `playthrough.js` (see above) |
+| Newly-red from item 3, confirmed again here | 2 | `airlock.js`, `portmigrate.js` (the other 3 newly-red probes, `build.js`, `furnace.js`, `furnacelit.js`, are also in this 38 and also confirmed RED, folded into the 32 above) |
+| **Reclassified RED to GREEN** | 1 | **`terrainart.js`**: the census's original RED was a sharded-contention artifact. Serially, with no other probe competing for the GPU/CPU, it is clean. This is exactly the failure mode `probeall.mjs`'s own comment warns a shard can produce, now caught by doing what that comment says. |
+
+**On the "35" count:** this lane could only ground 33 individually-named
+probes in the census document's own text (31 newly-found across its
+confidence buckets, plus the 2 previously-known), not 35. The document's own
+prose has at least one internal miscount to match (the "no confidence"
+section opens "Six reds are a bare `valid: false`..." and then names five).
+This is flagged for a future amendment rather than guessed at; it does not
+change any of the 38 verdicts actually re-run above, only whether the
+original headline "35" was itself exactly right.
+
+### 6. Corrected headline counts
+
+| Class | Original | Corrected | Change |
+|---|---:|---:|---|
+| GREEN | 217 | **219** | +`orbitdeck.js` (item 3), +`terrainart.js` (item 5, reclassified from RED) |
+| RED | 35 | **39** | -`terrainart.js` (item 5), +`airlock.js`/`build.js`/`furnace.js`/`furnacelit.js`/`portmigrate.js` (item 3) |
+| NO_VERDICT | 30 | **24** | -6 (the singular-`fail` probes, 5 to RED + `orbitdeck.js` to GREEN) |
+| NO_OUTPUT | 22 | 22 | unchanged; not re-swept by this lane (see NO_OUTPUT triage below) |
+| EXCLUDED | 12 | 12 | unchanged |
+
+219 + 39 + 24 + 22 + 12 = 316. Every probe still accounted for exactly once.
+
+### NO_OUTPUT (22): characterised, not fixed, same triage discipline the original census used for its REDs
+
+- **The ascent/orbit cluster**: `apexec.js`, `ascent.js`, `maneuver.js`
+  (timeouts) join the census's own already-identified cluster with
+  `map3d.js`, `qolflight3.js`, `vabdest.js` (all confirmed RED above): one
+  diagnostic pass across all six is recommended, not six separate ones.
+- **`post.js`**: a regression, not a new finding. BT-40 originally recorded
+  it as a returned RED (4 fails); it now hangs to a hard timeout instead of
+  returning. Worth flagging on its own to whichever domain owns it, since
+  "used to answer, now hangs" is a different and more urgent claim than "was
+  always slow."
+- **`machineports.js`**: fixed, item 4 above.
+- **11 remaining first-time timeouts with no shared textual signature**:
+  `assembler.js`, `autoapproach.js`, `basereal.js`, `buildshot.js`,
+  `demolish.js`, `enemies.js`, `factoryrebase.js`, `padgate.js`,
+  `pondwade.js`, `qolflight2.js`, `survivalrun.js`. Each needs its own
+  standalone, no-wrapper-timeout run (the BT-130 method) to tell "genuinely
+  slow, needs a documented override" from "hangs, is a real bug": 11 runs
+  at up to several hundred seconds each is outside this lane's own number
+  block and time budget. **Remaining checklist item, owner: build-tooling,
+  next lane.**
+- **3 that hit `timedOut: true` but still produced a complete, trustworthy
+  report** (`enemyshot.js` GREEN, `machineports.js` GREEN, `walk.js`
+  NO_VERDICT): all three finish their real work and then hang on process
+  exit rather than returning promptly, an instrument debt (a lingering
+  handle or timer), not a verdict question. Still open.
+- **7 crashes**: `shadowk.js` is a genuine instrument bug (a `SyntaxError`
+  inside `page.evaluate`, does not even parse) and is the one item here that
+  is a real code fix, not a diagnosis, unstarted. `qolbuild2.js`/
+  `qolbuild3.js` throw a fixture-precondition failure as an exception
+  instead of returning it in `fails[]`; changing that to a return would turn
+  a crash into a real, informative RED. `navdraw.js`, `qolsandbox.js`,
+  `ripplewalk.js`, `stationframe.js` are each self-describing bail guards or
+  fixture limits per the original census, not re-diagnosed further here.
+
+**Gate design gap this triage surfaces:** BT-41's `known-red.json` makes a
+*new* RED visible against a flipped gate. Nothing today makes a *new*
+NO_OUTPUT visible the same way: a probe silently regressing from GREEN to
+a timeout would pass a flipped gate exactly as silently as the singular-
+`fail` probes did before this lane's fix. This is named in the flip
+position below, not resolved here.
+
+### The flip position, restated
+
+**The two originally-named blockers (BT-158's parser gap, BT-160's missing
+`--sandbox=1`) are fixed and proven both ways.** The re-sweep found nothing
+the fix should not have moved, and moved everything it should have.
+
+**This lane does not consider the gate ready to flip anyway**, on evidence
+this lane itself produced rather than on the original two blockers:
+
+1. **`terrainart.js` proves the sharded-RED-is-untrustworthy rule is not
+   theoretical.** A `known-red.json` built from the original, un-reconfirmed
+   35 would have shipped one wrong entry on day one. The corrected 39-probe
+   RED set above (33 census-named + `airlock.js`/`build.js`/`furnace.js`/
+   `furnacelit.js`/`portmigrate.js`, minus `terrainart.js`) is the first set
+   this lane would trust for that file, and even it carries the open "35 vs
+   33-named" question above.
+2. **NO_OUTPUT (22) has no protective allowlist and 15 of its 22 members are
+   undiagnosed.** A flipped gate needs an answer for what NO_OUTPUT means
+   under it before it can be called complete, not just an accurate RED list.
+3. **A new, real timing caveat** (three probes reading NO_OUTPUT only when
+   deep in a long serial queue) means "re-run serially" is necessary but not
+   sufficient for a fully trustworthy reading; a probe's position in a long
+   queue is its own confound, previously undocumented.
+
+**Recommended remaining checklist, with owners:**
+
+| Item | Owner |
+|---|---|
+| Standalone BT-130-style timing runs for the 11 unclustered NO_OUTPUT timeouts | build-tooling, next lane |
+| Decide and implement how NO_OUTPUT is represented under a flipped gate (a `known-no-output.json`, or fold into `known-red.json`, or something else) | Admin decision, then build-tooling |
+| `shadowk.js`'s `SyntaxError` (a real instrument bug, not a diagnosis) | build-tooling |
+| `post.js`'s RED-to-timeout regression | whichever domain owns `post.js`'s scenario |
+| Reconcile the census document's "35" claim against the 33 this lane could ground in its own text | build-tooling, next amendment |
+| The flip itself | **Admin decision**, not this lane's, unchanged from the original brief |
+
 ## Cross-reference
 
-[NUMBERS.md](NUMBERS.md) BT-155 to BT-174 for the allocation and usage split.
+[NUMBERS.md](NUMBERS.md) BT-155 to BT-189 for the allocation and usage split.
 [../controllers/build-tooling.md](../controllers/build-tooling.md) for the
 subagent-log entry. [INSTRUMENTS.md](INSTRUMENTS.md) for `mapwork.js`'s prior
 history, cited above rather than repeated.

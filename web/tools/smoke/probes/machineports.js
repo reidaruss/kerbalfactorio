@@ -1,7 +1,7 @@
 // FS-43 to FS-47: A BELT CONNECTS TO A PORT, AND A BELT AT THE BARE HOUSING
 // REFUSES OUT LOUD.
 //
-// PROBEALL-TIMEOUT: 420000
+// PROBEALL-TIMEOUT: 600000
 // BT-130: hit the shared sweep's 240 s cap and was recorded NO_OUTPUT under
 // the BT-116 4-way batch. Re-run standalone on a quiet machine, no wrapper
 // timeout (2026-08-15, lane/probeall-debts): finished (its own separate RED,
@@ -11,6 +11,11 @@
 // add up to a cost this probe genuinely has; `probeall.mjs` reads this
 // header line and gives THIS probe alone a wider, documented budget instead
 // of raising the shared default for every probe in the sweep.
+// BT-175: the BT-155 census ran this override at 420000 and the probe
+// finished at 420043 ms, 43 ms inside its own cap under real contention --
+// not a margin, a coin flip. Raised to 600000 (the same value already used
+// by cantilever.js's own override) so a contended box has real headroom
+// instead of a number the next sweep can clear by chance.
 // (Marker kept inside the file's first 60 lines on purpose: probeall.mjs
 // only scans that far, same rule as PROBEALL-EXCLUDE.)
 //

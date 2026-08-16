@@ -1,5 +1,15 @@
 // CAN THE WALKER BE HELD UP BY A col_* PROXY WITH NO HEIGHTFIELD UNDER IT?
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/orbitdeck.js
+//
+// BT-175 SWEEP CORRECTION: this probe never carried a documented invocation
+// at all, so `verdictOf()`'s first `run.mjs` match fell through to a prose
+// sentence lower in this file, no --sandbox=1 flag reached the runner, and
+// the probe's own opening guard (`if (!of.sandbox().sandbox) return { fail:
+// 'run this with --sandbox=1', ... }`) failed every run. Exactly `clickonce.js`'s
+// BT-11x precedent: a missing invocation flag, not a game defect.
+//
 // This is the measurement the space station question turns on. It was asked
 // BEFORE any station existed, deliberately: if the answer had been no, then a
 // station interior would have been a substantial piece of new walker work and

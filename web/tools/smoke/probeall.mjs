@@ -152,18 +152,60 @@ function flagsOf(cmd) {
 
 // ---- verdict ---------------------------------------------------------------
 // What a gate that honoured the probe's own report would say.
-// THERE ARE FOUR VERDICT CONVENTIONS, NOT TWO. `valid` and `fails[]` are the
-// common pair, but seven probes carry only a boolean `ok` (animgate, padflat,
-// zerog, ...) and some carry `pass`. A census that knew only two names would
-// have filed those under NO_VERDICT and missed any red among them, which is the
-// audit committing the defect it is auditing. The runtime `evalKeys` recorded
-// below is what makes that claim checkable rather than asserted.
+//
+// THERE ARE FIVE VERDICT CONVENTIONS IN LIVE USE, NOT TWO, NOT FOUR. Every one
+// below is confirmed by grepping web/tools/smoke/probes for how the probe
+// actually returns, not assumed from one example:
+//   1. `fails: [...]`  an array, empty means green    (e.g. terrainspec.js, carrier.js)
+//   2. `valid: bool`                                  (e.g. build.js's own completed run)
+//   3. `ok: bool`                                      (e.g. animgate.js)
+//   4. `pass: bool`                                    (e.g. mapwork.js)
+//   5. `fail: "why"`    a SINGULAR truthy string, from an early-return guard
+//      shaped `const fail = (why, extra) => ({ fail: why, ...extra })` that
+//      short-circuits the whole run before any of 1-4 is ever built
+//                                                       (e.g. airlock.js, furnace.js)
+// (1)-(4) were the BT-43 fix (the `ok`-only gap). (5) is the BT-155/BT-175
+// gap: verdictOf() recognised only 1-4, so six live probes that fail by their
+// own report (airlock.js, build.js, furnace.js, furnacelit.js, orbitdeck.js,
+// portmigrate.js) sat as NO_VERDICT, invisible to a flipped gate, forever.
+// Fixed here by treating a truthy string `fail` exactly like a failed bool.
+
+// Exact-match, case-insensitive, against TOP-LEVEL key names only: deliberately
+// not a substring test, so a nested/unrelated key like `validAfterQ` or `okMs`
+// does not trip it. Only a key that IS one of these words but is not one of the
+// five recognised (name, type) pairs above reaches the check below at all.
+const VERDICT_LOOKALIKE = /^(valid|invalid|ok|okay|pass|passed|fail|failed|failure|failures|error|errors|success|succeeded)$/i;
+
 function verdictOf(ev) {
   if (ev === undefined || ev === null || typeof ev !== 'object') return { cls: 'NO_VERDICT', fails: [] };
   const hasFails = Array.isArray(ev.fails);
   const bools = ['valid', 'ok', 'pass'].filter((k) => typeof ev[k] === 'boolean');
-  if (!hasFails && bools.length === 0) return { cls: 'NO_VERDICT', fails: [] };
+  const hasFail = typeof ev.fail === 'string' && ev.fail.length > 0;
+  if (!hasFails && bools.length === 0 && !hasFail) {
+    // BT-175: this is where the fifth convention above went unseen. A silent
+    // NO_VERDICT here cannot be told apart from a probe that is legitimately
+    // report-only by design (telemetry/screenshot dumps with no verdict key
+    // at all, ~24 of the 30 probes this census's NO_VERDICT bucket held) from
+    // a probe using a SIXTH convention nobody has taught this function yet.
+    // Rather than let that repeat silently, flag it LOUD whenever the object
+    // carries a key that reads like a verdict field but matched none of the
+    // five known shapes (wrong type, near-miss name, etc.): a real
+    // report-only probe's keys (texW, drawCalls, footprintM, ...) never look
+    // like this, so this does not fire on the legitimate 24.
+    const lookalike = Object.keys(ev).filter((k) => VERDICT_LOOKALIKE.test(k));
+    if (lookalike.length > 0) {
+      return {
+        cls: 'UNRECOGNISED_VERDICT_SHAPE',
+        fails: [`eval has verdict-shaped key(s) [${lookalike.join(', ')}] that verdictOf() does not `
+          + 'recognise (wrong type or unlisted name); teach verdictOf() the convention rather than '
+          + 'letting this fall into NO_VERDICT, which is exactly how the singular fail gap (BT-175) '
+          + 'went unnoticed'],
+      };
+    }
+    return { cls: 'NO_VERDICT', fails: [] };
+  }
   const fails = hasFails ? ev.fails.map(String) : [];
+  if (hasFail) fails.push(ev.fail);
   const falseOnes = bools.filter((k) => ev[k] !== true);
   if (fails.length > 0 || falseOnes.length > 0) {
     return {
