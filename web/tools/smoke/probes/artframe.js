@@ -268,9 +268,41 @@
       // to the digit. So the sunlit-face box lives on `smelterhero`, which was
       // built with a `sunSide` bearing for this exact purpose, and this note
       // exists so the next lane does not spend a night re-deriving it.
+      // RN-1935 (shot-grades). MOVED OFF THE SKIRT, NOT RENAMED. RN-1839
+      // already found the mechanism: splitting the old 300,0,470,600 /
+      // 1225,0,1320,560 rectangles into thirds put the whole `paintchip`-pass
+      // delta in the LOWER third of each (`hearthL` 12.08 -> 11.85 iqr, upper
+      // and middle thirds bit-identical), because both strips run down to
+      // y = 0.6667 / 0.6222 and clip the painted keep-out SKIRT at the
+      // column's foot rather than stopping on stone. That made them unsafe as
+      // a `stone`-only control for any other lane reading them off this
+      // manifest, and this lane's own dispatch measured it in pixels rather
+      // than iqr: 3068 of 102000 px differ inside the OLD `hearthL` box
+      // against the control this manifest's own `Accent`/`paintchip` split
+      // implies, 3047 of them (99.3%) in the lower third alone; `hearthR`
+      // 1427 of 53200, 1384 (97.0%) in the lower third. `smelterhero`'s own
+      // `hearthL`/`hearthR` (different framing, does not reach the skirt at
+      // this camera's angle) stay the clean reference at 0 of 46500.
+      //
+      // FIX: both rectangles now END AT RN-1839's OWN THIRD BOUNDARY (400 px
+      // of the old 600, 373 px of the old 560), i.e. they keep the upper two
+      // thirds RN-1839 already showed bit-identical across a `paintchip`
+      // change and drop the lower third that clips the skirt. Still the
+      // `Rock`/stone refractory brick, still deterministic and responsive to
+      // a `stone` family change (RN-1490), now genuinely stone-only.
+      //
+      // VERIFIED, real D3D11 (RTX 4060 Ti, ANGLE), three consecutive
+      // captures at this build: `hearthL` px 68000, iqr 11.09, loFrac 0.85,
+      // hiFrac 0.002, identical to the digit all three times; `hearthR` px
+      // 35435, iqr 9.08, loFrac 0.859, hiFrac 0, identical on two fields and
+      // within 0.01 count of itself on luma/rgb[0] across the three (the
+      // project's own accepted floor for run-to-run float noise, e.g.
+      // RN-1859's `basedusk`). Both p95 fell (old `hearthL` 46.77 -> 42.91,
+      // `hearthR` 41.76 -> 38.11), which is the skirt's own brighter paint
+      // leaving the box, exactly the direction contamination predicts.
       extra: {
-        hearthL: [0.1875, 0.0000, 0.2938, 0.6667],
-        hearthR: [0.7656, 0.0000, 0.8250, 0.6222],
+        hearthL: [0.1875, 0.0000, 0.2938, 0.4444444444444444],
+        hearthR: [0.7656, 0.0000, 0.8250, 0.4148148148148148],
       },
       why: 'the RN-1200 machine close-up: Steel, Accent and Rubber in one frame',
     },
@@ -542,7 +574,7 @@
       // are a framing offset off the spine bearing and were chosen against the
       // first aft frame, which put the hull in the top right corner.
       sunMode: 'time', timeOfDay: 0.60,
-      back: true, yawOff: 45, pitch: 3,
+      back: true, yawOff: 105, pitch: 3,
       box: [0.4200, 0.2000, 0.9800, 0.7200],
       // RN-1800. THE STATION'S OWN ORBITAL CLOCK, PINNED, AND THIS IS THE
       // ACTUAL FIX FOR THE NON-REPRODUCIBLE SHOT.
@@ -611,6 +643,51 @@
       // would silently re-introduce that half of the defect. THE SHOT'S TARGET
       // GRADE IS MARKED UNMEASURED (rendering.md 2.1.7) rather than published
       // on a number four fresh captures showed is not reproducible.
+      //
+      // RN-1935 (shot-grades), THE FRAMING FIX THE ABOVE ASKED FOR, AND THE
+      // POSE CHECKED OUT UNDER IT. `yawOff: 45` was chosen against the
+      // PRE-FIX bearing (244.15 deg) and on the corrected one (255.35 deg,
+      // CE-115..117) it still points into the hull's own interior on current
+      // `main` -- confirmed by capture, not assumed: at 45 the frame is a
+      // riveted corridor with a carpeted floor, no stars, the same INTERIOR
+      // this entry already named. Swept `yawOff` in the field CE-117 itself
+      // proposed (`--evalargs='{"shot":"station","yawOff":N}'`) rather than
+      // solved on paper: 0 and 90 are still interior; **105 is the first
+      // angle that clears the hull and shows the MUST-SHOW frame**, a lit
+      // exterior hull segment and a strut truss against a visibly starred
+      // sky (`docs/screenshots/RN1935_station_yo105.png`). `captureDiag`
+      // proves the POSE fix holds under it: three captures at this exact
+      // yawOff/pitch read `originF`/`dirF` EQUAL TO FULL FLOAT PRECISION all
+      // three times, so CE-115..117 is not what stands between this shot and
+      // a baseline any more.
+      //
+      // WHAT DOES, AND THIS LANE'S OWN `ibl.builds` CORRELATION BELOW WAS
+      // FALSIFIED BY A FRESH-CONTEXT VERIFIER'S PROPER CONTROL -- READ THAT,
+      // NOT THE THREE-SAMPLE READING THIS COMMENT FIRST SHIPPED WITH. Three
+      // bit-identical-camera captures here read box luma 20.88/12.23/28.86
+      // (2.36x) alongside `ibl.builds` 9/8/11, which is three samples and no
+      // control. The verifier's FIVE bit-identical-camera captures (`originF`
+      // /`dirF`/`postSunF`/`sunBearingDeg` all equal to full float precision,
+      // so the pose fix and this `yawOff: 105` framing both hold) read box
+      // luma **25.96 / 40.17 / 12.75 / 12.92 / 47.27, a 3.71x spread** --
+      // WIDER than this entry's own 2.36x. `ibl.builds` read **11/11/11/11/9**:
+      // four of the five sit at a CONSTANT count and still span 12.75 to
+      // 40.17, 3.15x, on their own, so the counter does not predict the luma
+      // swing. `chunksBuilt` was constant at 562 across all five. **The
+      // controls this lane's own pass never carried are what falsify it**:
+      // `forestfloor` and `machine`, captured alongside, are bit-identical to
+      // the digit while their OWN `ibl.builds` moves, so the counter is not
+      // even coupled to what a shot draws when that shot does not move. Box
+      // and world luma do not track each other either (ratios 1.26/0.84/
+      // 0.74/0.68/1.85), so the residual is not simply frame-wide either.
+      // THE HONEST STATE: the residual is WIDER than first measured (3.71x,
+      // not 2.36x) and stays fully UNATTRIBUTED. `stationClock.pos` and the
+      // camera pose are solved and reproducible; neither `ibl.builds` nor a
+      // frame-wide luma ratio explains the spread. NOT this lane's to fix
+      // (core-engine/rendering territory) -- the next lane should treat the
+      // cause as OPEN, not start from the builds-counter correlation this
+      // comment originally, and wrongly, handed off. THE GRADE STAYS
+      // UNMEASURED.
       stationClockS: -100,
       why: 'the station exterior, 400 km up, no terrain bounce and no local fill',
     },
