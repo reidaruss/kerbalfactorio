@@ -3,7 +3,6 @@
 //   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
 //        --evalfile=tools/smoke/probes/cantilever.js
 //
-// PROBEALL-TIMEOUT: 600000
 // BT-130: hit the shared sweep's 240 s cap and was recorded NO_OUTPUT under
 // the BT-116 4-way batch. Re-run standalone with no wrapper timeout on
 // 2026-08-15 (lane/probeall-debts): on a genuinely quiet machine, GREEN in
@@ -12,10 +11,11 @@
 // budget. This VM runs several agent lanes concurrently by design (see
 // CLAUDE.md), so "quiet" is the exception rather than the rule: a same-day
 // re-verification measured 320s+ and still timed out while three other
-// lanes were mid-build/mid-probe on the same box. 600000 (10 min, ~2.5x the
-// clean baseline) is sized for that real operating condition, not the lab
-// number, and is still a documented override on ONE probe rather than a
-// silent raise of the shared default.
+// lanes were mid-build/mid-probe on the same box. BT-210 to BT-224 replaced
+// this file's own PROBEALL-TIMEOUT marker (and every other probe's) with one
+// committed, measured, generated file, `web/tools/smoke/probe-budgets.json`:
+// see that file and `build-probe-budgets.mjs` for the current numbers and the
+// margin rule.
 //
 // `supported()` returned true unconditionally for every level-0 deck, so there
 // was no neighbour concept at all and "a foundation may attach to an existing

@@ -6,23 +6,23 @@
 //     --width=640 --height=360 \
 //     --evalfile=web/tools/smoke/probes/padgate.js
 //
-// PROBEALL-TIMEOUT: 900000
-//
 // GP-981. MEASURED THREE TIMES ON THE DESKTOP AGAINST A LOCALLY BUILT `vite
 // preview` build and real D3D headless Chrome, with other lanes' probes sharing
 // the box: **1414.2 s** of probe body before the render-rate fix below, then
 // **242.9 s** and **204.2 s** after it (280 s and 253 s of total process wall
 // clock including boot). All three `valid: true, fails: []`, and the first two
-// eval blocks are identical field for field. 900000 ms is 3.5x the measured
-// cost, which is margin for sweep concurrency, not a guess. Before this line
-// the file ran on `probeall.mjs`'s shared 240000 default and could only ever
-// have been recorded NO_OUTPUT.
+// eval blocks are identical field for field. Before this section existed the
+// file ran on `probeall.mjs`'s shared 240000 default and could only ever have
+// been recorded NO_OUTPUT.
 //
 // THIS IS THE LONGEST PROBE IN THE SUITE AND IT IS NOT HUNG (GP-981, GP-983).
 // It plays the whole legal path to a launch pad, forty hand-furnace smelts
-// included, and the `PROBEALL-TIMEOUT` line above is the measured cost with
-// margin rather than a guess. Watch it with `run.mjs`'s heartbeat, which
-// quotes this file's own `phase()` lines back every 30 s.
+// included. Its budget is no longer a marker in this file: BT-210 to BT-224
+// subsumed every probe's PROBEALL-TIMEOUT override (this one included) into
+// one committed, measured, generated file, `web/tools/smoke/probe-budgets.json`
+// -- see that file and `build-probe-budgets.mjs` for the current numbers and
+// the margin rule they come from. Watch this probe with `run.mjs`'s
+// heartbeat, which quotes this file's own `phase()` lines back every 30 s.
 //
 // THE INVOCATION IS DOCUMENTED HERE FOR THE FIRST TIME (GP-625), and that is a
 // harness repair rather than a comment. `probeall.mjs` derives every probe's
