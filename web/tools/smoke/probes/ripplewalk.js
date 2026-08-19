@@ -4,7 +4,19 @@
 //   node tools/smoke/run.mjs --scenario=walk --sandbox=1 --url=http://127.0.0.1:4281/ \
 //     --width=1600 --height=900 \
 //     --evalfile=tools/smoke/probes/ripplewalk.js \
-//     --evalargs='{"lat":-35.6028,"lon":53.30131,"yaws":[300],"pitch":-20,"sunDot":0.64}'
+//     --evalargs='{"lat":-35.6028,"lon":53.30131,"yaws":[300],"pitch":-20,"sunDot":0.45}'
+//
+// BT-260 to BT-264: this invocation carried a stale sunDot:0.64 and threw on
+// every run (setSunElev(0.64) missed by 0.1158; run.mjs drops the whole
+// report on a page.evaluate throw, so the sweep read it as NO_OUTPUT rather
+// than as the real, informative failure it was). RN-1002, written the SAME
+// night this exact site was chosen, already measured this site's sun
+// ceiling at 0.5242 (31.6 degrees) and moved every sibling probe at this
+// pose to the one absolute elevation reachable everywhere, 0.45 (26.8
+// degrees); etchsplit.js already uses this identical lat/lon at sunDot:0.45.
+// Only this file's own default (below) and its documented invocation never
+// picked up that fix. Corrected to match; re-verified GREEN (gotDot 0.4501,
+// err 0.0001).
 //
 // WHY THIS EXISTS ALONGSIDE reliefrot.js. reliefrot.js poses a DIAGNOSTIC: 2 m
 // and -62 degrees at a grazing sun, chosen so the instrument can isolate the
@@ -86,7 +98,10 @@
   const alt = A.alt ?? 2.0;
   const pitch = A.pitch ?? -20;
   const yaws = A.yaws ?? [300];
-  const sunDot = A.sunDot ?? 0.64;
+  // BT-260 to BT-264: was 0.64, unreachable at this site (RN-1002: ceiling
+  // 0.5242). 0.45 (26.8 degrees) is the RN-1002 value every sibling
+  // walking-pose probe at this exact site already uses (etchsplit.js).
+  const sunDot = A.sunDot ?? 0.45;
   const swingOff = A.swingOff ?? 0;
   const wantProps = A.props === true;
   const repeat = A.repeat !== false;

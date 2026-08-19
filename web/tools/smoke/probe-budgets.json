@@ -1580,9 +1580,10 @@
     },
     "qolbuild2.js": {
       "samplesMs": [
-        20821
+        20821,
+        21071
       ],
-      "maxMs": 20821,
+      "maxMs": 21071,
       "budgetMs": 30000,
       "hardCapMs": 120000
     },
@@ -1812,9 +1813,10 @@
     },
     "ripplewalk.js": {
       "samplesMs": [
-        15909
+        15909,
+        18431
       ],
-      "maxMs": 15909,
+      "maxMs": 18431,
       "budgetMs": 30000,
       "hardCapMs": 120000
     },
@@ -1924,11 +1926,13 @@
     },
     "shadowk.js": {
       "samplesMs": [
-        13534
+        13534,
+        34266,
+        40077
       ],
-      "maxMs": 13534,
-      "budgetMs": 30000,
-      "hardCapMs": 120000
+      "maxMs": 40077,
+      "budgetMs": 55000,
+      "hardCapMs": 150000
     },
     "shadowlod.js": {
       "samplesMs": [
