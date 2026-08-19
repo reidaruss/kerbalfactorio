@@ -1,5 +1,24 @@
 // vmlight.js (RN-1990). THE WIRING GATE ON PASS 4'S SHADOW TERM.
 //
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=walk \
+//     --lat=-19.85 --lon=-72.7853 --evalfile=tools/smoke/probes/vmlight.js
+//
+// BT-225 to BT-239: this file has no OF_ARGS of its own (assertion 5 needs a
+// map that HAS casters in it, and unlike `vmshade.js` this probe never
+// teleports), so the invocation supplies the site instead: `--lat`/`--lon`
+// are `run.mjs`'s own boot-time params (not `--evalargs`), pinned to the
+// RN-352 forest site (lat -19.85, lon -72.7853, the same coordinates
+// `lodheights.js`/`lodstep.js`/`propshadow.js`/`understorey.js` already use
+// for this exact site under the name `forestfloor`), because that is the
+// pose RN-1993 measured cascade 0 carrying content at (105 of 576 texels
+// non-zero). Checked both ways on a real run rather than assumed: the
+// DEFAULT walk scenario (HOME, a hills valley with its own scattered trees)
+// also passes today (`casters:8, coverage:0.056`), so this is not a
+// pass/fail difference, but the forest site gives assertion 5 three times
+// the margin (`casters:24, coverage:0.167`) against becoming a flaky
+// near-empty-map probe if HOME's own tree placement ever shifts, so it is
+// the one pinned in the header.
+//
 // `probes/vmsurface.js` proved the view model's MATERIALS bound at the right
 // repeat; this proves its LIGHT is wired to the world's. Both exist for the
 // same reason: a static gate on three tables cannot see whether the running

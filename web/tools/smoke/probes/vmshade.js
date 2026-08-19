@@ -1,6 +1,25 @@
 // vmshade.js (RN-1990). THE SUN-TO-SHADE WALK: does the held tool lose the sun
 // where the world loses it?
 //
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=walk \
+//     --lat=-19.85 --lon=-72.7853 --evalfile=tools/smoke/probes/vmshade.js \
+//     --evalargs='{"dot":0.7}'
+//
+// BT-225 to BT-239: `--lat`/`--lon` are `run.mjs`'s own boot params, pinned to
+// the RN-352 forest site the probe's own `lat0`/`lon0` defaults already
+// target once it starts teleporting -- booting there too, rather than at the
+// default walk scenario (HOME) and letting the probe's first `place()` carry
+// it over, was measured to matter: booting at HOME and teleporting to the
+// forest grid from there returned `valid:false` ("the grid found no matched
+// pair of a shaded and a lit station"), no caster written at any of the 81
+// scanned stations, most likely the scatter density not yet built up around
+// a teleported-to site inside this probe's own settle budget. Booting AT the
+// site fixed it. `dot:0.7` matches RN-1994's own published measurement at
+// this exact site (81 stations, 8 shaded / 71 lit here); the default walk
+// sun (`sundot:0.55`) was not separately re-tried once the site fix alone
+// produced a clean `valid:true`, so `dot` is carried explicitly rather than
+// left to the boot default.
+//
 // This is the evidence a ratio table cannot give. The four canonical shots are
 // four still frames, and a term that were only a constant offset would sit at
 // the same ratio in all four; what proves pass 4 is READING the world is that

@@ -1,5 +1,16 @@
 // vmcost.js (RN-1990). WHAT PASS 4'S SHADOW TERM COSTS, by WG-189's method.
 //
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=walk \
+//     --evalfile=tools/smoke/probes/vmcost.js
+//
+// BT-225 to BT-239: unlike `vmlight.js`/`vmshade.js`, this probe does not care
+// where it boots. `__ofVmLight` is published unconditionally (`ViewModelLight.
+// installVmLightDiag`'s own comment: "called unconditionally... every default
+// here is the shipped frame") and the price is of the PASS, not of any one
+// scene's caster count, so the plain walk default is enough; `OF_ARGS.pairs`/
+// `secs` carry their own safe defaults (5 pairs of 4 s) and need no
+// `--evalargs`. Verified green at the default site.
+//
 // WG-189's rule, learned the hard way in that lane: a SERIAL sweep lets thermal
 // and background drift land entirely on one arm, and its first two runs
 // disagreed on the SIGN. So the two arms are INTERLEAVED inside one page load,
