@@ -42,7 +42,11 @@ const isMain = process.argv[1] && fileURLToPath(import.meta.url) === resolve(pro
 // extractCmd runs at all, and an excluded probe is skipped even under
 // --nodocs, because running it at the runner's defaults would not be running
 // the thing it was written to do either.
-function excludedReason(src) {
+//
+// BT-225 to BT-239: exported (was module-private) so `check-invocations.mjs`,
+// the authoring-time gate, can recognise the SAME exemption this file already
+// honours instead of re-deriving it -- one exemption convention, not two.
+export function excludedReason(src) {
   const lines = src.split(/\r?\n/).slice(0, 60);
   for (const l of lines) {
     const m = /^\s*\/\/\s*PROBEALL-EXCLUDE:\s*(.+?)\s*$/.exec(l);
