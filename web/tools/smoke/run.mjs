@@ -635,7 +635,25 @@ try {
   }
   console.log(JSON.stringify(report, null, 2));
 } catch (e) {
-  errors.push(`runner: ${e?.message ?? e}`);
+  // BT-270 to BT-274. `stage` was already tracked (the heartbeat prints it
+  // every 30s, `smoke: alive Ns stage=...`) but never carried into the
+  // terminal failure record, so a reader of `runnerFails`/`stderrTail` in
+  // probeall.mjs's results.jsonl could not tell "the app never booted" from
+  // "the probe's own content check failed" from "the screenshot write
+  // crashed" -- all three read as the same bare error message. This is a
+  // DELIBERATELY MINIMAL fix, not the structural one considered and rejected
+  // (see the audit's report for the reasoning): no `report` object exists at
+  // this point to preserve a "partial report" from -- `report` is assembled
+  // in ONE atomic page.evaluate call strictly AFTER the probe eval and
+  // settle steps (see `stage = 'report'` above in the try block), so there
+  // is nothing partial sitting in memory to lose here beyond what `stage`
+  // and `e` already describe. The prefix stays exactly `runner: ` (not
+  // `runner (at stage ...): `) because probeall.mjs's own `runnerFails`
+  // extraction is a regex anchored on that literal, unbroken prefix
+  // (`/^ {2}(console\.error|pageerror|requestfailed|runner|console\.warn):.*/gm`);
+  // putting the stage inside the message body, after the colon, is what
+  // keeps this change additive instead of silently breaking that gate.
+  errors.push(`runner: [stage=${stage}] ${e?.message ?? e}`);
   exitCode = 1;
 } finally {
   // Cleared BEFORE the close so a slow teardown cannot emit a beat that reads
