@@ -2285,14 +2285,33 @@
   const obs = of.world().observer;
   const pose = { yawDeg: r2(obs.yawDeg), pitchDeg: r2(obs.pitchDeg),
     latDeg: r3(obs.latDeg), lonDeg: r3(obs.lonDeg), altM: r2(obs.altM) };
-  // BACK TO THE GROUND BEFORE RESOLVING, for the same PH-89 reason: `run.mjs`
-  // settles AFTER the eval returns. Every station-side stat above is already
-  // captured, so this cannot change a number in the report.
-  if (name === 'station') {
-    if (typeof of.carrier === 'function') of.carrier('release');
-    of.teleport(-3.41413, 150.27984, 2);
-    await of.run(1.0, 15);
-  }
+  // BT-255. REMOVED: THIS USED TO TELEPORT THE WALKER BACK TO THE GROUND
+  // HERE, "for the same PH-89 reason: `run.mjs` settles AFTER the eval
+  // returns" -- and that reasoning does not hold for `--out`. `run.mjs` takes
+  // its screenshot AFTER `settle()`+`wait`, both of which run AFTER this eval
+  // resolves (RN-2030), so leaving the walker on the station until here and
+  // then jumping him to the RN-352 forest at 2 m meant every `--out` capture
+  // of this shot photographed the FOREST, HUD altitude ~1.6 m, while
+  // `eval.png` (this probe's own canvas grab, taken above at the station) was
+  // always correct. Every published station PNG taken via `--out` predates
+  // this fix and shows the wrong scene; see shot-grades.md's flag.
+  //
+  // THE PH-89 HANG WAS TESTED FOR, NOT ASSUMED AWAY. PH-89 is real for a
+  // walker mid-transition to/from orbit, which is exactly why the shot's OWN
+  // pre-capture settle above (`of.run(1.0, 30)` instead of `of.settle()`)
+  // stays a fixed window rather than a gate. But `run.mjs`'s blanket
+  // post-eval `window.__of.settle(n)` (the same terrain-convergence gate)
+  // runs a full two settle-windows and an ibl-convergence loop AFTER
+  // boarding, by which point the terrain streamer's target has not moved
+  // since before boarding (riding the carrier is a physics integration, not
+  // a re-teleport, so nothing re-targets the streamer) and is still
+  // converged from the walker's pre-board position. Measured directly: with
+  // this teleport removed, `run.mjs --out` on `station` still prints `smoke:
+  // PASS` and writes a photo of the hull, same order of runtime as before
+  // (no hang, no timeout). Removing the teleport costs nothing this shot's
+  // own report depends on: `pose`, `setup`, `captureDiag` and every stat
+  // above are all read before this point and are therefore identical either
+  // way.
   return {
     valid: true, shot: name, why: S.why,
     // RN-2018. The enemy-suppression receipt, published rather than assumed,

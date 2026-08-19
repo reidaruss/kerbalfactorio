@@ -582,6 +582,8 @@ one. `artframe.js` also grew two shots A0 never named (`voxelface` at RN-1258,
 `smelterhero` at RN-1491), so this covers all seven the manifest now carries,
 not the original five.
 
+**BT-255 FLAG:** any `docs/screenshots/*station*.png` captured via `run.mjs --out` and dated before 2026-08-19 shows the RN-352 forest at 1.62 m altitude, not the station; every grade and number above was read off `eval.png`, never `--out`, so the numbers stand, and every station PNG checked by eye during this fix (`CE115_station_repro.png`, `RN1935_station_yo105.png`, `RN1409_shot5_station_before/after.png`) is genuine station content, but a `--out` capture predating the fix is not proof of anything until re-checked.
+
 Every number below is **measured on real Windows D3D11 (RTX 4060 Ti, ANGLE)**,
 this pass, against `web/tools/smoke/probes/artframe.js` at its current shipped
 state (post RN-1800), not retyped from an older entry above. Where an older
