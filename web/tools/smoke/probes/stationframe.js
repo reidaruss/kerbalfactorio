@@ -137,9 +137,12 @@
   // alpha can only ever land on {0, 0.5}: `alphaSpan` read exactly 0.5 on every
   // run, and the collider-vs-eye difference (which sweeps toward the full
   // per-tick travel as alpha sweeps toward 1) never got sampled past its
-  // midpoint. A measurement window that is an exact multiple of the thing it
-  // samples cannot see the whole waveform, no matter how long it runs; a longer
-  // multiple window still only ever visits the same two phase points.
+  // midpoint. An EXACT PERIOD-2 multiple (120 = 2x60) is the sharpest case: the
+  // render accumulator can only ever land on TWO phase points, {0, 0.5}, no
+  // matter how long the window runs. Coarser exact multiples land on a denser
+  // comb of N evenly spaced phase points (N = hz/60) and CAN cover more of the
+  // tick (see the `alphaSpan > 0.8` check below for exactly how much, and why
+  // that is still honest rather than a hole in the fix).
   //
   // The fix is `of.run`'s OWN DEFAULT, 144.3 Hz, which every other probe in
   // this suite already uses for exactly this reason (see e.g. `grass.js`,
@@ -170,11 +173,19 @@
   // thing that can catch aliasing is requiring the window to actually SPAN
   // close to the whole tick. 0.8 sits below this window's measured 0.9418
   // (deterministic, every run) with real margin and clear of the aliased
-  // window's exact 0.5 by a wide gap, so it is neither tuned to one run nor
-  // achievable by construction from an exact-multiple render rate.
+  // window's exact 0.5 by a wide gap. CORRECTED (a fresh-context verifier
+  // ran `of.run(0.35, 360)`, an exact multiple, and cleared this floor at
+  // 0.8333): a PERIOD-2 exact multiple (120 = 2x60) is caught, since its comb
+  // is stuck at {0, 0.5} however long it runs; a coarser exact multiple
+  // (hz = N*60) lands on a DENSER comb of N points up to (N-1)/N apart and CAN
+  // clear 0.8 once N >= 6. That is not a hole: the amplitude check right below
+  // still compares against `alphaSpan * PER_TICK_M * projFactor`, so a denser
+  // exact-multiple comb reads a proportionally honest amplitude rather than a
+  // hidden aliased one, the same way this fix's own 144.3 Hz does.
   check('the window really spans nearly the WHOLE tick, not just some of it '
-    + '(the bound that actually rules out aliasing; a window at an exact '
-    + 'multiple of 60 Hz cannot clear this no matter how long it runs)',
+    + '(the bound that rules out PERIOD-2 aliasing, the {0, 0.5} case this '
+    + 'file was written for; a coarser exact multiple of 60 Hz can also clear '
+    + 'it, and the amplitude check below stays honest for that case too)',
     v.framesPerTick > 1.2 && v.alphaSpan > 0.8,
     `${v.framesPerTick} frames/tick, alpha span ${v.alphaSpan} against a `
     + 'floor of 0.8 (the old aliased window read exactly 0.5)');
