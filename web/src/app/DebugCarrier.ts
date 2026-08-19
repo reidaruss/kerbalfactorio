@@ -404,6 +404,48 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
         case 'frames':
           return framesOp(a);
 
+        /**
+         * CE-131. FORCE AN ALPHA THROUGH THE DRAWN PATH AND SAY WHERE THE HULL
+         * LANDS, so the clamp's failure semantics are pinned by measurement.
+         *
+         * The whole of RN-2030's visible defect was an alpha the loop cannot
+         * normally produce reaching `mounts.syncWatchersAt`, so the only honest
+         * test of what now happens when it DOES is to hand it one. This writes
+         * `loop.alpha`, reads `loop.renderTick` (the clamp under test), drives
+         * the SHIPPING `syncWatchersAt` with it, and restores both, so nothing
+         * here reimplements the path it is measuring.
+         *
+         * `rawPos` is the SAME watcher path driven at the unclamped instant,
+         * i.e. what the pre-CE-131 loop drew. Without it the check is vacuous:
+         * at a tick where the frame happens not to move, clamped and unclamped
+         * agree and an equality would pass on a broken build. Both readings are
+         * taken inside ONE call because `tickIndex` advances between calls.
+         */
+        case 'drawAt': {
+          const solid = lastStationSolid();
+          const mount = solid === null ? null : s.mounts.mountCarrying(solid);
+          if (mount === null) return { error: 'the station solid is on no mount' };
+          const want = num(a, 'alpha', 0.5);
+          const held = loop.alpha;
+          const rawTick = loop.tickIndex - 1 + want;
+          const d = mount.drawnPos;
+          loop.alpha = want;
+          const drawnTick = loop.renderTick;
+          s.mounts.syncWatchersAt(drawnTick);
+          const pos = [d.x, d.y, d.z];
+          s.mounts.syncWatchersAt(rawTick);
+          const rawPos = [d.x, d.y, d.z];
+          loop.alpha = held;
+          s.mounts.syncWatchersAt(loop.renderTick);
+          return {
+            alpha: want, tick: loop.tickIndex, rawTick, drawnTick,
+            clamped: drawnTick !== rawTick, pos, rawPos,
+            gapM: Math.hypot(pos[0] - rawPos[0], pos[1] - rawPos[1],
+                             pos[2] - rawPos[2]),
+            alphaClamps: loop.alphaClamps,
+          };
+        }
+
         /** CE-41. THE SHIPPED ARRIVAL, driven directly: the SAME
          *  `seatOnStationDeck` the `visit:station` row now presses, so a probe
          *  can measure it without the pause menu and still be measuring what
@@ -453,7 +495,8 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
 
         default:
           return { error: `unknown op '${op}'. ops: census register survey remove `
-            + `board release local standLocal seat frames mounts remount unmount` };
+            + `board release local standLocal seat frames drawAt mounts remount `
+            + `unmount` };
       }
     },
   };

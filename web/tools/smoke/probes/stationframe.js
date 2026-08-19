@@ -194,6 +194,55 @@
   check('and the two clocks are both running: drawn per FRAME, applied per TICK',
     mm.drawn > mm.applied, `drawn ${mm.drawn}, applied ${mm.applied}`);
 
+  // --- 4b. CE-131. WHAT THE DRAWN WORLD DOES WHEN THE ALPHA INVARIANT FAILS
+  //
+  // CE-130 makes an out-of-range alpha unreachable from the live loop, so this
+  // section exists to pin the behaviour when one arrives ANYWAY (a stall
+  // between the tick and the draw, or a future consumer writing the field).
+  // `of.carrier('drawAt')` writes `loop.alpha`, reads `loop.renderTick` and
+  // drives the SHIPPING `mounts.syncWatchersAt` with it, so this measures the
+  // path rather than a transcription of it.
+  //
+  // THE DECIDED SEMANTICS: the drawn world is pinned to the NEAREST INTEGER
+  // TICK, which is the last pose the sim actually produced, and never
+  // extrapolates past it. That is what the eye already does, so the two cannot
+  // disagree. `rawPos` in each reading is the same watcher path at the
+  // UNCLAMPED instant, i.e. what the pre-CE-131 loop drew, and it is what makes
+  // these checks non-vacuous: on a frozen station clamped and unclamped agree
+  // and every equality below would pass on a broken build.
+  const inRange = of.carrier('drawAt', { alpha: 0.5 });
+  const under = of.carrier('drawAt', { alpha: -0.5 });
+  const over = of.carrier('drawAt', { alpha: 1.5 });
+  if (inRange.error || under.error || over.error) {
+    return { valid: false, fails,
+      why: `drawAt refused: ${inRange.error ?? under.error ?? over.error}` };
+  }
+  check('CONTROL: an in-range alpha is not clamped and draws where it always did',
+    !inRange.clamped && inRange.gapM === 0,
+    `clamped ${inRange.clamped}, gap ${inRange.gapM} m at alpha 0.5`);
+  check('CE-131: a NEGATIVE alpha pins the drawn hull to the previous integer '
+    + 'tick', under.clamped && under.drawnTick === under.tick - 1,
+    `drawnTick ${under.drawnTick} against tick ${under.tick}, `
+    + `raw ${under.rawTick}`);
+  check('CE-131: an alpha ABOVE ONE pins it to the current integer tick',
+    over.clamped && over.drawnTick === over.tick,
+    `drawnTick ${over.drawnTick} against tick ${over.tick}, raw ${over.rawTick}`);
+  // NON-VACUITY. Half a tick of overshoot is half a tick of travel, so the
+  // clamp must have moved the drawn hull by about PER_TICK_M / 2. If this were
+  // small the equalities above would be passing on a station that is not going
+  // anywhere.
+  const wantGapM = PER_TICK_M / 2;
+  check('and the clamp actually moved the hull: half a tick of overshoot is '
+    + 'half a tick of travel',
+    Math.abs(under.gapM - wantGapM) < wantGapM * 0.05
+    && Math.abs(over.gapM - wantGapM) < wantGapM * 0.05,
+    `under ${under.gapM} m, over ${over.gapM} m, against ~${wantGapM} m`);
+  check('CONTROL: the forced alphas were restored and left no residue in the '
+    + 'live counter', of.world().clock.alphaClamps === 0,
+    `${of.world().clock.alphaClamps} live alpha-clamp activations`);
+  notes.push(`CE-131 pinning: alpha -0.5 held the hull ${under.gapM.toFixed(3)} m `
+    + `short of the unclamped extrapolation, alpha 1.5 by ${over.gapM.toFixed(3)} m`);
+
   // --- 5. BACK TO THE GROUND BEFORE FINISHING ----------------------------
   // `run.mjs` settles on terrain convergence AFTER the eval resolves, and a
   // walker parked 400 km up with the streamer chasing him never converges:
@@ -207,8 +256,11 @@
   return {
     valid: true,
     fails,
-    checks: 12,
+    checks: 17,
     notes,
+    // CE-131. The three forced-alpha readings, kept in the output so the
+    // decided failure semantics are readable without re-running the probe.
+    forcedAlpha: { inRange, under, over, wantGapM: PER_TICK_M / 2 },
     fixture: { perTickM: surv.perTickM, wantedPerTickM: PER_TICK_M },
     window: { frames: v.frames, ticks: v.ticks, framesPerTick: v.framesPerTick,
               alphaSpan: v.alphaSpan, rebaseSteps: v.rebaseSteps,

@@ -27,6 +27,19 @@ const HORIZON_RUN_PX = 6;
 const FIXED_DT = 1 / 60;
 const MAX_CATCHUP = 5;
 
+/**
+ * CE-130. `lastMs` before the first rAF frame of a live run.
+ *
+ * A sentinel rather than a number, because there IS no correct number: the
+ * only clock a live delta may be built from is the rAF timestamp sequence
+ * itself, and before the first callback no timestamp from that sequence
+ * exists. rAF timestamps are non-negative, so -1 cannot collide with one.
+ */
+const NOT_STAMPED = -1;
+
+/** The alpha every consumer of the render instant agrees on. See `renderTick`. */
+function clamp01(a: number): number { return a <= 0 ? 0 : a >= 1 ? 1 : a; }
+
 export class Loop {
   readonly fixedDt = FIXED_DT;
   tickIndex = 0;
@@ -60,15 +73,100 @@ export class Loop {
    *
    * The fractional tick a frame is drawn at is `tickIndex - 1 + alpha`: the
    * interpolation runs from the PREVIOUS tick's pose to the current one.
+   *
+   * CE-131. THIS FIELD IS RAW AND `renderTick` IS CLAMPED, deliberately. The
+   * report field must be able to say "the invariant broke and here is by how
+   * much" (FrameTrace and `__of.gameplay().stationDraw` both read it), while
+   * the DRAWN instant must not be able to express a pose nobody stepped to.
    */
   alpha = 1;
 
-  /** CE-51. `tickIndex - 1 + alpha`: the exact instant the last frame drew.
-   *  One expression, here, so no consumer writes the off-by-one itself. */
-  get renderTick(): number { return this.tickIndex - 1 + this.alpha; }
+  /**
+   * CE-51. `tickIndex - 1 + alpha`: the exact instant the last frame drew.
+   * One expression, here, so no consumer writes the off-by-one itself.
+   *
+   * CE-131. THE ALPHA IS CLAMPED TO [0, 1] HERE, MATCHING THE TWO OBSERVERS,
+   * AND THE CHOICE IS ABOUT WHAT HAPPENS WHEN THE INVARIANT FAILS ANYWAY.
+   *
+   * With CE-130's stamping in place a live alpha cannot leave [0, 1): a
+   * non-negative dt cannot drive `acc` below zero, and the drain loop leaves
+   * `acc < FIXED_DT` or zeroes it at MAX_CATCHUP. So this clamp is dead code
+   * in a healthy frame, and `alphaClamps` below is the standing proof of it.
+   *
+   * It is here because the failure mode it removes is the one RN-2030 filmed.
+   * `Controller.interpolate` and `VesselObserver.interpolate` both open with
+   * `alpha <= 0 ? 0 : alpha >= 1 ? 1 : alpha`, so an out-of-range alpha pins
+   * the EYE to an integer tick. Unclamped here, the same alpha sent the DRAWN
+   * hull to a fractional tick the camera was not at, and `CarrierFrame.poseAt`
+   * happily extrapolates: measured at 30.07 m per unit alpha on a deck that
+   * travels 31.32 m per tick, i.e. the station sliding out from under a
+   * stationary camera (rendering.md section 7c).
+   *
+   * THE FAILURE SEMANTICS THIS PICKS: a frame whose clock is out of range
+   * draws the world at the NEAREST INTEGER TICK, which is the last pose the
+   * simulation actually produced. A late frame therefore repeats the previous
+   * tick's pose, and the drawn world never extrapolates past a state the sim
+   * has reached. It can look FROZEN for a frame; it cannot look WRONG, and it
+   * cannot disagree with the eye, because the eye resolves the same alpha the
+   * same way. The rejected alternative was removing the observers' clamps so
+   * everything extrapolates together: coherent, but it buys a camera that pops
+   * on every stall to fix a case that CE-130 has already made unreachable, and
+   * an extrapolated eye is a motion-sickness defect rather than a stutter.
+   *
+   * The getter is PURE. `alphaClamps` is incremented where `alpha` is
+   * assigned, once per frame, because a counter driven from here would count
+   * readers instead of frames and `clock()` would tick it by reading itself.
+   */
+  get renderTick(): number { return this.tickIndex - 1 + clamp01(this.alpha); }
+
+  /**
+   * CE-130 / CE-131. THE THREE GUARD COUNTERS, published so "this guard is
+   * dead code" is a measurement rather than an argument. See `clock()`.
+   */
+  dtFloors = 0;
+  dtCeils = 0;
+  alphaClamps = 0;
+  /** The most negative dt any live frame has handed `step`, in seconds. */
+  dtMinS = 0;
+
+  /**
+   * The clock census: what the guards have caught since the page loaded.
+   *
+   * `dtFloors` is the RN-2035 zero-clamp's activation count and CE-130's
+   * whole claim is that it stays 0 on a live run. `alphaClamps` is the same
+   * for `renderTick`. A driven run cannot move either (its dt is
+   * `1 / renderHz` and its alpha is therefore in range by construction), so a
+   * nonzero reading is always about real rAF frames.
+   */
+  clock(): {
+    tick: number; frames: number; alpha: number; renderTick: number;
+    dtFloors: number; dtCeils: number; alphaClamps: number; dtMinS: number;
+    stamped: boolean;
+  } {
+    return {
+      tick: this.tickIndex, frames: this.frames,
+      alpha: this.alpha, renderTick: this.renderTick,
+      dtFloors: this.dtFloors, dtCeils: this.dtCeils,
+      alphaClamps: this.alphaClamps, dtMinS: this.dtMinS,
+      stamped: this.lastMs !== NOT_STAMPED,
+    };
+  }
 
   private raf = 0;
-  private lastMs = 0;
+  /**
+   * CE-130. THE PREVIOUS LIVE FRAME'S rAF TIMESTAMP, OR `NOT_STAMPED`.
+   *
+   * It used to be stamped from `performance.now()` in two places (`start` and
+   * `run`'s handoff) and from the rAF timestamp in a third (`frame`), and
+   * MIXING THE TWO IS THE WHOLE OF RN-2030. rAF's `now` is the instant the
+   * frame's rendering steps BEGAN, not the instant the callback runs, so a
+   * `performance.now()` taken from a task inside that same frame is LATER
+   * than the timestamp the next callback is handed, and `now - lastMs` comes
+   * back negative. Stamped only from rAF, both operands are drawn from one
+   * sequence that the spec requires to be non-decreasing, so the subtraction
+   * cannot be negative and the RN-2035 floor below has nothing to do.
+   */
+  private lastMs = NOT_STAMPED;
   private acc = 0;
   /**
    * FS-101. THE ACCUMULATOR A DRIVEN RUN CARRIES, kept apart from the live one.
@@ -123,7 +221,14 @@ export class Loop {
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.lastMs = performance.now();
+    // CE-130. THE ONE STAMPING SITE IS `frame`, AND IT IS AN rAF TIMESTAMP.
+    // This used to read `performance.now()`, which is a different clock READING
+    // (the same time base, but sampled at a different instant) from the `now`
+    // the next callback is handed, and the difference of the two is signed.
+    // Handing the first frame the sentinel makes it stamp itself and advance by
+    // zero, which is also the honest answer: no sim time passed while the loop
+    // was not running.
+    this.lastMs = NOT_STAMPED;
     const tick = (now: number) => {
       if (!this.running) return;
       this.raf = requestAnimationFrame(tick);
@@ -207,7 +312,12 @@ export class Loop {
     }
     this.drivenAcc = this.acc;
     this.acc = liveAcc;
-    if (wasRunning) { this.lastMs = performance.now(); this.start(); }
+    // CE-130. `start()` re-arms the sentinel, so the handoff no longer stamps
+    // `lastMs` from `performance.now()` at all. That stamp was the near half of
+    // RN-2030's negative delta: it happens inside a task that can run AFTER the
+    // browser has already taken the next frame's rAF timestamp, so the very
+    // first live frame back could be handed a `now` earlier than the stamp.
+    if (wasRunning) this.start();
   }
 
   /** Resolve after `n` rendered frames with nothing pending. Race-free captures. */
@@ -373,8 +483,19 @@ export class Loop {
    * of GP-1013: this is the only place a wall-clock timestamp is turned into a
    * duration, so a driven run cannot pick one up by accident. rAF is the sole
    * caller.
+   *
+   * CE-130. AND NOW THE ONLY PLACE A LIVE TIMESTAMP IS RECORDED, which is what
+   * makes a negative delta unrepresentable rather than merely guarded. Both
+   * operands of the subtraction are rAF timestamps for the same document, and
+   * the HTML spec requires that sequence to be non-decreasing, so `dt >= 0` is
+   * a property of the arithmetic rather than of the floor in `step`. Two frames
+   * that share a timestamp give exactly 0, which is the correct answer.
+   *
+   * It stays a LIVE CLOCK READ ONLY (GP-1013): the value comes in as an
+   * argument from rAF and nothing here reads a clock of its own.
    */
   private frame(now: number): void {
+    if (this.lastMs === NOT_STAMPED) { this.lastMs = now; this.step(0); return; }
     const dt = (now - this.lastMs) / 1000;
     this.lastMs = now;
     this.step(dt);
@@ -386,32 +507,34 @@ export class Loop {
    * stalled tab needs; a driven `dt` of `1 / renderHz` is far under it at any
    * rate a probe would ask for.
    *
-   * RN-2035. THE CLAMP IS TWO-SIDED. `frame()` builds dt as
-   * `(rAF now - lastMs) / 1000`, and rAF's `now` is the frame's own start
-   * rather than the moment the callback runs, while `run()` hands control back
-   * having just stamped `lastMs` from `performance.now()`. A live frame can
-   * therefore carry a NEGATIVE dt, which drives `acc` and `alpha` negative.
+   * RN-2035. THE CLAMP IS TWO-SIDED, and CE-130 KEPT IT AS DEFENCE IN DEPTH
+   * AFTER REMOVING THE THING IT DEFENDED AGAINST.
    *
-   * WHAT THAT COSTS IS AN ASYMMETRY BETWEEN TWO CONSUMERS OF `alpha`, NOT A
-   * MOVING CAMERA. `Controller.interpolate` and `VesselObserver.interpolate`
-   * both clamp (`alpha <= 0 ? 0 : alpha >= 1 ? 1 : alpha`), so the eye freezes
-   * at the previous integer tick. `renderTick` below is `tickIndex - 1 + alpha`
-   * and goes UNCLAMPED into `mounts.syncWatchersAt`, so `CarrierFrame.poseAt`
-   * extrapolates the DRAWN CARRIER past that tick and the station slides out
-   * from under a stationary camera: measured at 30.07 m per unit alpha on a
-   * deck moving 31.32 m per tick, which is the whole of the `station` canonical
-   * shot's bimodality (rendering.md section 7c, and note that section's struck
-   * first attempt, which blamed the eye).
+   * The history: `frame()` built dt as `(rAF now - lastMs) / 1000` while
+   * `start()` and `run()`'s handoff stamped `lastMs` from `performance.now()`,
+   * so a live frame could carry a NEGATIVE dt, which drove `acc` and `alpha`
+   * negative and, through an UNCLAMPED `renderTick`, slid the drawn station out
+   * from under a frozen camera at 30.07 m per unit alpha (rendering.md 7c).
+   * RN-2035 floored the delta here. CE-130 removed the mixed clock instead, so
+   * `dt >= 0` now holds by construction of the subtraction (see `frame`), and
+   * CE-131 clamped `renderTick` so an out-of-range alpha could not reach the
+   * drawn world even if one arrived.
    *
-   * Zero is the right floor rather than a fudge, because a frame whose clock
-   * ran backwards has had no time pass and must draw at the accumulator it
-   * already had. A driven run cannot reach it: its dt is `1 / renderHz` by
-   * construction (FS-101, GP-1013). THE DEEPER ASYMMETRY IS NOT FIXED HERE and
-   * is Admin's to route: the `lastMs` stamping, and `renderTick` having no
-   * clamp where its two sibling consumers do.
+   * The floor stays because a guard that is provably dead costs one `Math.max`
+   * and removing it would make the next mixed clock silent again. `dtFloors`
+   * counts its activations, so "dead" is a reading a probe takes rather than a
+   * claim this comment makes. Zero remains the right floor rather than a fudge:
+   * a frame whose clock ran backwards has had no time pass and must draw at the
+   * accumulator it already had.
+   *
+   * A driven run reaches neither guard: its dt is `1 / renderHz` by
+   * construction (FS-101, GP-1013), and a non-negative dt cannot put alpha
+   * outside [0, 1).
    */
   private step(dtIn: number): void {
     const t0 = performance.now();
+    if (dtIn < 0) { this.dtFloors++; this.dtMinS = Math.min(this.dtMinS, dtIn); }
+    else if (dtIn > 0.25) this.dtCeils++;
     const dt = Math.min(Math.max(dtIn, 0), 0.25);
     this.acc += dt;
     let ticks = 0;
@@ -432,6 +555,9 @@ export class Loop {
     // CE-51. ONE ALPHA, PUBLISHED BEFORE IT IS USED, so the hull and the eye can
     // be placed at the same fractional tick. See `alpha` above.
     this.alpha = this.acc / FIXED_DT;
+    // CE-131. ONE COUNT PER FRAME, at the one site alpha is written, so
+    // `alphaClamps` is a frame count and not a reader count. See `renderTick`.
+    if (this.alpha < 0 || this.alpha > 1) this.alphaClamps++;
     observer.interpolate(this.alpha);
     // CE-51. AND THE DRAWN CARRIER GEOMETRY AT THE SAME INSTANT, which is the
     // whole of the stutter fix. The collider was already posed at the integer
