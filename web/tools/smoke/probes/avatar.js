@@ -26,11 +26,26 @@
 //    mined trees with a pickaxe.
 //
 // 4. A-10, armour. Each piece is bound to the BODY's skeleton (an object
-//    identity, so it is exact) and the frame's triangle count rises by exactly
-//    the pieces' own triangles and returns when they come off. The identity is
-//    what breaks silently: a SkinnedMesh cloned out of another glTF keeps its
-//    OWN skeleton, renders a T-posed shell that never moves, and looks entirely
-//    plausible in a still frame of a standing character.
+//    identity, so it is exact) and the AVATAR'S OWN triangle count rises by
+//    exactly the pieces' own triangles and returns to its bare value when
+//    they come off. The identity is what breaks silently: a SkinnedMesh
+//    cloned out of another glTF keeps its OWN skeleton, renders a T-posed
+//    shell that never moves, and looks entirely plausible in a still frame of
+//    a standing character.
+//
+//    GP-1055. This used to read `of.stats().draw.triangles`, the GLOBAL scene
+//    counter (terrain + foliage + props + every rig, main pass plus three
+//    shadow cascades), and difference three timed samples of it. That counts
+//    the whole session, not the armour: the unmodified probe measured a
+//    bare-minus-removed delta of 4 triangles on one run and 2048 on the next,
+//    with nothing to do with armour, a background task spawning something
+//    between samples. It now reads `of.avatarTriangles()`
+//    (`PlayerRig.triangleCount`), which walks only the body rig's own
+//    subtree (`this.group`: loaded scene, held tool, worn armour) and
+//    nothing else the scene is doing concurrently can reach. Because that
+//    count is exact geometry, not a multi-pass frame counter, the claim also
+//    got STRONGER: the delta is asserted equal to `armourTris` (not merely a
+//    positive multiple of it), and bare-before equals bare-after exactly.
 (async () => {
   const of = window.__of;
   const clips = of.avatarClips();
@@ -190,17 +205,18 @@
     }
   }
 
-  // --- 4. Armour, measured on the drawn frame.
+  // --- 4. Armour, measured on the AVATAR'S OWN subtree (GP-1055), not on
+  // `of.stats().draw.triangles`, which is the whole scene.
   await of.run(0.3);
-  const triBare = of.stats().draw.triangles;
+  const triBare = of.avatarTriangles();
   const wornOn = await of.armourSet(true);
   await of.run(0.3);
-  const triArmed = of.stats().draw.triangles;
+  const triArmed = of.avatarTriangles();
   const drift = of.armourDrift();
   const armourTris = drift.reduce((a, d) => a + d.triangles, 0);
   const wornOff = await of.armourSet(false);
   await of.run(0.3);
-  const triOff = of.stats().draw.triangles;
+  const triOff = of.avatarTriangles();
 
   const s = of.stats();
   const w = of.world();
@@ -282,25 +298,25 @@
         && mined.swingLeft > 0
         && gate.pickaxeSwingsAfter > gate.pickaxeSwingsBefore,
     },
-    // --- PROPERTY 4: armour is on the body's own skeleton and on the screen.
+    // --- PROPERTY 4: armour is on the body's own skeleton and its geometry
+    // is actually attached to (and detached from) the avatar's own subtree.
     armour: {
       worn: wornOn, wornAfterRemove: wornOff, drift,
       trianglesBare: triBare, trianglesArmed: triArmed, trianglesAfterRemove: triOff,
       armourTriangles: armourTris,
       deltaOn: triArmed - triBare, deltaOff: triArmed - triOff,
-      passes: armourTris > 0 ? (triArmed - triBare) / armourTris : 0,
-      // The frame counter sums the MAIN pass and the three shadow cascades, so
-      // the delta is the armour's triangles times the number of passes it is
-      // drawn in. Asserting an exact multiple plus exact reversibility is
-      // stronger than asserting a constant 4: it holds with `?shadows=0` too,
-      // and it fails on any piece that is drawn in some passes and not others.
+      // `avatarTriangles()` is an exact walk of the rig's own geometry, not a
+      // multi-pass frame counter, so there is no "number of passes" to
+      // recover any more (GP-1055): the delta IS the armour's own triangle
+      // count, once, and bare-before must equal bare-after exactly, because
+      // nothing outside the rig's subtree can move this number between the
+      // three samples.
       ok: wornOn.length === 4 && wornOff.length === 0
         && drift.length === 4 && drift.every((d) => d.sameSkeleton)
         && drift.every((d) => d.bones === d.bodyBones && d.bones > 0)
         && armourTris > 0
-        && (triArmed - triBare) % armourTris === 0
-        && (triArmed - triBare) / armourTris >= 1
-        && triArmed - triBare === triArmed - triOff,
+        && triArmed - triBare === armourTris
+        && triOff === triBare,
     },
     cost: { drawCalls: s.draw.calls, triangles: s.draw.triangles, frameMs: s.frameMs },
   };
