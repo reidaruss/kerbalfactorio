@@ -28,6 +28,7 @@ import { assistedReport, clearAssisted, isAssisted, noteCheat } from '../game/As
 import { livePropellantKg, refillTanks, warpToOrbit } from '../sim/FlightCheats.js';
 import { pressVisit, stationRows, visitRows, type VisitPorts } from './VisitSites.js';
 import { pressWorld, worldRows, type WorldPorts } from './VisitWorlds.js';
+import { pressRuin, ruinRow, type RuinPorts } from './VisitRuin.js';
 import { optionPages, pressOption } from './OptionsPages.js';
 import { AudioBus } from '../audio/AudioBus.js';
 import type { CheatRow, PauseView } from '../ui/PauseMenu.js';
@@ -36,6 +37,7 @@ import type { FlightMode } from './FlightMode.js';
 import type { PlanetBody } from '../world/PlanetBody.js';
 import type { Config } from './Config.js';
 import type { SaveSlots } from '../game/SaveSlots.js';
+import type { Vec3d } from '../world/PlanetBody.js';
 
 /**
  * 100 km. The atmosphere's ceiling is 60 km (`atmosphere.h`: density is exactly
@@ -54,10 +56,13 @@ const FUEL_FLOOR = 0.9;
 
 /** GP-231. `VisitPorts` (the two teleport doors, argued in app/VisitSites.ts)
  *  is EXTENDED rather than held as a field, so `press` hands `this.d` over. */
-export interface CheatDeps extends VisitPorts, WorldPorts {
+export interface CheatDeps extends VisitPorts, WorldPorts, RuinPorts {
   gameplay: () => Gameplay | null;
   flight: () => FlightMode | null;
   body: PlanetBody;
+  /** GP-1060. The walker's own feet, or null with no player, so "teleport to
+   *  ruin" can pick the NEAREST one once there is more than one. */
+  feet: () => Vec3d | null;
   /** GP-132: the PARSED config, read only. The video screen shows what the
    *  renderer was handed, not the defaults. */
   cfg: Config;
@@ -154,6 +159,7 @@ export class Cheats {
     }
     if (id === 'fuel') return this.toggleFuel();
     if (id === 'orbit') return this.toOrbit();
+    if (id === 'ruin') return this.toRuin();
     if (id === 'peaceful') return this.togglePeaceful();
     if (id === 'killall') return this.killAll();
     // GP-102's negative control, and the only entry here that is not a cheat.
@@ -325,6 +331,23 @@ export class Cheats {
         eccentricity: o.eccentricity, bound: o.bound });
   }
 
+  // --- 3b. TELEPORT TO THE NEAREST RUIN -------------------------------------
+
+  /**
+   * GP-1060. The arithmetic and the guard live in `app/VisitRuin.ts`, the same
+   * split `toOrbit` above uses (state write here through the shared ports,
+   * destination resolution in its own file); it is not folded into
+   * `VisitSites.ts`'s `pressVisit` because a `visit:`-prefixed id there would
+   * be swallowed by that file's own "no such site" refusal before this ever
+   * ran (see VisitRuin.ts's header on `RUIN_ROW_ID`).
+   */
+  private toRuin(): CheatReceipt {
+    const g = this.d.gameplay();
+    const out = pressRuin(this.d.flight(), g?.ruins ?? null, this.d.feet(), this.d);
+    if (out.done) this.mark('ruin');
+    return this.say('ruin', out.done, out.message, out.detail);
+  }
+
   // --- 4. PEACEFUL MODE, AND KILL ALL ---------------------------------------
 
   private togglePeaceful(): CheatReceipt {
@@ -375,6 +398,10 @@ export class Cheats {
         note: 'no more waves are dispatched, and the live ones die' },
       { id: 'killall', label: 'Kill all enemies', kind: 'button', blocked: noEnemies,
         note: 'every creature and every nest, through the same damage a shot does' },
+      // GP-1060. `ruinRow` derives its own `blocked` off the live catalogue
+      // (no ruin placed, or aboard a vessel), the same live-derivation rule
+      // every other row here follows.
+      ruinRow(f, g?.ruins ?? null),
     ];
     return {
       page: this.page,
