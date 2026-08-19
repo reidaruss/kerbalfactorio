@@ -22,11 +22,13 @@
 //
 // **A measurement whose sample rate equals the rate the system is corrected at
 // cannot see the error it is corrected from.** This file samples per RENDERED
-// FRAME, which is where the player lives, and it drives `of.run(s, 120)` so
-// there are two frames per tick and alpha actually varies. At 15 Hz, which every
-// other station probe uses to survive this VM, there is at most one frame per
-// tick and this defect is INVISIBLE. That is stated so nobody "optimises" the
-// rate here later.
+// FRAME, which is where the player lives, and it drives the measurement window
+// at `of.run`'s own 144.3 Hz default (CE-135: NOT an exact multiple of the 60 Hz
+// tick, see the comment at the measurement site) so there are multiple frames
+// per tick and alpha actually varies across the WHOLE [0, 1) range rather than
+// two fixed points. At 15 Hz, which every other station probe uses to survive
+// this VM, there is at most one frame per tick and this defect is INVISIBLE.
+// That is stated so nobody "optimises" the rate here later.
 //
 // ===========================================================================
 // THE THREE HYPOTHESES, AND WHICH ONE THE PRE-FIX RUN CONVICTED
@@ -129,19 +131,64 @@
     JSON.stringify(c1.ride));
 
   // --- 3. THE MEASUREMENT ------------------------------------------------
-  // 120 Hz is TWO rendered frames per fixed tick. This is the one place in the
-  // suite where the render rate is load bearing: at 15 Hz alpha is pinned near 1
-  // and the defect this file exists for cannot appear.
+  // CE-135. THE WINDOW MUST NOT ALIAS AGAINST THE 60 Hz TICK IT IS MEASURING.
+  // This used to drive `of.run(0.35, 120)`. 120 is an EXACT MULTIPLE of 60, so
+  // the render accumulator advances by precisely half a tick every frame and
+  // alpha can only ever land on {0, 0.5}: `alphaSpan` read exactly 0.5 on every
+  // run, and the collider-vs-eye difference (which sweeps toward the full
+  // per-tick travel as alpha sweeps toward 1) never got sampled past its
+  // midpoint. An EXACT PERIOD-2 multiple (120 = 2x60) is the sharpest case: the
+  // render accumulator can only ever land on TWO phase points, {0, 0.5}, no
+  // matter how long the window runs. Coarser exact multiples land on a denser
+  // comb of N evenly spaced phase points (N = hz/60) and CAN cover more of the
+  // tick (see the `alphaSpan > 0.8` check below for exactly how much, and why
+  // that is still honest rather than a hole in the fix).
+  //
+  // The fix is `of.run`'s OWN DEFAULT, 144.3 Hz, which every other probe in
+  // this suite already uses for exactly this reason (see e.g. `grass.js`,
+  // `maps.js`, `stationboard.js`'s and `stationride.js`'s own comments on why
+  // they deliberately do NOT use it). 144.3 / 60 = 2.405, so each frame the
+  // accumulator advances by a NON-INTEGER, NON-HALF fraction of a tick
+  // (~0.4158 tick); the sampled alpha is `(frame * 0.4158) mod 1`, which walks
+  // densely through the whole [0, 1) interval rather than bouncing between two
+  // fixed points, and still delivers more than two frames per tick (still load
+  // bearing versus 15 Hz, where alpha is pinned near 1 and the defect this file
+  // exists for cannot appear at all).
   of.carrier('frames', { arm: true, n: 400 });
-  await of.run(0.35, 120);
+  await of.run(0.35, 144.3);
   const v = of.carrier('frames').verdict;
   const rows = of.carrier('frames', { dump: true }).samples;
   notes.push(`${v.frames} frames over ${v.ticks} ticks `
     + `(${v.framesPerTick.toFixed(2)} per tick), alpha spanning ${v.alphaSpan}`);
 
-  check('the window really had more than one frame per tick, or this file is '
-    + 'measuring nothing', v.framesPerTick > 1.2 && v.alphaSpan > 0.3,
-    `${v.framesPerTick} frames/tick, alpha span ${v.alphaSpan}`);
+  // CE-135 FOLLOW-UP. THIS BOUND IS WHAT ACTUALLY DEFEATS ALIASING, AND IT HAS
+  // TO BE ON alphaSpan ITSELF, NOT ON A DERIVED QUANTITY. The collider check
+  // below compares the measured amplitude against alphaSpan * PER_TICK_M *
+  // (a projection factor measured from THIS SAME window), which makes it
+  // internally consistent for ANY window, aliased or not: an aliased window
+  // stuck at alphaSpan 0.5 predicts its own aliased amplitude and passes,
+  // which is exactly what the first version of this follow-up did before a
+  // negative control caught it (fails: [] on the sabotaged 120 Hz window,
+  // because the check was comparing the window against itself). The only
+  // thing that can catch aliasing is requiring the window to actually SPAN
+  // close to the whole tick. 0.8 sits below this window's measured 0.9418
+  // (deterministic, every run) with real margin and clear of the aliased
+  // window's exact 0.5 by a wide gap. CORRECTED (a fresh-context verifier
+  // ran `of.run(0.35, 360)`, an exact multiple, and cleared this floor at
+  // 0.8333): a PERIOD-2 exact multiple (120 = 2x60) is caught, since its comb
+  // is stuck at {0, 0.5} however long it runs; a coarser exact multiple
+  // (hz = N*60) lands on a DENSER comb of N points up to (N-1)/N apart and CAN
+  // clear 0.8 once N >= 6. That is not a hole: the amplitude check right below
+  // still compares against `alphaSpan * PER_TICK_M * projFactor`, so a denser
+  // exact-multiple comb reads a proportionally honest amplitude rather than a
+  // hidden aliased one, the same way this fix's own 144.3 Hz does.
+  check('the window really spans nearly the WHOLE tick, not just some of it '
+    + '(the bound that rules out PERIOD-2 aliasing, the {0, 0.5} case this '
+    + 'file was written for; a coarser exact multiple of 60 Hz can also clear '
+    + 'it, and the amplitude check below stays honest for that case too)',
+    v.framesPerTick > 1.2 && v.alphaSpan > 0.8,
+    `${v.framesPerTick} frames/tick, alpha span ${v.alphaSpan} against a `
+    + 'floor of 0.8 (the old aliased window read exactly 0.5)');
 
   // THE HEADLINE.
   check('THE DRAWN DECK DOES NOT MOVE RELATIVE TO THE EYE, across frames',
@@ -162,9 +209,60 @@
     v.colliderWithinTickAmplitudeM > 1,
     `${v.colliderWithinTickAmplitudeM} m within a tick: if this is small the `
     + 'fix reached into the collision geometry, which is CE-33 broken');
-  check('CONTROL: and the collider sawtooth is the per-tick travel, as predicted',
-    Math.abs(v.colliderAmplitudeM - PER_TICK_M) < PER_TICK_M * 0.2,
-    `${v.colliderAmplitudeM} m against ~${PER_TICK_M} m of travel per tick`);
+
+  // CE-135 FOLLOW-UP. THE CHECK HAS A STRUCTURAL CEILING BELOW PER_TICK_M, AND
+  // IT IS NOT JUST alphaSpan. `colliderAmplitudeM` is the LARGEST SINGLE-AXIS
+  // peak-to-peak spread of `colRel` over the window (`FrameTrace.spread`), not
+  // the vector displacement. Within one tick, `colRel(alpha) = (alpha - 1) *
+  // delta`, where `delta` is that tick's step vector (magnitude ~PER_TICK_M,
+  // direction `u = delta / |delta|`), so the largest single-axis range the
+  // window can ever show is `alphaSpan * |delta| * max_i(|u_i|)`, and
+  // `max_i(|u_i|)` is BELOW 1 for any orbit whose direction of travel is not
+  // axis-aligned. So even a window with `alphaSpan === 1` (a full tick, the
+  // best any window can do) caps below the true `PER_TICK_M`, here around
+  // 27.1 m, never the full 31.32 m: the missing ~4 m is geometry, not
+  // aliasing. Comparing straight against `PER_TICK_M` (as the first version of
+  // this check did) left only a ~1.4% margin above its own 80% floor once the
+  // window stopped aliasing, which is fragile rather than wrong.
+  //
+  // Hard-coding the projection factor would go stale the moment the fixture's
+  // orbit changes, so it is measured HERE, from this SAME window's own raw
+  // `colRel` vectors instead: `colRel` is LINEAR in alpha (a chord, not the
+  // arc; CE-51's sagitta term is 1.2e-4 m, five orders below this amplitude),
+  // so the vector between the window's lowest-alpha and highest-alpha sample
+  // points in exactly `delta`'s direction, regardless of which ticks they
+  // land in (every tick's `delta` is the same step to within that same
+  // negligible curvature over a 0.35 s window).
+  let lo = rows[0];
+  let hi = rows[0];
+  for (const r of rows) {
+    if (r.alpha < lo.alpha) lo = r;
+    if (r.alpha > hi.alpha) hi = r;
+  }
+  const dVec = [hi.colRel[0] - lo.colRel[0], hi.colRel[1] - lo.colRel[1],
+    hi.colRel[2] - lo.colRel[2]];
+  const dMag = Math.hypot(dVec[0], dVec[1], dVec[2]);
+  const projFactor = dMag > 0
+    ? Math.max(Math.abs(dVec[0]), Math.abs(dVec[1]), Math.abs(dVec[2])) / dMag
+    : 1;
+  const expectedColliderAmplitudeM = v.alphaSpan * PER_TICK_M * projFactor;
+  notes.push(`axis-projection factor ${projFactor.toFixed(6)}, from the window's `
+    + `own lowest/highest-alpha samples: caps the collider ceiling at `
+    + `${(PER_TICK_M * projFactor).toFixed(3)} m even at alphaSpan 1.0, never `
+    + `the full ${PER_TICK_M.toFixed(2)} m of true per-tick travel`);
+  check('CONTROL: and the collider sawtooth matches alphaSpan times the '
+    + "per-tick travel times the window's OWN measured axis-projection "
+    + 'factor (never the full per-tick travel: the orbit is not axis-aligned, '
+    + 'so even alphaSpan 1.0 caps below PER_TICK_M, and that ceiling is '
+    + 'derived from this run rather than a constant that would go stale). '
+    + 'TOLERANCE: 2% of PER_TICK_M (0.626 m); 5 measured runs agreed with the '
+    + 'projection-derived expectation to within 0.53 mm every time, a >1000x '
+    + 'margin, so 2% is headroom for run-to-run and cross-machine noise, not '
+    + 'a bound tuned to the observed residue',
+    Math.abs(v.colliderAmplitudeM - expectedColliderAmplitudeM) < PER_TICK_M * 0.02,
+    `${v.colliderAmplitudeM} m against ${expectedColliderAmplitudeM.toFixed(6)} m `
+    + `expected (alphaSpan ${v.alphaSpan} * ${PER_TICK_M} m * projection `
+    + `${projFactor.toFixed(6)}), tolerance ${(PER_TICK_M * 0.02).toFixed(3)} m`);
   check('the drawn channel is orders of magnitude quieter than the collider',
     v.colliderAmplitudeM > v.amplitudeM * 1000,
     `drawn ${v.amplitudeM} m vs collider ${v.colliderAmplitudeM} m`);
@@ -271,7 +369,10 @@
              preFixAmplitudeM: 27.04063896095613,
              preFixWithinTickAmplitudeM: 13.524666351033375 },
     collider: { amplitudeM: v.colliderAmplitudeM,
-                withinTickAmplitudeM: v.colliderWithinTickAmplitudeM },
+                withinTickAmplitudeM: v.colliderWithinTickAmplitudeM,
+                // CE-135 follow-up: the axis-projection ceiling, derived from
+                // this run's own window rather than a hard-coded constant.
+                projFactor, expectedAmplitudeM: expectedColliderAmplitudeM },
     corrAlpha: v.corrAlpha,
     simDriftM: drift,
     clocks: { drawn: mm.drawn, applied: mm.applied },
