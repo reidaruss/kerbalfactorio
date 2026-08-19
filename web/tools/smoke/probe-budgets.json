@@ -119,11 +119,12 @@
     },
     "ascent.js": {
       "samplesMs": [
-        284951
+        284951,
+        294379
       ],
-      "maxMs": 284951,
-      "budgetMs": 360000,
-      "hardCapMs": 870000
+      "maxMs": 294379,
+      "budgetMs": 370000,
+      "hardCapMs": 900000
     },
     "assembler.js": {
       "samplesMs": [
@@ -191,9 +192,10 @@
     },
     "basereal.js": {
       "samplesMs": [
-        192411
+        192411,
+        192545
       ],
-      "maxMs": 192411,
+      "maxMs": 192545,
       "budgetMs": 245000,
       "hardCapMs": 600000
     },
@@ -335,10 +337,11 @@
     },
     "cantilever.js": {
       "samplesMs": [
-        207001
+        207001,
+        208211
       ],
-      "maxMs": 207001,
-      "budgetMs": 260000,
+      "maxMs": 208211,
+      "budgetMs": 265000,
       "hardCapMs": 630000
     },
     "carrier.js": {
@@ -363,6 +366,2160 @@
       ],
       "maxMs": 24476,
       "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "clickonce.js": {
+      "samplesMs": [
+        46242
+      ],
+      "maxMs": 46242,
+      "budgetMs": 60000,
+      "hardCapMs": 150000
+    },
+    "clockstamp.js": {
+      "samplesMs": [
+        12823
+      ],
+      "maxMs": 12823,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "coalsmelt.js": {
+      "samplesMs": [
+        42086
+      ],
+      "maxMs": 42086,
+      "budgetMs": 55000,
+      "hardCapMs": 150000
+    },
+    "compass.js": {
+      "samplesMs": [
+        30573
+      ],
+      "maxMs": 30573,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "contact.js": {
+      "samplesMs": [
+        82673
+      ],
+      "maxMs": 82673,
+      "budgetMs": 105000,
+      "hardCapMs": 270000
+    },
+    "controls.js": {
+      "samplesMs": [
+        51324
+      ],
+      "maxMs": 51324,
+      "budgetMs": 65000,
+      "hardCapMs": 180000
+    },
+    "cost.js": {
+      "samplesMs": [
+        20449
+      ],
+      "maxMs": 20449,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "craftfull.js": {
+      "samplesMs": [
+        20059
+      ],
+      "maxMs": 20059,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "craterfrag.js": {
+      "samplesMs": [
+        19493
+      ],
+      "maxMs": 19493,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "cutbank.js": {
+      "samplesMs": [
+        18076
+      ],
+      "maxMs": 18076,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "daycycle.js": {
+      "samplesMs": [
+        43885
+      ],
+      "maxMs": 43885,
+      "budgetMs": 55000,
+      "hardCapMs": 150000
+    },
+    "decksink.js": {
+      "samplesMs": [
+        46272
+      ],
+      "maxMs": 46272,
+      "budgetMs": 60000,
+      "hardCapMs": 150000
+    },
+    "deepgate.js": {
+      "samplesMs": [
+        83004
+      ],
+      "maxMs": 83004,
+      "budgetMs": 105000,
+      "hardCapMs": 270000
+    },
+    "demolish.js": {
+      "samplesMs": [
+        125129
+      ],
+      "maxMs": 125129,
+      "budgetMs": 160000,
+      "hardCapMs": 390000
+    },
+    "deposit.js": {
+      "samplesMs": [
+        62664
+      ],
+      "maxMs": 62664,
+      "budgetMs": 80000,
+      "hardCapMs": 210000
+    },
+    "destruction.js": {
+      "samplesMs": [
+        39671
+      ],
+      "maxMs": 39671,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "dig.js": {
+      "samplesMs": [
+        19254
+      ],
+      "maxMs": 19254,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "digore.js": {
+      "samplesMs": [
+        23100
+      ],
+      "maxMs": 23100,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "digquality.js": {
+      "samplesMs": [
+        26898
+      ],
+      "maxMs": 26898,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "digskin.js": {
+      "samplesMs": [
+        33396
+      ],
+      "maxMs": 33396,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "discbody.js": {
+      "samplesMs": [
+        18079
+      ],
+      "maxMs": 18079,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "discovery.js": {
+      "samplesMs": [
+        54513
+      ],
+      "maxMs": 54513,
+      "budgetMs": 70000,
+      "hardCapMs": 180000
+    },
+    "discshot.js": {
+      "samplesMs": [
+        54323
+      ],
+      "maxMs": 54323,
+      "budgetMs": 70000,
+      "hardCapMs": 180000
+    },
+    "docking.js": {
+      "samplesMs": [
+        34242
+      ],
+      "maxMs": 34242,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "drain.js": {
+      "samplesMs": [
+        14654
+      ],
+      "maxMs": 14654,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "dusk.js": {
+      "samplesMs": [
+        29063
+      ],
+      "maxMs": 29063,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "duskghost.js": {
+      "samplesMs": [
+        45518
+      ],
+      "maxMs": 45518,
+      "budgetMs": 60000,
+      "hardCapMs": 150000
+    },
+    "enemies.js": {
+      "samplesMs": [
+        129259
+      ],
+      "maxMs": 129259,
+      "budgetMs": 165000,
+      "hardCapMs": 390000
+    },
+    "enemyshot.js": {
+      "samplesMs": [
+        89096
+      ],
+      "maxMs": 89096,
+      "budgetMs": 115000,
+      "hardCapMs": 270000
+    },
+    "equip.js": {
+      "samplesMs": [
+        29549
+      ],
+      "maxMs": 29549,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "etchsplit.js": {
+      "samplesMs": [
+        20474
+      ],
+      "maxMs": 20474,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "factoryrebase.js": {
+      "samplesMs": [
+        142722
+      ],
+      "maxMs": 142722,
+      "budgetMs": 180000,
+      "hardCapMs": 450000
+    },
+    "factoryshot.js": {
+      "samplesMs": [
+        51104
+      ],
+      "maxMs": 51104,
+      "budgetMs": 65000,
+      "hardCapMs": 180000
+    },
+    "flightabuse.js": {
+      "samplesMs": [
+        86576
+      ],
+      "maxMs": 86576,
+      "budgetMs": 110000,
+      "hardCapMs": 270000
+    },
+    "flightthread.js": {
+      "samplesMs": [
+        30716
+      ],
+      "maxMs": 30716,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "floratex.js": {
+      "samplesMs": [
+        39658
+      ],
+      "maxMs": 39658,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "flyto.js": {
+      "samplesMs": [
+        153914
+      ],
+      "maxMs": 153914,
+      "budgetMs": 195000,
+      "hardCapMs": 480000
+    },
+    "forestshot.js": {
+      "samplesMs": [
+        23325
+      ],
+      "maxMs": 23325,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "forestsite.js": {
+      "samplesMs": [
+        40599
+      ],
+      "maxMs": 40599,
+      "budgetMs": 55000,
+      "hardCapMs": 150000
+    },
+    "fpshot.js": {
+      "samplesMs": [
+        16523
+      ],
+      "maxMs": 16523,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "frame.js": {
+      "samplesMs": [
+        5582
+      ],
+      "maxMs": 5582,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "furmotion.js": {
+      "samplesMs": [
+        31182
+      ],
+      "maxMs": 31182,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "furnace.js": {
+      "samplesMs": [
+        22214
+      ],
+      "maxMs": 22214,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "furnacelit.js": {
+      "samplesMs": [
+        24226
+      ],
+      "maxMs": 24226,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "garrison.js": {
+      "samplesMs": [
+        46086
+      ],
+      "maxMs": 46086,
+      "budgetMs": 60000,
+      "hardCapMs": 150000
+    },
+    "genpole.js": {
+      "samplesMs": [
+        74747
+      ],
+      "maxMs": 74747,
+      "budgetMs": 95000,
+      "hardCapMs": 240000
+    },
+    "ghostsize.js": {
+      "samplesMs": [
+        32364
+      ],
+      "maxMs": 32364,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "goalhints.js": {
+      "samplesMs": [
+        15205
+      ],
+      "maxMs": 15205,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "goalmoot.js": {
+      "samplesMs": [
+        15234
+      ],
+      "maxMs": 15234,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "gp49.js": {
+      "samplesMs": [
+        29036
+      ],
+      "maxMs": 29036,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "grass.js": {
+      "samplesMs": [
+        39574
+      ],
+      "maxMs": 39574,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "groundart.js": {
+      "samplesMs": [
+        22517
+      ],
+      "maxMs": 22517,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "groundnear.js": {
+      "samplesMs": [
+        37534
+      ],
+      "maxMs": 37534,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "groundshot.js": {
+      "samplesMs": [
+        22149
+      ],
+      "maxMs": 22149,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "gun.js": {
+      "samplesMs": [
+        20220
+      ],
+      "maxMs": 20220,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "handoff.js": {
+      "samplesMs": [
+        24707
+      ],
+      "maxMs": 24707,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "harvest.js": {
+      "samplesMs": [
+        25927
+      ],
+      "maxMs": 25927,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "holes.js": {
+      "samplesMs": [
+        6645
+      ],
+      "maxMs": 6645,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "hotbaredit.js": {
+      "samplesMs": [
+        24888
+      ],
+      "maxMs": 24888,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "ibldiag.js": {
+      "samplesMs": [
+        13945
+      ],
+      "maxMs": 13945,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "icons.js": {
+      "samplesMs": [
+        15361
+      ],
+      "maxMs": 15361,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "impact.js": {
+      "samplesMs": [
+        25254
+      ],
+      "maxMs": 25254,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "inventory.js": {
+      "samplesMs": [
+        17241
+      ],
+      "maxMs": 17241,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "jump.js": {
+      "samplesMs": [
+        17897
+      ],
+      "maxMs": 17897,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "keycollide.js": {
+      "samplesMs": [
+        24785
+      ],
+      "maxMs": 24785,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "keywfreeze.js": {
+      "samplesMs": [
+        60677
+      ],
+      "maxMs": 60677,
+      "budgetMs": 80000,
+      "hardCapMs": 210000
+    },
+    "keywmute.js": {
+      "samplesMs": [
+        87245
+      ],
+      "maxMs": 87245,
+      "budgetMs": 110000,
+      "hardCapMs": 270000
+    },
+    "launchguide.js": {
+      "samplesMs": [
+        31602
+      ],
+      "maxMs": 31602,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "leafvar.js": {
+      "samplesMs": [
+        18561
+      ],
+      "maxMs": 18561,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "level.js": {
+      "samplesMs": [
+        26614
+      ],
+      "maxMs": 26614,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "levelcost.js": {
+      "samplesMs": [
+        21831
+      ],
+      "maxMs": 21831,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "leveldiag.js": {
+      "samplesMs": [
+        23091
+      ],
+      "maxMs": 23091,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "levelgrace.js": {
+      "samplesMs": [
+        26783
+      ],
+      "maxMs": 26783,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "levelholes.js": {
+      "samplesMs": [
+        16767
+      ],
+      "maxMs": 16767,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "levellook.js": {
+      "samplesMs": [
+        18086
+      ],
+      "maxMs": 18086,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "leveloutside.js": {
+      "samplesMs": [
+        19121
+      ],
+      "maxMs": 19121,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "levelstream.js": {
+      "samplesMs": [
+        22125
+      ],
+      "maxMs": 22125,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "lifeless.js": {
+      "samplesMs": [
+        15851
+      ],
+      "maxMs": 15851,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "lodfeet.js": {
+      "samplesMs": [
+        52725
+      ],
+      "maxMs": 52725,
+      "budgetMs": 70000,
+      "hardCapMs": 180000
+    },
+    "lodheights.js": {
+      "samplesMs": [
+        22724
+      ],
+      "maxMs": 22724,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "lodstep.js": {
+      "samplesMs": [
+        17511
+      ],
+      "maxMs": 17511,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "look.js": {
+      "samplesMs": [
+        14860
+      ],
+      "maxMs": 14860,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "lookdev.js": {
+      "samplesMs": [
+        43795
+      ],
+      "maxMs": 43795,
+      "budgetMs": 55000,
+      "hardCapMs": 150000
+    },
+    "lunarnight.js": {
+      "samplesMs": [
+        17274
+      ],
+      "maxMs": 17274,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "machinefam.js": {
+      "samplesMs": [
+        14628
+      ],
+      "maxMs": 14628,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "machinemat.js": {
+      "samplesMs": [
+        18824
+      ],
+      "maxMs": 18824,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "machineopen.js": {
+      "samplesMs": [
+        123313
+      ],
+      "maxMs": 123313,
+      "budgetMs": 155000,
+      "hardCapMs": 390000
+    },
+    "machinepanel.js": {
+      "samplesMs": [
+        37219
+      ],
+      "maxMs": 37219,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "machineports.js": {
+      "samplesMs": [
+        233868,
+        232871
+      ],
+      "maxMs": 233868,
+      "budgetMs": 295000,
+      "hardCapMs": 720000
+    },
+    "machineshot.js": {
+      "samplesMs": [
+        23827
+      ],
+      "maxMs": 23827,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "machinesolid.js": {
+      "samplesMs": [
+        26728
+      ],
+      "maxMs": 26728,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "maneuver.js": {
+      "samplesMs": [
+        181755,
+        179654
+      ],
+      "maxMs": 181755,
+      "budgetMs": 230000,
+      "hardCapMs": 570000
+    },
+    "map3d.js": {
+      "samplesMs": [
+        32664
+      ],
+      "maxMs": 32664,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "mapbody.js": {
+      "samplesMs": [
+        19133
+      ],
+      "maxMs": 19133,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "mapcontrast.js": {
+      "samplesMs": [
+        18898
+      ],
+      "maxMs": 18898,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "mapplanner.js": {
+      "samplesMs": [
+        46193
+      ],
+      "maxMs": 46193,
+      "budgetMs": 60000,
+      "hardCapMs": 150000
+    },
+    "maps.js": {
+      "samplesMs": [
+        32782
+      ],
+      "maxMs": 32782,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "mapshot.js": {
+      "samplesMs": [
+        47813
+      ],
+      "maxMs": 47813,
+      "budgetMs": 60000,
+      "hardCapMs": 150000
+    },
+    "mapwork.js": {
+      "samplesMs": [
+        23222
+      ],
+      "maxMs": 23222,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "markers.js": {
+      "samplesMs": [
+        15804
+      ],
+      "maxMs": 15804,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "milestones.js": {
+      "samplesMs": [
+        28865
+      ],
+      "maxMs": 28865,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "moments.js": {
+      "samplesMs": [
+        27306
+      ],
+      "maxMs": 27306,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "moonarm.js": {
+      "samplesMs": [
+        30704
+      ],
+      "maxMs": 30704,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "moonsite.js": {
+      "samplesMs": [
+        15311
+      ],
+      "maxMs": 15311,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "mountainlook.js": {
+      "samplesMs": [
+        18486
+      ],
+      "maxMs": 18486,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "mtncave.js": {
+      "samplesMs": [
+        84576
+      ],
+      "maxMs": 84576,
+      "budgetMs": 110000,
+      "hardCapMs": 270000
+    },
+    "mtnfall.js": {
+      "samplesMs": [
+        86490
+      ],
+      "maxMs": 86490,
+      "budgetMs": 110000,
+      "hardCapMs": 270000
+    },
+    "navdraw.js": {
+      "samplesMs": [
+        41470
+      ],
+      "maxMs": 41470,
+      "budgetMs": 55000,
+      "hardCapMs": 150000
+    },
+    "nightexp.js": {
+      "samplesMs": [
+        25342
+      ],
+      "maxMs": 25342,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "nightfloor.js": {
+      "samplesMs": [
+        17566
+      ],
+      "maxMs": 17566,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "nightform.js": {
+      "samplesMs": [
+        25482
+      ],
+      "maxMs": 25482,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "nightshot.js": {
+      "samplesMs": [
+        18723
+      ],
+      "maxMs": 18723,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "nightsky.js": {
+      "samplesMs": [
+        18112
+      ],
+      "maxMs": 18112,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "nightspark.js": {
+      "samplesMs": [
+        25697
+      ],
+      "maxMs": 25697,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "noderegrow.js": {
+      "samplesMs": [
+        20222
+      ],
+      "maxMs": 20222,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "objectives.js": {
+      "samplesMs": [
+        19269
+      ],
+      "maxMs": 19269,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "orbitdeck.js": {
+      "samplesMs": [
+        23097
+      ],
+      "maxMs": 23097,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "oreshot.js": {
+      "samplesMs": [
+        20087
+      ],
+      "maxMs": 20087,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "pad.js": {
+      "samplesMs": [
+        47349
+      ],
+      "maxMs": 47349,
+      "budgetMs": 60000,
+      "hardCapMs": 150000
+    },
+    "padart.js": {
+      "samplesMs": [
+        43134
+      ],
+      "maxMs": 43134,
+      "budgetMs": 55000,
+      "hardCapMs": 150000
+    },
+    "padflank.js": {
+      "samplesMs": [
+        36379
+      ],
+      "maxMs": 36379,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "padflat.js": {
+      "samplesMs": [
+        14505
+      ],
+      "maxMs": 14505,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "padgate.js": {
+      "samplesMs": [
+        164354
+      ],
+      "maxMs": 164354,
+      "budgetMs": 210000,
+      "hardCapMs": 510000
+    },
+    "padground.js": {
+      "samplesMs": [
+        15482
+      ],
+      "maxMs": 15482,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "padshot.js": {
+      "samplesMs": [
+        17917
+      ],
+      "maxMs": 17917,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "padstair.js": {
+      "samplesMs": [
+        24060
+      ],
+      "maxMs": 24060,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "pausekeys.js": {
+      "samplesMs": [
+        39099
+      ],
+      "maxMs": 39099,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "persist.js": {
+      "samplesMs": [
+        18735
+      ],
+      "maxMs": 18735,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "phnav.js": {
+      "samplesMs": [
+        66441
+      ],
+      "maxMs": 66441,
+      "budgetMs": 85000,
+      "hardCapMs": 210000
+    },
+    "phrcskeys.js": {
+      "samplesMs": [
+        79649
+      ],
+      "maxMs": 79649,
+      "budgetMs": 100000,
+      "hardCapMs": 240000
+    },
+    "phrendezvous.js": {
+      "samplesMs": [
+        89004
+      ],
+      "maxMs": 89004,
+      "budgetMs": 115000,
+      "hardCapMs": 270000
+    },
+    "pickaxegate.js": {
+      "samplesMs": [
+        17088
+      ],
+      "maxMs": 17088,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "plainshot.js": {
+      "samplesMs": [
+        16251
+      ],
+      "maxMs": 16251,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "platetile.js": {
+      "samplesMs": [
+        17974
+      ],
+      "maxMs": 17974,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "playerhealth.js": {
+      "samplesMs": [
+        17401
+      ],
+      "maxMs": 17401,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "playerskin.js": {
+      "samplesMs": [
+        14246
+      ],
+      "maxMs": 14246,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "playthrough.js": {
+      "samplesMs": [
+        132069
+      ],
+      "maxMs": 132069,
+      "budgetMs": 170000,
+      "hardCapMs": 420000
+    },
+    "plumeshot.js": {
+      "samplesMs": [
+        36869
+      ],
+      "maxMs": 36869,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "pondscatter.js": {
+      "samplesMs": [
+        26041
+      ],
+      "maxMs": 26041,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "pondshot.js": {
+      "samplesMs": [
+        16597
+      ],
+      "maxMs": 16597,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "pondwade.js": {
+      "samplesMs": [
+        179466
+      ],
+      "maxMs": 179466,
+      "budgetMs": 225000,
+      "hardCapMs": 540000
+    },
+    "pop.js": {
+      "samplesMs": [
+        67280
+      ],
+      "maxMs": 67280,
+      "budgetMs": 85000,
+      "hardCapMs": 210000
+    },
+    "popshot.js": {
+      "samplesMs": [
+        7375
+      ],
+      "maxMs": 7375,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "portcost.js": {
+      "samplesMs": [
+        82580
+      ],
+      "maxMs": 82580,
+      "budgetMs": 105000,
+      "hardCapMs": 270000
+    },
+    "portmigrate.js": {
+      "samplesMs": [
+        31175
+      ],
+      "maxMs": 31175,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "poseshot.js": {
+      "samplesMs": [
+        16791
+      ],
+      "maxMs": 16791,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "post.js": {
+      "samplesMs": [
+        100071
+      ],
+      "maxMs": 100071,
+      "budgetMs": 130000,
+      "hardCapMs": 330000
+    },
+    "power.js": {
+      "samplesMs": [
+        89116
+      ],
+      "maxMs": 89116,
+      "budgetMs": 115000,
+      "hardCapMs": 270000
+    },
+    "proplight.js": {
+      "samplesMs": [
+        16047
+      ],
+      "maxMs": 16047,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "propshadow.js": {
+      "samplesMs": [
+        21032
+      ],
+      "maxMs": 21032,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "qolbuild1.js": {
+      "samplesMs": [
+        17342
+      ],
+      "maxMs": 17342,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "qolbuild2.js": {
+      "samplesMs": [
+        20821
+      ],
+      "maxMs": 20821,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "qolbuild3.js": {
+      "samplesMs": [
+        32959
+      ],
+      "maxMs": 32959,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "qolctl.js": {
+      "samplesMs": [
+        16827
+      ],
+      "maxMs": 16827,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "qolesc.js": {
+      "samplesMs": [
+        17482
+      ],
+      "maxMs": 17482,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "qolflight1.js": {
+      "samplesMs": [
+        28175
+      ],
+      "maxMs": 28175,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "qolflight2.js": {
+      "samplesMs": [
+        123600
+      ],
+      "maxMs": 123600,
+      "budgetMs": 155000,
+      "hardCapMs": 390000
+    },
+    "qolflight3.js": {
+      "samplesMs": [
+        91412
+      ],
+      "maxMs": 91412,
+      "budgetMs": 115000,
+      "hardCapMs": 300000
+    },
+    "qolhandsafe.js": {
+      "samplesMs": [
+        36189
+      ],
+      "maxMs": 36189,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "qolmenu.js": {
+      "samplesMs": [
+        16009
+      ],
+      "maxMs": 16009,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "qolpack.js": {
+      "samplesMs": [
+        17460
+      ],
+      "maxMs": 17460,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "qolpanels.js": {
+      "samplesMs": [
+        32754
+      ],
+      "maxMs": 32754,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "qolplay.js": {
+      "samplesMs": [
+        22385
+      ],
+      "maxMs": 22385,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "qolsandbox.js": {
+      "samplesMs": [
+        21792
+      ],
+      "maxMs": 21792,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "qolspawn.js": {
+      "samplesMs": [
+        17364
+      ],
+      "maxMs": 17364,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "qolswing.js": {
+      "samplesMs": [
+        43894
+      ],
+      "maxMs": 43894,
+      "budgetMs": 55000,
+      "hardCapMs": 150000
+    },
+    "r17_hp.js": {
+      "samplesMs": [
+        66531
+      ],
+      "maxMs": 66531,
+      "budgetMs": 85000,
+      "hardCapMs": 210000
+    },
+    "r17_scout.js": {
+      "samplesMs": [
+        20490
+      ],
+      "maxMs": 20490,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "radialdrain.js": {
+      "samplesMs": [
+        46411
+      ],
+      "maxMs": 46411,
+      "budgetMs": 60000,
+      "hardCapMs": 150000
+    },
+    "radialhull.js": {
+      "samplesMs": [
+        22861
+      ],
+      "maxMs": 22861,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "radialsink.js": {
+      "samplesMs": [
+        20780
+      ],
+      "maxMs": 20780,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "realclick.js": {
+      "samplesMs": [
+        30105
+      ],
+      "maxMs": 30105,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "reliefgrad.js": {
+      "samplesMs": [
+        17617
+      ],
+      "maxMs": 17617,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "reliefrot.js": {
+      "samplesMs": [
+        15437
+      ],
+      "maxMs": 15437,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "reliefshot.js": {
+      "samplesMs": [
+        25507
+      ],
+      "maxMs": 25507,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "reliefsweep.js": {
+      "samplesMs": [
+        17837
+      ],
+      "maxMs": 17837,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "rescale.js": {
+      "samplesMs": [
+        25998
+      ],
+      "maxMs": 25998,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "research.js": {
+      "samplesMs": [
+        56089
+      ],
+      "maxMs": 56089,
+      "budgetMs": 75000,
+      "hardCapMs": 180000
+    },
+    "researchstation.js": {
+      "samplesMs": [
+        41524
+      ],
+      "maxMs": 41524,
+      "budgetMs": 55000,
+      "hardCapMs": 150000
+    },
+    "ribbon.js": {
+      "samplesMs": [
+        75382
+      ],
+      "maxMs": 75382,
+      "budgetMs": 95000,
+      "hardCapMs": 240000
+    },
+    "ripplewalk.js": {
+      "samplesMs": [
+        15909
+      ],
+      "maxMs": 15909,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "rocklook.js": {
+      "samplesMs": [
+        29029
+      ],
+      "maxMs": 29029,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "rockpose.js": {
+      "samplesMs": [
+        16767
+      ],
+      "maxMs": 16767,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "rocks.js": {
+      "samplesMs": [
+        33551
+      ],
+      "maxMs": 33551,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "rocksite.js": {
+      "samplesMs": [
+        33004
+      ],
+      "maxMs": 33004,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "rollhold.js": {
+      "samplesMs": [
+        29737
+      ],
+      "maxMs": 29737,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "rollout.js": {
+      "samplesMs": [
+        26277
+      ],
+      "maxMs": 26277,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "ruininvest.js": {
+      "samplesMs": [
+        18377
+      ],
+      "maxMs": 18377,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "ruinplace.js": {
+      "samplesMs": [
+        24359
+      ],
+      "maxMs": 24359,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "sandbox.js": {
+      "samplesMs": [
+        21857
+      ],
+      "maxMs": 21857,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "sandboxshot.js": {
+      "samplesMs": [
+        93185
+      ],
+      "maxMs": 93185,
+      "budgetMs": 120000,
+      "hardCapMs": 300000
+    },
+    "scatterrebase.js": {
+      "samplesMs": [
+        80988
+      ],
+      "maxMs": 80988,
+      "budgetMs": 105000,
+      "hardCapMs": 270000
+    },
+    "seamcut.js": {
+      "samplesMs": [
+        14844
+      ],
+      "maxMs": 14844,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "seams.js": {
+      "samplesMs": [
+        13744
+      ],
+      "maxMs": 13744,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "shadowk.js": {
+      "samplesMs": [
+        13534
+      ],
+      "maxMs": 13534,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "shadowlod.js": {
+      "samplesMs": [
+        17175
+      ],
+      "maxMs": 17175,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "shine.js": {
+      "samplesMs": [
+        17212
+      ],
+      "maxMs": 17212,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "shortline.js": {
+      "samplesMs": [
+        65547
+      ],
+      "maxMs": 65547,
+      "budgetMs": 85000,
+      "hardCapMs": 210000
+    },
+    "shot_build.js": {
+      "samplesMs": [
+        15793
+      ],
+      "maxMs": 15793,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "shot_controls.js": {
+      "samplesMs": [
+        16356
+      ],
+      "maxMs": 16356,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "shot_pad.js": {
+      "samplesMs": [
+        26189
+      ],
+      "maxMs": 26189,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "shot_save.js": {
+      "samplesMs": [
+        20850
+      ],
+      "maxMs": 20850,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "sitelook.js": {
+      "samplesMs": [
+        24988
+      ],
+      "maxMs": 24988,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "sitesun.js": {
+      "samplesMs": [
+        18240
+      ],
+      "maxMs": 18240,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "skybody.js": {
+      "samplesMs": [
+        17517
+      ],
+      "maxMs": 17517,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "slopestat.js": {
+      "samplesMs": [
+        14991
+      ],
+      "maxMs": 14991,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "spidergait.js": {
+      "samplesMs": [
+        26496
+      ],
+      "maxMs": 26496,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "spiderskin.js": {
+      "samplesMs": [
+        42968
+      ],
+      "maxMs": 42968,
+      "budgetMs": 55000,
+      "hardCapMs": 150000
+    },
+    "spiderwalk.js": {
+      "samplesMs": [
+        46308
+      ],
+      "maxMs": 46308,
+      "budgetMs": 60000,
+      "hardCapMs": 150000
+    },
+    "stagedv.js": {
+      "samplesMs": [
+        48876
+      ],
+      "maxMs": 48876,
+      "budgetMs": 65000,
+      "hardCapMs": 150000
+    },
+    "stagelock.js": {
+      "samplesMs": [
+        57121
+      ],
+      "maxMs": 57121,
+      "budgetMs": 75000,
+      "hardCapMs": 180000
+    },
+    "startercontent.js": {
+      "samplesMs": [
+        16330
+      ],
+      "maxMs": 16330,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "stationboard.js": {
+      "samplesMs": [
+        17939
+      ],
+      "maxMs": 17939,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "stationdock.js": {
+      "samplesMs": [
+        14842
+      ],
+      "maxMs": 14842,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "stationdraw.js": {
+      "samplesMs": [
+        25694
+      ],
+      "maxMs": 25694,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "stationframe.js": {
+      "samplesMs": [
+        13594
+      ],
+      "maxMs": 13594,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "stationpose.js": {
+      "samplesMs": [
+        20088
+      ],
+      "maxMs": 20088,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "stationreboot.js": {
+      "samplesMs": [
+        17561
+      ],
+      "maxMs": 17561,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "stationreveal.js": {
+      "samplesMs": [
+        32208
+      ],
+      "maxMs": 32208,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "stationride.js": {
+      "samplesMs": [
+        18313
+      ],
+      "maxMs": 18313,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "stationvisit.js": {
+      "samplesMs": [
+        31828
+      ],
+      "maxMs": 31828,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "stationwalk.js": {
+      "samplesMs": [
+        85464
+      ],
+      "maxMs": 85464,
+      "budgetMs": 110000,
+      "hardCapMs": 270000
+    },
+    "sunshot.js": {
+      "samplesMs": [
+        19786
+      ],
+      "maxMs": 19786,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "survivalrun.js": {
+      "samplesMs": [
+        569393
+      ],
+      "maxMs": 569393,
+      "budgetMs": 715000,
+      "hardCapMs": 1710000
+    },
+    "terrainart.js": {
+      "samplesMs": [
+        34441
+      ],
+      "maxMs": 34441,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "terrainspec.js": {
+      "samplesMs": [
+        57699
+      ],
+      "maxMs": 57699,
+      "budgetMs": 75000,
+      "hardCapMs": 180000
+    },
+    "treectl.js": {
+      "samplesMs": [
+        78013
+      ],
+      "maxMs": 78013,
+      "budgetMs": 100000,
+      "hardCapMs": 240000
+    },
+    "trees.js": {
+      "samplesMs": [
+        38636
+      ],
+      "maxMs": 38636,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "treesite.js": {
+      "samplesMs": [
+        77765
+      ],
+      "maxMs": 77765,
+      "budgetMs": 100000,
+      "hardCapMs": 240000
+    },
+    "treeslope.js": {
+      "samplesMs": [
+        14058
+      ],
+      "maxMs": 14058,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "tunnellit.js": {
+      "samplesMs": [
+        28186
+      ],
+      "maxMs": 28186,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "tunnelmouth.js": {
+      "samplesMs": [
+        14603
+      ],
+      "maxMs": 14603,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "tunnelpersist.js": {
+      "samplesMs": [
+        23740
+      ],
+      "maxMs": 23740,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "tunnelsink.js": {
+      "samplesMs": [
+        97500
+      ],
+      "maxMs": 97500,
+      "budgetMs": 125000,
+      "hardCapMs": 300000
+    },
+    "tunnelwalk.js": {
+      "samplesMs": [
+        25309
+      ],
+      "maxMs": 25309,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "understorey.js": {
+      "samplesMs": [
+        25864
+      ],
+      "maxMs": 25864,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "underwater.js": {
+      "samplesMs": [
+        38367
+      ],
+      "maxMs": 38367,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "vab.js": {
+      "samplesMs": [
+        16846
+      ],
+      "maxMs": 16846,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "vabdelete.js": {
+      "samplesMs": [
+        16482
+      ],
+      "maxMs": 16482,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "vabdest.js": {
+      "samplesMs": [
+        16663
+      ],
+      "maxMs": 16663,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "vabdirection.js": {
+      "samplesMs": [
+        46164
+      ],
+      "maxMs": 46164,
+      "budgetMs": 60000,
+      "hardCapMs": 150000
+    },
+    "vabdown.js": {
+      "samplesMs": [
+        24062
+      ],
+      "maxMs": 24062,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "vabinsert.js": {
+      "samplesMs": [
+        16757
+      ],
+      "maxMs": 16757,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "vabround.js": {
+      "samplesMs": [
+        20599
+      ],
+      "maxMs": 20599,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "vabsay.js": {
+      "samplesMs": [
+        16595
+      ],
+      "maxMs": 16595,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "vabshot.js": {
+      "samplesMs": [
+        15138
+      ],
+      "maxMs": 15138,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "vabsnap.js": {
+      "samplesMs": [
+        38334
+      ],
+      "maxMs": 38334,
+      "budgetMs": 50000,
+      "hardCapMs": 120000
+    },
+    "vabstrap.js": {
+      "samplesMs": [
+        29429
+      ],
+      "maxMs": 29429,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "vabwidth.js": {
+      "samplesMs": [
+        14650
+      ],
+      "maxMs": 14650,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "vesselrails.js": {
+      "samplesMs": [
+        13852
+      ],
+      "maxMs": 13852,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "vesselrebase.js": {
+      "samplesMs": [
+        24203
+      ],
+      "maxMs": 24203,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "viewtoggle.js": {
+      "samplesMs": [
+        20961
+      ],
+      "maxMs": 20961,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "visitsite.js": {
+      "samplesMs": [
+        59372
+      ],
+      "maxMs": 59372,
+      "budgetMs": 75000,
+      "hardCapMs": 180000
+    },
+    "vmcost.js": {
+      "samplesMs": [
+        107379
+      ],
+      "maxMs": 107379,
+      "budgetMs": 135000,
+      "hardCapMs": 330000
+    },
+    "vmlight.js": {
+      "samplesMs": [
+        14287
+      ],
+      "maxMs": 14287,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "vmshade.js": {
+      "samplesMs": [
+        63446
+      ],
+      "maxMs": 63446,
+      "budgetMs": 80000,
+      "hardCapMs": 210000
+    },
+    "vmsurface.js": {
+      "samplesMs": [
+        14833
+      ],
+      "maxMs": 14833,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "voxelskin.js": {
+      "samplesMs": [
+        8901
+      ],
+      "maxMs": 8901,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "walk.js": {
+      "samplesMs": [
+        133385
+      ],
+      "maxMs": 133385,
+      "budgetMs": 170000,
+      "hardCapMs": 420000
+    },
+    "walkdet.js": {
+      "samplesMs": [
+        34736
+      ],
+      "maxMs": 34736,
+      "budgetMs": 45000,
+      "hardCapMs": 120000
+    },
+    "walkfeel.js": {
+      "samplesMs": [
+        31824
+      ],
+      "maxMs": 31824,
+      "budgetMs": 40000,
+      "hardCapMs": 120000
+    },
+    "wallstuck.js": {
+      "samplesMs": [
+        42203
+      ],
+      "maxMs": 42203,
+      "budgetMs": 55000,
+      "hardCapMs": 150000
+    },
+    "water.js": {
+      "samplesMs": [
+        18950
+      ],
+      "maxMs": 18950,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "wgart.js": {
+      "samplesMs": [
+        16744
+      ],
+      "maxMs": 16744,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "wind.js": {
+      "samplesMs": [
+        18884
+      ],
+      "maxMs": 18884,
+      "budgetMs": 30000,
+      "hardCapMs": 120000
+    },
+    "wires.js": {
+      "samplesMs": [
+        48932
+      ],
+      "maxMs": 48932,
+      "budgetMs": 65000,
+      "hardCapMs": 150000
+    },
+    "worldreboot.js": {
+      "samplesMs": [
+        24135
+      ],
+      "maxMs": 24135,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
+    "zerog.js": {
+      "samplesMs": [
+        44835
+      ],
+      "maxMs": 44835,
+      "budgetMs": 60000,
+      "hardCapMs": 150000
+    },
+    "zfight.js": {
+      "samplesMs": [
+        7973
+      ],
+      "maxMs": 7973,
+      "budgetMs": 30000,
       "hardCapMs": 120000
     }
   }
