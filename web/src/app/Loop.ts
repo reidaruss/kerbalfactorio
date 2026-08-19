@@ -385,10 +385,24 @@ export class Loop {
    * than at the two call sites so both paths keep the catch-up guarantee a
    * stalled tab needs; a driven `dt` of `1 / renderHz` is far under it at any
    * rate a probe would ask for.
+   *
+   * RN-2035. THE CLAMP IS TWO-SIDED. `frame()` builds dt as
+   * `(rAF now - lastMs) / 1000`, and rAF's `now` is the frame's own start, not
+   * the moment the callback runs, so the first live frame after `run()` hands
+   * back (with `lastMs` sampled from `performance.now()`) can carry a NEGATIVE
+   * dt. That drove `acc` and `alpha` negative and `observer.interpolate` then
+   * extrapolated the eye BACKWARDS past the previous tick: millimetres on the
+   * ground, 2.1 m on the station deck at 31.32 m per tick, which walked the
+   * camera through a bulkhead and is the whole of the `station` shot's
+   * bimodality. Zero is the right floor rather than a fudge, because a frame
+   * whose clock ran backwards has had no time pass and must draw at the
+   * accumulator it already had. A driven run cannot reach it: its dt is
+   * `1 / renderHz` by construction (FS-101, GP-1013). See rendering.md's
+   * RN-2030..2049 entry for the census this came out of.
    */
   private step(dtIn: number): void {
     const t0 = performance.now();
-    const dt = Math.min(dtIn, 0.25);
+    const dt = Math.min(Math.max(dtIn, 0), 0.25);
     this.acc += dt;
     let ticks = 0;
     while (this.acc >= FIXED_DT && ticks < MAX_CATCHUP) {
