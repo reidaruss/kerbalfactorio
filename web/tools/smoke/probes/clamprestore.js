@@ -1,6 +1,7 @@
 // clamprestore.js: THE LAUNCH CLAMP STILL WORKS ON A VESSEL THAT WAS PUT BACK.
 //
-//   node tools/smoke/run.mjs --url=... --sandbox=1 --debug=1 //     --evalfile=tools/smoke/probes/clamprestore.js
+//   node tools/smoke/run.mjs --url=... --sandbox=1 --debug=1 \
+//     --evalfile=tools/smoke/probes/clamprestore.js
 //
 // WHY THIS PROBE EXISTS, and it is a specific fear rather than a general one.
 // Reid spent a large part of a day behind a rocket bolted to the pad reading
