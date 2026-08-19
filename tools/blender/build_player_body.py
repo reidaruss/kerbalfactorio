@@ -586,7 +586,7 @@ def build_mesh(name, arm):
     #
     # IT RIDES THE EXISTING `Plate` ROLE RATHER THAN A NEW ONE, DELIBERATELY.
     # A new role needs a matching row in the client's own copy of the role
-    # table (web/src/render/instancing/Surfaces.ts), which this lane may not
+    # table (web/src/render/instancing/SurfaceRoles.ts), which this lane may not
     # edit, and a role the client has never heard of binds to NO maps at all:
     # the helmet would go from the wrong family to no family, which is a
     # regression on the exact axis being fixed. `Plate` is already wired,

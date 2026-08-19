@@ -2,7 +2,7 @@
 //
 // WHY THIS EXISTS, and it is not because the check was missing.
 //
-// `Surfaces.ts` ALREADY compares its `ROLE_FAMILY` against the shipped
+// The client ALREADY compares its `ROLE_FAMILY` against the shipped
 // `surfaces.json` (`verifyAgainstManifest`), already names the disagreeing role
 // and both sides of it, and already emits a `console.error` that `run.mjs`
 // turns into a failed smoke run. That check was correct and it worked: when
@@ -38,7 +38,7 @@
 //
 //   A. the shipped bytes   `assets/models/dist/**/*.glb` material names
 //   B. the manifest        `assets/textures/dist/surfaces.json` roles+flat_roles
-//   C. the client          `ROLE_FAMILY` in web/src/render/instancing/Surfaces.ts
+//   C. the client          `ROLE_FAMILY` in web/src/render/instancing/SurfaceRoles.ts
 //   D. the SERVED manifest `web/public/assets/textures/surfaces.json`, if synced
 //
 // A role in A and not in B is an asset using a surface texgen has never heard
@@ -76,7 +76,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..');
 const MODELS = resolve(repoRoot, 'assets', 'models', 'dist');
 const MANIFEST = resolve(repoRoot, 'assets', 'textures', 'dist', 'surfaces.json');
-const CLIENT = resolve(repoRoot, 'web', 'src', 'render', 'instancing', 'Surfaces.ts');
+const CLIENT = resolve(repoRoot, 'web', 'src', 'render', 'instancing', 'SurfaceRoles.ts');
 // What the browser actually FETCHES. `sync-assets.mjs` copies the source
 // manifest here and the client reads `assets/textures/surfaces.json` at
 // runtime, so a tree where sync-assets has not been re-run serves an older
@@ -139,7 +139,7 @@ function gltfJson(path) {
   throw new Error(`${path}: no JSON chunk`);
 }
 
-/** `OF_SteelDark` -> `SteelDark`. Must match Surfaces.ts roleOfMaterialName. */
+/** `OF_SteelDark` -> `SteelDark`. Must match SurfaceRoles.ts roleOfMaterialName. */
 const roleOfMaterialName = (n) => (n.startsWith('OF_') ? n.slice(3) : n);
 
 function shippedRoles(files) {
@@ -162,7 +162,7 @@ function shippedRoles(files) {
 // ---------------------------------------------------------------------------
 
 /**
- * `ROLE_FAMILY` out of Surfaces.ts, without a TypeScript parser.
+ * `ROLE_FAMILY` out of SurfaceRoles.ts, without a TypeScript parser.
  *
  * The brittleness here is real and it is handled by the positive control rather
  * than by cleverness: if this regex stops matching the file, it returns a table
@@ -176,16 +176,16 @@ function shippedRoles(files) {
  */
 function parseClientTable(src) {
   const start = src.indexOf('const ROLE_FAMILY');
-  if (start === -1) throw new Error('Surfaces.ts: no `const ROLE_FAMILY` found');
+  if (start === -1) throw new Error('SurfaceRoles.ts: no `const ROLE_FAMILY` found');
   const open = src.indexOf('{', start);
-  if (open === -1) throw new Error('Surfaces.ts: ROLE_FAMILY has no `{`');
+  if (open === -1) throw new Error('SurfaceRoles.ts: ROLE_FAMILY has no `{`');
   let depth = 0;
   let end = -1;
   for (let i = open; i < src.length; ++i) {
     if (src[i] === '{') depth++;
     else if (src[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
   }
-  if (end === -1) throw new Error('Surfaces.ts: ROLE_FAMILY is not closed');
+  if (end === -1) throw new Error('SurfaceRoles.ts: ROLE_FAMILY is not closed');
   const body = src.slice(open + 1, end)
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/[^\n]*/g, '');
@@ -193,7 +193,7 @@ function parseClientTable(src) {
   const re = /([A-Za-z_][A-Za-z0-9_]*)\s*:\s*'([a-z]+)'/g;
   let m;
   while ((m = re.exec(body)) !== null) {
-    if (table.has(m[1])) throw new Error(`Surfaces.ts: role '${m[1]}' listed twice in ROLE_FAMILY`);
+    if (table.has(m[1])) throw new Error(`SurfaceRoles.ts: role '${m[1]}' listed twice in ROLE_FAMILY`);
     table.set(m[1], m[2]);
   }
   return table;
@@ -227,7 +227,7 @@ export function compareRoleTables(shipped, manifest, client) {
     }
     if (!client.has(role)) {
       fails.push(`SHIPPED role '${role}' is absent from ROLE_FAMILY in `
-        + `Surfaces.ts, so it DRAWS UNTEXTURED in game. Used by: ${where}`);
+        + `SurfaceRoles.ts, so it DRAWS UNTEXTURED in game. Used by: ${where}`);
     }
   }
 
@@ -239,9 +239,9 @@ export function compareRoleTables(shipped, manifest, client) {
     const c = client.get(role);
     if (c === undefined) {
       fails.push(`MANIFEST role '${role}' -> '${fam}' is absent from ROLE_FAMILY `
-        + `in Surfaces.ts. Add \`${role}: '${fam}',\``);
+        + `in SurfaceRoles.ts. Add \`${role}: '${fam}',\``);
     } else if (c !== fam) {
-      fails.push(`role '${role}': surfaces.json says '${fam}', Surfaces.ts says '${c}'`);
+      fails.push(`role '${role}': surfaces.json says '${fam}', SurfaceRoles.ts says '${c}'`);
     }
     if (!mFamilies.has(fam)) {
       fails.push(`MANIFEST role '${role}' names family '${fam}', which surfaces.json `
@@ -252,14 +252,14 @@ export function compareRoleTables(shipped, manifest, client) {
     const c = client.get(role);
     if (c === undefined) {
       fails.push(`MANIFEST flat role '${role}' is absent from ROLE_FAMILY in `
-        + `Surfaces.ts. Add \`${role}: 'flat',\``);
+        + `SurfaceRoles.ts. Add \`${role}: 'flat',\``);
     } else if (c !== 'flat') {
-      fails.push(`role '${role}': surfaces.json leaves it FLAT, Surfaces.ts says '${c}'`);
+      fails.push(`role '${role}': surfaces.json leaves it FLAT, SurfaceRoles.ts says '${c}'`);
     }
   }
   for (const [role, fam] of client) {
     if (mRoles[role] === undefined && mFlat[role] === undefined) {
-      fails.push(`CLIENT-ONLY role '${role}' -> '${fam}' in Surfaces.ts is absent `
+      fails.push(`CLIENT-ONLY role '${role}' -> '${fam}' in SurfaceRoles.ts is absent `
         + `from surfaces.json entirely`);
     }
   }
@@ -383,7 +383,7 @@ const counts = {
 const vacuous = [];
 if (counts.glb < MIN_GLB) vacuous.push(`only ${counts.glb} .glb found under ${MODELS} (expected >= ${MIN_GLB})`);
 if (counts.manifestRoles < MIN_ROLES) vacuous.push(`only ${counts.manifestRoles} manifest roles (expected >= ${MIN_ROLES})`);
-if (counts.clientRoles < MIN_CLIENT) vacuous.push(`only ${counts.clientRoles} roles parsed out of ROLE_FAMILY (expected >= ${MIN_CLIENT}); the parser has probably stopped matching Surfaces.ts`);
+if (counts.clientRoles < MIN_CLIENT) vacuous.push(`only ${counts.clientRoles} roles parsed out of ROLE_FAMILY (expected >= ${MIN_CLIENT}); the parser has probably stopped matching SurfaceRoles.ts`);
 if (vacuous.length > 0) {
   console.error('check-roles: REFUSING TO PASS ON TRIVIAL INPUT. A comparison over '
     + 'an empty set succeeds and means nothing:');
@@ -436,7 +436,7 @@ if (asJson) {
 if (fails.length > 0) {
   console.error(`check-roles: FAILED, ${fails.length} disagreement(s) between the `
     + `shipped .glb material names, assets/textures/dist/surfaces.json and `
-    + `ROLE_FAMILY in web/src/render/instancing/Surfaces.ts:`);
+    + `ROLE_FAMILY in web/src/render/instancing/SurfaceRoles.ts:`);
   for (const f of fails) console.error(`  ${f}`);
   console.error('check-roles: a role the client does not know draws UNTEXTURED. '
     + 'The client says so at runtime too, but only in a browser console, which is '
