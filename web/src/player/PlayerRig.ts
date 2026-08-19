@@ -301,6 +301,36 @@ export class PlayerRig {
     return out;
   }
 
+  /**
+   * GP-1055. The triangle count of THIS RIG'S OWN SUBTREE ONLY: the loaded
+   * body/arms scene, the held tool, and any equipped armour pieces, all of
+   * which live under `this.group` and nowhere else (armour pieces are added
+   * to `this.group` in `equip`, never to a scene root). Walked live off the
+   * geometry rather than cached, so a piece that was `unequip`'d (and
+   * `removeFromParent`'d) is gone from the count the instant it leaves the
+   * group, with no separate bookkeeping to drift out of sync.
+   *
+   * This exists so a probe can measure "how many triangles does the avatar
+   * itself carry" without going through `of.stats().draw.triangles`, which
+   * is a GLOBAL scene counter: it also includes terrain, foliage, props and
+   * every other rig, so two samples of it taken moments apart differ by
+   * whatever concurrent chunk streaming or entity spawning did in between,
+   * not by what changed on the avatar. `armourDrift()` already computes an
+   * exact per-piece count this same way (`geometry.getIndex()`, falling back
+   * to `position.count / 3` for unindexed geometry); this is the same
+   * arithmetic generalised to every mesh in the rig, not just the worn ones.
+   */
+  triangleCount(): number {
+    let tris = 0;
+    this.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh !== true) return;
+      const idx = m.geometry.getIndex();
+      tris += Math.floor((idx?.count ?? m.geometry.getAttribute('position').count) / 3);
+    });
+    return tris;
+  }
+
   socket(name: string): THREE.Object3D | null { return this.sockets.get(name) ?? null; }
   get socketNames(): string[] { return [...this.sockets.keys()]; }
   get holding(): string { return this.heldName; }

@@ -37,6 +37,19 @@ export interface ArmourApi {
     slot: string; nodes: string[]; primitives: number; sameSkeleton: boolean;
     bones: number; bodyBones: number; triangles: number;
   }[];
+  /**
+   * GP-1055. The BODY rig's own triangle count (`PlayerRig.triangleCount`):
+   * loaded scene + held tool + any equipped armour, and NOTHING else in the
+   * world. Armour binds to the body's skeleton only (A-11: the FP arms are a
+   * different rig with a different bind pose and no armour file), so this is
+   * the body group and not a union of both rigs.
+   *
+   * Exists so a probe can measure the avatar's own geometry directly instead
+   * of differencing `of.stats().draw.triangles`, a GLOBAL scene counter that
+   * also moves with terrain streaming, foliage and every other spawned
+   * entity. See PlayerRig.triangleCount for the full account.
+   */
+  avatarTriangles(): number;
 }
 
 export function armourApi(s: Services): ArmourApi {
@@ -69,6 +82,9 @@ export function armourApi(s: Services): ArmourApi {
       const body = a?.body ?? null;
       if (body === null) return [];
       return body.armourDrift();
+    },
+    avatarTriangles() {
+      return avatar()?.body?.triangleCount() ?? 0;
     },
   };
 }
