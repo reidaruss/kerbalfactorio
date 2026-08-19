@@ -211,9 +211,21 @@
   // asserted against the spelling  produces and there is no second one
   // to disagree with. The launch guide's probe asserts the same function from
   // the other side.
+  //
+  // GP-1074: RE-AIMED AGAINST GP-605, WHICH THIS ROW PREDATES. `demolish` used
+  // to carry both `KeyX` and `Mouse2`, so this line read `X+Right click`. GP-605
+  // took Mouse2 OFF `demolish` on purpose (a right-click reflex destroying a
+  // building with no confirmation) and gave it its own action, `demolishAsk`,
+  // that answers with the key that really removes rather than removing itself.
+  // The old assertion had gone on passing for the wrong reason: `keyOf` reads
+  // the LIVE table, so it had been quietly asserting `X` was falsy-equal to
+  // nothing joined onto it -- no, it had simply never been re-run since the
+  // rebind, which is exactly the GP-140 defect class this screen exists to
+  // catch, now caught in the probe that watches for it. Both codes are named.
   check('and it reports the codes a player actually recognises',
-    keyOf('use') === 'Left click' && keyOf('demolish') === 'X+Right click',
-    `use=${keyOf('use')} demolish=${keyOf('demolish')}`);
+    keyOf('use') === 'Left click' && keyOf('demolish') === 'X'
+    && keyOf('demolishAsk') === 'Right click',
+    `use=${keyOf('use')} demolish=${keyOf('demolish')} demolishAsk=${keyOf('demolishAsk')}`);
   // SHARED CODES ARE SHOWN rather than drawn twice and hoped over. Space is
   // `jump` and `stage`, which `Bindings.ts` permits only because one consumer
   // is ever live; a screen that hid that would hide the precondition.
