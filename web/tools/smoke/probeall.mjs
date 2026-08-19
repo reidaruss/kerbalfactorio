@@ -55,37 +55,74 @@ export function excludedReason(src) {
   return null;
 }
 
-// ---- BT-130: a documented PER-PROBE timeout override -----------------------
-// `cantilever.js` and `machineports.js` both hit the shared `timeoutMs`
-// (default 240000) inside the BT-116 sweep and were recorded NO_OUTPUT.
-// Re-run standalone on a quiet machine (2026-08-15, lane/probeall-debts),
-// with NO wrapper timeout at all so the real cost could be measured:
-// `cantilever.js` finished GREEN in 238.2 s, 1.8 s inside the 240 s cap with
-// zero contention; `machineports.js` finished (RED on an unrelated assertion,
-// see its own header) in 298.5 s, which is past the cap even completely
-// alone. Neither is the sweep's parallelism inventing a cost that is not
-// there: `machineports.js` cannot fit the shared budget under any
-// concurrency, and `cantilever.js` has essentially no margin left for GC
-// pauses or a second probe's Chrome instance sharing the CPU, which is
-// exactly the class BT-116's 4-way batch would have induced.
+// ---- BT-210 to BT-224: per-probe budgets, ONE committed source of truth ----
+// BT-130 introduced a documented PER-PROBE timeout override to fix the same
+// problem this section still fixes (the shared default is wrong in both
+// directions: too tight for a real outlier like assembler.js, ~730 s
+// measured, scored a false NO_OUTPUT identical to a genuine hang, GP-950;
+// too loose to catch a real hang quickly for the hundreds of probes that
+// finish in seconds). BT-130's fix was a `// PROBEALL-TIMEOUT: <ms>` header
+// comment, hand-picked per incident (cantilever.js, machineports.js,
+// padgate.js -- three probes, out of a corpus of 300+, each found only
+// because it had already caused a false NO_OUTPUT). That does not scale to
+// "every probe has a measured budget" and it is a SECOND place a number about
+// the sweep can live, which is exactly the kind of drift NUMBERS.md's own
+// "completed attribution with no owner" trap describes. It has been
+// SUBSUMED: every probe's budget now comes from ONE committed, generated,
+// machine-readable file, `web/tools/smoke/probe-budgets.json` (BT-210 to
+// BT-224), and the three `PROBEALL-TIMEOUT` header comments that used to
+// carry this are deleted from their probe files (the measurement narrative
+// in each stays, pointing at the committed file instead of a magic number).
 //
-// The instruction from the brief that fixed this is explicit: do not
-// silently raise the GLOBAL timeout for every probe to cover two outliers.
-// So the override is opt-in, per-probe, and requires the same kind of visible
-// justification `PROBEALL-EXCLUDE` does: a probe's header may carry
-//   // PROBEALL-TIMEOUT: <milliseconds>
-// anywhere in its first 60 lines, read here and applied ONLY to that probe's
-// own run, leaving every other probe (including a probe with no comment at
-// all) on the shared default. `cantilever.js` and `machineports.js` both
-// carry one now, with the measurement that justifies the number recorded in
-// the same comment.
-function timeoutOverrideMs(src) {
-  const lines = src.split(/\r?\n/).slice(0, 60);
-  for (const l of lines) {
-    const m = /^\s*\/\/\s*PROBEALL-TIMEOUT:\s*(\d+)\s*$/.exec(l);
-    if (m) return Number(m[1]);
+// Two numbers per probe, both derived from measured wall time by the ONE
+// rule stated in `build-probe-budgets.mjs` (never hand-picked per probe):
+//   - `budgetMs`:  a SOFT ceiling. Exceeding it flags `overBudget: true` on
+//     an otherwise-normal result; it NEVER turns a GREEN into a fail, and it
+//     never doubles up a RED that failed for its own reason. This is the
+//     "slow but it finished" signal.
+//   - `hardCapMs`: the HARD kill timeout passed to `run()`'s SIGKILL timer,
+//     same role BT-130's override played. Being killed here is a `HUNG`
+//     verdict: no report was ever produced, which is a fatal, real failure,
+//     distinct from a probe that finished (however slowly) with a verdict.
+//     "hung" (no output, ever) and "slow" (output, just late) are different
+//     facts and this is what keeps them from collapsing onto one NO_OUTPUT
+//     the way they did before GP-950's false read.
+//
+// A probe with no entry in the file (new since the last measurement pass, or
+// the budgets file itself missing/unreadable in an older `--tree`) falls back
+// to `defaultBudgetMs`/`defaultHardCapMs` from the same file, or the
+// hardcoded constants below if the file cannot be read at all -- the same
+// shared-default behaviour every probe had before this existed, never a
+// silent skip.
+const FALLBACK_BUDGET_MS = 300000;
+const FALLBACK_HARD_CAP_MS = 720000;
+
+function loadBudgets(tree) {
+  const path = join(tree, 'web', 'tools', 'smoke', 'probe-budgets.json');
+  try {
+    const doc = JSON.parse(readFileSync(path, 'utf8'));
+    return {
+      probes: doc.probes ?? {},
+      defaultBudgetMs: Number(doc.defaultBudgetMs) || FALLBACK_BUDGET_MS,
+      defaultHardCapMs: Number(doc.defaultHardCapMs) || FALLBACK_HARD_CAP_MS,
+    };
+  } catch {
+    // Missing/unreadable is not fatal: every probe just runs at the fallback,
+    // exactly as it did before this file existed. Loud on stderr so a lane
+    // running against a stale `--tree` notices rather than silently getting
+    // the fallback for every probe.
+    console.error(`probeall: no readable probe-budgets.json at ${path}; every probe uses the `
+      + `${FALLBACK_BUDGET_MS}/${FALLBACK_HARD_CAP_MS} ms fallback`);
+    return { probes: {}, defaultBudgetMs: FALLBACK_BUDGET_MS, defaultHardCapMs: FALLBACK_HARD_CAP_MS };
   }
-  return null;
+}
+
+function budgetFor(budgets, probeFile) {
+  const b = budgets.probes[probeFile];
+  return {
+    budgetMs: b?.budgetMs ?? budgets.defaultBudgetMs,
+    hardCapMs: b?.hardCapMs ?? budgets.defaultHardCapMs,
+  };
 }
 
 // ---- extract the documented invocation from the header comment -------------
@@ -360,11 +397,25 @@ for (const a of process.argv.slice(2)) {
   const m = /^--([^=]+)(?:=(.*))?$/.exec(a);
   if (m) args.set(m[1], m[2] ?? '1');
 }
+// `--summarize=<file>` reads an existing results.jsonl (this run's or an
+// earlier one's) and prints the pass/fail/OVER_BUDGET table with no browser,
+// no tree, and no probes run -- useful to re-quote a sweep's summary later
+// without paying for the sweep again.
+if (args.has('summarize')) {
+  printSummary(args.get('summarize'));
+  process.exit(0);
+}
 const url = args.get('url') ?? 'http://127.0.0.1:4262/';
 const tree = resolve(args.get('tree') ?? join(here, 'tree'));
 const only = args.get('only');           // comma list of probe basenames
 const limit = Number(args.get('limit') ?? 0);
-const timeoutMs = Number(args.get('timeout') ?? 240000);
+// An explicit --timeout on the command line is a uniform OVERRIDE of every
+// probe's hard cap (used for a from-scratch measurement pass, where the goal
+// is one generous shared cap so real wall time can be observed rather than
+// clipped). Omitted (the normal case), each probe's hard cap comes from
+// probe-budgets.json (BT-210 to BT-224, see loadBudgets/budgetFor above).
+const timeoutOverrideCli = args.has('timeout') ? Number(args.get('timeout')) : null;
+const budgets = loadBudgets(tree);
 // GP-982: forwarded to run.mjs only if given, so the runner's own default (30 s)
 // stays the single place the cadence is defined. `--heartbeat=0` silences it.
 const heartbeat = args.has('heartbeat') ? Number(args.get('heartbeat')) : null;
@@ -407,7 +458,8 @@ for (const f of files) {
     if (shard === 0) appendFileSync(outFile, JSON.stringify({ probe: f, cls: 'EXCLUDED', reason: excluded }) + '\n');
     continue;
   }
-  const probeTimeoutMs = timeoutOverrideMs(src) ?? timeoutMs;
+  const { budgetMs, hardCapMs } = budgetFor(budgets, f);
+  const probeTimeoutMs = timeoutOverrideCli ?? hardCapMs;
   const cmd = extractCmd(src);
   if (cmd === PROSE_ONLY_INVOCATION) {
     // BT-190: named LOUDLY and never queued, even under --nodocs. This is not
@@ -431,14 +483,17 @@ for (const f of files) {
     }
     idx++;
     if (shards > 1 && idx % shards !== shard) continue;
-    queue.push({ f, flags: [], bad: [], cmd: '(defaults; probe documents no invocation)', defaults: true, timeoutMs: probeTimeoutMs });
+    queue.push({
+      f, flags: [], bad: [], cmd: '(defaults; probe documents no invocation)', defaults: true,
+      timeoutMs: probeTimeoutMs, budgetMs,
+    });
     continue;
   }
   if (args.has('nodocs')) continue;
   idx++;
   if (shards > 1 && idx % shards !== shard) continue;
   const { flags, bad } = flagsOf(cmd);
-  queue.push({ f, flags, bad, cmd, timeoutMs: probeTimeoutMs });
+  queue.push({ f, flags, bad, cmd, timeoutMs: probeTimeoutMs, budgetMs });
 }
 
 console.error(`probeall: ${queue.length} to run (${done.size} already recorded)`);
@@ -452,9 +507,10 @@ for (const q of queue) {
   // Printed BEFORE the run, not after it. Half of "is this sweep alive" is
   // knowing which probe it is inside; the other half is the forwarded
   // heartbeat in `run()`.
-  console.error(`[${n}/${queue.length}] ${q.f} running (budget `
-    + `${Math.round((q.timeoutMs ?? timeoutMs) / 1000)}s)`);
-  const r = await run(process.execPath, argv, webDir, q.f, q.timeoutMs ?? timeoutMs, stdoutDir);
+  console.error(`[${n}/${queue.length}] ${q.f} running (hard cap `
+    + `${Math.round((q.timeoutMs ?? budgets.defaultHardCapMs) / 1000)}s, soft budget `
+    + `${Math.round((q.budgetMs ?? budgets.defaultBudgetMs) / 1000)}s)`);
+  const r = await run(process.execPath, argv, webDir, q.f, q.timeoutMs ?? budgets.defaultHardCapMs, stdoutDir);
   // BT-130: stdout is read back from disk, not from a capped in-memory
   // string, so a big-but-complete report (propshadow.js: 8.4 MB) parses the
   // same as a small one. `r.soTruncated` is only ever true against
@@ -467,7 +523,26 @@ for (const q of queue) {
     try { report = JSON.parse(so); } catch (e) { parseErr = String(e.message).slice(0, 200); }
   }
   let v;
-  if (r.soTruncated) {
+  if (r.timedOut) {
+    // BT-210 to BT-224: HUNG is its own verdict, not NO_OUTPUT. Both mean "no
+    // report was ever produced", but they arrive differently: NO_OUTPUT is a
+    // process that exited (crashed, or closed early) without ever printing a
+    // parseable report; HUNG is a process still running when its own
+    // measured hard cap (probe-budgets.json's hardCapMs, 3x this probe's own
+    // worst measured wall time, floor 120 s -- see build-probe-budgets.mjs)
+    // ran out and was SIGKILLed. Distinguishing them is the whole point of
+    // this decision block: a probe that is merely SLOW (produces a report,
+    // just later than its soft budget) must never collapse onto the same
+    // bucket as a probe that never produces one at all, the way GP-950's
+    // false NO_OUTPUT read did for assembler.js under the old shared 240 s
+    // default. HUNG is always fatal/red; there is no soft-budget reading of
+    // "never finished".
+    v = {
+      cls: 'HUNG',
+      fails: [`killed at its own hard cap after ${r.ms} ms (cap `
+        + `${q.timeoutMs ?? budgets.defaultHardCapMs} ms); no report was ever produced`],
+    };
+  } else if (r.soTruncated) {
     // LOUD, not a silent NO_OUTPUT: the process was still producing output
     // when the safety cap cut it off, which is a fact about the cap, not
     // about the probe's verdict.
@@ -482,6 +557,12 @@ for (const q of queue) {
   } else {
     v = { cls: 'NO_OUTPUT', fails: [] };
   }
+  // A probe that finished (produced a real verdict, was not killed) but took
+  // longer than its own soft budget is SLOW, not a content failure: the flag
+  // rides alongside whatever verdict it earned (GREEN stays GREEN, RED stays
+  // RED for its own reason) and is surfaced separately in the summary, never
+  // folded into `fails` and never able to turn a pass into a fail by itself.
+  const overBudget = !r.timedOut && r.ms > (q.budgetMs ?? budgets.defaultBudgetMs);
   const runnerFails = (r.se.match(/^ {2}(console\.error|pageerror|requestfailed|runner|console\.warn):.*/gm) ?? []).slice(0, 6);
   const rec = {
     probe: q.f,
@@ -496,7 +577,9 @@ for (const q of queue) {
     runnerFails,
     flags: q.flags,
     atDefaults: q.defaults === true,
-    timeoutMs: q.timeoutMs ?? timeoutMs,
+    timeoutMs: q.timeoutMs ?? budgets.defaultHardCapMs,
+    budgetMs: q.budgetMs ?? budgets.defaultBudgetMs,
+    overBudget,
     parseErr,
     stdoutBytes: r.soBytes,
     stdoutTruncated: r.soTruncated,
@@ -505,7 +588,51 @@ for (const q of queue) {
     stderrTail: r.se.slice(-600),
   };
   appendFileSync(outFile, JSON.stringify(rec) + '\n');
-  console.error(`[${n}/${queue.length}] ${q.f} done exit=${r.code} runner=${rec.runnerSaysPass ? 'PASS' : 'FAIL'} verdict=${v.cls}${v.fails.length ? ` (${v.fails.length})` : ''} ${Math.round(r.ms / 1000)}s`);
+  console.error(`[${n}/${queue.length}] ${q.f} done exit=${r.code} runner=${rec.runnerSaysPass ? 'PASS' : 'FAIL'} `
+    + `verdict=${v.cls}${v.fails.length ? ` (${v.fails.length})` : ''}${overBudget ? ' OVER_BUDGET' : ''} `
+    + `${Math.round(r.ms / 1000)}s`);
 }
 console.error('probeall: done');
+printSummary(outFile);
 } // isMain
+
+// ---- BT-210 to BT-224: the pass/fail/OVER_BUDGET summary -------------------
+// Read back from the results FILE, not from this run's in-memory queue, so it
+// reports the true total across a resumed sweep (partial runs included, per
+// the file's own resumability) rather than just whatever this invocation
+// happened to execute. Callable standalone via `--summarize=<file>` (see
+// below `if (isMain)`... this function itself has no side effects) so a
+// results file from an earlier run can be summarised without re-running
+// anything.
+export function printSummary(outFile) {
+  if (!existsSync(outFile)) { console.error(`probeall: no results file at ${outFile} to summarise`); return; }
+  const byCls = {};
+  let overBudgetCount = 0;
+  let total = 0;
+  for (const l of readFileSync(outFile, 'utf8').split(/\r?\n/)) {
+    if (!l.trim()) continue;
+    let d;
+    try { d = JSON.parse(l); } catch { continue; }
+    total++;
+    const cls = d.cls || d.verdict || 'UNKNOWN';
+    byCls[cls] = (byCls[cls] ?? 0) + 1;
+    if (d.overBudget) overBudgetCount++;
+  }
+  // PASS is exactly GREEN. FAIL is every verdict that means the probe itself
+  // is broken or never reported (RED, HUNG, NO_OUTPUT, TRUNCATED_OUTPUT,
+  // UNRECOGNISED_VERDICT_SHAPE). Everything else (NO_VERDICT and the
+  // documentation-only buckets EXCLUDED/NO_DOCUMENTED_CMD/
+  // PROSE_ONLY_INVOCATION) is neither: NO_VERDICT is legitimately a
+  // report-only probe by design for most of its members (BT-175), and the
+  // documentation buckets never ran at all. OVER_BUDGET is cross-cutting and
+  // deliberately excluded from both PASS and FAIL counts: per the BT-210 to
+  // BT-224 gate semantics, a slow-but-correct run is visible, not a failure.
+  const FAIL_CLASSES = ['RED', 'HUNG', 'NO_OUTPUT', 'TRUNCATED_OUTPUT', 'UNRECOGNISED_VERDICT_SHAPE'];
+  const pass = byCls.GREEN ?? 0;
+  const fail = FAIL_CLASSES.reduce((s, c) => s + (byCls[c] ?? 0), 0);
+  console.error(`probeall summary (${outFile}): ${total} recorded, ${pass} PASS, ${fail} FAIL, `
+    + `${overBudgetCount} OVER_BUDGET (informational, not counted in FAIL)`);
+  for (const [cls, n] of Object.entries(byCls).sort(([a], [b]) => a.localeCompare(b))) {
+    console.error(`  ${cls}: ${n}`);
+  }
+}
