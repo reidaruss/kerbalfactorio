@@ -13,10 +13,22 @@
 // `qolbuild2.js`, the rest of this same three-part survey, for the same
 // reason: the `vab`/`vabinsert` stages build from the full part catalogue.
 //
-// GP-401. EVERY STAGE ASSERTS AND A FAILED ASSERTION THROWS, because a returned
-// `fails: [...]` or `valid:false` exits 0 and run.mjs prints `smoke: PASS`: the
-// runner only fails a run on console errors and failed requests. A throw
-// rejects page.evaluate, which is the one signal that reaches the exit code.
+// GP-401. EVERY STAGE ASSERTS. A returned `fails: [...]` or `valid:false`
+// exits 0 and run.mjs prints `smoke: PASS` for a standalone run: the runner
+// only fails a run on console errors and failed requests.
+//
+// AMENDED BT-270 to BT-274: a failed assertion used to THROW, because a throw
+// rejects page.evaluate, which is the one signal that reaches a standalone
+// run's exit code. That never accounted for the SWEEP: `probeall.mjs`'s
+// audit found `run.mjs`'s try/catch drops the ENTIRE report on a
+// page.evaluate throw, not just the eval field, so a correctly-diagnosed RED
+// here read as NO_OUTPUT, indistinguishable from a hard crash (qolbuild2.js's
+// "press aimed at the SKY places nothing" finding, BT-260 to BT-264, was
+// exactly this). `finish` now RETURNS `{ fails, valid: fails.length === 0,
+// log }` instead; the standalone-run exit-code honesty is kept the same way
+// qolbuild2.js keeps it, every failure also gets its own `console.error`
+// line, which fails a standalone run's own exit code independent of the
+// returned report.
 //
 // `scale` was DEAD before this pass. It read `of.game().factory.tileM` and
 // swallowed the miss with `?? null`: the client has never published `tileM`, so
@@ -57,17 +69,18 @@
     if (!ok) fails.push(`${name} :: ${detail}`);
   };
   const finish = (out) => {
-    if (fails.length > 0) {
-      // Each failure ALSO on its own console.error line. run.mjs dedups its
-      // error list on the first 160 characters of a message, so a single long
-      // throw arrives TRUNCATED and every failure after the first is
-      // unreadable. One line each survives that, and a page console.error is
-      // itself a failing run, so this cannot turn a red run green.
-      for (const f of fails) console.error(`probe FAIL: ${f}`);
-      throw new Error(`probe: ${fails.length} of ${log.length} checks failed:\n  `
-        + fails.join('\n  '));
-    }
-    return { ...out, valid: true, log };
+    // Each failure ALSO on its own console.error line (kept from the old
+    // throwing version, BT-270 to BT-274): run.mjs fails a standalone run's
+    // own exit code on any page console.error, independent of what's in the
+    // returned report, so `node run.mjs ... qolbuild3.js` by hand still
+    // prints `smoke: FAILURES` and exits non-zero when a check fails.
+    for (const f of fails) console.error(`probe FAIL: ${f}`);
+    // RETURNED, NOT THROWN: a throw here drops the whole report before
+    // run.mjs ever prints it, so the sweep read every real failure here as
+    // indistinguishable from a crash. `fails: [...]` is verdictOf()'s
+    // convention 1, so a non-empty array is read as a real RED verdict with
+    // every failing check's name intact instead of NO_OUTPUT with none.
+    return { ...out, valid: fails.length === 0, fails, log };
   };
 
   // Every HUD channel read BOTH ways at the same instant. A `*RawOnly` twin

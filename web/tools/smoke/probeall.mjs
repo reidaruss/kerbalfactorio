@@ -185,11 +185,22 @@ export function extractCmd(src) {
 
 const PLACEHOLDER = /^(\.\.\.|<.*>|\$.*|\.\.\.\.)$/;
 
-function flagsOf(cmd) {
+// BT-265 to BT-269: exported (was module-private, same reasoning as
+// `excludedReason`/`extractCmd` at BT-225) so `check-invocations.mjs` can
+// classify the SAME flag-token shape this file's own sweep already uses to
+// build a probe's argv, instead of re-deriving a second regex that could
+// drift from this one. A token this pattern does not match is exactly what
+// `flagsOf()`'s `continue` below drops SILENTLY -- correct for `flagsOf()`'s
+// own job (build the argv from what IS a flag), wrong for a well-formedness
+// gate, whose job is to notice when something that was clearly MEANT to be a
+// flag value got split off and dropped instead.
+export const FLAG_TOKEN_RE = /^--([A-Za-z0-9_-]+)(?:=(.*))?$/;
+
+export function flagsOf(cmd) {
   const out = [];
   const bad = [];
   for (const tok of cmd.split(/\s+/)) {
-    const m = /^--([A-Za-z0-9_-]+)(?:=(.*))?$/.exec(tok);
+    const m = FLAG_TOKEN_RE.exec(tok);
     if (!m) continue;
     const [, k, v0] = m;
     if (k === 'url' || k === 'out' || k === 'evalfile') continue;

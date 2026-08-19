@@ -44,38 +44,38 @@
     log.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail === undefined ? '' : `  [${detail}]`}`);
     if (!ok) fails.push(`${name} :: ${detail}`);
   };
-  // GP-609. A FAILED CHECK NOW THROWS, BECAUSE `smoke: PASS` DOES NOT MEAN THE
-  // CHECKS HELD. Measured directly against `run.mjs`: a probe returning
-  // `fails: ['DELIBERATE FAILURE']` exits **0** and prints `smoke: PASS`, and
-  // so does one returning `valid: false`. The runner's exit code is a function
-  // of console errors and failed requests ONLY. So every probe on this project
-  // that reports through a `fails` array has been relying on a human reading
-  // the JSON, and a suite whose green is unconditional is a suite that cannot
-  // go red.
-  //
-  // A THROW is the one thing that does reach the exit code: it rejects
-  // `page.evaluate`, and the runner already treats that as a FAILURE with a
-  // non-zero exit (its own PRELUDE comment says so about `mustNum`). Verified
-  // both ways before adopting it: throwing gives exit 1 with the failing names
-  // printed, and the same shape with nothing failing still gives exit 0.
-  //
-  // `run.mjs` itself is NOT changed here. It is build-tooling's file, another
-  // lane has uncommitted work in it, and flipping its exit semantics would turn
-  // every currently-green run in the repo red at once. That is Admin's call,
-  // and it is raised rather than taken.
-  // GP-609. AN EARLY BAIL-OUT THROWS TOO. `valid:false` exits 0 (measured), so a
-  // probe that gives up half way through, having explicitly recorded that it
-  // measured nothing, was reporting `smoke: PASS` for a run that tested nothing.
-  // That is the exact failure this retrofit exists to remove, and returning a
-  // flag instead of throwing would have left it in place at the one point where
-  // the probe already KNOWS it has failed.
-  const bail = (why) => { throw new Error(`probe: ABANDONED, ${why}`); };
+  // GP-609, AMENDED BT-270 to BT-274. A FAILED CHECK USED TO THROW, on the
+  // theory that a returned `fails: [...]`/`valid:false` exits 0 and run.mjs
+  // prints `smoke: PASS` for a human driving it by hand, and only a throw
+  // (which rejects page.evaluate) reached the runner's own exit code. That
+  // reasoning never accounted for the SWEEP: `probeall.mjs`'s audit of
+  // `run.mjs` found its try/catch drops the ENTIRE report on a
+  // page.evaluate throw, not just the eval field, so a correctly-diagnosed
+  // RED here read as NO_OUTPUT, indistinguishable from a hard crash --
+  // qolbuild2.js's "press aimed at the SKY places nothing" finding (BT-260
+  // to BT-264) was exactly this shape. `finish()` now RETURNS `{ fails,
+  // valid: fails.length === 0, log }` (verdictOf()'s convention 1) instead,
+  // which probeall.mjs reads as a real RED with the failing check names
+  // intact. The standalone-run honesty is kept the same way qolbuild2.js
+  // keeps it: every failure still gets its own `console.error` line, and
+  // `run.mjs` fails a standalone run's own exit code on any page
+  // console.error independent of what is in the returned report, so `node
+  // run.mjs ...` by hand still prints `smoke: FAILURES` and exits non-zero.
+  // `bail()` (an early, self-diagnosed abandon: this file defines it but
+  // never calls it) gets the same fix for the same reason, kept consistent
+  // with the sibling probes (`navdraw.js`, `qolhandsafe.js`, `qolsandbox.js`)
+  // that do call it: it now records the reason as a failure and returns
+  // through `finish()` rather than throwing it away. `run.mjs` itself is
+  // addressed separately (BT-270 to BT-274's own decision on its catch
+  // block), not silently assumed fixed by this file alone.
+  const bail = (why) => {
+    fails.push(`ABANDONED :: ${why}`);
+    log.push(`FAIL  ABANDONED  [${why}]`);
+    return finish(out);
+  };
   const finish = (out) => {
-    if (fails.length > 0) {
-      throw new Error(`probe: ${fails.length} of ${log.length} checks failed:\n  `
-        + fails.join('\n  '));
-    }
-    return { ...out, valid: true, log };
+    for (const f of fails) console.error(`probe FAIL: ${f}`);
+    return { ...out, valid: fails.length === 0, fails, log };
   };
   const out = { fails, log };
 

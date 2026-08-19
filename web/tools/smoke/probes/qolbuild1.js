@@ -16,14 +16,25 @@
 // survival pack would report an empty catalogue rather than the QOL
 // question the survey exists to ask.
 //
-// GP-401. EVERY STAGE NOW ASSERTS, AND A FAILED ASSERTION THROWS. Before this
-// pass the file returned a bag of readings and no claims at all, and the runner
-// printed `smoke: PASS` for a probe that returned `fails: ['DELIBERATE
-// FAILURE']` or `valid:false`: run.mjs only fails a run on console errors and
-// failed requests, so thirteen green stages supported exactly zero statements
-// about the game. A THROW is the one thing that does travel: it rejects
-// page.evaluate, which the runner reports as a failure with exit 1. So `finish`
-// throws, and nothing here is green unless every check held.
+// GP-401. EVERY STAGE ASSERTS. Before this pass the file returned a bag of
+// readings and no claims at all, and the runner printed `smoke: PASS` for a
+// probe that returned `fails: ['DELIBERATE FAILURE']` or `valid:false`:
+// run.mjs only fails a standalone run on console errors and failed requests,
+// so thirteen green stages supported exactly zero statements about the game.
+//
+// AMENDED BT-270 to BT-274: `finish` used to THROW on a failed check, on the
+// theory that a throw was the one thing that traveled (it rejects
+// page.evaluate, which the runner reports as a failure with exit 1). That
+// held for a human driving `run.mjs` by hand and not for the SWEEP:
+// `probeall.mjs`'s audit found `run.mjs`'s try/catch drops the ENTIRE report
+// on a page.evaluate throw, not just the eval field, so a correctly-diagnosed
+// RED here read as NO_OUTPUT, indistinguishable from a hard crash
+// (qolbuild2.js's "press aimed at the SKY places nothing" finding, BT-260 to
+// BT-264, was exactly this). `finish` now RETURNS `{ fails, valid:
+// fails.length === 0, log }` instead; the standalone-run exit-code honesty is
+// kept the same way qolbuild2.js keeps it, every failure also gets its own
+// `console.error` line, which fails a standalone run's own exit code
+// independent of the returned report.
 (async () => {
   const of = window.__of;
   // A THROW, not `return {valid:false}`: a returned flag exits 0 and prints PASS.
@@ -57,17 +68,18 @@
     if (!ok) fails.push(`${name} :: ${detail}`);
   };
   const finish = (out) => {
-    if (fails.length > 0) {
-      // Each failure ALSO on its own console.error line. run.mjs dedups its
-      // error list on the first 160 characters of a message, so a single long
-      // throw arrives TRUNCATED and every failure after the first is
-      // unreadable. One line each survives that, and a page console.error is
-      // itself a failing run, so this cannot turn a red run green.
-      for (const f of fails) console.error(`probe FAIL: ${f}`);
-      throw new Error(`probe: ${fails.length} of ${log.length} checks failed:\n  `
-        + fails.join('\n  '));
-    }
-    return { ...out, valid: true, log };
+    // Each failure ALSO on its own console.error line (kept from the old
+    // throwing version, BT-270 to BT-274): run.mjs fails a standalone run's
+    // own exit code on any page console.error, independent of what's in the
+    // returned report, so `node run.mjs ... qolbuild1.js` by hand still
+    // prints `smoke: FAILURES` and exits non-zero when a check fails.
+    for (const f of fails) console.error(`probe FAIL: ${f}`);
+    // RETURNED, NOT THROWN: a throw here drops the whole report before
+    // run.mjs ever prints it, so the sweep read every real failure here as
+    // indistinguishable from a crash. `fails: [...]` is verdictOf()'s
+    // convention 1, so a non-empty array is read as a real RED verdict with
+    // every failing check's name intact instead of NO_OUTPUT with none.
+    return { ...out, valid: fails.length === 0, fails, log };
   };
 
   // Every HUD channel, read BOTH ways at the same instant. `drawn` is what a
