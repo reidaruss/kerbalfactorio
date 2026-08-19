@@ -4,8 +4,33 @@
 //
 //   node tools/smoke/run.mjs --url=http://127.0.0.1:<p>/ --scenario=walk \
 //     --evalfile=tools/smoke/probes/shadowk.js --wait=1200 \
-//     --evalargs='{"site":{"name":"mountains","lat":-31.165,"lon":-86.27401,
-//                          "yaw":300,"pitch":-6},"sunDot":0.10}'
+//     --evalargs='{"site":{"name":"mountains","lat":-31.165,"lon":-86.27401,"yaw":300,"pitch":-6},"sunDot":0.10}'
+//
+// BT-260 to BT-264, amended, TWO STACKED DEFECTS in this header, not one.
+// (1) The old line 7 never carried the trailing `\` every other
+// continuation line here has, so extractCmd() (which stops collecting a
+// documented invocation the moment a comment line does NOT end in `\`)
+// silently truncated the command after `"lon":-86.27401,` and dropped the
+// old line 8 entirely -- unterminated JSON, `SyntaxError: Invalid or
+// unexpected token` under the real sweep path, scored NO_OUTPUT. (2) Adding
+// only the backslash is NOT sufficient: `probeall.mjs`'s `flagsOf()`
+// tokenises the extracted command on bare whitespace (`cmd.split(/\s+/)`),
+// with no awareness of the single quotes around --evalargs' JSON value, and
+// `extractCmd()`'s own line-joiner (`parts.join(' ')`) inserts a further
+// space at every join regardless of each line's original indentation. So
+// EVEN with the backslash restored, the join still lands a bare space in
+// the middle of the quoted JSON (between the old lines 7 and 8), `flagsOf()`
+// still splits on it, and the tail token (`"yaw":300,...`) does not match
+// `--key=value` and is silently dropped -- same truncation, different
+// mechanism, verified live before landing the real fix (see this file's
+// NUMBERS.md BT-260 row). shadowk.js was the ONLY probe in the corpus
+// wrapping --evalargs onto a second comment line; every other multi-flag
+// header keeps --evalargs on ONE line for exactly this reason, so the real
+// fix is collapsing it back to one line above, matching the convention,
+// not patching the continuation. A hand-typed invocation (copying the JSON
+// across lines by eye, as this lane's first pass did) reproduces neither
+// defect, because a human closes braces and ignores incidental whitespace
+// that a naive tokeniser cannot.
 //
 // WHY THIS EXISTS. `?shadowlodk` is read at module load, so a k=1 against k=2
 // pair costs two page loads. The rocks lane measured what that is worth: two

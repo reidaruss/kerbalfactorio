@@ -16,10 +16,25 @@
 // crafting step, which needs the full catalogue unlocked to reach the UI
 // question this survey is actually asking.
 //
-// GP-401. EVERY STAGE ASSERTS AND A FAILED ASSERTION THROWS, because a returned
-// `fails: [...]` or `valid:false` exits 0 and run.mjs prints `smoke: PASS`: the
-// runner only fails on console errors and failed requests. A throw rejects
-// page.evaluate, which is the one signal that reaches the exit code.
+// GP-401, AMENDED BT-260 to BT-264. Every stage still asserts, but a failed
+// assertion no longer THROWS. It used to, on the theory that a returned
+// `fails: [...]` exits 0 and run.mjs prints `smoke: PASS`, so only a throw
+// (which rejects page.evaluate) reached the exit code. That was true for a
+// human driving run.mjs by hand, and false for the sweep: run.mjs's
+// try/catch drops the ENTIRE report on a page.evaluate throw, not just the
+// eval field, so probeall.mjs sees zero bytes on stdout and records
+// NO_OUTPUT -- identical to a hard crash -- for what was actually a
+// specific, named, correctly-diagnosed failure sitting in `fails`. Found
+// live: the 'place' stage's own "press aimed at the SKY places nothing"
+// check failing threw, and the sweep's own record of that run was
+// indistinguishable from a hang. `finish()` below now returns `{ fails,
+// valid: fails.length === 0, log }` instead (verdictOf()'s convention 1,
+// the same shape terrainspec.js/carrier.js use), which probeall.mjs reads
+// as a real RED verdict with the failing check name intact. The exit-code
+// honesty for a standalone `node run.mjs` run is kept a different way: every
+// failure still gets its own `console.error` line below, and run.mjs fails
+// its OWN exit code on any page console.error independent of the report
+// content, so `smoke: FAILURES` and a non-zero exit still happen either way.
 //
 // Two stages were DEAD before this pass and are fixed here:
 //   * `machine` opened a SMELTER and then looked for a recipe menu. A smelter
@@ -60,17 +75,21 @@
     if (!ok) fails.push(`${name} :: ${detail}`);
   };
   const finish = (out) => {
-    if (fails.length > 0) {
-      // Each failure ALSO on its own console.error line. run.mjs dedups its
-      // error list on the first 160 characters of a message, so a single long
-      // throw arrives TRUNCATED and every failure after the first is
-      // unreadable. One line each survives that, and a page console.error is
-      // itself a failing run, so this cannot turn a red run green.
-      for (const f of fails) console.error(`probe FAIL: ${f}`);
-      throw new Error(`probe: ${fails.length} of ${log.length} checks failed:\n  `
-        + fails.join('\n  '));
-    }
-    return { ...out, valid: true, log };
+    // Each failure ALSO on its own console.error line, kept from the old
+    // throwing version: run.mjs fails a standalone run's own exit code on
+    // any page console.error, independent of what's in the returned report,
+    // so `node run.mjs ... qolbuild2.js` by hand still prints `smoke:
+    // FAILURES` and exits non-zero when a check fails. dedups on the first
+    // 160 characters, so one line per failure survives that where one long
+    // combined message would not.
+    for (const f of fails) console.error(`probe FAIL: ${f}`);
+    // RETURNED, NOT THROWN (BT-260 to BT-264, see the header comment): a
+    // throw here drops the whole report before run.mjs ever prints it, so
+    // the sweep read every real failure here as indistinguishable from a
+    // crash. `fails: [...]` is verdictOf()'s convention 1, so a non-empty
+    // array is read as a real RED verdict with every failing check's name
+    // intact instead of NO_OUTPUT with none of them.
+    return { ...out, valid: fails.length === 0, fails, log };
   };
 
   // Every HUD channel read BOTH ways at the same instant. `drawn` is what a
