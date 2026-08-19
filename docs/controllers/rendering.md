@@ -970,6 +970,8 @@ delta can therefore be NEGATIVE, which drives `acc` negative and `alpha`
 negative. RN-2035 is `Math.min(Math.max(dtIn, 0), 0.25)` in
 `web/src/app/Loop.ts`.
 
+> **SUPERSEDED IN ITS MECHANISM, NOT IN ITS FINDING (CE-130 / CE-131, 2026-08-19).** The paragraph above is still the correct history and RN-2035 is still in the file, but it is no longer the whole fix: `lastMs` is now stamped ONLY from the rAF timestamp, so the delta cannot be negative in the first place, and `renderTick` clamps its alpha to match the two observers, so an out-of-range alpha could not reach the drawn hull even if one arrived. See `core-engine.md` §5o.
+
 **WHAT A NEGATIVE ALPHA ACTUALLY DOES, AND IT IS AN ASYMMETRY BETWEEN TWO
 CONSUMERS RATHER THAN A MOVING CAMERA.** The eye does NOT extrapolate.
 `Controller.interpolate` and `VesselObserver.interpolate` both open with
