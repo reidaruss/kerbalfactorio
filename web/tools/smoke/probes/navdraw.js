@@ -25,9 +25,21 @@
 // could not exclude a near-vertical climb. Physics published
 // `periapsisMeaningful` as the physical fact; this asserts the CELL follows it.
 //
-// GP-609: a failed check throws, because `smoke: PASS` does not mean the checks
-// held. Measured against `run.mjs`: a probe returning a non-empty `fails` array
-// exits 0.
+// GP-609, AMENDED BT-270 to BT-274: a failed check USED TO throw, on the theory
+// that `smoke: PASS` does not otherwise mean the checks held (measured against
+// `run.mjs`: a probe returning a non-empty `fails` array exits 0 for a human
+// driving it by hand). That never accounted for the SWEEP: `probeall.mjs`'s
+// audit found `run.mjs`'s try/catch drops the ENTIRE report on a
+// page.evaluate throw, not just the eval field, so a correctly-diagnosed RED
+// here read as NO_OUTPUT, indistinguishable from a hard crash (qolbuild2.js's
+// BT-260 to BT-264 finding). `finish()` now RETURNS `{ fails, valid:
+// fails.length === 0, log }` instead; the standalone-run exit-code honesty is
+// kept the same way qolbuild2.js keeps it, every failure also gets its own
+// `console.error` line, which fails a standalone run's own exit code
+// independent of the returned report. `bail()` gets the same fix: it now
+// records the abandon reason as a failure and returns through `finish()`
+// rather than throwing it away. `run.mjs` itself is addressed separately
+// (BT-270 to BT-274's own decision on its catch block).
 (async () => {
   const of = window.__of;
   if (!of) throw new Error('probe: no __of on the page');
@@ -38,13 +50,14 @@
     log.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail === undefined ? '' : `  [${detail}]`}`);
     if (!ok) fails.push(`${name} :: ${detail}`);
   };
-  const bail = (why) => { throw new Error(`probe: ABANDONED, ${why}`); };
+  const bail = (why) => {
+    fails.push(`ABANDONED :: ${why}`);
+    log.push(`FAIL  ABANDONED  [${why}]`);
+    return finish(out);
+  };
   const finish = (out) => {
-    if (fails.length > 0) {
-      throw new Error(`probe: ${fails.length} of ${log.length} checks failed:\n  `
-        + fails.join('\n  '));
-    }
-    return { ...out, valid: true, log };
+    for (const f of fails) console.error(`probe FAIL: ${f}`);
+    return { ...out, valid: fails.length === 0, fails, log };
   };
   // A DRAWN string, or null. `innerText` falls back to `textContent` on a
   // display:none element, so reading text without a layout test reports hidden
