@@ -94,7 +94,20 @@ const PID = {
   check('ROLLED OUT and never boarded: the rocket already knows its own mass',
         f0.flight.massKg > 1000, `${f0.flight.massKg}`);
   log.push(`rolled out: live ${f0.flight.live} status ${f0.flight.status} mass ${f0.flight.massKg}`);
-  const id = (of.flight('vessels').list[0] || {}).id;
+  // GP-1073: `list[0]` USED TO BE THE ROCKET, and stopped being that the day
+  // PH-380/D-015 gave Anchorage a real one-part design instead of the empty
+  // one `VesselDesign.fromJson([])` used to build. The registry now seeds
+  // `Anchorage` (`SpaceStation.ts`'s `STATION_TAG = 'station:anchorage'`) BEFORE
+  // a probe ever rolls anything out, so `list[0]` is the station and this
+  // fixture's own rocket lands at `list[1]`. That is not a coincidence a probe
+  // should lean on either: `promoteVessel` (`app/FlightVessels.ts`) has refused
+  // to promote a station by NAME since the same PH-380 pass ("A PLACE, NOT A
+  // VEHICLE, REFUSED BY NAME"), on purpose, so the station id is the one id in
+  // the list `promote` can never succeed on. Filter it out the same way the
+  // game code recognises it (`isStation`'s own predicate) rather than assuming
+  // a position in the array.
+  const rec = of.flight('vessels').list.find((r) => r.status !== 'station:anchorage');
+  const id = rec ? rec.id : undefined;
   if (!id) return { valid: false, why: 'no record', vessels: of.flight('vessels') };
   of.flight('demote'); await sleep(0.5);
   const d1 = of.flight('report');
