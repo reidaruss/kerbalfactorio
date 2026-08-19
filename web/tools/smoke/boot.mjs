@@ -45,6 +45,70 @@ export const CHROME_CANDIDATES = [
   '/usr/bin/chromium',
 ];
 
+/**
+ * Chromium's kRestrictedPorts (net/base/port_util.cc): ports it refuses to
+ * navigate to at all, ERR_UNSAFE_PORT, no matter what answers on them. Node's
+ * `server.listen(0, ...)` ephemeral-port allocator knows nothing about this
+ * list. On this box (`netsh int ipv4 show dynamicport tcp`: start 1024, 64511
+ * ports, i.e. 1024-65534) that range overlaps 17 of Chromium's restricted
+ * ports: 1719, 1720, 1723, 2049, 3659, 4045, 5060, 5061, 6000, 6566, 6665,
+ * 6666, 6667, 6668, 6669, 6697, 10080. That is how a boot run once drew 6667
+ * and died with ERR_UNSAFE_PORT for a reason that had nothing to do with the
+ * build: the OS handed it out honestly, port 0 does not consult Chrome's
+ * list, and nothing here rejected it. (The IANA ephemeral range 49152-65535
+ * some other platforms restrict binds to contains NONE of these; the bug is
+ * specific to this OS's wider dynamic port range, not to the port list.)
+ */
+export const CHROME_UNSAFE_PORTS = new Set([
+  0, 1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77,
+  79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135,
+  137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531,
+  532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720,
+  1723, 2049, 3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668,
+  6669, 6697, 10080,
+]);
+
+export const isUnsafePort = (port) => CHROME_UNSAFE_PORTS.has(port);
+
+/**
+ * Call `bind()` (which must yield a fresh port on each call) until it yields
+ * one Chrome will actually accept, re-rolling on anything in
+ * CHROME_UNSAFE_PORTS. Factored out from the real listener so the re-roll
+ * itself can be proven with a scripted `bind` and no real socket (selftest,
+ * case "a forced 6667 collision").
+ */
+export async function pickSafePort(bind, { maxAttempts = 50 } = {}) {
+  const rejectedPorts = [];
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const port = await bind();
+    if (!isUnsafePort(port)) return { port, rejectedPorts };
+    rejectedPorts.push(port);
+  }
+  throw new Error(`pickSafePort: ${maxAttempts} straight unsafe ports (${rejectedPorts.join(', ')})`);
+}
+
+/**
+ * Bind `server` to an ephemeral port on `host`, closing and re-listening if
+ * the OS hands back one of Chrome's unsafe ports. Safe to call once per
+ * server: the first bind is a plain listen(0), every retry closes the prior
+ * attempt first because a listening server cannot listen() a second time.
+ */
+export async function listenEphemeral(server, host) {
+  let first = true;
+  const bindOnce = () => new Promise((resolve, reject) => {
+    const doListen = () => {
+      server.once('error', reject);
+      server.listen(0, host, () => {
+        server.removeListener('error', reject);
+        resolve(server.address().port);
+      });
+    };
+    if (first) { first = false; doListen(); }
+    else { server.close(() => doListen()); }
+  });
+  return pickSafePort(bindOnce);
+}
+
 /** Run both sync scripts. Their output is printed only on failure. */
 export function syncScripts() {
   for (const script of ['scripts/sync-wasm.mjs', 'scripts/sync-assets.mjs']) {
@@ -88,7 +152,7 @@ const MIME = {
  * run's server is a missing file, a response without the nonce is a different
  * server entirely, and the two must never be confusable.
  */
-export function startStaticServer(dir, nonce) {
+export async function startStaticServer(dir, nonce) {
   const server = createServer((req, res) => {
     res.setHeader(NONCE_HEADER, nonce);
     const path = decodeURIComponent((req.url ?? '/').split('?')[0]);
@@ -102,11 +166,8 @@ export function startStaticServer(dir, nonce) {
       res.end(data);
     });
   });
-  return new Promise((resolvePort) => {
-    server.listen(0, '127.0.0.1', () => {
-      resolvePort({ server, port: server.address().port });
-    });
-  });
+  const { port } = await listenEphemeral(server, '127.0.0.1');
+  return { server, port };
 }
 
 /**
@@ -234,9 +295,10 @@ export async function bootOnce({ url, nonce, timeoutMs = 60000 }) {
 // in-memory. A gate that has never been seen to fail is a log line (rule 11).
 // ---------------------------------------------------------------------------
 
-function tinyServer(handler) {
+async function tinyServer(handler) {
   const server = createServer(handler);
-  return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ server, port: server.address().port })));
+  const { port } = await listenEphemeral(server, '127.0.0.1');
+  return { server, port };
 }
 
 async function selftest() {
@@ -256,6 +318,49 @@ async function selftest() {
       for (const e of r.errors) console.error(`  saw: ${e}`);
     }
   };
+
+  // 0a. THE UNSAFE-PORT PICKER, over many REAL OS-assigned ephemeral ports
+  //     (not synthetic ones): BT-240 found port 6667 drawn for real on this
+  //     box, so the proof binds a fresh server 300 times and requires every
+  //     single port that comes back to be outside CHROME_UNSAFE_PORTS.
+  {
+    const drawn = [];
+    let escaped = null;
+    for (let i = 0; i < 300 && escaped === null; i++) {
+      const server = createServer();
+      const { port } = await listenEphemeral(server, '127.0.0.1');
+      drawn.push(port);
+      await new Promise((r) => server.close(r));
+      if (isUnsafePort(port)) escaped = port;
+    }
+    const pass = escaped === null;
+    cases.push({
+      name: '300 real ephemeral binds never return an unsafe port',
+      pass, why: pass ? '' : `port ${escaped} escaped the picker`, errors: [],
+    });
+    console.error(`selftest: ${pass ? 'PASS' : 'FAIL'}  300 real ephemeral binds never return an`
+      + ` unsafe port (drew ${Math.min(...drawn)}-${Math.max(...drawn)})`);
+  }
+
+  // 0b. FORCED COLLISION: 0a shows real binds happen to be safe; this proves
+  //     the RE-ROLL ITSELF by scripting a fake bind that returns Chrome's
+  //     unsafe 6667 on the first call and a safe port on the second, with no
+  //     real socket involved. The picker must reject 6667 (not return it),
+  //     record it as rejected, and return the safe port from the retry.
+  {
+    const scripted = [6667, 54321];
+    let calls = 0;
+    const { port, rejectedPorts } = await pickSafePort(async () => scripted[calls++]);
+    const pass = port === 54321 && calls === 2
+      && rejectedPorts.length === 1 && rejectedPorts[0] === 6667;
+    cases.push({
+      name: 'a forced 6667 collision is rejected and re-rolled',
+      pass,
+      why: pass ? '' : `port=${port} calls=${calls} rejected=${JSON.stringify(rejectedPorts)}`,
+      errors: [],
+    });
+    console.error(`selftest: ${pass ? 'PASS' : 'FAIL'}  a forced 6667 collision is rejected and re-rolled`);
+  }
 
   // 1. The module THROWS. Must fail, and the pageerror must be the reason.
   await run('a throwing module fails the boot',
