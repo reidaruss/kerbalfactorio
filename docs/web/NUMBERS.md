@@ -2122,3 +2122,10 @@ that had to be withdrawn with it.**
 
 **Also recorded from the same verification, about the INSTRUMENT rather than the art:** RN-1824's headline that the wall's autocorrelation band-mean "held at 0.214" is not a comparison. The shipped arm's first-minimum walk reaches the band edge, so that mean averages exactly ONE lag where the before arm averaged 144. Like for like, the full-band mean went 0.290 to 0.494 and the absolute autocovariance at the tile lag went 5.06 to 34.60. The change is still an improvement, but the FRAMES carry that claim and this instrument cannot; a band mean whose window collapses to one sample is not a measurement.
 
+
+### A SAME-PROCESS PNGDIFF CONTROL MEASURES PROCESS DETERMINISM, NOT SOURCE EQUIVALENCE
+
+Found by the RN-2050 decomposition and confirmed by two independent verifiers, 2026-08-19. Two captures of the same shot inside ONE server process can diff at 0.00 per cent while a rebuild of the SAME SOURCE served from a fresh process diffs at 0.16 to 3.92 per cent on the same shot (the settle tick lands differently per process; measured tick 439 versus 446 on one pair). Two consequences, both binding:
+
+1. A before/after pixel proof for a refactor must take its noise band from a REBUILD IN A FRESH PROCESS of the unchanged source, never from two captures inside one process, and from at least three pairs, because a two-capture band is a coin flip (CE-140's verifier watched a 0.38 per cent same-build reading sit beside a 0.00 per cent cross-build one, which would have supported a nonsense conclusion in either direction).
+2. Raw probe REPORT FIELDS are not comparable across arms either: 139 of 444 terrain-probe fields differ between HEAD and its own rebuild (frame counts, timing accumulators, walk-position-dependent counters). Only a probe's own ASSERTIONS (valid, fails, ok) are stable evidence across builds. A field-for-field diff between arms measures the process, not the change.
