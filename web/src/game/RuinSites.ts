@@ -186,6 +186,13 @@ export class RuinSites {
   get lod1M(): number { return this.boundM * RUIN_LOD1_RADII; }
   get lod2M(): number { return this.boundM * RUIN_LOD2_RADII; }
   investigateLocal(): THREE.Vector3 | null { return this.points.get('socket_investigate')?.clone() ?? null; }
+  /** GP-1060. The doorway socket, in the SAME unrotated local space
+   *  `investigateLocal` returns, or null when the asset ships none. Read-only
+   *  geometry, same shape as `investigateLocal`: the "teleport to ruin" cheat
+   *  (app/VisitRuin.ts) uses it to land facing the entrance rather than an
+   *  arbitrary side, and it adds no interact/reward logic to this file (the
+   *  header's charter is about WHAT is inside a ruin, not where a socket is). */
+  entryLocal(): THREE.Vector3 | null { return this.points.get('socket_entry')?.clone() ?? null; }
 
   /**
    * Draw every ruin-kind site this body's `SiteCatalog` holds, and make each one

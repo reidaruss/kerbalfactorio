@@ -1886,6 +1886,16 @@
       "budgetMs": 35000,
       "hardCapMs": 120000
     },
+    "ruinteleport.js": {
+      "samplesMs": [
+        20792,
+        21255,
+        24166
+      ],
+      "maxMs": 24166,
+      "budgetMs": 35000,
+      "hardCapMs": 120000
+    },
     "sandbox.js": {
       "samplesMs": [
         21857

@@ -123,6 +123,26 @@ export function installPauseMenu(s: Services, loop: Loop) {
       const b = s.gameplay?.structures.bodies ?? null;
       return b === null ? null : stationArrivalBody(b)?.pos ?? null;
     },
+    // GP-1060. THE WALKER'S OWN FEET, for "nearest ruin" once there is more
+    // than one. Null with no character, same shape as every optional port
+    // here.
+    feet: () => s.player?.body.feet ?? null,
+    // GP-1060. The ONE direction-to-lat/lon conversion (`SurfaceOracle.
+    // latLonFromDir`, backed by /core's `_of_dir_to_latlon`), so the ruin
+    // teleport's Cartesian offset point reaches the ground through the same
+    // lat/lon door and the same geodesy every site row already uses, rather
+    // than a hand-rolled asin/atan2 this file would own a second copy of.
+    latLonFromDir: (dx, dy, dz) => s.oracle.latLonFromDir(dx, dy, dz),
+    // GP-1060. Face the walker at a compass yaw AFTER `teleport` has already
+    // placed the feet. `view.update` is called again immediately so the
+    // camera frame (built from `feet` and `yaw` together) is not one tick
+    // stale, the same re-place `Controller.teleport`/`standAt` already do on
+    // arrival. A no-op with no walker.
+    faceYaw: (yawRad) => {
+      if (s.player === null) return;
+      s.player.view.yaw = yawRad;
+      s.player.view.update(s.player.body.feet, s.player.altM, 1 / 60);
+    },
   });
 
   const menu = new PauseMenu(g.host, g.modals, (id) => {
