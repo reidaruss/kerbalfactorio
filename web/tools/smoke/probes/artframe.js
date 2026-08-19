@@ -1603,15 +1603,61 @@
   // takes as long as it takes while rAF keeps running, so `post` can be many
   // frames late. Publishing BOTH makes the width of that window a measured
   // number instead of an assumption -- and the window is the subject.
+  //
+  // RN-2033. `{"captureDriven":true}` -- SERVICE THE CAPTURE FROM A DRIVEN
+  // FRAME INSTEAD OF FROM THE FIRST NATURAL rAF FRAME. Off by default.
+  //
+  // `Loop.run` calls `stop()`, steps a synthetic clock at a fixed `1/renderHz`
+  // with its own carried accumulator (FS-101, GP-1013: a driven run is a
+  // function of its own arguments and no wall-clock value enters it), and only
+  // then calls `start()` again. So the moment the probe's last settle window
+  // ends, the next frame is a LIVE rAF frame whose `dt` is
+  // `performance.now() - lastMs` -- the wall-clock gap between `run()`
+  // returning and the browser choosing to fire rAF. `Loop.step` clamps that to
+  // 0.25 s and caps catch-up at MAX_CATCHUP, so that one frame advances
+  // somewhere between 0 and 5 fixed ticks and lands on a wall-clock-dependent
+  // alpha, and it is the frame `Loop.capture`'s waiter is serviced on.
+  //
+  // Pushing the waiter and THEN driving turns that frame back into a driven
+  // one. If the shot's spread is a property of which live frame the photograph
+  // landed on, this arm removes it; if the spread survives, it is not.
+  //
+  // RN-2034. AND `photo`, WHICH IS THE PHOTOGRAPHED FRAME ITSELF.
+  //
+  // `Loop.start`'s rAF callback re-registers itself as its FIRST statement and
+  // only then calls `frame(now)`. A callback registered from here, between two
+  // frames, is therefore queued behind the loop's own for the next frame and
+  // runs immediately after that frame's `step()` has rendered and serviced the
+  // capture waiter. So one `requestAnimationFrame` after pushing the waiter
+  // reads the state of the frame that was actually photographed, which is the
+  // reading three passes of this shot have wanted and none has had.
+  //
+  // `of.settle(1)` would be the obvious way and cannot be used: `settleGate`
+  // never opens for a walker 400 km above the terrain the streamer is chasing
+  // (PH-89), which is why this shot runs a fixed window instead of settling.
   const grab = async () => {
     const pre = atCapture();
-    const blob = await of.screenshot();
+    let blob; let photo = null;
+    if (A.captureDriven === true) {
+      const pending = of.screenshot();
+      // `total = max(1, round(seconds * renderHz))`, so this is exactly one
+      // driven frame unless a caller asks for more.
+      await of.run(A.captureDrivenS ?? (1 / 60), A.captureDrivenHz ?? 60);
+      photo = atCapture();
+      blob = await pending;
+    } else {
+      const pending = of.screenshot();
+      photo = await new Promise((res) => {
+        requestAnimationFrame(() => res(atCapture()));
+      });
+      blob = await pending;
+    }
     const at = atCapture();
     const bmp = await createImageBitmap(blob);
     const cv = new OffscreenCanvas(bmp.width, bmp.height);
     const cx = cv.getContext('2d', { willReadFrequently: true });
     cx.drawImage(bmp, 0, 0);
-    return { blob, W: bmp.width, H: bmp.height, cx, at, pre };
+    return { blob, W: bmp.width, H: bmp.height, cx, at, pre, photo };
   };
 
   /** The §2.1 idiom, on one rectangle. RGB is decoded rather than luma alone:
@@ -2192,7 +2238,7 @@
         k,
         box: statOn(gk.cx, bk[0], bk[1], bk[2], bk[3]),
         world: statOn(gk.cx, 0, 0, gk.W, gk.H),
-        at: gk.at,
+        at: gk.at, pre: gk.pre, photo: gk.photo,
         png: A.repeatPng === true ? await new Promise((res) => {
           const fr = new FileReader();
           fr.onload = () => res(fr.result);
@@ -2279,7 +2325,7 @@
     // `grab`), and the extra in-load captures if `{"repeat":K}` asked for them.
     // `atCapture` is published on every shot because every shot's `captureDiag`
     // has the same one-frame-early defect; `repeats` is null unless asked for.
-    atCapture: g0.at, preCapture: g0.pre, repeats,
+    atCapture: g0.at, preCapture: g0.pre, photoCapture: g0.photo, repeats,
     // RN-1876. Whether THIS frame is the view-model control. Published on every
     // shot, so a pair is provably one variable apart rather than filed as one.
     vmHidden,
