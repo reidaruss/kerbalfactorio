@@ -52,6 +52,15 @@ export interface WorldState {
   altM: number;
   tick: number;
   frames: number;
+  /**
+   * CE-130. THE CLOCK GUARDS' ACTIVATION COUNTS, on every run's standard dump.
+   *
+   * `run.mjs` prints `__of.world()` for every probe in the suite, so putting the
+   * counters here makes "no live frame in this run had a negative delta" a fact
+   * about EVERY probe run rather than a fact about the one probe that thought
+   * to ask. The defect it watches for was found in a shot nobody suspected.
+   */
+  clock: { dtFloors: number; dtCeils: number; alphaClamps: number; dtMinS: number };
 }
 
 export interface SceneDump {
@@ -110,6 +119,16 @@ export interface OfDebugApi {
   settle(n?: number): Promise<void>;
   /** Advance `seconds` of sim on a synthetic clock. See Loop.run. */
   run(seconds: number, renderHz?: number): Promise<void>;
+  /**
+   * CE-130 / CE-131. The loop clock census: tick, frames, alpha, renderTick and
+   * the THREE GUARD COUNTERS (`dtFloors`, `dtCeils`, `alphaClamps`).
+   *
+   * It exists so "the RN-2035 floor is dead code now" is a reading rather than
+   * an argument. The counters only ever move on live rAF frames, so a probe
+   * that drives with `of.run` and then lets the page render for a while can
+   * state the activation count for a real session. See Loop.clock.
+   */
+  clock(): unknown;
   /** Render + hash the presented frame. See Loop.frameHash. */
   framehash(tilesX?: number, tilesY?: number): FrameHash;
   screenshot(): Promise<Blob>;
@@ -402,6 +421,8 @@ export function installDebugApi(
         altM: s.observer.altM,
         tick: loop.tickIndex,
         frames: loop.frames,
+        clock: { dtFloors: loop.dtFloors, dtCeils: loop.dtCeils,
+                 alphaClamps: loop.alphaClamps, dtMinS: loop.dtMinS },
       };
     },
 
@@ -425,6 +446,7 @@ export function installDebugApi(
 
     settle: (n = 8) => loop.settle(n),
     run: (seconds, renderHz) => loop.run(seconds, renderHz),
+    clock: () => loop.clock(),
     framehash: (tx, ty) => loop.frameHash(tx, ty),
     screenshot: () => loop.capture(),
 
