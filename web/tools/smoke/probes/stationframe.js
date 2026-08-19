@@ -22,11 +22,13 @@
 //
 // **A measurement whose sample rate equals the rate the system is corrected at
 // cannot see the error it is corrected from.** This file samples per RENDERED
-// FRAME, which is where the player lives, and it drives `of.run(s, 120)` so
-// there are two frames per tick and alpha actually varies. At 15 Hz, which every
-// other station probe uses to survive this VM, there is at most one frame per
-// tick and this defect is INVISIBLE. That is stated so nobody "optimises" the
-// rate here later.
+// FRAME, which is where the player lives, and it drives the measurement window
+// at `of.run`'s own 144.3 Hz default (CE-135: NOT an exact multiple of the 60 Hz
+// tick, see the comment at the measurement site) so there are multiple frames
+// per tick and alpha actually varies across the WHOLE [0, 1) range rather than
+// two fixed points. At 15 Hz, which every other station probe uses to survive
+// this VM, there is at most one frame per tick and this defect is INVISIBLE.
+// That is stated so nobody "optimises" the rate here later.
 //
 // ===========================================================================
 // THE THREE HYPOTHESES, AND WHICH ONE THE PRE-FIX RUN CONVICTED
@@ -129,11 +131,28 @@
     JSON.stringify(c1.ride));
 
   // --- 3. THE MEASUREMENT ------------------------------------------------
-  // 120 Hz is TWO rendered frames per fixed tick. This is the one place in the
-  // suite where the render rate is load bearing: at 15 Hz alpha is pinned near 1
-  // and the defect this file exists for cannot appear.
+  // CE-135. THE WINDOW MUST NOT ALIAS AGAINST THE 60 Hz TICK IT IS MEASURING.
+  // This used to drive `of.run(0.35, 120)`. 120 is an EXACT MULTIPLE of 60, so
+  // the render accumulator advances by precisely half a tick every frame and
+  // alpha can only ever land on {0, 0.5}: `alphaSpan` read exactly 0.5 on every
+  // run, and the collider-vs-eye difference (which sweeps toward the full
+  // per-tick travel as alpha sweeps toward 1) never got sampled past its
+  // midpoint. A measurement window that is an exact multiple of the thing it
+  // samples cannot see the whole waveform, no matter how long it runs; a longer
+  // multiple window still only ever visits the same two phase points.
+  //
+  // The fix is `of.run`'s OWN DEFAULT, 144.3 Hz, which every other probe in
+  // this suite already uses for exactly this reason (see e.g. `grass.js`,
+  // `maps.js`, `stationboard.js`'s and `stationride.js`'s own comments on why
+  // they deliberately do NOT use it). 144.3 / 60 = 2.405, so each frame the
+  // accumulator advances by a NON-INTEGER, NON-HALF fraction of a tick
+  // (~0.4158 tick); the sampled alpha is `(frame * 0.4158) mod 1`, which walks
+  // densely through the whole [0, 1) interval rather than bouncing between two
+  // fixed points, and still delivers more than two frames per tick (still load
+  // bearing versus 15 Hz, where alpha is pinned near 1 and the defect this file
+  // exists for cannot appear at all).
   of.carrier('frames', { arm: true, n: 400 });
-  await of.run(0.35, 120);
+  await of.run(0.35, 144.3);
   const v = of.carrier('frames').verdict;
   const rows = of.carrier('frames', { dump: true }).samples;
   notes.push(`${v.frames} frames over ${v.ticks} ticks `
