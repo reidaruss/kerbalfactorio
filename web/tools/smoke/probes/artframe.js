@@ -1552,13 +1552,66 @@
   // shade discriminator below can take a MATCHED PAIR in this same page load
   // rather than across two scene builds. The single-capture path below calls it
   // exactly once and is unchanged to the digit.
+  //
+  // RN-2031. AND THE INSTRUMENTS READ **AFTER** THE SCREENSHOT PROMISE
+  // RESOLVES, WHICH IS THE FIRST TIME THIS FILE HAS READ THEM ON THE
+  // PHOTOGRAPHED FRAME.
+  //
+  // `captureDiag` above is built BEFORE this call. `of.screenshot()` is
+  // `Loop.capture()`, which parks a waiter and resolves it from inside the
+  // NEXT `step()`, after `frame.render()` (`Loop.ts`). So between the two there
+  // is at least one whole frame, and outside a driven `of.run` window that
+  // frame's `dt` is real wall-clock rAF time rather than the fixed `1/renderHz`
+  // the settle windows use. Every quantity `Loop.step` recomputes per frame --
+  // `alpha`, `observer.interpolate`, `mounts.syncWatchersAt(renderTick)`,
+  // `origin.toEngine`, `rig.setView` -- is therefore a DIFFERENT value in the
+  // photograph than in `captureDiag`, and `captureDiag` cannot see the
+  // difference by construction.
+  //
+  // That is the same class of defect RN-1954 already recorded one level up
+  // (`run.mjs` reads its `stats` block two settle windows after the probe
+  // returns) and RN-1955 recorded one level down (`of.aim()` is the fixed-tick
+  // eye, not the camera). This is the third instance and the innermost: the
+  // camera certificate RN-1955 built to replace `aim()` is itself read on the
+  // wrong frame. `atCapture` is read here instead, in the microtask the
+  // resolve schedules, before any further frame can run.
+  const atCapture = () => {
+    const s0 = of.stats();
+    const sd = s0.stationDraw ?? null;
+    return {
+      cam: s0.cam ?? null,
+      drawQuat: sd ? sd.quat : null,
+      drawPosB: sd ? sd.posB : null,
+      drawPosE: sd ? sd.posE : null,
+      drawEyeDistM: sd ? sd.eyeDistM : null,
+      drawVisible: sd ? sd.visible : null,
+      drawnParts: sd ? sd.drawnParts : null,
+      staleMaxM: sd ? sd.staleMaxM : null,
+      clock: typeof of.stationClock === 'function' ? of.stationClock() : null,
+      frames: of.world().frames, tick: of.world().tick,
+      rebases: of.world().origin.rebases,
+      eyeRel: of.world().eyeRel,
+    };
+  };
+  //
+  // AND IT IS BRACKETED, because neither side alone is the photograph.
+  // `Loop.capture` pushes a waiter and `Loop.step` services it AFTER
+  // `frame.render()`, so the photographed frame is the FIRST frame after the
+  // `of.screenshot()` call: `pre` is therefore within one frame of it and is
+  // the tighter certificate. The waiter is then resolved from
+  // `renderer.capture().then(...)`, an async read-back and blob encode that
+  // takes as long as it takes while rAF keeps running, so `post` can be many
+  // frames late. Publishing BOTH makes the width of that window a measured
+  // number instead of an assumption -- and the window is the subject.
   const grab = async () => {
+    const pre = atCapture();
     const blob = await of.screenshot();
+    const at = atCapture();
     const bmp = await createImageBitmap(blob);
     const cv = new OffscreenCanvas(bmp.width, bmp.height);
     const cx = cv.getContext('2d', { willReadFrequently: true });
     cx.drawImage(bmp, 0, 0);
-    return { blob, W: bmp.width, H: bmp.height, cx };
+    return { blob, W: bmp.width, H: bmp.height, cx, at, pre };
   };
 
   /** The §2.1 idiom, on one rectangle. RGB is decoded rather than luma alone:
@@ -2110,6 +2163,45 @@
       extraStat[k].footM = r3(footAtRow((f[1] + f[3]) / 2, H));
     }
   }
+  // ======================================================================
+  // RN-2032. `{"repeat":K}` -- K-1 EXTRA CAPTURES IN THIS SAME PAGE LOAD.
+  //
+  // ADDITIVE AND OFF BY DEFAULT: nothing below this block reads `repeats`, and
+  // with `repeat` absent no extra frame is taken, so every number and every
+  // pixel any earlier pass has published is unchanged to the digit.
+  //
+  // WHY IT IS THE EXPERIMENT THIS SHOT NEEDS. Every census of the station shot
+  // so far has been one capture per PAGE LOAD, so "the frame changed" and "the
+  // boot changed" are the same observation and no arm can separate them. K
+  // captures inside one load, with the instruments read on each photographed
+  // frame (`grab().at`), separates them: if the frames within a load differ,
+  // the mode is chosen per FRAME and every per-boot suspect (install order,
+  // asset load order, the scene build) is out at once.
+  //
+  // `repeatRunS` drives a fixed window between grabs so the gap is the same
+  // sim time each time; 0 grabs back to back with only the natural rAF frame
+  // between them.
+  let repeats = null;
+  if (Number.isFinite(A.repeat) && A.repeat > 1) {
+    repeats = [];
+    for (let k = 1; k < A.repeat; ++k) {
+      if ((A.repeatRunS ?? 0) > 0) await of.run(A.repeatRunS, A.repeatHz ?? 30);
+      const gk = await grab();
+      const bk = [S.box[0] * gk.W, S.box[1] * gk.H, S.box[2] * gk.W, S.box[3] * gk.H];
+      repeats.push({
+        k,
+        box: statOn(gk.cx, bk[0], bk[1], bk[2], bk[3]),
+        world: statOn(gk.cx, 0, 0, gk.W, gk.H),
+        at: gk.at,
+        png: A.repeatPng === true ? await new Promise((res) => {
+          const fr = new FileReader();
+          fr.onload = () => res(fr.result);
+          fr.readAsDataURL(gk.blob);
+        }) : null,
+      });
+    }
+  }
+
   const png = await new Promise((res) => {
     const fr = new FileReader();
     fr.onload = () => res(fr.result);
@@ -2183,6 +2275,11 @@
     // a probe can verify the pin landed rather than assume it: `null` on
     // every shot but `station`.
     stationClock, captureDiag, iblSettleIters,
+    // RN-2031/RN-2032. The instruments read on THE PHOTOGRAPHED FRAME (see
+    // `grab`), and the extra in-load captures if `{"repeat":K}` asked for them.
+    // `atCapture` is published on every shot because every shot's `captureDiag`
+    // has the same one-frame-early defect; `repeats` is null unless asked for.
+    atCapture: g0.at, preCapture: g0.pre, repeats,
     // RN-1876. Whether THIS frame is the view-model control. Published on every
     // shot, so a pair is provably one variable apart rather than filed as one.
     vmHidden,
