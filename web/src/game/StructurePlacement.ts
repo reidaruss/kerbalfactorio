@@ -441,14 +441,59 @@ export function aimPoint(s: Structures, ray: { origin: Vec3d; dir: Vec3d }): Vec
   return aimHit(s, ray).p;
 }
 
+/**
+ * GP-1065. THE PREVIEW AND THE PRESS ASK DIFFERENT QUESTIONS, and conflating
+ * them was the bug. `ghostsize.js` pins, as a regression, that the GHOST must
+ * stay drawn across nearly every pitch including straight up (GP-289: hiding
+ * it on every miss was tried first and was worse, because a 24 m march never
+ * dips below a 600 km sphere near the horizon either, so a hidden-on-miss
+ * ghost vanished on ordinary flat ground). That invariant is about DRAWING,
+ * not about BUYING. `resolveTarget` used to let the second question default
+ * to "yes" whenever nothing else refused it, so a press aimed at the sky
+ * (`aim.found === false`, the ray reached `REACH_M` without touching ground
+ * or a solid, e.g. pitch +45) resolved a real address off
+ * `fallbackOnGround`'s yaw-only projection and PLACED THERE, silently,
+ * because nothing downstream of `aimed` ever read it.
+ *
+ * THE GATE IS `aim.found` ALONE, NOT `aim.overhead`, and that split matters.
+ * `overhead` is true both for the sky-miss case above AND for a hit STRAIGHT
+ * DOWN at the player's own feet (`overheadOf` is symmetric: no tangential
+ * heading exists looking straight up or straight down either one), and the
+ * second of those is a real, close, `found: true` hit that `wallstuck.js`
+ * exercises on purpose (pitch -88, "the wall aimed straight down at the
+ * player's own feet", `fallbackOnGround`'s own dedicated "return the player's
+ * feet" branch). Gating on `overhead` too was tried first and measured wrong:
+ * it refused that exact placement, `ghost.ok=false "no heading to aim by"`,
+ * turning a shipped, deliberate feature red. `aim.found` alone lets it
+ * through (the near-hit branch in `aimHit` hardcodes `found: true` whenever
+ * `raw < MIN_PLACE_M`, regardless of the cone), while still catching the sky.
+ *
+ * The ghost still draws on a miss (BuildMode's hide condition, `t.overhead`
+ * alone, is untouched on purpose, or `ghostsize.js` goes red), but it now draws
+ * REFUSED, the same way an occupied cell or unlevel ground already does: a
+ * sentence on the ghost before the key is pressed, per this file's own header.
+ * `overhead` still picks the wording, purely cosmetic, once `found` is false.
+ */
+function gateAim(t: StructureTarget, aim: { found: boolean; overhead: boolean }):
+boolean {
+  if (aim.found) return true;
+  t.ok = false;
+  t.reason = aim.overhead ? 'no heading to aim by' : 'nothing there to build on';
+  return false;
+}
+
 /** Where a part would go and whether it would be accepted. */
 export function resolveTarget(s: Structures, kind: StructureKind,
                               ray: { origin: Vec3d; dir: Vec3d },
                               flip: number, freePlaced: boolean): StructureTarget {
   const aim = aimHit(s, ray);
   const hit = aim.p;
-  if (freePlaced) return { ...freeTarget(s, kind, hit, ray.dir, flip),
-                           aimed: aim.found, overhead: aim.overhead };
+  if (freePlaced) {
+    const t: StructureTarget = { ...freeTarget(s, kind, hit, ray.dir, flip),
+                             aimed: aim.found, overhead: aim.overhead };
+    gateAim(t, aim);
+    return t;
+  }
   const site = s.nearestSite(hit) ?? s.prospectiveSite(hit);
   // GP-37. The bare grid answers first, then a socket is allowed to overrule it.
   // The grid is kept as the fallback rather than replaced, because a player
@@ -479,6 +524,7 @@ export function resolveTarget(s: Structures, kind: StructureKind,
     unevennessM: 0, freePlaced: false, snapped, carryRun: 0,
     aimed: aim.found, overhead: aim.overhead,
   };
+  if (!gateAim(t, aim)) return t;
   if (s.has(t.key)) { t.ok = false; t.reason = 'already built here'; return t; }
   if (addr.level > MAX_LEVEL) { t.ok = false; t.reason = 'too high'; return t; }
   if (!supported(s, site, addr)) {
