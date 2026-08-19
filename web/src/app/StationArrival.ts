@@ -5,6 +5,10 @@
 
 import { apply, newPose, type FramePose, type V3 } from '../world/FramePose.js';
 import { lastStationSolid, stationStandLocal } from '../game/SpaceStation.js';
+// CE-49. THE WALKER'S OWN NUMBERS, imported rather than retyped. A helper that
+// wrote its own 0.15 / 0.9 / 1.65 and its own 0.4 m radius would agree with
+// itself and not with `KinematicBody`, which is the failure this whole file
+// keeps arguing against.
 import { CAPSULE_SAMPLES_M } from '../player/VoxelCollision.js';
 import { CAPSULE } from '../player/Capsule.js';
 
