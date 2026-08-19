@@ -1611,12 +1611,14 @@
   // with its own carried accumulator (FS-101, GP-1013: a driven run is a
   // function of its own arguments and no wall-clock value enters it), and only
   // then calls `start()` again. So the moment the probe's last settle window
-  // ends, the next frame is a LIVE rAF frame whose `dt` is
-  // `performance.now() - lastMs` -- the wall-clock gap between `run()`
-  // returning and the browser choosing to fire rAF. `Loop.step` clamps that to
-  // 0.25 s and caps catch-up at MAX_CATCHUP, so that one frame advances
-  // somewhere between 0 and 5 fixed ticks and lands on a wall-clock-dependent
-  // alpha, and it is the frame `Loop.capture`'s waiter is serviced on.
+  // ends, the next frame is a LIVE rAF frame, whose `dt` is a wall-clock
+  // difference and therefore lands on an alpha nothing in the probe controls.
+  // That is the frame `Loop.capture`'s waiter is serviced on.
+  //
+  // A negative `dt` there is what RN-2035 clamps, and note it is NOT unique to
+  // the hand-back frame: a fresh-context verifier measured negative deltas
+  // recurring throughout live rAF. This arm is therefore a control on WHICH
+  // frame the photograph lands on, and not a claim about which frames are bad.
   //
   // Pushing the waiter and THEN driving turns that frame back into a driven
   // one. If the shot's spread is a property of which live frame the photograph

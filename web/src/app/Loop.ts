@@ -387,18 +387,28 @@ export class Loop {
    * rate a probe would ask for.
    *
    * RN-2035. THE CLAMP IS TWO-SIDED. `frame()` builds dt as
-   * `(rAF now - lastMs) / 1000`, and rAF's `now` is the frame's own start, not
-   * the moment the callback runs, so the first live frame after `run()` hands
-   * back (with `lastMs` sampled from `performance.now()`) can carry a NEGATIVE
-   * dt. That drove `acc` and `alpha` negative and `observer.interpolate` then
-   * extrapolated the eye BACKWARDS past the previous tick: millimetres on the
-   * ground, 2.1 m on the station deck at 31.32 m per tick, which walked the
-   * camera through a bulkhead and is the whole of the `station` shot's
-   * bimodality. Zero is the right floor rather than a fudge, because a frame
-   * whose clock ran backwards has had no time pass and must draw at the
-   * accumulator it already had. A driven run cannot reach it: its dt is
-   * `1 / renderHz` by construction (FS-101, GP-1013). See rendering.md's
-   * RN-2030..2049 entry for the census this came out of.
+   * `(rAF now - lastMs) / 1000`, and rAF's `now` is the frame's own start
+   * rather than the moment the callback runs, while `run()` hands control back
+   * having just stamped `lastMs` from `performance.now()`. A live frame can
+   * therefore carry a NEGATIVE dt, which drives `acc` and `alpha` negative.
+   *
+   * WHAT THAT COSTS IS AN ASYMMETRY BETWEEN TWO CONSUMERS OF `alpha`, NOT A
+   * MOVING CAMERA. `Controller.interpolate` and `VesselObserver.interpolate`
+   * both clamp (`alpha <= 0 ? 0 : alpha >= 1 ? 1 : alpha`), so the eye freezes
+   * at the previous integer tick. `renderTick` below is `tickIndex - 1 + alpha`
+   * and goes UNCLAMPED into `mounts.syncWatchersAt`, so `CarrierFrame.poseAt`
+   * extrapolates the DRAWN CARRIER past that tick and the station slides out
+   * from under a stationary camera: measured at 30.07 m per unit alpha on a
+   * deck moving 31.32 m per tick, which is the whole of the `station` canonical
+   * shot's bimodality (rendering.md section 7c, and note that section's struck
+   * first attempt, which blamed the eye).
+   *
+   * Zero is the right floor rather than a fudge, because a frame whose clock
+   * ran backwards has had no time pass and must draw at the accumulator it
+   * already had. A driven run cannot reach it: its dt is `1 / renderHz` by
+   * construction (FS-101, GP-1013). THE DEEPER ASYMMETRY IS NOT FIXED HERE and
+   * is Admin's to route: the `lastMs` stamping, and `renderTick` having no
+   * clamp where its two sibling consumers do.
    */
   private step(dtIn: number): void {
     const t0 = performance.now();
