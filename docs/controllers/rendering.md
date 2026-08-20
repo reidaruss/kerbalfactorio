@@ -1,6 +1,6 @@
 # Rendering & Graphics: Master Controller Context
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-19 (**RN-2085 to RN-2090 used of the RN-2085 to RN-2099 block, `lane/ceiling-study`: THE BROWSER IS NOT THE BLOCKER, and the measurement says where the blocker is. Full document at [docs/web/CEILING-STUDY-2026-08-19.md](../web/CEILING-STUDY-2026-08-19.md); the decision row is RN-2085 in §3 below; the six questions for Reid are §7 of that document. Headline: ~10 ms/frame at `forestfloor` on a real D3D11 RTX 4060 Ti at 1600x900 against a 16.6 ms budget, 76 of 150 budgeted draw calls, 1.45 M of 2.7 M budgeted triangles, and 58.8 PER CENT OF EVERY TRIANGLE IN THE FRAME IS SHADOW-MAP GEOMETRY, which is §2.8 R2's already-diagnosed foliage-LOD defect and not a platform property. Two instruments landed, `web/tools/smoke/probes/ceiling.js` and `web/tools/smoke/ceilingsweep.mjs`; no game code.**) (Earlier the same day: RN-2050 to RN-2052 used of the RN-2050 to RN-2059 block, `lane/rn-resisters`, THE THREE RENDERING LINE-CAP RESISTERS DECOMPOSED RATHER THAN EXEMPTED, per Reid's ruling of the same day. `check:limits` **51 -> 48**, `cd web && npm run check` **6 of 7** with only the pre-existing `check:limits` red and `check:boot` green. **`TerrainMaterial.ts` 989 -> 53**, `createTerrainMaterials` (565 lines) decomposed into four named phases over one explicit state object whose type is `ReturnType<typeof buildTerrainUniformState>`, derived rather than declared so the two cannot drift; six siblings (`TerrainUniformState`, `TerrainProgram`, `TerrainArtHandle`, `TerrainAmpQuery`, `TerrainReliefQuery`, `TerrainMaterialTypes`). **`TerrainShader.ts` 884 -> 64**, the 690-line GLSL `main()` split into five named chunk constants concatenated in identical order (`TerrainFragPars/Setup/Albedo/Bump/Light.glsl.ts`), **proven BYTE-IDENTICAL** rather than merely pixel-close (real modules, log 90,439 chars sha256 `bdf0ec82...`, plain 90,372 sha256 `8fd8f416...`; an earlier stubbed-harness figure published in this row was corrected, see RN-2054). **`Scatter.ts` 714 -> 365**, the 200-line sampler and the nineteen counters given explicit state (`ScatterSample`, `ScatterCounters`, `ScatterTypes`); its `forestfloor` frame is **bit-identical** to a HEAD-source frame from a different build and process. **THE FINDING THAT GENERALISES IS ABOUT THE INSTRUMENT, NOT THE THREE FILES: a same-build pngdiff control taken inside ONE server process is not a noise band.** Two back-to-back `midfield` shots on one process measured 0.00% and looked like determinism; rebuilding the SAME HEAD source into a fresh process and re-shooting put the real same-source band at **0.00% to 2.94%** for `midfield` and **1.61% to 3.92%** for `forestfloor`. The same trap sits in the probe reports: **139 fields of the three terrain probes differ between HEAD and a HEAD REBUILD**, against 140 for the TerrainMaterial split, so a bare "N fields moved" reading would have condemned a behaviour-preserving change. See RN-2050 to RN-2054 in section 3 and NUMBERS.md's RN-2050 to RN-2059 row.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-19 (RN-2065 to RN-2075 used of the RN-2065 to RN-2084 block, `lane/world-audit`: **THE WORLD LOOK AUDIT. THE WORLD IS FINISHED TO ABOUT FORTY METRES AND UNFINISHED PAST IT, AND NINE OF THE TEN CANONICAL FRAMES WERE TAKEN INSIDE THAT FORTY METRES.** Full ranked queue with evidence in [docs/web/WORLD-AUDIT-2026-08-19.md](../web/WORLD-AUDIT-2026-08-19.md), summarised in section 2.10 below. **FIVE NEW CANONICAL POSES** in `artframe.js` (`vista`, `vistadawn`, `vistanoon` at one pose one `sunDot` apart on a Mountains ridge; `flyover` at 1,200 m and `limb` at 120 km, both of which needed their own `--scenario=` because **`Controller.teleport` DISCARDS its altitude argument** and a walk-mode run would have photographed the ground with every field reading correct). **THE FOUR MEASUREMENTS THAT RANK THE QUEUE.** (1) **A `?atmos=0` NEGATIVE CONTROL SPLITS ONE APPARENT DEFECT INTO TWO**: at 1,200 m the horizon band reads iqr **20.08 with the atmosphere and 89.17 without** (the haze is taking **77.5%** of the distance) while the ground DIRECTLY BELOW reads **7.79 and 7.21**, i.e. the haze takes none of it and that flatness is terrain with no material to lose. Either finding alone would have been filed as the other. (2) **THE DAY ARC INVERTS THE FRAME**: at one fixed pose, sun 66.89 -> 44.31 -> 5.85 degrees, near scree luma **167.51 -> 134.14 -> 33.01** while the far ridge goes **205.31 -> 198.86 -> 231.51**, so the far-to-near ratio runs 1.23 -> 1.48 -> **7.01** and at dawn the distance is seven times brighter than the player's feet. (3) **THE SKY BRIGHTENS TOWARD THE SUN AND NEVER REDDENS**: the sun-side sky is **1.84x** the anti-sun side at a 5.85 degree sun (110.83 against 60.35, so the scattering integral does resolve direction and section 8 is a TUNING lane), while the horizon sky's `warm` moves **14.83 counts across 61 degrees of elevation** and sits at -86 at dawn. (4) **THE WORLD EMPTIES THE MOMENT THE EYE LEAVES THE GROUND**: `flyover` is **188,081 triangles at 1,200 m and 231,089 at 400 m** against **2,759,465** at a standing eye on plains, with not one tree in any aerial frame and both `?atmos=0` controls proving they are ABSENT rather than hazed. **AND THE COST CEILING IS ALREADY BREACHED WITHOUT ANY OF THIS**: that 2,759,465-triangle plains frame is 71 calls, over `StatsProbe`'s ALERT triangle threshold and over the 16.6 ms frame budget on every box measured, at a ratio of about 4.5x against the vista pose's cost (absolute milliseconds are box-and-run-dependent: this audit's p50 read 32.1 ms), at a standing eye with nothing built; `midfield` p99 is **64.6 ms**. **NOT ONE OF THE TOP FIVE GAPS NEEDS WEBGPU OR NATIVE**, and the audit says so with reasons rather than as an opinion: the two atmosphere gaps are shader-local in `ofAtmoAerial` and `TerrainFragLight`, the vegetation gap is a third baked LOD rung in a pipeline that already bakes LOD2, the shadow gap is a fourth cascade plus a heightfield horizon term, and the one plausible (c) is DISTANT GEOMETRIC relief, handed to the RN-2085 ceiling study with this lane's numbers attached. **TWO GREENS WORTH THE SAME WEIGHT AS THE REDS**: the `limb` frame at 120 km is **AT BAR** (ring luma 93.27, iqr 101.39, sat 0.626 over a 0.10 sky, 52,913 triangles, 21 calls, p50 1.1 ms) and the atmosphere is a real shared analytic integral rather than a gradient. **ONE LATENT DEFECT FOUND AND FIXED**: `artframe.js` read `of.game().mode` and `of.game()` is null with no gameplay, so the first shot ever run outside `--scenario=walk` died with a TypeError out of `page.evaluate` before any shot code ran. **`station` CAME BACK INTERIOR AGAIN** (`drawEyeDistM` 4.316; `alpha` varies per run and stays inside [0,1] -- this audit read 0.924 -- so the RN-2035 clamp is ruled out and INTERIOR is the stable fact), so section 2.8 R5 stays open and is re-flagged rather than re-diagnosed.) (**RN-2085 to RN-2090 used of the RN-2085 to RN-2099 block, `lane/ceiling-study`: THE BROWSER IS NOT THE BLOCKER, and the measurement says where the blocker is. Full document at [docs/web/CEILING-STUDY-2026-08-19.md](../web/CEILING-STUDY-2026-08-19.md); the decision row is RN-2085 in §3 below; the six questions for Reid are §7 of that document. Headline: ~10 ms/frame at `forestfloor` on a real D3D11 RTX 4060 Ti at 1600x900 against a 16.6 ms budget, 76 of 150 budgeted draw calls, 1.45 M of 2.7 M budgeted triangles, and 58.8 PER CENT OF EVERY TRIANGLE IN THE FRAME IS SHADOW-MAP GEOMETRY, which is §2.8 R2's already-diagnosed foliage-LOD defect and not a platform property. Two instruments landed, `web/tools/smoke/probes/ceiling.js` and `web/tools/smoke/ceilingsweep.mjs`; no game code.**) (Earlier the same day: RN-2050 to RN-2052 used of the RN-2050 to RN-2059 block, `lane/rn-resisters`, THE THREE RENDERING LINE-CAP RESISTERS DECOMPOSED RATHER THAN EXEMPTED, per Reid's ruling of the same day. `check:limits` **51 -> 48**, `cd web && npm run check` **6 of 7** with only the pre-existing `check:limits` red and `check:boot` green. **`TerrainMaterial.ts` 989 -> 53**, `createTerrainMaterials` (565 lines) decomposed into four named phases over one explicit state object whose type is `ReturnType<typeof buildTerrainUniformState>`, derived rather than declared so the two cannot drift; six siblings (`TerrainUniformState`, `TerrainProgram`, `TerrainArtHandle`, `TerrainAmpQuery`, `TerrainReliefQuery`, `TerrainMaterialTypes`). **`TerrainShader.ts` 884 -> 64**, the 690-line GLSL `main()` split into five named chunk constants concatenated in identical order (`TerrainFragPars/Setup/Albedo/Bump/Light.glsl.ts`), **proven BYTE-IDENTICAL** rather than merely pixel-close (real modules, log 90,439 chars sha256 `bdf0ec82...`, plain 90,372 sha256 `8fd8f416...`; an earlier stubbed-harness figure published in this row was corrected, see RN-2054). **`Scatter.ts` 714 -> 365**, the 200-line sampler and the nineteen counters given explicit state (`ScatterSample`, `ScatterCounters`, `ScatterTypes`); its `forestfloor` frame is **bit-identical** to a HEAD-source frame from a different build and process. **THE FINDING THAT GENERALISES IS ABOUT THE INSTRUMENT, NOT THE THREE FILES: a same-build pngdiff control taken inside ONE server process is not a noise band.** Two back-to-back `midfield` shots on one process measured 0.00% and looked like determinism; rebuilding the SAME HEAD source into a fresh process and re-shooting put the real same-source band at **0.00% to 2.94%** for `midfield` and **1.61% to 3.92%** for `forestfloor`. The same trap sits in the probe reports: **139 fields of the three terrain probes differ between HEAD and a HEAD REBUILD**, against 140 for the TerrainMaterial split, so a bare "N fields moved" reading would have condemned a behaviour-preserving change. See RN-2050 to RN-2054 in section 3 and NUMBERS.md's RN-2050 to RN-2059 row.)
 
 > **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-19 (RN-2030 to RN-2038 used of the RN-2030 to RN-2049 block, `lane/station-bimodal`, AS CORRECTED BY ITS OWN FRESH-CONTEXT VERIFIER BEFORE MERGE: **THE STATION SHOT IS FIXED, THE CAUSE IS ONE MISSING CLAMP, AND EVERY INSTRUMENT THAT CERTIFIED IT WAS READING THE WRONG FRAME.** `Loop.step` clamped the frame delta at the top only, so a live rAF frame could carry a NEGATIVE delta (rAF's `now` is the frame's own start and `Loop.run` stamps `lastMs` from `performance.now()` on its way out) and drive `alpha` negative. **THE CAMERA DOES NOT MOVE: `Controller.interpolate` and `VesselObserver.interpolate` both clamp alpha to [0,1], while `Loop.renderTick` (`tickIndex - 1 + alpha`) is handed UNCLAMPED to `mounts.syncWatchersAt`, so THE DRAWN HULL extrapolates and the station slides out from under a frozen camera** - across the 62 excursion runs `phCamPosE` takes ONE distinct value and `phDrawPosE` takes 62, separating at 30.07 m per unit alpha. (This entry first blamed the eye and that is struck in section 7c rather than deleted.) RN-2035 is `Math.min(Math.max(dtIn, 0), 0.25)`, in CORE-ENGINE's `Loop.ts`, flagged to Admin which is routing the core-engine follow-up. **MEASURED AT n = 108 PER ARM, INTERLEAVED ACROSS TWO SERVED BUILDS: shipped 62 of 108, 57.41%, Wilson 95% [47.99%, 66.32%]; fixed 0 of 108, [0.00%, 3.43%]**, with the verifier independently reading 20 of 30 and 0 of 30 - so the inherited "roughly one run in seven" was undersampled by a factor of four. Classifier is `pngdiff` against a designated modal reference at a 5% threshold; the clusters are wide and real but their edges are sample-dependent, and the narrowest empty band across both samples is [0.663%, 20.304%]. `alpha` on the PHOTOGRAPHED frame separates the modes perfectly (62 tp, 0 fp, 0 fn, 46 tn) while every published instrument takes exactly ONE distinct value across all 108 shipped runs, because all of them are read on a driven frame before the photograph. Box luma goes from 54 distinct values spanning 6.75x to exactly two, 12.92 and 12.93. No load sensitivity across three batches. See section 7c.)
 
@@ -1766,6 +1766,121 @@ comparison at `z >= stored`, and an empty texel stores 0, so no bias in `[0, 1]`
 can shadow against it, and the forced-bias arm returns "lit" for exactly the
 reason the real one does. Only reading the map itself separated them.
 
+## 2.10 THE WORLD LOOK AUDIT (RN-2065 to RN-2075, 2026-08-19, `lane/world-audit`). DISTANCE, SKY AND THE AIR
+
+Full document with every frame, every rectangle and the feasibility argument:
+**[docs/web/WORLD-AUDIT-2026-08-19.md](../web/WORLD-AUDIT-2026-08-19.md)**. This
+section is the pointer plus the deltas; the audit is the detail.
+
+Section 2.8 audited the close and mid range on 2026-08-15 and its R1 to R7 are
+unchanged by this pass. This one audits what 2.8 structurally could not see, for
+the same reason RN-1859 gave about the mid field one range band earlier: **the
+furthest subject any canonical shot framed was the ruin at 34 m.** Nine frames
+inside forty metres cannot judge a horizon, and the world's weaknesses are past
+it.
+
+### THE FIVE NEW POSES, and why two of them needed a different scenario
+`vista` / `vistadawn` / `vistanoon` are ONE pose (mtn, lat 2.036 / lon 144.056,
+yaw 120, pitch -2, biome 5) differing in exactly one manifest field, so the day
+arc is a controlled comparison at a fixed camera. Six frames were taken to
+choose that site and five are recorded as rejects in the manifest, two of them
+because the reject IS a finding (plains: the world visibly ends at the canopy
+ring; hills2: distant snow reads as white paper over a black mid ground). The
+other three are the same trap twice: **a high site is not a high view.** mtn at
+yaw 300 and at yaw 210 both stand the eye on a slope facing uphill.
+
+`flyover` (1,200 m) and `limb` (120 km) carry `--scenario=surface` and
+`--scenario=orbit` in their own invocations, because **`Controller.teleport`
+discards its third argument** (`_altM`, contract stated in `Controller.ts` and
+`ConfigTypes.ts`), so no shot run under `--scenario=walk` can ever leave the
+ground. The branch refuses on `observer.mode !== 'FLY'` and asserts the eye
+altitude landed within `max(50, 2%)`, because a silently grounded flyover is
+`station`'s three-pass failure in another costume: a frame that looks fine,
+measures fine and is of the wrong thing.
+
+### THE FOUR NUMBERS THE QUEUE IS RANKED ON
+1. **The `?atmos=0` control splits one apparent defect into two.** At 1,200 m
+   the horizon band is iqr **20.08** with the atmosphere and **89.17** without
+   (-77.5%), while the ground straight down is **7.79** and **7.21** (unchanged).
+   The white ground in that frame is the haze in its far half and terrain with
+   no material in its near half, and either one alone reads as the other.
+2. **The day arc inverts the frame.** One pose, 66.89 -> 44.31 -> 5.85 degrees:
+   near scree **167.51 -> 134.14 -> 33.01**, far ridge **205.31 -> 198.86 ->
+   231.51**, far-to-near ratio **1.23 -> 1.48 -> 7.01**.
+3. **The sky brightens toward the sun and never reddens.** Sun-side against
+   anti-sun at 5.85 degrees: **110.83 / 60.35, 1.84x**, so the integral resolves
+   direction and the colour lane is TUNING. Horizon `warm` over the same 61
+   degrees: **-101.06 / -91.87 / -86.23**, 14.83 counts and still deeply blue.
+4. **The world empties when the eye leaves the ground.** `flyover` **188,081
+   triangles at 1,200 m**, **231,089 at 400 m**, against **2,759,465** at a
+   standing eye on plains, with no tree in any aerial frame and both `?atmos=0`
+   controls proving absence rather than haze. The exact trigger is NOT diagnosed
+   here and is the lane's first job: at 400 m the 620 m canopy ring still
+   subtends a 474 m horizontal disc of ground and the frame is empty anyway.
+
+### THE COST CEILING, WHICH GATES EVERY FIX ABOVE
+The plains vista at a standing eye with nothing built is **2,759,465 triangles,
+71 calls** on an RTX 4060 Ti at 1600x900: over `StatsProbe`'s ALERT triangle
+threshold (2.7e6) and over the 16.6 ms frame budget on every box measured, at a
+ratio of about 4.5x against the vista pose's cost (absolute milliseconds are
+box-and-run-dependent: this audit's p50 read 32.1 ms on plains against readings
+of 6.9 ms and 10.1 ms on `vista` for the same pose). `midfield` p99 **64.6
+ms**, `ruin` p99 44.0 ms. Meanwhile the frame with the most DISTANCE in it,
+`vista`, is 591,906 triangles: **distance is not what costs, the understorey
+card population at LOD0 is.** That is the same fix as the vegetation gap, which
+is why one lane buys both.
+
+### THE QUEUE (severity, then storyline exposure)
+Blocking: **1** aerial-perspective whiteout (a+b) · **2** no vegetation from the
+air (b) · **3** no terrain material past ~75 m, and 75 to 600 m is a genuine
+texture hole between the ground-texture fade at 35-75 m and the macro tint that
+starts at 600 m (b) · **4** the cost ceiling (b, and (c) only if density AND
+distance are both wanted) · **5** shadows stop at 300 m and the last cascade
+paints a texel-staircase black region at altitude whose dark side FLIPS between
+400 m and 1,200 m (b + a) · **6** the low-sun inversion (a+b) · **7** the 620 m
+world edge, same lane as 2 (b).
+Clearly behind: **8** sky colour, and the `aerosolTint` (0.38, 0.39, 0.43) is
+blue-biased so the one term colouring every distant surface pushes the world
+away from warmth at every hour (a) · **9** no clouds anywhere in `web/src` (a
+for a dome layer) · **10** snow and rock read as flat paint (a) · **11** the
+Ocean biome renders as blue TERRAIN and the good water shader is worn by one
+pond (b) · **12** LOD ribbons on the shell at the terminator (b) · **13** stars
+visible at 1,200 m in a blue sky (a).
+Acceptable: **14** no large-scale AO · **15** the fixed day arc.
+Unmeasured and said so: **16** the sun disc, because **no canonical frame in
+this project contains it** · **17** foliage aliasing in motion.
+At bar: **18** the limb at 120 km, which is the best frame the project has
+(ring luma 93.27, iqr 101.39, sat 0.626 over a 0.10 sky; 52,913 triangles, 21
+calls, p50 1.1 ms) · **19** the atmosphere's architecture, one analytic integral
+whose uniform record is shared BY REFERENCE between the sky and both terrain
+materials, so the horizon cannot disagree with the sky.
+
+### THE FIVE LANES THIS BECOMES
+**L1 haze** (1+6, shader-local, cheapest change and the largest number of
+pixels, and every later lane is judged through frames it distorts) ·
+**L2 distance vegetation** (2+7+half of 4, a third baked LOD rung and an
+altitude-scaled canopy radius) · **L3 far terrain material** (3, normal-only
+first, geometry handed to the ceiling study) · **L4 shadow reach** (5) ·
+**L5 sky colour** (8+10+13+9's cheap half, all class (a), so an art pass can run
+it while L2 and L3 are built).
+
+### TWO THINGS FOUND ON THE WAY, NEITHER OF WHICH IS THIS AUDIT'S SUBJECT
+**`artframe.js` could not run outside `--scenario=walk` and never had.** The
+sandbox gate read `of.game().mode`; `of.game()` returns null with no gameplay,
+so `flyover` died with `TypeError: Cannot read properties of null (reading
+'mode')` out of `page.evaluate` before any shot code ran. Null-safe now, sandbox
+rule unchanged for the shots that declare `needsSandbox`.
+
+**`station` came back INTERIOR again** at RN-1935's `yawOff: 105`
+(`drawEyeDistM` 4.316, `drawnParts` 2, `staleMaxM` 0; `alpha` varies per run
+and stays inside [0,1] -- this audit read 0.924 -- so the RN-2035 clamp defect
+is ruled out). Section 2.8 R5 stays open: INTERIOR is the stable fact and the
+storyline's climax destination still has no judgeable exterior frame. Re-flagged
+rather than re-diagnosed, because it is not a world-graphics question and this
+lane had no mandate to reopen it.
+
+---
+
 ## 3. Key design decisions
 | # | Decision | Rationale | Status | Date |
 |---|----------|-----------|--------|------|
@@ -2182,6 +2297,21 @@ write access to the lane's files, all folded into
 | 2 | Explore (sonnet): inventory the exact migration surface, counting GLSL authoring, instancing, post, IBL, shadows, render targets, GPGPU, renderer-API coupling, the terrain path, scatter, workers and wasm | The numbers behind RN-2086: 49 shader files / 10,744 lines, 6 `ShaderMaterial`, **14 `onBeforeCompile`**, a 13-file 2,372-line non-`EffectComposer` post stack, **zero** GPGPU, and the seam holding at one file / 328 lines. Terrain meshing is C++ in wasm in a worker and therefore renderer-agnostic | Study §3, §4.2 |
 | 3 | general-purpose (opus, web research): current three.js WebGPURenderer maturity, #30560 and #31055 status, TSL and `onBeforeCompile` support, WebGPU-only feature deltas, volumetrics and texture streaming, Electron WebGPU | The decisive quote, from the r185 manual verbatim: `ShaderMaterial`, `RawShaderMaterial` and `onBeforeCompile` **"are not supported in `WebGPURenderer`"**. **#30560 open since 2025-02-19 and the only open "High priority" issue in the repo.** Indirect draw landed but BatchedMesh-over-indirect is unmerged draft PR #30645. Bindless is not in the WebGPU spec (gpuweb #380, open since 2019). **No sparse textures on either backend, so virtual texturing is not a WebGPU argument.** Agent explicitly marked the "production-ready since r171" and "30 to 50% faster" claims as unsourced blog myths | Study §3, §4.1, §4.3 |
 | 4 | Explore (opus): cost a native port from the repo, measuring what is renderer-agnostic versus browser-shaped | The numbers behind RN-2087. Also found, unprompted: **no CI at all for `core/`** (no `.github/workflows`, no `build.ps1`/`build.sh`, no `ctest` in `check-all.mjs`); the 41/41 green result is produced by hand | Study §5, §5.1 note |
+
+**RN-2065 to RN-2075 (`lane/world-audit`), two Explore subagents, read-only,
+spawned in parallel with this lane's own build-and-serve setup rather than
+instead of it, and both folded into section 2.10 and the audit document.**
+
+| # | Brief | Result | Folded into |
+|---|---|---|---|
+| WA-s1 | Inventory the ATMOSPHERE / SKY / LIGHTING / SHADOW / FOG / WATER / CLOUD / SPACE-TRANSITION stack as implemented, mechanism and constants only, no judgement, file paths and line numbers for every claim | The model is an analytic Rayleigh/Mie march (Forge profile `betaR` 5.8e-6/13.5e-6/33.1e-6, `mieG` 0.76, `sunIntensity` 15.0) with a SEPARATE boundary-layer aerosol (`aerosolSigma` 4.5e-4, `aerosolScaleM` 400 referenced to the ray's LOWER end, `aerosolTint` 0.38/0.39/0.43), aerial perspective applied to terrain at 4 view / 2 light steps, the uniform record shared BY REFERENCE with the sky; CSM `[22, 80, 300]` PCF 2048; **no `THREE.Fog` anywhere, no clouds anywhere, water is one pond disc**; sun disc a 0.53-degree additive sprite | Gaps 1, 5, 6, 8, 9, 10, 11, 13, 18, 19 |
+| WA-s2 | Inventory the TERRAIN LOD / MATERIAL / SCATTER stack the same way: streamer constants, texture maps, sample scales, fade ranges, instancing, densities, LOD tiers, recorded triangle and draw-call figures | Terrain samples **exactly two DATA textures and has no albedo, normal or ORM map at all**; ground-texture weight fades 35 to 75 m, relief bump 30 to 60 m, macro tint 600 to 4000 m, strata 500 to 2500 m; every near term is `#ifndef OF_SCALED`; scatter is `BatchedMesh` with **two LOD rungs and no impostor or billboard tier anywhere in `web/src/render`**, canopy radius 620 m (full to 300 m), understorey 78 m; budgets ALERT at 2.7e6 triangles | Gaps 2, 3, 4, 7, and the whole feasibility argument in section 6 of the audit |
+
+The two briefs were deliberately split along the same seam the audit later
+ranks on (the air and the ground), so neither subagent could return an opinion
+about the other's half, and both were told to report mechanism and constants
+and NOT quality. Every judgement in section 2.10 is this controller's, taken
+against frames this controller captured.
 
 **RN-1255..1258 (`lane/art-terrain`, ART CAMPAIGN pass A3), two Explore subagents, both
 read-only, both folded here and neither given write access to the lane's files.**

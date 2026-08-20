@@ -26,6 +26,32 @@
 //                surface property, which is how a family shipped a repeat
 //                nobody photographed.
 //
+// AND FIVE MORE AT RN-2065, THE VISTA SET, which are the first shots in this
+// file that photograph anything further away than 34 m. Their reasons are in
+// their own manifest rows; the short version is that the nine above are all
+// close or mid range and the world's own weaknesses live at distance and in
+// the sky.
+//   vista        the horizon vista at eye level from a 4.7 km ridge.
+//   vistadawn    the same pose at a 5.7 degree sun.
+//   vistanoon    the same pose at the top of the day arc.
+//   flyover      1,200 m over the spawn, the first-launch view.
+//   limb         120 km up, the orbit-to-surface frame.
+// The last two need a FLY view source and therefore their own `--scenario=`,
+// because the walking capsule discards `of.teleport`'s altitude argument:
+//
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=surface \
+//     --width=1600 --height=900 \
+//     --evalfile=tools/smoke/probes/artframe.js --evalargs='{"shot":"flyover"}' \
+//     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
+//
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=orbit \
+//     --width=1600 --height=900 \
+//     --evalfile=tools/smoke/probes/artframe.js --evalargs='{"shot":"limb"}' \
+//     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
+//
+// The three `vista*` shots take the file's own `--scenario=walk` line at the
+// top of this header, with the shot name changed.
+//
 // ==========================================================================
 // WHY THIS FILE EXISTS AT ALL, given `artshot.js` and the `*shot.js` family
 // ==========================================================================
@@ -239,6 +265,248 @@
         r35c: [0.1500, 0.3855162, 0.8500, 0.3910718],
       },
       why: 'the MID FIELD at 18 / 27 / 35 m, the band no other shot can see',
+    },
+    // ===================== RN-2065. THE FIVE VISTA POSES =====================
+    //
+    // WHY THEY EXIST. Every shot above this line is close or mid range: the
+    // furthest subject any of them frames is the ruin at 34 m, and RN-1900
+    // added `midfield` precisely because 18 to 44 m was invisible to the other
+    // seven. Past 44 m the shot set has NOTHING, and past 44 m is where the
+    // world's own work is: the canopy ring ends at 620 m, the shadow rig's
+    // last cascade ends at 300 m, the macro tint fades out over 600 to 4000 m
+    // and the aerial-perspective integral is the only thing rendering
+    // anything at all beyond that. Nine canonical frames could not have judged
+    // one of those, and a look audit taken on them alone would have concluded
+    // the world is finished at the exact ranges where a player spends most of
+    // the game looking.
+    //
+    // THE SITE IS `mtn` (lat 2.036 / lon 144.056) AT YAW 120, AND BOTH HALVES
+    // OF THAT WERE CHOSEN BY CAPTURE RATHER THAN BY ARGUMENT. Six frames were
+    // taken and five are rejects; they are recorded rather than deleted,
+    // because "stand somewhere high and look out" is not a pose and each
+    // reject is a real reading about the world. All six on real D3D11 through
+    // this manifest, sun pinned to dot 0.70, 1600x900:
+    //   plains (-7.9675, 116.53189), biome 2. REJECTED as a vista and KEPT as
+    //       evidence (`docs/screenshots/RN2065_sweep_plains.png`): the horizon
+    //       is flat to 59 km and the frame holds no relief to judge at any
+    //       range. It is also the frame that costs the most anywhere in this
+    //       file -- 2,759,465 triangles, 71 calls, frame p50 32.1 ms -- which
+    //       is over the `StatsProbe` ALERT triangle threshold and twice a
+    //       60 Hz budget, at a standing eye on flat ground with nothing built.
+    //   forest (-19.85, -72.7853), biome 3, 1,420,222 tris, p50 13.6 ms. The
+    //       canopy fills the frame to the horizon line, so the shot measures
+    //       the tree ring and never the terrain behind it.
+    //   hills2 (22.286, 108.84406). Rejected and kept for the same reason as
+    //       plains: it is the frame in which the distant snow band reads as
+    //       flat white paper over a near-black mid ground, which is a finding
+    //       and not a vista.
+    //   mtn at yaw 300 and at yaw 210, biome 5 (Mountains). Both stand the eye
+    //       on a slope FACING UPHILL: the frame is 80 per cent scree at 5 to
+    //       40 m and holds no horizon at all. This is the trap in picking a
+    //       site by its elevation: a high site is not a high VIEW, and the
+    //       walker lands wherever the surface oracle puts him.
+    //   mtn at yaw 120, biome 5, 591,906 tris, 47 calls, p50 10.1 ms. SHIPPED.
+    //       Six ridge lines between the eye and the horizon, the whole depth
+    //       ladder in one frame (near scree, the 300 m shadow edge, the macro
+    //       tint fade over 600 to 4000 m, the aerial-perspective integral
+    //       carrying everything past that), and it is the CHEAPEST of the six
+    //       by a factor of 4.7 against plains, which is worth stating: the
+    //       frame with the most distance in it is not the expensive one.
+    // The site's own elevation is not re-measured here and is not this shot's
+    // claim. `of.world().observer.altM` reads 1.62 at every one of the six
+    // because the walking capsule reports the EYE ABOVE THE GROUND and not the
+    // ground above the datum; `ConfigTypes.ts` records lat 2 / lon 144 at
+    // 4,667.789 m as of 2026-08-03 and `setup.biome` 5 agrees with the
+    // Mountains half of that. If the ridge ever drifts the way the old spawn
+    // did, the biome in the report is what says so.
+    //
+    // PITCH IS -2 AND NOT 0, so the horizon sits just above the frame centre
+    // and both halves carry signal. At pitch 0 the top half is 450 rows of
+    // sky gradient and the ground below the horizon is compressed into a
+    // strip too shallow to hold a range rectangle.
+    //
+    // THREE SUNS, ONE POSE, AND THAT IS THE POINT. `vista`, `vistadawn` and
+    // `vistanoon` differ in exactly one manifest field (`sunDot`), so the day
+    // arc becomes a controlled comparison at a fixed camera rather than three
+    // pictures of three places. §2b measured the dusk half of the cycle at
+    // four sites and had no picture of any of them at a range past 5 m;
+    // `basedusk` closed that for a BASE at 19 m and cannot see a horizon.
+    //
+    // THE RECTANGLES ARE A DEPTH LADDER AND A SKY TRIPLE, and both are claims
+    // this file has never been able to make.
+    //   `box`     the canonical box, and on this shot it is the HAZE BAND: the
+    //       far basin and the ridge behind it, i.e. the part of the frame that
+    //       is nothing but atmosphere and terrain tint.
+    //   `skyL` / `skyR`, the same height either side of frame centre, and
+    //       `skyHz`, a clean patch just over the ridge line. An analytic
+    //       Rayleigh/Mie integral must brighten and warm toward the sun AND
+    //       toward the horizon; a gradient dome can only do the second. The
+    //       three together separate those two, and the pair only means
+    //       anything once you know which side the sun is on, which is why
+    //       `setup.sunYawOffDeg` is published beside them and why the boxes
+    //       are named for the FRAME and not for the sun (naming a rectangle
+    //       `skySun` before establishing the bearing is how a reading gets
+    //       filed backwards).
+    //   `hzBand` the furthest ridge in the frame; `mid` a nearer ridge with
+    //       the same material on it; `nearG` the scree at 5 to 40 m. Aerial
+    //       perspective is a CONTRAST RAMP over range, so a single rectangle
+    //       cannot see it and three can: the claim is about `iqr` and `sat`
+    //       FALLING monotonically from `nearG` to `hzBand`, not about any one
+    //       of their values.
+    //   `nearG` DELIBERATELY STOPS ABOVE y = 0.76 so it cannot clip the
+    //       first-person view model, which occupies the bottom 12 per cent of
+    //       every ground frame in this file (section 2.8 R4).
+    // They are committed as fractions, RN-1727's rule, so a verifier reads
+    // them out of the manifest instead of grid-searching them out of the PNG.
+    vista: {
+      scenario: 'walk', needsSandbox: false,
+      lat: 2.036, lon: 144.056, yaw: 120, pitch: -2,
+      sunDot: 0.70, sunTol: 0.06,
+      box: [0.2500, 0.4600, 0.7500, 0.6000],
+      extra: {
+        skyL: [0.0500, 0.1000, 0.2000, 0.2000],
+        skyR: [0.8000, 0.1000, 0.9500, 0.2000],
+        skyHz: [0.4000, 0.3300, 0.6000, 0.3800],
+        hzBand: [0.0500, 0.4600, 0.2500, 0.5600],
+        mid: [0.4000, 0.5400, 0.7000, 0.6000],
+        nearG: [0.2000, 0.7100, 0.8000, 0.7600],
+      },
+      why: 'the HORIZON VISTA at eye level on high ground, the range ladder',
+    },
+    vistadawn: {
+      scenario: 'walk', needsSandbox: false,
+      lat: 2.036, lon: 144.056, yaw: 120, pitch: -2,
+      // 0.10 and not 0.20. `basedusk` takes 0.20 because at 0.12 its subject
+      // (a base at 19 m) went to world luma 15.6 and could not be judged. This
+      // shot's subject is the SKY and the horizon, which are the two things a
+      // low sun makes brighter rather than darker, so it can go lower than any
+      // ground shot in this file and should: 0.10 is 5.7 degrees, inside the
+      // band where a real atmosphere reddens and a gradient dome does not.
+      sunDot: 0.10, sunTol: 0.03,
+      box: [0.2500, 0.4600, 0.7500, 0.6000],
+      extra: {
+        skyL: [0.0500, 0.1000, 0.2000, 0.2000],
+        skyR: [0.8000, 0.1000, 0.9500, 0.2000],
+        skyHz: [0.4000, 0.3300, 0.6000, 0.3800],
+        hzBand: [0.0500, 0.4600, 0.2500, 0.5600],
+        mid: [0.4000, 0.5400, 0.7000, 0.6000],
+        nearG: [0.2000, 0.7100, 0.8000, 0.7600],
+      },
+      why: 'the same vista at a 5.7 degree sun: the low-sun half of the arc',
+    },
+    vistanoon: {
+      scenario: 'walk', needsSandbox: false,
+      lat: 2.036, lon: 144.056, yaw: 120, pitch: -2,
+      // THE TOP OF THE DAY ARC, AND THE MISS IS THE MEASUREMENT. `dirForT`
+      // fixes the sun's declination at a constant 0.42 y-component
+      // (`SkyPass.ts`), so a site's maximum elevation is a property of its
+      // latitude and nothing else, and 0.92 is reachable at lat 2.036 and is
+      // NOT reachable at most of the sites in this file. `setSunElev` returns
+      // the closest phase it found rather than refusing, so `sunTol` is what
+      // turns an unreachable ask into a refusal instead of a photograph of a
+      // different hour (machinemat.js's rule, this file's own header).
+      sunDot: 0.92, sunTol: 0.06,
+      box: [0.2500, 0.4600, 0.7500, 0.6000],
+      extra: {
+        skyL: [0.0500, 0.1000, 0.2000, 0.2000],
+        skyR: [0.8000, 0.1000, 0.9500, 0.2000],
+        skyHz: [0.4000, 0.3300, 0.6000, 0.3800],
+        hzBand: [0.0500, 0.4600, 0.2500, 0.5600],
+        mid: [0.4000, 0.5400, 0.7000, 0.6000],
+        nearG: [0.2000, 0.7100, 0.8000, 0.7600],
+      },
+      why: 'the same vista at the top of the day arc: shortest shadows',
+    },
+    // THE TWO FLY POSES, AND THEY NEED A DIFFERENT SCENARIO, WHICH IS THE
+    // WHOLE REASON THIS FILE HAD NONE.
+    //
+    // `Controller.teleport` DISCARDS ITS THIRD ARGUMENT (`_altM`, and the
+    // contract is stated out loud at `Controller.ts` and `ConfigTypes.ts`:
+    // "alt is ignored (the capsule spawns ON the surface)"). Every shot above
+    // runs `--scenario=walk`, so every shot above is standing on the ground by
+    // construction and no amount of arguing with `of.teleport` was ever going
+    // to lift one. The altitude-honouring view source is `ObserverCamera`, and
+    // it drives the frame when the scenario's mode is `fly`, which
+    // `--scenario=surface`, `ascent`, `orbit` and `space` all are.
+    //
+    // So these two shots carry their own `--scenario=` in their invocation,
+    // and the branch below REFUSES rather than photographing the ground if the
+    // observer came back in a walking mode. A silently-grounded flyover is the
+    // exact failure `station` spent three passes on in another costume: a
+    // frame that looks fine, measures fine and is of the wrong thing.
+    flyover: {
+      scenario: 'surface', needsSandbox: false, fly: true,
+      // The spawn's own ground, from 1,200 m. `HOME` and not a scenic site:
+      // this is the view a player gets on the first launch of the storyline's
+      // rocket, over the terrain the first four hours are spent on.
+      lat: -3.41413, lon: 150.27984, altM: 1200,
+      // -14 puts the horizon in the top fifth and the ground under the
+      // aircraft in the bottom third, so the frame holds both the aerial
+      // perspective ramp and the LOD ladder the eye passes over.
+      yaw: 300, pitch: -14,
+      sunDot: 0.55, sunTol: 0.06,
+      // THE RECTANGLES WERE PLACED, CAPTURED, AND THEN MOVED, which is this
+      // file's own rule (RN-1839) and worth restating: the first `hzBand` here
+      // was written at y 0.21 from the pitch arithmetic and the horizon
+      // actually lands at y 0.36, so it measured sky and reported it as
+      // terrain. Placed against the capture now.
+      //   `hzBand`      the horizon line itself.
+      //   `under`       the ground DIRECTLY BELOW, i.e. a 1.2 km slant path
+      //       and the shortest column of air anything in this frame is seen
+      //       through. If the haze whites this out, it whites out everything.
+      //   `shadowStep`  the last shadow cascade's own boundary, which crosses
+      //       this frame as a hard stepped edge. Committed as a rectangle
+      //       because it is a DEFECT with a location, and a defect nobody
+      //       wrote a rectangle for is a defect the next pass argues about.
+      box: [0.2500, 0.4500, 0.7500, 0.7500],
+      extra: {
+        skyBand: [0.2000, 0.0500, 0.8000, 0.1500],
+        hzBand: [0.2000, 0.3500, 0.8000, 0.3750],
+        under: [0.3500, 0.8500, 0.6500, 0.9800],
+        shadowStep: [0.1875, 0.5900, 0.5625, 0.6444],
+      },
+      why: 'the MID-ALTITUDE FLIGHT VIEW at 1,200 m over the spawn',
+    },
+    limb: {
+      scenario: 'orbit', needsSandbox: false, fly: true,
+      // 120 km is 20 km INSIDE the ORBIT band (`Regime.ts` puts the boundary
+      // at 1.0e5 m), which is deliberate: at this altitude every chunk has
+      // moved to the far scaled scene, the shadow rig is off, and the sky
+      // dome, the terrain shell and the planet proxy are all drawn through
+      // the same shared atmosphere uniform record. If the surface-to-space
+      // handover has a seam, this is the altitude it shows at.
+      lat: -3.41413, lon: 150.27984, altM: 1.2e5,
+      // -18, i.e. well ABOVE the 20.6 degree horizon depression at this
+      // altitude, so the limb and the atmosphere ring sit across the middle
+      // of the frame with black sky above and lit ground below. Pitched down
+      // onto the ground (which is `ObserverCamera.reframe`'s own default here)
+      // the atmosphere is edge-on nowhere in frame and the shot cannot see
+      // the one thing it exists for.
+      yaw: 300, pitch: -18,
+      sunDot: 0.30, sunTol: 0.06,
+      // SAME CORRECTION AS `flyover`, AND WORSE, so it is recorded rather than
+      // quietly fixed: the first `ring` here sat at y 0.40 and the limb halo
+      // actually crosses y 0.69 to 0.73, so the rectangle named for the
+      // atmosphere read 0.17 counts of pure black sky. Read as published that
+      // would have said "the limb has no atmosphere ring", which is the
+      // opposite of what the frame shows. Placed against the capture now.
+      //   `space`  black sky well above the limb: the star field's own field,
+      //       and the frame's zero.
+      //   `ring`   the lit atmosphere halo where it crosses the upper right.
+      //   `ground` the sunlit planet surface below the terminator.
+      //   `seam`   THE DEFECT, and it has a location: a set of concentric
+      //       stepped ribbons along the terminator on the left, where the
+      //       scaled-space terrain shell's LOD tiles catch the low sun. A
+      //       rectangle on the artefact is what lets the next pass show it
+      //       gone rather than describe it differently.
+      box: [0.2000, 0.6000, 0.9000, 0.9000],
+      extra: {
+        space: [0.3000, 0.0400, 0.7000, 0.1200],
+        ring: [0.5000, 0.6900, 0.6500, 0.7300],
+        ground: [0.3000, 0.8200, 0.7000, 0.9500],
+        seam: [0.0938, 0.7778, 0.3750, 0.9556],
+      },
+      why: 'the ORBIT-TO-SURFACE frame at 120 km: the limb, the ring, the shell',
     },
     machine: {
       scenario: 'walk', needsSandbox: false,
@@ -798,9 +1066,22 @@
         + 'IS the control being taken.',
       postState: post };
   }
-  if (of.game().mode !== undefined && S.needsSandbox
-      && of.game().mode.sandbox !== true) {
+  // RN-2065. `of.game()` RETURNS NULL WHEN THERE IS NO GAMEPLAY, and until the
+  // two fly shots landed nothing in this file had ever run outside
+  // `--scenario=walk`, so `of.game().mode` threw before any shot-specific code
+  // could run at all. The throw was a real TypeError out of `page.evaluate`,
+  // i.e. no report and no frame, which is the right FAILURE and the wrong
+  // MESSAGE: it says "cannot read mode of null" about a probe whose actual
+  // problem would have been an unsandboxed scenario. Null-safe now, with the
+  // sandbox rule unchanged for every shot that declares `needsSandbox`.
+  const gameNow = typeof of.game === 'function' ? of.game() : null;
+  if (gameNow !== null && gameNow !== undefined && gameNow.mode !== undefined
+      && S.needsSandbox && gameNow.mode.sandbox !== true) {
     return { valid: false, shot: name, why: 'this shot needs --sandbox=1' };
+  }
+  if ((gameNow === null || gameNow === undefined) && S.needsSandbox) {
+    return { valid: false, shot: name,
+      why: 'this shot needs --sandbox=1 and there is no gameplay at all' };
   }
 
   // Freeze everything that moves on its own, so a pair differs only by the
@@ -939,6 +1220,136 @@
     of.look(S.yaw, S.pitch);         // the observer's own up, which just moved
     setup = { teleported: true, converged: of.world().chunks.converged,
       biome: of.world().biome, tickAdvanced: of.world().tick > w0.tick };
+  }
+
+  // RN-2065. THE VISTA FAMILY. `forestfloor`'s sequence at a different site
+  // and a shallower pitch, with two additions the distance shots need and the
+  // close ones never did.
+  //
+  // (1) THE CONVERGENCE SPIN IS LONGER AND ITS RESULT IS ASSERTED. A close
+  // shot converges when the chunks under the feet arrive; a horizon shot is
+  // not finished until the streamer has walked the whole quadtree out to the
+  // limb, which at 4.7 km of eye altitude is several hundred chunk builds
+  // through ONE terrain worker with a genBudget of 8 to 16 meshes per update
+  // (`Quality.ts`). `forestfloor`'s 240 half-second spins is 120 s and was
+  // written for a 2 m eye. A vista that photographs mid-stream is a picture of
+  // the STREAMER, not of the world, and it would read as exactly the LOD
+  // defect this shot exists to look for, so the frame is refused rather than
+  // taken unconverged.
+  //
+  // (2) THE EYE ALTITUDE IS PUBLISHED, because the site is the whole claim.
+  // `mtn` is a site the world GENERATES, and `ConfigTypes.ts` records that the
+  // old spawn drifted 1,704.789 m and changed biome without anything noticing.
+  // If this ridge ever moves, `setup.eyeAltM` says so in the report instead of
+  // the pose quietly becoming a different pose.
+  if (name === 'vista' || name === 'vistadawn' || name === 'vistanoon') {
+    const w0 = of.world();
+    of.teleport(A.lat ?? S.lat, A.lon ?? S.lon, 2.0);
+    await sleep(2.0);
+    let spin = 0;
+    while (!of.world().chunks.converged && spin++ < 600) await sleep(0.5);
+    await sleep(1.5);
+    sun = pin();                     // AFTER the teleport, forestfloor's reason
+    if ((A.props ?? S.props) === false) of.propsVisible(false);
+    of.look(A.yaw ?? S.yaw, A.pitch ?? S.pitch);
+    await sleep(0.5);
+    const o = of.world().observer;
+    if (of.world().chunks.converged !== true && A.allowUnconverged !== true) {
+      return { valid: false, shot: name, spins: spin,
+        why: 'the terrain streamer never converged, so this frame is a '
+          + 'photograph of the stream and not of the world. Pass '
+          + '{"allowUnconverged":true} only when the mid-stream frame IS the '
+          + 'subject.', chunks: of.world().chunks };
+    }
+    // WHICH SIDE OF THE FRAME THE SUN IS ON, MEASURED. `skyL` and `skyR` are
+    // named for the frame because the sun's bearing is not a manifest constant
+    // -- `setSunElev` solves a PHASE against this site's own up, so the
+    // azimuth it lands on is a property of the site and the elevation asked
+    // for, and it moves between `vista`, `vistadawn` and `vistanoon`. This is
+    // the angle between the look direction and the sun, projected onto the
+    // horizontal, signed so that a POSITIVE value means the sun is to the
+    // RIGHT of the look direction (i.e. toward `skyR`). Without it the sky
+    // pair is two numbers with no hypothesis attached, which is how a lane
+    // publishes "the sun side is darker" about the anti-sun side.
+    // THE LOCAL UP IS REBUILT FROM lat/lon AND THEN CHECKED AGAINST A NUMBER
+    // THE ENGINE ALREADY PUBLISHES, so the convention is proven rather than
+    // assumed. `FloatingOrigin` only TRANSLATES, so engine axes are body axes
+    // and `dirForT`'s constant 0.42 y-component says +y is the polar axis;
+    // that makes the local up at (lat, lon) the usual
+    // (cos lat cos lon, sin lat, cos lat sin lon). If that reconstruction is
+    // right then `dot(up, sunDir)` MUST equal `sky.elevationDot`, which is
+    // defined as exactly that dot product. `upCheck` is the difference, and it
+    // is published rather than asserted so a convention change shows up as a
+    // number in the report instead of as a silently mirrored bearing.
+    const aimNow = of.aim();
+    const sunNow = window.__ofPost ? window.__ofPost.state().sun : null;
+    let sunYawOffDeg = null;
+    let sunElevDeg = null;
+    let upCheck = null;
+    if (aimNow !== null && Array.isArray(sunNow)) {
+      const la = (o.latDeg * Math.PI) / 180;
+      const lo = (o.lonDeg * Math.PI) / 180;
+      const up = [Math.cos(la) * Math.cos(lo), Math.sin(la),
+        Math.cos(la) * Math.sin(lo)];
+      const s3 = norm(sunNow);
+      upCheck = r3(dot(up, s3) - of.stats().sky.elevationDot);
+      sunElevDeg = r2((Math.asin(Math.max(-1, Math.min(1, dot(up, s3))))
+        * 180) / Math.PI);
+      const f = norm(aimNow.dir);
+      const fH = norm(addk(f, up, -dot(f, up)));       // look dir, flattened
+      const sH = norm(addk(s3, up, -dot(s3, up)));     // sun dir, flattened
+      const rgt = norm(cross(fH, up));                 // +right in the frame
+      sunYawOffDeg = r2((Math.atan2(dot(sH, rgt), dot(sH, fH)) * 180) / Math.PI);
+    }
+    setup = { teleported: true, converged: of.world().chunks.converged,
+      spins: spin, biome: of.world().biome, eyeAltM: r2(o.altM),
+      sunYawOffDeg, sunElevDeg, upCheck,
+      regime: of.world().regime, chunks: of.world().chunks,
+      tickAdvanced: of.world().tick > w0.tick };
+  }
+
+  // RN-2065. THE TWO FLY POSES. See their manifest rows for why they cannot
+  // share the branch above: the walking capsule discards the altitude.
+  if (name === 'flyover' || name === 'limb') {
+    const o0 = of.world().observer;
+    if (o0.mode !== 'FLY') {
+      return { valid: false, shot: name, observerMode: o0.mode,
+        why: 'this shot needs the FLY view source and the observer came back '
+          + `in mode '${String(o0.mode)}'. Run it with --scenario=${S.scenario} `
+          + '(or add --mode=fly). The walking capsule DISCARDS of.teleport\'s '
+          + 'altitude argument, so a walk-mode run of this shot photographs the '
+          + 'ground and every field in the report still reads correct.' };
+    }
+    const w0 = of.world();
+    const alt = A.altM ?? S.altM;
+    of.teleport(A.lat ?? S.lat, A.lon ?? S.lon, alt);
+    await sleep(2.0);
+    let spin = 0;
+    while (!of.world().chunks.converged && spin++ < 600) await sleep(0.5);
+    await sleep(2.0);
+    sun = pin();
+    of.look(A.yaw ?? S.yaw, A.pitch ?? S.pitch);
+    await sleep(0.5);
+    const o = of.world().observer;
+    // ASSERT THE ALTITUDE, for the same reason `voxelface` asserts that the
+    // pit exists: a shot named for a height that was not reached is filed as
+    // evidence about that height.
+    const tolM = Math.max(50, alt * 0.02);
+    if (!(Math.abs(o.altM - alt) <= tolM)) {
+      return { valid: false, shot: name, wantAltM: alt, gotAltM: r2(o.altM),
+        tolM: r2(tolM), observer: o,
+        why: 'the eye is not at the altitude this shot names' };
+    }
+    if (of.world().chunks.converged !== true && A.allowUnconverged !== true) {
+      return { valid: false, shot: name, spins: spin,
+        why: 'the terrain streamer never converged; see the vista branch note',
+        chunks: of.world().chunks };
+    }
+    setup = { teleported: true, wantAltM: alt, eyeAltM: r2(o.altM),
+      observerMode: o.mode, regime: of.world().regime, spins: spin,
+      depthMode: of.world().depthMode, chunks: of.world().chunks,
+      converged: of.world().chunks.converged,
+      tickAdvanced: of.world().tick > w0.tick };
   }
 
   if (name === 'voxelface') {
