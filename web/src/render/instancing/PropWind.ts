@@ -120,6 +120,29 @@ export function windUpdate(simSecs: number): void {
   if (enabled && !frozen) uniforms.uWindTime.value = simSecs;
 }
 
+/**
+ * RN-2145. The shared uniform OBJECTS, for a consumer that is not a
+ * MeshStandardMaterial and therefore cannot go through `applyWind`.
+ *
+ * The ground-cover carpet (render/grass) is a ShaderMaterial, for reasons its
+ * own header gives, so the hook above cannot reach it. It takes these two
+ * objects instead, which is what actually matters for coherence: one clock and
+ * one amplitude, so `__ofWind.freeze` pins the carpet and the crowns at the
+ * same instant and a matched capture pair cannot have one of them moving.
+ *
+ * NOTHING ABOUT THE EMITTED GLSL ABOVE CHANGES, and that is deliberate. The
+ * carpet's sway is written out in its own shader rather than factored out of
+ * WIND_GLSL, because WIND_GLSL is the props' program and this lane's before and
+ * after depend on the props not moving by so much as a rounding difference.
+ * `uWindTree` is not exported: it is the tree reach law and a 0.26 m blade has
+ * no use for it.
+ */
+export function windUniforms(): {
+  uWindTime: { value: number }; uWindAmp: { value: number };
+} {
+  return { uWindTime: uniforms.uWindTime, uWindAmp: uniforms.uWindAmp };
+}
+
 // The probe surface, on the `__ofProps` precedent and for its reason: a page
 // reload cannot hold the camera, the sun and the streamed chunk set equal, so
 // the honest before/after is a matched pair inside one settled frame, and

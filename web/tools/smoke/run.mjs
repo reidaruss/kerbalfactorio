@@ -336,6 +336,23 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // the hooked program at exactly zero displacement, which is what separates
   // "the hook costs" from "the motion costs".
   'wind', 'windamp',
+  // RN-2145, THE GROUND-COVER CARPET, registered in the same commit that
+  // introduces the flags because this list's own rule a hundred lines down says
+  // an unregistered flag is a vacuous green and has produced three of them.
+  //
+  // `grass=0` REMOVES THE LAYER: nothing is constructed, no geometry, no
+  // material, no draw, so the off arm is bit-exact with the pre-carpet build
+  // (?wind=0's shape, standing rule 7). It is NOT the same control as
+  // `grassdens=0`, which leaves the layer constructed and empty and therefore
+  // measures the cost of an empty pass; both exist because they answer
+  // different questions.
+  // `grasstint=0` makes every blade exactly the ground colour with no chroma
+  // rotation, which isolates "is the greening doing this" from "is the cover
+  // doing this". `grasstrans=0` removes the wrap and forward-scatter terms.
+  // `grasspx=` and `grassfade=` move the fade window, which is in PIXELS of
+  // apparent card height and not in metres; see GrassTuning's note on why.
+  'grass', 'grassdens', 'grasstint', 'grasspx', 'grassfade',
+  'grasstrans', 'grasstransamp',
   // RN-102, standing rule 7. `leafvar=0` bakes the flat greyscale vertex
   // colour, i.e. the pre-RN-102 bytes exactly; the runtime pair lives on
   // `__ofProps.setLeafVar` because a reload cannot hold the frame equal.

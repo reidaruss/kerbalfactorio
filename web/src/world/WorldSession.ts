@@ -51,6 +51,7 @@ import type { SurfaceOracle } from './SurfaceOracle.js';
 import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { TerrainStream } from './TerrainStream.js';
 import type { Scatter } from './Scatter.js';
+import type { GrassCover } from '../render/grass/GrassCover.js';
 import type { Events, EventCensus } from '../app/Events.js';
 import type { HandleCensus } from '../sim/wasm/HandleLedger.js';
 import type { TeardownReport } from '../app/Lifetime.js';
@@ -64,6 +65,10 @@ export interface BodyScope {
   readonly terrain: TerrainStream;
   /** Props placed against THIS scope's chunk keys and this body's radius. */
   readonly scatter: Scatter;
+  /** RN-2145. The ground-cover carpet, on the same terms as the scatter: it
+   *  holds instance buffers keyed on THIS scope's chunk keys, so it is scope
+   *  state and not process state and it dies with the scope. */
+  readonly grass: GrassCover;
   /**
    * CE-19. The terrain worker's OWN handle census at the moment it inited.
    *
@@ -138,6 +143,7 @@ export class WorldSession {
   get body(): PlanetBody { return this.scope.body; }
   get terrain(): TerrainStream { return this.scope.terrain; }
   get scatter(): Scatter { return this.scope.scatter; }
+  get grass(): GrassCover { return this.scope.grass; }
   get workerHandles(): Readonly<Record<string, number>> { return this.scope.workerHandles; }
   get lifetime(): Lifetime { return this.lt; }
 

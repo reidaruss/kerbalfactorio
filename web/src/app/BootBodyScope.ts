@@ -10,6 +10,8 @@
 import { measureHorizonOcclusion, type HorizonOcclusion }
   from '../render/materials/HorizonOcclusion.js';
 import { bootTerrain } from '../world/TerrainBoot.js';
+import { GrassCover } from '../render/grass/GrassCover.js';
+import { surfacesReady } from '../render/instancing/Surfaces.js';
 import { Scatter } from '../world/Scatter.js';
 import { Lifetime } from './Lifetime.js';
 import { WorldSession, type BuildBodyScope } from '../world/WorldSession.js';
@@ -209,6 +211,39 @@ export async function phaseBodyScope(
     // already `TerrainStream.dispose`'s job; this registration is what releases
     // the props THIS scope placed, in the scope that placed them.
     lt.add('scatter.placed', () => { sc.clearPlaced(); });
+
+    // RN-2145. THE GROUND-COVER CARPET, built here beside the scatter and for
+    // the same reason: it is keyed on this scope's chunk keys and it holds GPU
+    // buffers, so it is scope state.
+    //
+    // It takes the NEAR TERRAIN MATERIAL, and that is the load-bearing argument
+    // rather than a convenience: the carpet lights itself from the same shared
+    // uniform objects the ground lights itself from (see GrassMaterial), which
+    // is what makes cover and substrate unable to disagree about light the way
+    // GrassPalette makes them unable to disagree about colour.
+    const gc = new GrassCover({
+      pool: t.pool, depth: renderer.depth, terrain: t.materials.near,
+      atmosphere: sky.atmos, cascades: shadows.splits.length,
+      maxReliefM: oracle.body.maxReliefM,
+      water: cfg.scatterWet ? null : oracle.water,
+      editsHandle: () => read(voxelsRef, 'the voxel world')?.handle ?? 0,
+    });
+    for (const m of gc.meshes) scenes.near.add(m);
+    // CHAINED, not replaced. `afterRebase` is ONE slot and the scatter already
+    // holds it; assigning over it is how the props get left 4 km behind
+    // (WG-64's measurement, four lines up). The order is scatter first because
+    // that is the order the two were registered in, and neither reads the
+    // other.
+    const afterScatter = t.stream.afterRebase;
+    t.stream.afterRebase = () => {
+      afterScatter?.();
+      gc.replace(t.stream.residentViews);
+    };
+    void surfacesReady().then(() => { gc.bindCard(); });
+    lt.add('grass.cover', () => { gc.dispose(); });
+    (window as unknown as { __ofGrass: unknown }).__ofGrass = {
+      report: () => gc.report(),
+    };
     built.v = t;
     // CE-47. R17. THE STATION COMES BACK WITH THE SCOPE.
     //
@@ -221,7 +256,10 @@ export async function phaseBodyScope(
     // conic was at boot. The body guard is CE-31's rule; see StationMount for
     // both arguments and for the residue it does not fix.
     stationRebuild.fn?.(bodyId, mounts.lastTick);
-    return { body: oracle.body, terrain: t.stream, scatter: sc, workerHandles: t.workerHandles };
+    return {
+      body: oracle.body, terrain: t.stream, scatter: sc, grass: gc,
+      workerHandles: t.workerHandles,
+    };
   };
 
   hud.banner('starting terrain.worker and preallocating the chunk pool ...');
