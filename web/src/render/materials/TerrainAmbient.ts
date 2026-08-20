@@ -20,6 +20,7 @@
 // about the same problem one layer up.
 
 import * as THREE from 'three';
+import { SKY_IRR_ON } from './Atmosphere.glsl.js';
 
 /**
  * The floor under everything: what a face receives with no sky and no sun. It
@@ -87,8 +88,55 @@ const AMBIENT_LEGACY = new THREE.Color(0.030, 0.034, 0.045);
 const AMBIENT_NOON = new THREE.Color(0.048, 0.058, 0.084);
 const AMBIENT_LOWSUN = new THREE.Color(0.072, 0.068, 0.076);
 
+/**
+ * RN-2175 (fidelity lane A4). THE FLOOR IS NOW READ OFF THE SKY MODEL, which is
+ * the handoff lane A1 wrote into the two constants above: "these are still
+ * authored endpoints and not a spherical-harmonic probe of the real sky; a
+ * probe is A4's job and this lane must not build one."
+ *
+ * `SkyProbe.skyIrradiance` returns the cosine-weighted hemispherical radiance
+ * of the ACTUAL sky over the observer, in the shader's own units. This is the
+ * gain that turns it into the FLOOR: the part of the sky's light that reaches a
+ * facet with no view of the sky at all, which is what this constant has always
+ * been, and it is deliberately small because the sky's DIRECT contribution
+ * already arrives through `TERRAIN_SKY_AMBIENT` and is not this term's job.
+ *
+ * CALIBRATED, NOT CHOSEN, AND MEASURED RATHER THAN DERIVED. At the Hills site
+ * under a dot-0.92 sun the probe reads (0.1152, 0.1639, 0.2435); A1's
+ * `AMBIENT_NOON` is (0.048, 0.058, 0.084). 0.36 is the single gain that
+ * reproduces the green and blue of that endpoint to two figures, so the shipped
+ * high-sun frame does not jump and A1's calibration survives. Red lands at
+ * 0.0415 against A1's authored 0.048, i.e. the model's noon sky is slightly
+ * bluer than the endpoint that was guessed for it, and that difference is
+ * REPORTED rather than corrected with a per-channel gain: a per-channel gain
+ * would be the authored triple coming back in through the window.
+ *
+ * Everything the arc does away from noon is then the model's answer. That is
+ * the whole point: A1's low-sun endpoint was authored warm on the argument that
+ * the sky is the dominant lamp at that hour, which is right, but it was one
+ * guessed triple for every hour below the knee and it could not know which way
+ * the sky had actually gone.
+ */
+const SKY_FLOOR_K = 0.36;
+
 export const TERRAIN_AMBIENT = (FILL_ON ? AMBIENT_NOON : AMBIENT_LEGACY)
   .clone().multiplyScalar(FLOOR_AMP);
+
+/** The probe's answer this frame, written by `terrainSkyFloor`. */
+const SKY_IRR = new THREE.Color(0, 0, 0);
+let skyIrrSet = false;
+
+/**
+ * RN-2175. Hand the frame's hemispherical sky radiance in. Called by SkyPass
+ * before `terrainNightAmbient`, from the one place that holds both the
+ * atmosphere record and the observer. A no-op under `?skyirr=0`, where the
+ * authored endpoints above stay in charge, so the flag restores both halves.
+ */
+export function terrainSkyFloor(c: THREE.Color): void {
+  if (!SKY_IRR_ON) return;
+  SKY_IRR.copy(c);
+  skyIrrSet = true;
+}
 
 /** The daylight value of the floor THIS FRAME, kept so the night writer below
  *  is idempotent: it always writes base + starlight * k, never accumulates.
@@ -143,10 +191,17 @@ export function terrainNightAmbient(elevationDot: number): number {
   // low-sun weight uses the same 0.06 to 0.42 band ToneDrive.ts keys the
   // exposure on, deliberately: one hour, one set of weights, three consumers.
   if (FILL_ON) {
-    const d = Math.min(1, Math.max(0, (elevationDot - 0.06) / 0.36));
-    const dayK = d * d * (3 - 2 * d);
-    AMBIENT_BASE.copy(AMBIENT_LOWSUN).lerp(AMBIENT_NOON, dayK)
-      .multiplyScalar(FLOOR_AMP);
+    if (SKY_IRR_ON && skyIrrSet) {
+      // RN-2175. The sky's own hemisphere, scaled. No elevation blend: the
+      // model already knows what hour it is, and blending two authored
+      // endpoints on top of it would be a second answer to the same question.
+      AMBIENT_BASE.copy(SKY_IRR).multiplyScalar(SKY_FLOOR_K * FLOOR_AMP);
+    } else {
+      const d = Math.min(1, Math.max(0, (elevationDot - 0.06) / 0.36));
+      const dayK = d * d * (3 - 2 * d);
+      AMBIENT_BASE.copy(AMBIENT_LOWSUN).lerp(AMBIENT_NOON, dayK)
+        .multiplyScalar(FLOOR_AMP);
+    }
   }
   TERRAIN_AMBIENT.copy(AMBIENT_BASE);
   TERRAIN_AMBIENT.r += STARLIGHT.r * k;
@@ -172,6 +227,7 @@ export function terrainNightAmbient(elevationDot: number): number {
  */
 export function terrainAmbientState(): {
   floorAmp: number; starlightAmp: number; fillOn: boolean; skyAmbient: number;
+  skyIrr: [number, number, number]; skyIrrOn: boolean;
   day: [number, number, number]; starlight: [number, number, number];
   current: [number, number, number]; nightK: number;
 } {
@@ -179,6 +235,8 @@ export function terrainAmbientState(): {
     floorAmp: FLOOR_AMP, starlightAmp: STARLIGHT_AMP, fillOn: FILL_ON,
     skyAmbient: TERRAIN_SKY_AMBIENT,
     day: [AMBIENT_BASE.r, AMBIENT_BASE.g, AMBIENT_BASE.b],
+    skyIrr: [SKY_IRR.r, SKY_IRR.g, SKY_IRR.b],
+    skyIrrOn: SKY_IRR_ON && skyIrrSet,
     starlight: [STARLIGHT.r, STARLIGHT.g, STARLIGHT.b],
     current: [TERRAIN_AMBIENT.r, TERRAIN_AMBIENT.g, TERRAIN_AMBIENT.b],
     nightK: lastK,

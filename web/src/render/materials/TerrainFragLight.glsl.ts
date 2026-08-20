@@ -28,8 +28,8 @@ export const TERRAIN_FRAG_LIGHT = /* glsl */`
       // the sky uses.
       vec3 sunT = uAtmosOn > 0.5 ? ofAtmoSunTransmittance(pM, sd, 3) : vec3(1.0);
 
-      vec3 skyTrans;
-      vec3 skyAmb = ofAtmoScatter(pM, up, 1.0e9, 2, 2, skyTrans) * uSkyAmbient;
+      // RN-2175. The hemisphere, not the zenith. See ofAtmoSkyAmb.
+      vec3 skyAmb = ofAtmoSkyAmb(pM, up, 2, 2) * uSkyAmbient;
 
       // INDIRECT, and it is what a cut bank is lit BY. With only uAmbient and
       // skyAmb, a face that turns away from the sun receives those two and

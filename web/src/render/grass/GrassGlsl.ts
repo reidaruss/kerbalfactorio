@@ -299,8 +299,7 @@ export function grassFragmentShader(depth: DepthPolicy): string {
       float shadow = ofCascadeShadow(vViewZ);
       vec3 sunT = uAtmosOn > 0.5 ? ofAtmoSunTransmittance(pM, sd, 3) : vec3(1.0);
 
-      vec3 skyTrans;
-      vec3 skyAmb = ofAtmoScatter(pM, up, 1.0e9, 2, 2, skyTrans) * uSkyAmbient;
+      vec3 skyAmb = ofAtmoSkyAmb(pM, up, 2, 2) * uSkyAmbient;
 
       // The ground BESIDE the blade, which is what a blade's lower half is
       // actually lit by, computed the way TerrainFragLight computes it
