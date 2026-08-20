@@ -19,6 +19,7 @@ import { LAYER_PROPS } from '../Scenes.js';
 import { isFoliageMaterial } from '../ScatterLook.js';
 import { normalize, setBaseShade, setLeafVar, type BaseBake }
   from './PropGeometry.js';
+import { applyPropSkyAmbient } from '../materials/PropSkyAmbient.js';
 import { applyWind } from './PropWind.js';
 import { attachSurface, familyForRole, roleOfMaterialName, surfacesReady }
   from './Surfaces.js';
@@ -260,6 +261,14 @@ export class PropLibrary {
     if (isFoliageMaterial(role)) {
       applyWind(material as THREE.MeshStandardMaterial, `props:${key}`);
     }
+    // RN-2201. THE SKY AMBIENT (PropSkyAmbient.ts). Foliage batches already
+    // spent their one `onBeforeCompile` on the wind and take the term by that
+    // hook chaining to it; the mineral and bark batches have no hook at all, so
+    // this installs the standalone one for them. Ordered AFTER the wind because
+    // it reads the material's current hook to decide which case it is in, and
+    // it is a no-op with `?wind=0` on a foliage batch only in the sense that
+    // the standalone hook is then the one that carries the term.
+    applyPropSkyAmbient(material, `props:${key}`);
     const cap0 = this.growable ? START_CAPACITY : LEGACY_CAPACITY;
     const mesh = new THREE.BatchedMesh(cap0, MAX_VERTS, MAX_VERTS * 3, material);
     mesh.name = `props:${key}`;

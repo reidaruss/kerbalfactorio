@@ -9,6 +9,7 @@
 
 import { measureHorizonOcclusion, type HorizonOcclusion }
   from '../render/materials/HorizonOcclusion.js';
+import { publishPropSkyAmbient } from '../render/materials/PropSkyAmbient.js';
 import { bootTerrain } from '../world/TerrainBoot.js';
 import { GrassCover } from '../render/grass/GrassCover.js';
 import { surfacesReady } from '../render/instancing/Surfaces.js';
@@ -221,6 +222,15 @@ export async function phaseBodyScope(
     // uniform objects the ground lights itself from (see GrassMaterial), which
     // is what makes cover and substrate unable to disagree about light the way
     // GrassPalette makes them unable to disagree about colour.
+    // RN-2201. The props and the harvest nodes take the SAME two shared uniform
+    // objects the carpet takes on the next line, for the same reason and from
+    // the same two owners. Published here rather than plumbed through
+    // `PropLibrary.load` because this is the one scope that already holds both,
+    // and it runs during boot, before the first render compiles a program.
+    publishPropSkyAmbient(
+      sky.atmos as unknown as Parameters<typeof publishPropSkyAmbient>[0],
+      t.materials.near.uniforms);
+
     const gc = new GrassCover({
       pool: t.pool, depth: renderer.depth, terrain: t.materials.near,
       atmosphere: sky.atmos, cascades: shadows.splits.length,

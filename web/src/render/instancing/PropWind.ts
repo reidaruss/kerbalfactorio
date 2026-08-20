@@ -39,6 +39,7 @@
 // reaches all of them and `__ofWind.set` needs no material list.
 
 import type * as THREE from 'three';
+import { injectPropSkyAmbient } from '../materials/PropSkyAmbient.js';
 
 /** Tip displacement scale in metres. Peak per-axis excursion is ~1.5x this. */
 const AMP_M = 0.045;
@@ -91,7 +92,8 @@ const WIND_GLSL = `
 #endif
 `;
 
-function hook(shader: { uniforms: Record<string, { value: unknown }>; vertexShader: string }): void {
+function hook(shader: { uniforms: Record<string, { value: unknown }>;
+                       vertexShader: string; fragmentShader: string }): void {
   shader.uniforms.uWindTime = uniforms.uWindTime;
   shader.uniforms.uWindAmp = uniforms.uWindAmp;
   shader.uniforms.uWindTree = uniforms.uWindTree;
@@ -99,6 +101,14 @@ function hook(shader: { uniforms: Record<string, { value: unknown }>; vertexShad
     .replace('#include <common>', '#include <common>\n'
       + 'uniform float uWindTime;\nuniform float uWindAmp;\nuniform float uWindTree;')
     .replace('#include <begin_vertex>', '#include <begin_vertex>' + WIND_GLSL);
+  // RN-2201, CHAINED not replaced, on FurShader's precedent. A material holds
+  // ONE `onBeforeCompile`, and every foliage prop and every leaf node batch
+  // already spends it here, so the sky-ambient term can only reach the surfaces
+  // that most need it (the meadow's near ground IS props) by being called from
+  // inside this one. This hook owns the VERTEX stage and that one owns the
+  // FRAGMENT stage, so they cannot eat each other's anchors.
+  injectPropSkyAmbient(shader as unknown as
+    { uniforms: Record<string, THREE.IUniform>; fragmentShader: string });
 }
 
 /**

@@ -7,6 +7,7 @@
 // reads it.
 
 import * as THREE from 'three';
+import { applyPropSkyAmbient } from '../render/materials/PropSkyAmbient.js';
 import { attachSurface, type Family } from '../render/instancing/Surfaces.js';
 import { applyWind } from '../render/instancing/PropWind.js';
 import { assertPartMatBase } from '../render/materials/PartMaterial.js';
@@ -102,6 +103,12 @@ export function makeBatch(group: THREE.Group, name: string,
     assertPartMatBase(material);
     applyRockMat(material, `nodes:${name}`);
   }
+  // RN-2201. Same rule as the props: the two hooks above chain the sky-ambient
+  // splice themselves, and this installs the standalone hook on the batches
+  // that have neither (a `coarse:` bark batch, or anything at all under
+  // `?wind=0 ?rockmat=0`). A tree trunk lit by a floor while its own leaves are
+  // lit by the sky is the shape this closes.
+  applyPropSkyAmbient(material, `nodes:${name}`);
   const mesh = new THREE.BatchedMesh(START_CAPACITY, s.verts, s.idx, material);
   mesh.name = `nodes:${name}`;
   mesh.castShadow = true;

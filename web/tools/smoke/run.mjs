@@ -383,6 +383,16 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   'grass', 'grassdens', 'grasstint', 'grasspx', 'grassfade',
   'grasstrans', 'grasstransamp', 'grasssharp', 'grassval',
   'grasslean', 'grassramp', 'grassdry',
+  // RN-2201, standing rule 7, and the FIRST arm is the one that matters. A1
+  // measured that the sky-ambient weight which lights the terrain reaches no
+  // scatter prop at all ("two counts of fourteen"); PropSkyAmbient splices the
+  // terrain's own `ofAtmoScatter(...) * uSkyAmbient` into the stock prop and
+  // node programs from the SAME shared uniform objects. `propsky=0` computes
+  // the term and multiplies it by zero, so the PROGRAM is identical across the
+  // pair and only the value differs -- which is what makes the before/after a
+  // measurement of the term rather than of two different shaders. A number
+  // sweeps it.
+  'propsky',
   // RN-102, standing rule 7. `leafvar=0` bakes the flat greyscale vertex
   // colour, i.e. the pre-RN-102 bytes exactly; the runtime pair lives on
   // `__ofProps.setLeafVar` because a reload cannot hold the frame equal.
