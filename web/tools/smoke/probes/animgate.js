@@ -48,7 +48,7 @@
     await of.settle(4);
     return of.framehash(TX, TY);
   };
-  // readPixels is BOTTOM-LEFT origin (Loop.countHoles states it), so tile row
+  // readPixels is BOTTOM-LEFT origin (LoopFrameHash.countHoles states it), so tile row
   // 0 is the BOTTOM of the screen, which is where the FP arms live.
   //
   // THE MEASURED FLOOR, and why `strong` is thresholded at 3.0 counts. This

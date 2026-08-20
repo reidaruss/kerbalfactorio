@@ -7,22 +7,14 @@
 import * as THREE from 'three';
 import type { Services } from './Services.js';
 import { STAKE_STRIDE } from '../render/debug/JitterProbe.js';
-import { FrameDiff, type FrameDiffStats } from '../render/debug/FrameDiff.js';
+// CE-145. The two non-clock helpers this file used to inline. Loop stays the
+// BARREL: `FrameHash` is re-exported below, so no import site outside changes.
+import { FrameHasher, type FrameHash } from './LoopFrameHash.js';
+import { LoopWaiters } from './LoopWaiters.js';
 
 export type FixedStep = (dt: number, tick: number) => void;
 export type Drain = () => void;
-
-export interface FrameHash {
-  w: number; h: number; hash: number; litPct: number;
-  /** Clear-colour pixels with terrain above them. See Loop.countHoles. */
-  holePixels: number;
-  tilesX: number; tilesY: number; tiles: number[];
-  /** Per-pixel second difference against the two previous frameHash calls. */
-  diff: FrameDiffStats;
-}
-
-/** Consecutive opaque pixels that mark the horizon in countHoles. */
-const HORIZON_RUN_PX = 6;
+export type { FrameHash } from './LoopFrameHash.js';
 
 const FIXED_DT = 1 / 60;
 const MAX_CATCHUP = 5;
@@ -204,13 +196,16 @@ export class Loop {
   private readonly eye = new THREE.Vector3();
   private lastW = 0;
   private lastH = 0;
-  private settleWaiters: { framesLeft: number; resolve: () => void }[] = [];
-  private captureWaiters: { resolve: (b: Blob) => void; reject: (e: unknown) => void }[] = [];
+  /** CE-145. Settle/capture waiter bookkeeping. See `LoopWaiters`. */
+  private readonly waiters = new LoopWaiters();
   /** Preallocated jitter stakes: [anchor xyz, local xyz] per stake (rule 6). */
   private readonly stakes = new Float64Array(16 * STAKE_STRIDE);
-  private readonly frameDiff = new FrameDiff();
+  /** CE-145. The pixel read-back instrument. See `LoopFrameHash`. */
+  private readonly hasher: FrameHasher;
 
-  constructor(private readonly s: Services) {}
+  constructor(private readonly s: Services) {
+    this.hasher = new FrameHasher(s);
+  }
 
   /** Fills the stake rows from live chunks only while the probe is armed. */
   private stakeCount(): number {
@@ -321,90 +316,19 @@ export class Loop {
   }
 
   /** Resolve after `n` rendered frames with nothing pending. Race-free captures. */
-  settle(n = 8): Promise<void> {
-    return new Promise((resolve) => this.settleWaiters.push({ framesLeft: n, resolve }));
-  }
+  settle(n = 8): Promise<void> { return this.waiters.settle(n); }
 
   /**
-   * Render one frame and hash what was presented. This is the floating-origin
-   * INVISIBILITY test: two runs of the same scripted walk that differ only in
-   * the rebase threshold must present the same pixels, because every
-   * world-anchored object re-derives from its 64-bit anchor. Comparing hashes
-   * across two separate browser runs needs no image library and no goldens.
-   *
-   * `tiles` also comes back as mean luminance per cell, so a difference can be
-   * localised and quantified instead of just reported as "not equal".
+   * Render one frame and hash what was presented. See `LoopFrameHash`, which
+   * holds the whole instrument; the size is passed in because `resizeIfNeeded`
+   * here owns the size the frame was actually presented at.
    */
   frameHash(tilesX = 48, tilesY = 27): FrameHash {
-    const { renderer, frame } = this.s;
-    frame.render();
-    const w = Math.max(1, Math.round(this.lastW * renderer.pixelRatio));
-    const h = Math.max(1, Math.round(this.lastH * renderer.pixelRatio));
-    const buf = new Uint8Array(w * h * 4);
-    renderer.readPixels(0, 0, w, h, buf);
-    const sum = new Float64Array(tilesX * tilesY);
-    const n = new Float64Array(tilesX * tilesY);
-    let hash = 0x811c9dc5 >>> 0;
-    let lit = 0;
-    for (let y = 0; y < h; ++y) {
-      const ty = Math.min(tilesY - 1, ((y * tilesY) / h) | 0);
-      for (let x = 0; x < w; ++x) {
-        const i = (y * w + x) * 4;
-        const l = (buf[i] * 77 + buf[i + 1] * 151 + buf[i + 2] * 28) >> 8;
-        hash = Math.imul(hash ^ buf[i], 0x01000193) >>> 0;
-        hash = Math.imul(hash ^ buf[i + 1], 0x01000193) >>> 0;
-        hash = Math.imul(hash ^ buf[i + 2], 0x01000193) >>> 0;
-        const t = ty * tilesX + Math.min(tilesX - 1, ((x * tilesX) / w) | 0);
-        sum[t] += l; n[t] += 1;
-        if (l > 4) lit++;
-      }
-    }
-    const tiles: number[] = [];
-    for (let i = 0; i < sum.length; ++i) tiles.push(Math.round((sum[i] / Math.max(1, n[i])) * 100) / 100);
-    return {
-      w, h, hash, litPct: Math.round((lit / (w * h)) * 10000) / 100,
-      holePixels: this.countHoles(buf, w, h), tilesX, tilesY, tiles,
-      diff: this.frameDiff.sample(buf, w, h),
-    };
-  }
-
-  /**
-   * Pixels showing the clear colour with terrain ABOVE them: sky seen THROUGH
-   * the world. Run with ?clear=ff00ff and this is an exact crack count, which
-   * is the only way to tell a hole from a dark-shaded steep face. The W1 handoff
-   * read one as the other.
-   *
-   * readPixels is bottom-left origin, so the scan runs from the top down and a
-   * column starts counting only after it has hit something opaque.
-   */
-  private countHoles(buf: Uint8Array, w: number, h: number): number {
-    const c = this.s.cfg.clearColor;
-    const cr = (c >> 16) & 0xff, cg = (c >> 8) & 0xff, cb = c & 0xff;
-    let holes = 0;
-    for (let x = 0; x < w; ++x) {
-      let seenSolid = false;
-      let run = 0;
-      for (let y = h - 1; y >= 0; --y) {
-        const i = (y * w + x) * 4;
-        const isVoid = Math.abs(buf[i] - cr) < 12
-          && Math.abs(buf[i + 1] - cg) < 12 && Math.abs(buf[i + 2] - cb) < 12;
-        if (!isVoid) {
-          // Stars are one or two pixels. Only a RUN of opaque pixels counts as
-          // the horizon, or every star would make the sky below it a "hole".
-          if (++run >= HORIZON_RUN_PX) seenSolid = true;
-          continue;
-        }
-        run = 0;
-        if (seenSolid) holes++;
-      }
-    }
-    return holes;
+    return this.hasher.frameHash(this.lastW, this.lastH, tilesX, tilesY);
   }
 
   /** Captured inside the rAF callback, so preserveDrawingBuffer is not needed. */
-  capture(): Promise<Blob> {
-    return new Promise((resolve, reject) => this.captureWaiters.push({ resolve, reject }));
-  }
+  capture(): Promise<Blob> { return this.waiters.capture(); }
 
   private resizeIfNeeded(): void {
     const c = this.s.renderer.domElement;
@@ -584,21 +508,10 @@ export class Loop {
     this.frames++;
     stats.sample(performance.now() - t0, cpuMs);
 
-    if (this.captureWaiters.length > 0) {
-      const waiters = this.captureWaiters.splice(0);
-      renderer.capture().then(
-        (b) => waiters.forEach((w) => w.resolve(b)),
-        (e) => waiters.forEach((w) => w.reject(e)),
-      );
-    }
-    if (this.settleWaiters.length > 0) {
-      const settled = this.settleGate === null || this.settleGate();
-      this.settleWaiters = this.settleWaiters.filter((w) => {
-        if (!settled) { w.framesLeft = Math.max(w.framesLeft, 1); return true; }
-        if (--w.framesLeft > 0) return true;
-        w.resolve();
-        return false;
-      });
-    }
+    // CE-145. The waiter queues, at the same place in the frame the two
+    // inlined blocks stood: last, after the render and after `stats.sample`.
+    // The gate is handed over rather than called here, so it stays uncalled on
+    // a frame with nothing waiting. See `LoopWaiters.pump`.
+    this.waiters.pump(renderer, this.settleGate);
   }
 }
