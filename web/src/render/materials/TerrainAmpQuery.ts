@@ -14,6 +14,7 @@ import { FINE_ALB, FINE_BUMP, MID_ALB } from './TerrainArt.glsl.js';
 import type { TerrainWaterBand } from './TerrainMaterialTypes.js';
 import { SPLAT_A_VALUE, SPLAT_A_CHROMA, SPLAT_A_NORMAL }
   from './TerrainSplat.js';
+import { SPLAT_A_FAR } from './TerrainCoverFar.js';
 
 /**
  * SURFACE ART amplitudes (RN-45): macro colour variation, detail bump, rock
@@ -145,6 +146,23 @@ export function splatAmpFromQuery(): THREE.Vector3 {
     all * ampParam(p, 'splatchroma', SPLAT_A_CHROMA),
     all * ampParam(p, 'splatnrm', SPLAT_A_NORMAL),
   );
+}
+
+/**
+ * RN-2195. The far-field cover convergence's OWN amplitude, separate from the
+ * splat's three (`uSplatAmp`) rather than folded into the chroma one, for
+ * `SPLAT_A_VALUE`/`_CHROMA`/`_NORMAL`'s own reason: this term can be wrong in
+ * a way none of the near-field three are (it can green ground that should
+ * stay khaki, or fail to meet the carpet at all), so it has to be isolable on
+ * its own flag. `?splatfar=0` is the whole-term isolator and is what the
+ * before half of every RN-2195 pair is taken with; `?splatfaramp=` sweeps it.
+ * RN-150's dead-default guard applies here too (`ampParam`, not
+ * `Number(p.get(...))`).
+ */
+export function splatFarAmpFromQuery(): number {
+  const p = new URLSearchParams(self.location.search);
+  if (p.get('splatfar') === '0') return 0;
+  return ampParam(p, 'splatfaramp', SPLAT_A_FAR);
 }
 
 export function groundTexAmpFromQuery(): number {

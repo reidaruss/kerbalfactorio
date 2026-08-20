@@ -20,7 +20,7 @@ import { GROUND_RELIEF_MAP, GROUND_VALUE_MAP, groundTexture } from './GroundText
 import { ART_COARSE_M, ART_FINE_M, FINE_A, FINE_B, FINE_R, FINE_W,
   MID_A_M, MID_B_M, RELIEF_FINE_M } from './TerrainArt.glsl.js';
 import { artAmpFromQuery, fineAmpFromQuery, groundReliefAmpFromQuery,
-  splatAmpFromQuery,
+  splatAmpFromQuery, splatFarAmpFromQuery,
   groundTexAmpFromQuery, midAmpFromQuery, specAmpFromQuery, wetBandFromQuery }
   from './TerrainAmpQuery.js';
 import { fineMFromQuery, horizonOccFromQuery, reliefCellFromQuery,
@@ -192,6 +192,11 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
       : new THREE.Vector4(SPLAT_FADE_ALBEDO[0], SPLAT_FADE_ALBEDO[1],
                           SPLAT_FADE_NORMAL[0], SPLAT_FADE_NORMAL[1]);
   })();
+  // RN-2195. THE FAR-FIELD COVER CONVERGENCE's own amplitude, shared by
+  // reference into both materials for the one-authority reason artAmp is: a
+  // toggle that reached the near material and not the far one would be a
+  // second opinion about what colour the ground converges to past the fade.
+  const splatFarAmp: THREE.IUniform<number> = { value: splatFarAmpFromQuery() };
   // Six maps, ONE shared IUniform each out of GroundTextures' cache, and it
   // must be the holder rather than a fresh { value } wrapper for that file's
   // own stated reason: the texture arrives asynchronously and the loader
@@ -214,7 +219,7 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     fineLum, reliefGrad, reliefGradUv, artFineM, reliefFineM, artCoarseM,
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
-    splatAmp, splatFade,
+    splatAmp, splatFade, splatFarAmp,
     splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,
   };
 }

@@ -231,6 +231,15 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // Registered in the same commit that introduces them, per this list's own
   // rule and RN-152's scar.
   'splat', 'splatval', 'splatchroma', 'splatnrm', 'splatfade',
+  // RN-2195, phase 1.5, the far-field cover convergence that hands off from
+  // the splat's own chroma term at its own 35-75 m boundary. `splatfar=0` is
+  // its own whole-term isolator, separate from `splat=0` and `splatchroma=`
+  // for the same reason those three are separate from each other: it fails
+  // in a way none of the near-field terms can (greening ground that should
+  // stay khaki, or leaving the carpet's own fade unmet). `splatfaramp=`
+  // sweeps it. Registered in the same commit that introduces them, per this
+  // list's own rule and RN-152's scar.
+  'splatfar', 'splatfaramp',
   // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
   // night exactly); `starlightamp=` sweeps it.
   // RN-952, the DAYLIGHT floor underneath it, which had no control at all and

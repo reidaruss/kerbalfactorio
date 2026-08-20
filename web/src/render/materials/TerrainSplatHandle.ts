@@ -14,13 +14,41 @@
 
 import { SPLAT_A_CHROMA, SPLAT_A_NORMAL, SPLAT_A_VALUE, SPLAT_LAYERS,
   SPLAT_WARP_UV, luma709 } from './TerrainSplat.js';
-import { splatAmpFromQuery } from './TerrainAmpQuery.js';
+import { splatAmpFromQuery, splatFarAmpFromQuery } from './TerrainAmpQuery.js';
+import { farCoverState, SPLAT_A_FAR } from './TerrainCoverFar.js';
 import type { TerrainUniformState } from './TerrainUniformState.js';
 
 export function terrainSplatHandle(s: TerrainUniformState):
 Record<string, unknown> {
-  const { splatAmp, splatFade, splatGrass, splatSnow } = s;
+  const { splatAmp, splatFade, splatFarAmp, splatGrass, splatSnow } = s;
   return {
+    /** RN-2195. The far-field cover convergence's own amplitude, on
+     *  `setSplat`'s rule exactly: negatives refused rather than clamped, so a
+     *  mistyped sweep does not look like a working one. */
+    setSplatFar(value: number): number {
+      if (Number.isFinite(value) && value >= 0) splatFarAmp.value = value;
+      return splatFarAmp.value;
+    },
+    getSplatFar(): number {
+      return splatFarAmp.value;
+    },
+    /** RN-2195. The boot default and the cross-checked constants, on
+     *  `splatDefault`'s own shape: `green`/`rot`/`value` are what
+     *  `TerrainCoverFar.assertFarCoverMatchesGrass` already proved agree with
+     *  GrassPalette.coverAlbedo at module load (it throws if they do not), so
+     *  a probe reading them back is reading a fixture that is already known
+     *  to hold rather than re-deriving the proof. */
+    splatFarDefault(): { present: boolean; amp: number; shipped: number }
+      & ReturnType<typeof farCoverState> {
+      const p = new URLSearchParams(self.location.search);
+      const keys = ['splatfar', 'splatfaramp'];
+      return {
+        present: keys.some((k) => p.get(k) !== null),
+        amp: splatFarAmpFromQuery(),
+        shipped: SPLAT_A_FAR,
+        ...farCoverState(),
+      };
+    },
     /** RN-2160. The SPLAT's three amplitudes, written into the SHARED vector so
      *  the near and far materials cannot disagree and no push is needed.
      *

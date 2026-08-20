@@ -153,6 +153,12 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // completes inside the max-depth ring where the chunk UV's world scale is
     // constant. See TerrainSplat.ts clause C4.
     uniform vec4 uSplatFade;
+    // RN-2195. THE FAR-FIELD COVER CONVERGENCE's own amplitude, separate from
+    // uSplatAmp for TerrainCoverFar.ts's own reason: this term fails
+    // differently from the near-field three (it can green ground that should
+    // stay khaki, or fail to meet the carpet at all) and has to be isolable
+    // on its own flag (?splatfar=0).
+    uniform float uSplatFarAmp;
     // Six layers, six samplers, and the packing is what makes that affordable:
     // R albedo value, G/B tangent normal xy, A roughness detail, every channel
     // centred on 0.5. Six layers x albedo/normal/ORM would be eighteen units

@@ -37,7 +37,7 @@ export function makeTerrainMaterial(
     fineFreq, fineW, fineLum, reliefGrad, reliefGradUv, artFineM, reliefFineM,
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
     horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
-    splatAmp, splatFade, splatGrass, splatDirt, splatRock, splatCliff,
+    splatAmp, splatFade, splatFarAmp, splatGrass, splatDirt, splatRock, splatCliff,
     splatScree, splatSnow } = s;
   // UniformsLib.lights is MANDATORY for a lights:true ShaderMaterial: three
   // writes ambientLightColor / directionalLights / directionalShadowMap
@@ -101,6 +101,10 @@ export function makeTerrainMaterial(
     // spend a texture unit on a layer it cannot reach.
     uSplatAmp: { value: splatAmp },
     uSplatFade: { value: splatFade },
+    // RN-2195. Already an IUniform holder (a scalar, on groundAmp/reliefAmp's
+    // own pattern rather than splatAmp's vector one), so passed through
+    // rather than re-wrapped.
+    uSplatFarAmp: splatFarAmp,
     uSplatGrass: splatGrass,
     uSplatDirt: splatDirt,
     uSplatRock: splatRock,
