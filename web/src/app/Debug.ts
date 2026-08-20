@@ -70,6 +70,11 @@ export function installDebugApi(
         // lamp object exists.
         lamp: s.headlamp.stats(),
         props: { ...s.props.stats(), ...s.scatter.stats() },
+        // RN-2225. The wild rock and tree rings when there is no character to
+        // own them. Null in a walk scenario, where `of.game().trees` already
+        // reports the identical object through gameplay's own surface, so
+        // there is one reading of a field and never two that can disagree.
+        wild: s.wild?.stats() ?? null,
         avatar: s.avatar?.report() ?? null,
         // RN-821. The station's DRAW, which is not the station: `__of.station()`
         // is the record, the orbit and the proxies, and this is the mesh.

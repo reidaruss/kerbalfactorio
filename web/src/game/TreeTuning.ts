@@ -28,40 +28,14 @@
 
 export {
   TREELINE_FULL_M, TREELINE_BARE_M, TREELINE_WANDER_M,
+  // RN-2228. THE HARVEST RING'S OWN TWO NUMBERS MOVED TO `ScatterTuning` and
+  // are re-exported here, for the reason the header above gives about the
+  // treeline: the canopy tier's near cut-off is DERIVED from where the minable
+  // ring ends, and a boundary owned by two files is a boundary that drifts.
+  // Every import site of `TREE_RADIUS_M` / `TREE_EDGE_WANDER_M` is unchanged.
+  TREE_RADIUS_M, TREE_EDGE_WANDER_M,
 } from '../world/ScatterTuning.js';
 
-/**
- * How far trees exist around the player, metres, and the number this pass is
- * judged on. Swept from a URL (`?trees=`) because cost goes as its SQUARE and
- * the shipping value has to be the largest ring the frame budget holds.
- *
- * THE RING HAS A HARD EDGE AND THAT IS DELIBERATE. The retired canopy tier
- * thinned its density from 300 m outward (`canopyDistanceWeight`), which made
- * the boundary invisible at the cost of making a tree's EXISTENCE a function of
- * how far away the player was standing when its chunk was built. A harvest node
- * cannot pay that: it is a thing you can chop, so it must be there before you
- * decide to walk to it. Uniform density to the edge is the only honest choice,
- * and the edge is softened by TREE_EDGE_WANDER_M below rather than by a fade.
- */
-export const TREE_RADIUS_M = 620;
-
-/**
- * The ring's radius is displaced by a smooth world-space field by up to this
- * many metres, so the boundary is a ragged margin rather than a circle centred
- * on the player. Same argument as `TREELINE_WANDER_M` one tier up: without it
- * the eye finds the shape immediately, and a circle that follows you is worse
- * than a contour line because it is obviously about you.
- *
- * It cannot remove the pop, only the geometry of it. A true horizon treeline
- * needs the far-field impostor layer WG-63 already asked rendering for.
- */
-export const TREE_EDGE_WANDER_M = 70;
-
-/**
- * Lattice cell size, metres of ground per side. Larger than the rocks' 24 m
- * because the ring is thirteen times the area and the scan is per cell: at 28 m
- * a 620 m ring is about 1,540 cells against the rock ring's 154.
- */
 export const TREE_CELL_M = 28;
 
 /** Most trees one cell may hold. A guard on the fair draw, not a target: at the

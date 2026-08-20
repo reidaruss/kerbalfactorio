@@ -102,6 +102,15 @@ export async function phaseGameplay(s: GameplayIn): Promise<GameplayOut> {
       // rocks and reading the same body datum. `?trees=0` is the control.
       trees: { radiusM: cfg.treeRadiusM, density: cfg.treeDensity },
       nodeArt: { lod: cfg.nodeLod, cull: cfg.nodeCull },
+      // RN-2225. THE VEGETATION ORIGIN. `player.body.feet` while the walker
+      // holds the eye, which is the byte-identical object `GameplayFrame` read
+      // directly before this existed, and `router.position` once anything else
+      // does -- a boarded rocket, above all, whose climb used to leave the
+      // rock and tree rings pinned to the launch pad. ONE `router.onFoot`
+      // test rather than a flight-status test, because the router IS the
+      // authority on which source is the streaming observer (W9) and asking
+      // anything else is a second opinion that can disagree with the terrain.
+      vegOrigin: () => (router.onFoot ? player.body.feet : router.position),
       // DW-31. The mode is decided ONCE, here, and everything downstream asks
       // the ModeRules object rather than re-reading the flag.
       mode: cfg.sandbox ? 'sandbox' : 'survival',

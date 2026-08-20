@@ -28,6 +28,8 @@ export class ScatterCounters {
   wetCells = 0;
   /** Chunks waiting on the per-update sampling budget. Should settle to 0. */
   backlog = 0;
+  /** RN-2229. Resident chunks `build` refused and will not re-offer. */
+  chunksRefused = 0;
   /** Canopy trees placed, the ground they were drawn over, and the ask. */
   canopyProps = 0;
   canopyCells = 0;
@@ -92,7 +94,8 @@ export interface ScatterStats {
   chunks: number; buildMs: number; propsPlaced: number; cellsScattered: number;
   groundM2: number; placedPerM2: number; wantedPerM2: number;
   deliveredFraction: number; cellsCapped: number; chunksCapped: number;
-  scatterBacklog: number; fairQuantise: boolean; wetCells: number;
+  scatterBacklog: number; chunksRefused: number;
+  fairQuantise: boolean; wetCells: number;
   canopyRadiusM: number; canopyShade: boolean; canopyProps: number;
   canopyCells: number; canopyM2: number; canopyPerM2: number;
   canopyDelivered: number; canopyOfferedCells: number;
@@ -132,6 +135,7 @@ export function scatterStats(c: ScatterCounters, d: ScatterStatsDeps): ScatterSt
     cellsCapped: d.cellsCapped,
     chunksCapped: c.chunksCapped,
     scatterBacklog: c.backlog,
+    chunksRefused: c.chunksRefused,
     fairQuantise: d.fair,
     wetCells: c.wetCells,
     // Standing rule 7: the isolation flags travel with the numbers, so a row

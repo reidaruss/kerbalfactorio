@@ -111,6 +111,7 @@ function phaseServices(s: BootCtx): Booted {
     get materials() { return session.terrain.materials; },
     get scatter() { return session.scatter; },
     get grass() { return session.grass; },
+    get wild() { return session.wild; },
     observer, player, avatar, input, jitter, zfight,
     hud, sunLights, shadows, ibl, headlamp, props, voxels, voxelMesh, dig, digFx,
     level, levelRing,

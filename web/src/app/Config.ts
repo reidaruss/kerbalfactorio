@@ -11,6 +11,8 @@
 
 import { parsePost } from '../render/post/PostConfig.js';
 import { TREE_RADIUS_M } from '../game/TreeTuning.js';
+import { CANOPY_FAR_RADIUS_M, CANOPY_MAX_RADIUS_M }
+  from '../world/ScatterTuning.js';
 import {
   SCENARIOS, type Config, type Scenario, type QualityTier,
 } from './ConfigTypes.js';
@@ -204,15 +206,66 @@ export function parseConfig(search: string): Config {
     propCullBiome: p.get('propcullbiome') !== '0',
     grassShort: p.get('grassshort') !== '0',
     scatterWet: p.get('scatterwet') === '1',
-    // Clamped at 1,600 m rather than left open: past that the cell the far
-    // chunks offer is coarser than `MAX_CELL_M` and the ring silently stops
-    // growing, which would read as "the cost levelled off" rather than as
-    // "the sampler refused the chunk".
-    // WG-116: the scenery canopy is RETIRED, so the default is 0 and
-    // `?canopy=620` (ScatterTuning.CANOPY_RADIUS_M, which still holds the
-    // measured reach and its argument) restores it as the before-picture.
-    canopyRadiusM: Math.min(1600, Math.max(0, num(p, 'canopy', 0))),
-    canopyShade: p.get('canopyshade') !== '0',
+    // RN-2231. THE CANOPY TIER IS THE FAR-FIELD FOREST AND IT IS ON BY
+    // DEFAULT, at `CANOPY_FAR_RADIUS_M` of GROUND.
+    //
+    // WG-116 retired it to 0 and that was right for what it then was: a
+    // scenery ring from 0 to 620 m, standing exactly where `TreeField`'s
+    // minable trees stand, which Reid's "all trees should be minable" ruling
+    // refuses. It is not that any more. `CANOPY_NEAR_M` holds it out of the
+    // whole harvest ring, so every tree a player can reach is still a node
+    // they can chop, and what this tier draws is the ground BETWEEN the
+    // harvest ring's edge and the terrain material's own far tier -- the
+    // horizon treeline `CANOPY_RADIUS_M`'s own docstring asked rendering for
+    // and RN-2202's impostor rung was built to carry.
+    //
+    // The REALISED reach is `ScatterTuning.canopyReachM`, which bounds this by
+    // the eye's height; this number is the ceiling, reached at the 1,200 m
+    // flyover. Clamped at `CANOPY_MAX_RADIUS_M` rather than left open, for the
+    // reason the old 1,600 m clamp gave and which is still exactly true: past
+    // the limit the far chunks offer a cell coarser than `CANOPY_MAX_CELL_M`
+    // and the ring silently stops growing, which reads as "the cost levelled
+    // off" rather than as "the sampler refused the chunk".
+    //
+    // `?canopy=0` is the exact before-picture and is still one binary apart:
+    // the atlas is not even loaded (BootObserver) and the sampler takes the
+    // branch it took before the tier existed.
+    canopyRadiusM: Math.min(CANOPY_MAX_RADIUS_M,
+      Math.max(0, num(p, 'canopy', CANOPY_FAR_RADIUS_M))),
+    // RN-2225 REMEDY, 2026-08-20. OFF PENDING AN ADMIN RULING, and the flag
+    // inverts: `?canopyshade=1` re-arms it, `?canopyshade=0` and absent are
+    // both off.
+    //
+    // `CANOPY_SHADE` thins the understorey under a stand and it has been DEAD
+    // CODE since WG-116 retired the canopy tier: `sampleChunk` computes
+    // `shadeW` only inside `if (canopy.total > 0)`, and that has been false in
+    // every shipped build for months. Turning the far tier on at RN-2231 woke
+    // it, and it is the LARGEST single change this lane made to the ground a
+    // player walks on -- forestfloor `propsPlaced` 41,300 -> 25,391, a **38.5
+    // per cent** cut in the understorey, with `cellsScattered` identical at
+    // 25,655 and nothing capped, so it is the density and not the coverage.
+    // This lane originally shipped it live and disclosed it only as a
+    // 0.83-count luma move on one meadow rectangle, which is exactly the shape
+    // of understatement NUMBERS.md exists to catch; the lane's verifier caught
+    // it.
+    //
+    // WHY OFF RATHER THAN ON. Judged by eye on committed pairs
+    // (`docs/screenshots/RN2225_shade_*`), it does not read as canopy shading
+    // its floor. The term is `1 - CANOPY_SHADE * shadeW` and `shadeW` is the
+    // planet's stand weight, which is close to 1 across the WHOLE visible floor
+    // at a forest site, so what lands is a spatially UNIFORM cut rather than
+    // the patchy dark-under-trees / bright-in-clearings pattern that would read
+    // as shade. Forestfloor loses its large pale fronds and reads plainer;
+    // meadow (18.1 per cent there, Plains carrying less stand weight) is
+    // indistinguishable. Neither frame is better and one is slightly worse, so
+    // the honest default is the state the world has actually been in.
+    //
+    // It is a DEFAULT and not a deletion: the physical argument for it is real
+    // (a closed canopy does dim its floor, which is why the Forest atlas is
+    // ferns and litter) and the fix if it is wanted is patchiness, not
+    // magnitude. Admin rules from the frames; `?canopyshade=1` is the arm to
+    // rule on.
+    canopyShade: p.get('canopyshade') === '1',
     rocks: p.get('rocks') !== '0',
     station: p.get('station') !== '0',
     rockDensity: Math.max(0, num(p, 'rockdensity', 1)),

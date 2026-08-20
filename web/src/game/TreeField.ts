@@ -24,13 +24,15 @@ import { inheritDepletion, type KnownNode } from './NodeMemory.js';
 import type { NodeField } from './NodeField.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { WaterOracle } from '../world/WaterOracle.js';
-import { canopyWeight, standAt } from '../world/ScatterTuning.js';
+import { canopyWeight, standAt, VEG_ORIGIN_MAX_ALT_M }
+  from '../world/ScatterTuning.js';
 import {
   MAX_PER_CELL, TREE_CELL_M, TREE_CLEARING_KEEPOUT_M,
   TREE_DENSITY_KM2, TREE_EDGE_WANDER_M, TREE_MIN_SLOPE_COS, TREE_WET_REJECT_M,
   edgeWander, frac, oracleSlopeCos, treeHash, treeScaleFor,
 } from './TreeTuning.js';
 import type { TreeStats } from './TreeTuning.js';
+
 
 /** Re-scan when the feet move this far: half a cell, so the ring's edge error
  *  stays under one cell and a stationary player costs zero scans. */
@@ -103,6 +105,15 @@ export class TreeField {
    *  cell builds amortised over frames (CELL_BUILDS_PER_UPDATE). */
   update(feet: { x: number; y: number; z: number }): void {
     if (!this.enabled) return;
+    // RN-2225. THE CEILING. `feet` is the vegetation origin and it is no longer
+    // guaranteed to be on the ground: a rocket carries it up, and a fly
+    // scenario starts it up. A 620 m ring of ground trees is worth streaming
+    // all the way to the altitude at which a tree is under a pixel and worth
+    // nothing above it. See VegetationFields.VEG_ORIGIN_MAX_ALT_M for the
+    // arithmetic. Only GROWTH stops; nothing already placed is dropped, and
+    // `NodeField.update` keeps picking rungs for it.
+    if (Math.hypot(feet.x, feet.y, feet.z) - this.bodyRadiusM
+      > VEG_ORIGIN_MAX_ALT_M) return;
     if (this.queue.length > 0) {
       const t0 = performance.now();
       let n = CELL_BUILDS_PER_UPDATE;

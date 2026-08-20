@@ -14,6 +14,7 @@ import { bootTerrain } from '../world/TerrainBoot.js';
 import { GrassCover } from '../render/grass/GrassCover.js';
 import { surfacesReady } from '../render/instancing/Surfaces.js';
 import { Scatter } from '../world/Scatter.js';
+import { CANOPY_NEAR_M } from '../world/ScatterTuning.js';
 import { Lifetime } from './Lifetime.js';
 import { WorldSession, type BuildBodyScope } from '../world/WorldSession.js';
 import { arriveOnBody } from '../game/WorldScope.js';
@@ -24,6 +25,7 @@ import type { TerrainBootResult } from '../world/TerrainBoot.js';
 import type { TerrainStream } from '../world/TerrainStream.js';
 import type { BodyId } from '../world/PlanetBody.js';
 import type { VoxelWorld } from '../world/VoxelWorld.js';
+import type { VegetationScope } from '../game/VegetationScope.js';
 import { read, type BootCtx, type Holder } from './BootStage.js';
 
 export type BodyScopeIn = Pick<BootCtx,
@@ -254,6 +256,65 @@ export async function phaseBodyScope(
     (window as unknown as { __ofGrass: unknown }).__ofGrass = {
       report: () => gc.report(),
     };
+    // RN-2233. THE THEOREM THE CANOPY'S `castShadow = false` RESTS ON, checked
+    // rather than trusted, and checked HERE because this is the one place that
+    // holds the shadow rig and can reach the world-layer constant.
+    //
+    // `PropLibrary` gives the far canopy its own batches and takes them out of
+    // the shadow pass entirely, worth a measured 13.8 ms of the flyover's
+    // 21.4 ms near pass for pixels that were identical to the digit. That is
+    // only correct while EVERY canopy instance is outside EVERY cascade, which
+    // is `CANOPY_NEAR_M` (the radius inside which the tier is exactly zero)
+    // being greater than the furthest split. Two numbers in two files; either
+    // could move, and if the near cut-off ever came inside a cascade the
+    // failure would be a missing tree shadow, which is invisible in every
+    // aggregate and exactly the class this project keeps paying for. It shouts
+    // rather than throws, because a wrong shadow is worse than a wrong frame
+    // and neither is worth refusing to boot over.
+    {
+      const far = shadows.splits.length > 0
+        ? shadows.splits[shadows.splits.length - 1] : 0;
+      if (cfg.canopyRadiusM > 0 && far >= CANOPY_NEAR_M) {
+        console.error('[of] RN-2233 BROKEN: the furthest shadow cascade reaches'
+          + ` ${far} m and the canopy starts at ${CANOPY_NEAR_M} m, so canopy`
+          + ' trees are inside a cascade and their batches do not cast.'
+          + ' Re-enable castShadow on the :canopy batches or move CANOPY_NEAR_M.');
+      }
+    }
+
+    // RN-2225. THE WILD VEGETATION SOURCE FOR A WORLD WITH NO CHARACTER.
+    //
+    // The gate is the EXACT COMPLEMENT of `BootGameplay`'s (`player !== null &&
+    // cfg.gameplay`), written as its negation rather than as a fresh condition,
+    // so the two can never both build a tree field or both skip one. With a
+    // character, `Gameplay` owns these objects and ticks them off the feet;
+    // without one -- every `--scenario=surface|ascent|orbit|space` run and
+    // every aerial probe pose -- nothing did, which is the whole of section
+    // 2.12.6. `?gameplay=0` still isolates the slice: it takes the same branch
+    // a fly scenario does but `cfg.gameplay` is false in it, so no node field
+    // is built either way and the control still means what it says.
+    //
+    // Body-scoped for the scatter's reason: it holds instance slots and /core
+    // node indices keyed to THIS body, so it dies with the scope.
+    let wild: VegetationScope | null = null;
+    if (player === null && cfg.gameplay && (cfg.treeRadiusM > 0 || cfg.rocks)) {
+      const { VegetationScope: VS } = await import('../game/VegetationScope.js');
+      wild = await VS.create({
+        core, origin, bodyHandle: oracle.body.handle, seed: cfg.seedLo,
+        // CE-20: `oracle.body.radiusM`, the body THIS scope is for, on the
+        // same line of argument the scatter three constructors up gives.
+        bodyRadiusM: oracle.body.radiusM, water: oracle.water,
+        rocks: { enabled: cfg.rocks, density: cfg.rockDensity },
+        trees: { radiusM: cfg.treeRadiusM, density: cfg.treeDensity },
+        nodeArt: { lod: cfg.nodeLod, cull: cfg.nodeCull },
+        // No voxels without a character (`phaseTools` is player-gated too), so
+        // there is no dug ground for a node to seat into. A thunk anyway, so
+        // the shape matches `composeGround`'s and cannot drift from it.
+        editsHandle: () => 0,
+      }, scenes.near);
+      const w = wild;
+      lt.add('vegetation.wild', () => { w.dispose(); });
+    }
     built.v = t;
     // CE-47. R17. THE STATION COMES BACK WITH THE SCOPE.
     //
@@ -268,7 +329,7 @@ export async function phaseBodyScope(
     stationRebuild.fn?.(bodyId, mounts.lastTick);
     return {
       body: oracle.body, terrain: t.stream, scatter: sc, grass: gc,
-      workerHandles: t.workerHandles,
+      wild, workerHandles: t.workerHandles,
     };
   };
 
