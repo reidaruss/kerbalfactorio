@@ -414,6 +414,83 @@ export const STAND_DETAIL_M = 52;
 /** Stand-field values below LO are clearing, above HI are closed canopy. */
 export const STAND_LO = 0.36;
 export const STAND_HI = 0.63;
+
+/**
+ * WG-221. THE GROVE MASK: the scale ABOVE the stand, and the reason the air
+ * view reads as a landscape rather than as one evenly-wooded plate.
+ *
+ * `STAND_M` is 165 m and it is the right size for what it was built for: from
+ * a 1.6 m eye inside a 620 m ring, a 165 m stand is the largest structure the
+ * frame can hold, and RN-2225's own flyover proved the tier's machinery works.
+ * What that frame then showed is that a 165 m feature seen from 1,200 m over a
+ * 3.5 km disc is FINE GRAIN. The eye reading an aerial photograph of forest
+ * finds wood-and-field structure at HUNDREDS of metres to kilometres -- a wood
+ * with a shape, a field beside it, a strip of trees along a watercourse -- and
+ * a field whose only feature size is 165 m averages out to uniform speckle at
+ * exactly the range this tier exists to fill.
+ *
+ * So the grove is a SECOND, COARSER field multiplied over the stand field
+ * rather than a fourth octave inside it, and the distinction is not cosmetic.
+ * Folding another octave into `standAt` would REDUCE the total variance (a
+ * weighted sum of independent fields concentrates about its mean), which is the
+ * opposite of what patchiness needs. A product of two ramped fields has the
+ * variance of neither: a point is closed canopy only when it is inside a grove
+ * AND inside a stand, and it is open when either says open. That is what puts
+ * hard-edged clearings inside woods and bare ground between them.
+ *
+ * 760 m rather than a round kilometre because it has to be resolvable at BOTH
+ * ends of the tier's own range: at the flyover's 3,500 m reach a 760 m grove is
+ * about 4.6 features across the disc, which is a landscape; from a standing eye
+ * at the 1,400 m ground reach it is half the visible depth, which reads as
+ * "the wood ends over there" rather than as a texture. It is sampled in
+ * BODY-FRAME METRES by the same `octave` the stand field uses, so every word of
+ * `STAND_M`'s determinism argument applies unchanged: smooth rather than
+ * hashed, LOD-independent, and a pure function of position (WG-6).
+ *
+ * `GROVE_FLOOR_W` is 0.12 and not 0 for `CANOPY_FLOOR_W`'s reason one scale
+ * down: open ground with EXACTLY no trees on it is a hole with a rim, and a
+ * hole 760 m across has a very visible rim. A tenth leaves hedgerow trees and
+ * lone standards in the open ground, which is what open ground actually has.
+ */
+export const GROVE_M = 760;
+export const GROVE_LO = 0.40;
+export const GROVE_HI = 0.62;
+export const GROVE_FLOOR_W = 0.12;
+
+/**
+ * WG-223. THE CROWN FIELD: the scale BELOW the stand, and it exists for the
+ * question rendering parked rather than for the trees.
+ *
+ * rendering.md 2.14.7b measured `CANOPY_SHADE` woken and judged it worse: the
+ * term cut the forest floor by 38.5 per cent as a spatially UNIFORM thinning,
+ * because at a forest site `shadeW` (which was `canopyWeight`, i.e. stands
+ * times treeline) is close to 1 across the whole visible floor. Its verdict
+ * named the fix precisely -- "the shape of a fix, if it is wanted, is
+ * PATCHINESS rather than magnitude: a `shadeW` that varies over tens of metres
+ * (crown-scale) instead of one that saturates over a whole biome. That is a
+ * world-gen question about the stand field, not a rendering constant."
+ *
+ * This is that field, and 34 m is the crown scale MEASURED rather than picked:
+ * `tools/blender/contracts.json` gives the broadleaf a 8.4 x 10.5 m crown and
+ * the two conifers 3.85 and 2.9 m, so a clump of three or four adjacent crowns
+ * with the gap between clumps is a feature about thirty metres across. Dark
+ * under the clump, bright in the gap, which is what the eye reads as canopy
+ * shadow and what a uniform multiplier can never be.
+ *
+ * NOTHING IS WIRED HERE. `CANOPY_SHADE` is still default OFF (`Config
+ * .canopyShade`, `?canopyshade=1` to arm it) and Admin's ruling is still open.
+ * What this lane changes is that the value the term reads is now the crown-
+ * scale one, so when the ruling comes the arm being ruled on is the arm 2.14.7b
+ * asked for. `crownWeightAt` is exported as the named accessor and the scatter
+ * publishes the field's realised mean and spread (`canopyShadeMean` /
+ * `canopyShadeP90` in `ScatterStats`), because a patchiness claim that is not
+ * measured is exactly the claim 2.14.7b had to catch by eye.
+ */
+export const CROWN_M = 34;
+export const CROWN_LO = 0.38;
+export const CROWN_HI = 0.66;
+/** Floor under the crown field, so a lit gap is never a hard zero. */
+export const CROWN_FLOOR_W = 0.15;
 /**
  * Canopy weight in a clearing. Not zero: a clearing with EXACTLY no trees in it
  * is a hole with a rim, and the rim reads as a wall. A tenth of the density
@@ -495,8 +572,90 @@ export const CANOPY_NEAR_FULL_M = TREE_RADIUS_M + TREE_EDGE_WANDER_M;
  * terrain material's own far tier (RN-2195), which is the right instrument out
  * there because a 12 m tree at 4,200 m is 3.1 pixels tall and an instance
  * carrying three pixels is a colour, not a silhouette.
+ *
+ * WG-224, 2026-08-20: 4,200 -> 3,500, AND IT IS A TRADE RATHER THAN A
+ * RETREAT. The tier's cost is per-instance CPU and is linear in the tree count,
+ * so at a fixed frame budget `density x area` is a constant and the two are
+ * exchangeable. WG-222 spends six times the density; the annulus from 3,500 to
+ * 4,200 m is 31 per cent of the disc's area and is the band where a 12 m tree
+ * is 3.1 pixels, seen through the deepest column of haze in the frame. Buying
+ * closed-canopy coverage across the visible middle with the thinnest, hazes
+ * outer sliver is the trade this lane makes, and the fade re-normalises to the
+ * REALISED reach (`canopyDistanceWeight`) so no ring appears where the old
+ * radius used to be. **RN-2240 buys it back:** a single-material impostor card
+ * divides the per-tree instance cost by four, which at this density puts the
+ * radius past 4,200 m again at the same frame.
  */
-export const CANOPY_FAR_RADIUS_M = 4200;
+export const CANOPY_FAR_RADIUS_M = 3500;
+
+/**
+ * WG-225. HOW MUCH BIGGER A CANOPY CARD IS DRAWN AT THE FAR EDGE OF THE TIER,
+ * and the honest name for what it does: **past the impostor threshold, one
+ * instance stops being a tree and becomes a patch of canopy.**
+ *
+ * WHY THE TERM HAS TO EXIST, as arithmetic rather than as taste. What the eye
+ * reads from the air is CROWN COVER, which is density times crown area, and
+ * real temperate forest runs 20 to 60 per cent of it. This world's crowns are
+ * small: `contracts.json` gives the pine a 3.85 x 2.55 m crown (7.7 m2), the
+ * fir 2.9 x 2.2 (5.0 m2) and the broadleaf 8.4 x 10.5 (69.3 m2), so even the
+ * broadleaf-led mixes WG-222 authors average about 44 m2 a tree. Closing 40 per
+ * cent of the ground with 44 m2 crowns needs `-ln(0.6)/44e-6` = **11,600 trees
+ * per square kilometre standing at once**, and over the flyover's 43 km2 of
+ * visible canopy that is half a million instances. At the measured 0.23 us a
+ * tree that is 115 ms of CPU in a 16.6 ms frame. **There is no density that
+ * reaches forest-credible cover one-instance-per-tree at this range, and this
+ * constant is where that fact is written down.**
+ *
+ * WHY IT IS LEGITIMATE AND NOT AN INFLATED TREE. `CANOPY_NEAR_M` (550 m) is
+ * already past `CANOPY_LOD3_M` (420 m), so **every tree this tier draws is
+ * ALREADY an impostor card** -- a trunk stub and two crossed quads, twelve
+ * triangles, no crown geometry at all (rendering.md 2.14.2). A card is a
+ * picture of canopy, not a tree, and a picture of canopy standing for nine
+ * trees is what every impostor forest ever shipped has been. The term is the
+ * same one `DETAIL_FAR_GROW` already applies one tier down for exactly the same
+ * stated reason ("coverage is what the eye reads, not instance count ... making
+ * it 45% larger costs nothing in silhouette honesty"), and the argument is
+ * stronger here because the geometry being scaled carries no silhouette to lose.
+ *
+ * IT GROWS UNIFORMLY, where `DETAIL_FAR_GROW` is horizontal-only, and the
+ * difference is measured rather than inconsistent. That term was made
+ * horizontal because growing a 0.60 m card's HEIGHT turned it into a 1.34 m one
+ * at the player's feet, a near-field silhouette defect. Nothing here is nearer
+ * than 690 m, where the biggest grown card is under seven pixels tall, and a
+ * card stretched in width alone reads as a mushroom the moment the eye has
+ * enough pixels to see its proportion. Proportionate is the safer failure.
+ *
+ * THE RAMP IS AGAINST THE FIXED RADIUS, NOT THE REALISED REACH, and that is the
+ * one line in this constant that took a second attempt to get right. Tied to
+ * the reach, a standing player at the 1,400 m ground reach would see the FULL
+ * growth on the trees at their own horizon: 31 m trees on the treeline beside
+ * 12 m harvest trees, which is the seam WG-116 and RN-2228 spent two lanes
+ * making invisible. Tied to `CANOPY_FAR_RADIUS_M`, the ground pose only ever
+ * reaches `(1400-690)/(3500-690)` = 0.25 of the ramp, so its treeline grows by
+ * 1.40x (a 17 m tree, an ordinary big tree) while the aerial far field gets the
+ * whole 2.6x. **The growth is a function of the GROUND the tree stands on and
+ * of nothing about the observer**, which is the same rule `canopyWeight` lives
+ * under and the reason a chunk grows the same trees at the same size whoever
+ * streamed it in.
+ *
+ * 1.6, i.e. 1.0x at 690 m rising to 2.6x at 3,500 m. Area-weighted over the
+ * density fade that multiplies realised crown area by **3.39** (the integral is
+ * in world-gen.md section 6.6), and the outer card is then a 31 m tree at
+ * 3,500 m: **6.9 pixels tall** at the shipped 1600x900 / 60 degree frame, a
+ * blob of canopy standing for roughly nine trees. Both coverage figures are
+ * published with and without this term (world-gen.md 6.6) so the density claim
+ * stands on its own arithmetic and cannot be flattered by this one.
+ */
+export const CANOPY_FAR_GROW = 1.6;
+
+/** WG-225. A canopy card's size multiplier at ground distance `g`, metres. */
+export function canopyFarGrow(g: number): number {
+  if (g <= CANOPY_NEAR_FULL_M) return 1;
+  const span = CANOPY_FAR_RADIUS_M - CANOPY_NEAR_FULL_M;
+  if (span <= 0) return 1;
+  const t = Math.min(1, (g - CANOPY_NEAR_FULL_M) / span);
+  return 1 + CANOPY_FAR_GROW * t;
+}
 
 /**
  * RN-2234. THE REACH IS BOUNDED BY THE EYE'S HEIGHT, and this is the term that
@@ -551,8 +710,38 @@ export const CANOPY_FAR_RADIUS_M = 4200;
  * five milliseconds, which is the whole content of the altitude rule above,
  * arriving from the cheap end.
  */
-export const CANOPY_REACH_PER_ALT = 3.5;
-export const CANOPY_GROUND_REACH_M = 2000;
+/**
+ * WG-224, 2026-08-20. BOTH NUMBERS MOVE WITH THE DENSITY, AND THEY MOVE
+ * BECAUSE THE PRODUCT IS WHAT THE BUDGET BOUNDS, NOT EITHER FACTOR.
+ *
+ * The table above is measured at the OLD density. WG-222 multiplies every
+ * biome's canopy ask by six, and the tier's cost is linear in the realised tree
+ * count, which is `density x (the area the reach admits, weighted by the
+ * distance fade)`. Holding the same frame at six times the density therefore
+ * means dividing the admitted area, and the two constants are where that lands:
+ *
+ *   `CANOPY_REACH_PER_ALT`  3.5  -> 2.92, i.e. `3500 / 1200`. It keeps this
+ *       constant's own stated property, that the altitude rule binds EXACTLY at
+ *       the flyover pose it was derived from rather than two constants
+ *       disagreeing about which is in charge there -- the pose is unchanged and
+ *       only `CANOPY_FAR_RADIUS_M` moved under it.
+ *   `CANOPY_GROUND_REACH_M` 2,000 -> 1,400, and this one costs almost nothing
+ *       that was ever visible. The table above is the evidence AGAINST its own
+ *       old value: going 0 -> 2,000 m from a standing eye moved the forestfloor
+ *       `box` from 22.82 to 23.05, **a quarter of a luma count for 1.9 ms**,
+ *       and 2,000 -> 3,000 moved it by nothing at all for 4.9 ms more. What a
+ *       standing player actually sees of this tier is the treeline between 690
+ *       and roughly 1,400 m; everything past that is a sliver at the horizon,
+ *       which is `CANOPY_REACH_PER_ALT`'s whole argument arriving from the
+ *       cheap end. The kilometre given up here is what pays for six times the
+ *       density inside the band that IS visible.
+ *
+ * RN-2240's single-material card divides the per-tree cost by four and both of
+ * these come straight back out; they are budget numbers at today's card cost
+ * and they are labelled as such rather than as findings about the world.
+ */
+export const CANOPY_REACH_PER_ALT = 2.92;
+export const CANOPY_GROUND_REACH_M = 1400;
 
 /** The canopy's realised ground reach at eye height `altM`, metres. */
 export function canopyReachM(radiusM: number, altM: number): number {
@@ -680,19 +869,82 @@ export function standAt(x: number, y: number, z: number): number {
 }
 
 /**
- * Canopy density weight for one cell: stands times treeline, in [0,1].
- *
- * `stand` is passed in rather than re-sampled because the caller needs it for
- * the understorey shading as well, and sampling one field twice per cell to
- * keep two call sites tidy is how a hot loop doubles.
+ * WG-221. The grove field at a body-frame point, in [0,1]. ONE octave, at the
+ * landscape scale: a second octave here would only re-create the stand field
+ * this multiplies, and the point of the pair is that they are separable.
  */
-export function canopyWeight(altM: number, stand: number): number {
+export function groveAt(x: number, y: number, z: number): number {
+  return octave(x, y, z, GROVE_M);
+}
+
+/** WG-223. The crown field at a body-frame point, in [0,1]. See `CROWN_M`. */
+export function crownAt(x: number, y: number, z: number): number {
+  return octave(x, y, z, CROWN_M);
+}
+
+/** WG-221. Grove weight from the grove field: wood, edge, or open ground. */
+export function groveWeight(grove: number): number {
+  return GROVE_FLOOR_W
+    + (1 - GROVE_FLOOR_W) * ramp(grove, GROVE_LO, GROVE_HI);
+}
+
+/**
+ * Canopy density weight for one cell: groves times stands times treeline, in
+ * [0,1].
+ *
+ * `stand` and `grove` are passed in rather than re-sampled because the caller
+ * needs them for the understorey shading as well, and sampling a field twice
+ * per cell to keep two call sites tidy is how a hot loop doubles.
+ *
+ * WG-221: THE GROVE IS A THIRD FACTOR AND NOT A WIDER STAND. Three terms, each
+ * of which can independently say "no trees here", multiplied: the LANDSCAPE
+ * (760 m woods and fields), the STAND (165 m closures and clearings inside a
+ * wood) and the TREELINE (altitude). A product is what gives the field its
+ * shape -- closed canopy needs every term to agree, open ground needs only one
+ * to dissent -- and it is also why the realised mean falls to about 45 per cent
+ * of the table's ask while the closed-grove-closed-stand ground gets the ask in
+ * full. That is the number `Registry`'s canopy tables are now written against:
+ * **the density inside a closed stand of a closed wood**, not the average over
+ * a biome. Both figures are published in world-gen.md section 6.6.
+ */
+export function canopyWeight(altM: number, stand: number, grove: number): number {
   const wander = (stand * 2 - 1) * TREELINE_WANDER_M;
   const above = ramp(altM, TREELINE_FULL_M + wander, TREELINE_BARE_M + wander);
   if (above >= 1) return 0;
   const dense = CANOPY_FLOOR_W
     + (1 - CANOPY_FLOOR_W) * ramp(stand, STAND_LO, STAND_HI);
-  return dense * (1 - above);
+  return dense * groveWeight(grove) * (1 - above);
+}
+
+/**
+ * WG-223. THE CROWN-SCALE CANOPY WEIGHT at a body-frame point, in [0,1], and
+ * the value 2.14.7b asked world-gen for by name.
+ *
+ * It is `canopyWeight` -- the planet's own answer to "how much forest is here"
+ * -- modulated by the 34 m crown field, so a point under a clump of crowns
+ * reads near 1 and a point in the gap between clumps reads near
+ * `CROWN_FLOOR_W`. That is the difference between a term that reads as canopy
+ * shadow and a term that reads as somebody having turned the understorey down,
+ * which is the whole of 2.14.7b's verdict.
+ *
+ * PUBLISHED, NOT WIRED. `CANOPY_SHADE` remains default OFF; this function is
+ * what `sampleChunk` hands that term when it IS armed, and it is exported so
+ * rendering can read the same field for a floor-shading pass without
+ * re-deriving it (`ScatterStats.canopyShadeMean` / `canopyShadeP90` measure
+ * what it realises, so the patchiness claim is a number rather than an
+ * assertion).
+ */
+export function crownWeightAt(
+  x: number, y: number, z: number, altM: number,
+): number {
+  const w = canopyWeight(altM, standAt(x, y, z), groveAt(x, y, z));
+  if (w <= 0) return 0;
+  return w * crownShade(crownAt(x, y, z));
+}
+
+/** WG-223. The crown field's own [0,1] modulation, split out for one caller. */
+export function crownShade(crown: number): number {
+  return CROWN_FLOOR_W + (1 - CROWN_FLOOR_W) * ramp(crown, CROWN_LO, CROWN_HI);
 }
 
 /** One weighted draw pool: the specs eligible at a cell, and their total. */
