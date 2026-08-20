@@ -385,6 +385,10 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   'grass', 'grassdens', 'grasstint', 'grasspx', 'grassfade',
   'grasstrans', 'grasstransamp', 'grasssharp', 'grassval',
   'grasslean', 'grassramp', 'grassdry',
+  // RN-2220, standing rule 7. `grassbend=0` is the exact pre-RN-2220 control
+  // for the blade-normal shading bend (GrassGlsl's `ns`, the second,
+  // independent blend toward up spent only on ndl/skyView).
+  'grassbend',
   // RN-102, standing rule 7. `leafvar=0` bakes the flat greyscale vertex
   // colour, i.e. the pre-RN-102 bytes exactly; the runtime pair lives on
   // `__ofProps.setLeafVar` because a reload cannot hold the frame equal.

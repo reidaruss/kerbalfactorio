@@ -125,6 +125,12 @@ export function createGrassMaterial(o: GrassMaterialOptions): GrassMaterialHandl
       ? new THREE.Vector2(1, 1)
       : new THREE.Vector2(1 - 0.50 * numQ('grassramp', 1),
         1 + 0.30 * numQ('grassramp', 1)) },
+    // RN-2220. 0.7 by eye against the meadow pose (enough bend that the carpet
+    // reads lit rather than upright-and-dim, not so much that the tuft's own
+    // facet disappears) and by the forestfloor box (closes the 6.6 per cent
+    // residual; see GrassGlsl's note at its one use). `?grassbend=0` is the
+    // exact pre-RN-2220 control (mix identity, GrassGlsl's `ns` becomes `n`).
+    uBendUp: { value: numQ('grassbend', 0.7) },
   });
 
   const material = new THREE.ShaderMaterial({

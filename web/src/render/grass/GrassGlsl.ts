@@ -222,6 +222,11 @@ export function grassFragmentShader(depth: DepthPolicy): string {
     uniform vec3 uTrans;
     /** The root-to-tip value ramp: x at the root, y at the tip. */
     uniform vec2 uRamp;
+    /** RN-2220. How far the SHADING normal is blended toward local up, on top of
+     *  GrassCard's own geometric BEND_UP (0.74, chosen for a tuft's own lit
+     *  side). See the note beside its one use below. ?grassbend=0 is the
+     *  exact pre-RN-2220 control (mix identity). */
+    uniform float uBendUp;
 
     varying vec3 vWorld;
     varying vec3 vUp;
@@ -294,8 +299,25 @@ export function grassFragmentShader(depth: DepthPolicy): string {
       // 1.45 is inlined from the same exported constant TerrainFragLight
       // inlines. A carpet that shaded itself by its own rules would be exactly
       // the disagreement between cover and substrate this layer exists to end.
+      // RN-2220. THE SHADING-NORMAL BEND, closing the forestfloor residual
+      // (rendering.md 2.12.1): "the same lighting expression the ground uses"
+      // (this file's header) implicitly assumes an up-facing normal, because
+      // that is what the ground beside the blade has. GrassCard's own BEND_UP
+      // bends the GEOMETRIC normal 0.74 of the way there already, for a
+      // different reason (a tuft's own lit side, so a field of yawed cards does
+      // not read as salt-and-pepper), and still leaves an upright card taking
+      // measurably less near-zenith ndl than the flat terrain plane it stands
+      // on. ns is a SECOND, independent blend toward up, spent only on the two
+      // terms that stand in for the ground's own diffuse response (ndl and
+      // skyView below); the wrap/forward translucency term two blocks down
+      // stays on the UNBENT n, because that term is the facet's own thin-tissue
+      // read (why a real meadow glows into a low sun) and is not this
+      // residual's subject -- bending it too would flatten exactly the
+      // variation that lets the wind shimmer read.
+      vec3 ns = normalize(mix(n, up, uBendUp));
+
       vec3 sd = normalize(uSunDir);
-      float ndl = max(dot(n, sd), 0.0);
+      float ndl = max(dot(ns, sd), 0.0);
       float shadow = ofCascadeShadow(vViewZ);
       vec3 sunT = uAtmosOn > 0.5 ? ofAtmoSunTransmittance(pM, sd, 3) : vec3(1.0);
 
@@ -306,7 +328,7 @@ export function grassFragmentShader(depth: DepthPolicy): string {
       // actually lit by, computed the way TerrainFragLight computes it
       // (RN-841's unshadowed bounce source, same argument: the lit ground
       // around a blade is not extinguished by the blade's own shadow).
-      float skyView = 0.5 + 0.5 * dot(n, up);
+      float skyView = 0.5 + 0.5 * dot(ns, up);
       vec3 ground = vCol * (uAmbient + skyAmb
         + sunT * (${SUN_IRR} * max(dot(up, sd), 0.0)));
 
