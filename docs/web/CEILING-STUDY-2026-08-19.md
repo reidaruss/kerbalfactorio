@@ -134,11 +134,21 @@ Four interleaved repeats, 400 timed frames each, `forestfloor`, 1600x900:
 | VRAM estimate | 104.2 MB | 260 MB | **2.5x** |
 | Resident chunks | 342 | 384 cap | **1.1x, the tightest ratio in the table** |
 | Scatter props placed | 41,300 over 89,430 m² | 135k instances | 3.3x |
-| p99 frame (submission) | 27.5 ms | 25 ms alert | **ALERT** |
+| **Programs** | **41** | **40 alert (`ARCHITECTURE.md` §17.1)** | **BREACHED** |
+
+> **A number this table used to carry, and why it was removed.** An earlier draft
+> listed "p99 frame (submission) 27.5 ms, ALERT" here and asserted the ALERT as a
+> standing fact in four places. **It was a single reading off a contended box, and
+> §1.3 of this document forbids treating a timing statistic from a contended box
+> as standing.** A fresh-context verifier on a quieter machine read
+> `submitMs.p99` at **14** with the client's own `budget.frameP99` reporting
+> **ok**. The p99 claim is **withdrawn**. The programs breach replaces it because
+> it is structural and reproduces.
 
 **Nothing here is a WebGL2 limit.** The frame uses half its draw-call budget and
 half its triangle budget. The two tight numbers are the chunk pool (342 of 384)
-and the p99, and neither is a property of the graphics API.
+and the program count (41 against 40), and neither is a property of the graphics
+API.
 
 ### 2.2 Where the time goes
 
@@ -178,9 +188,16 @@ and the timing column as indicative.
 | `terrainart=0` | 10.77 | 2.93 | +0.56 | **no** | 76 | 1,452,463 | 104.2 |
 | `post=0` | 10.76 | 4.29 | +0.55 | **no** | 59 | 1,452,446 | 76.0 |
 
-**Not one timing delta separated from its own arm's spread.** That is the honest
-verdict and it is reported as such. But the structural columns did separate, they
-reproduced to the digit, and they carry the finding:
+**Not one timing delta separated from its own arm's spread on this box.** That is
+the honest verdict for this sweep and it is reported as such. **A fresh-context
+verifier on a quieter machine got the shadow arm to separate, at -3.09 ms against
+within-arm spreads of 2.31 and 0.36 ms, so this table under-claims rather than
+over-claims** (see §3, shadow row, for provenance). The conservative reading is
+kept here because it is what this box measured; the verifier's datum is kept
+separate because it is a different box.
+
+The structural columns did separate, they reproduced to the digit, and they carry
+the finding:
 
 - **58.8 per cent of every triangle drawn in this frame is shadow-map geometry.**
   Base draws 1,452,463 triangles; with casting off it draws 598,788. The
@@ -270,8 +287,25 @@ precisely.
 
 `ARCHITECTURE.md` §17 is a full measured record of W3, taken on **the same
 machine, the same backend and the same resolution** as this study: *"Chrome /
-ANGLE D3D11 / RTX 4060 Ti, 1600 x 900"*. It is therefore directly comparable, and
-the comparison is the most useful thing in this document.
+ANGLE D3D11 / RTX 4060 Ti, 1600 x 900"*.
+
+**Two caveats before the table, because "same machine and resolution" is not the
+same as "same measurement".**
+
+1. **The pose is not the same.** W3's figures came through the `cost.js` family,
+   which takes a yaw and a pitch and **inherits whatever the scenario's spawn
+   was**; that is precisely the gap §1.2 says `ceiling.js` was written to close.
+   The W3 row is "a surface walk", this study's row is the pinned `forestfloor`
+   calibration pose. They are the same *class* of frame, not the same frame.
+2. **The scene is materially different, and that is the whole point rather than a
+   confound.** W3 predates the props, the machines, the voxel face, the nine
+   surface-art terms, the view model and the post stack. **The growth below is the
+   art campaign doing its job, not a renderer regression**, and nothing in this
+   document argues otherwise.
+
+Read the table as an order-of-magnitude trend with those two caveats attached,
+not as a controlled A/B. On that reading it is still the most useful comparison
+available, because the trend is 10x and the caveats are not.
 
 | Quantity | W3, 2026-07-25 | Today, 2026-08-19 | Change | Threshold |
 |---|---|---|---|---|
@@ -298,9 +332,9 @@ Three things fall out of that table:
 None of that growth was wrong. Every term was measured and argued for in its own
 lane. **What is wrong is that no gate ever summed them.** The project has 327
 probes, `probe-budgets.json` bounds every probe's *wall-clock runtime* (a
-different quantity), and `StatsProbe` publishes ALERT and FAIL thresholds that
-**nothing enforces**: the p99 is at ALERT and programs are past their alert right
-now, and no check went red for either.
+different quantity), and both `StatsProbe`'s ALERT/FAIL thresholds and §17.1's
+program alert are **published and unenforced**: **the program count is at 41
+against a documented alert of 40 right now, and no check went red.**
 
 ### 2.6 The instrument this study depends on is about to be removed
 
@@ -332,7 +366,7 @@ MYTH means the concern does not survive contact with what we actually run.
 | **Compute-driven terrain synthesis** | **MYTH, for us.** WebGL2 genuinely has no compute shaders (HARD in the abstract), but we do not want it there. Terrain meshing is already C++ in `of-core.wasm` inside `terrain.worker.ts`, it is deterministic, it is shared with 41 native ctest suites, and `DW-14` makes the wasm build the canonical world generator. Moving it to the GPU would fork determinism from the sim. | `web/src/workers/terrain.worker.ts`, `web/src/world/TerrainStream.ts`, `core/include/of/terrain_stream.h` |
 | **Compute-driven scatter placement** | **SOFT LIMIT, and not currently binding.** Placement is CPU on the main thread (`Scatter.ts` and friends, ~1,700 lines). Measured `buildMs` at the heaviest pose is **0.1 ms** with `scatterBacklog` 0 and `cellsCapped` 0. There is nothing to accelerate yet. | `w.props.buildMs = 0.1`, `scatterBacklog: 0` |
 | **GPU-driven culling** | **HARD LIMIT on WebGL2** (no indirect draw). **Also effectively unavailable on WebGPU**: three's BatchedMesh-over-indirect is draft PR #30645, unmerged as of today. **Not binding either way:** we issue 76 draws against a 150 target, and `BatchedMesh.perObjectFrustumCulled` already culls per instance on the CPU. | `draw.calls: 76`; `PropLibrary.ts:123` |
-| **Shadow techniques beyond cascaded maps** | **SOFT LIMIT.** Virtual/ray-traced shadow maps need compute and indirect draw, so WebGL2 cannot host them. **But we are not limited by the technique, we are limited by what we feed it**: 58.8% of triangles go into three cascades because the foliage has no shadow-safe LOD. Fix the input before changing the algorithm. | §2.3; `rendering.md` §2.8 R2 |
+| **Shadow techniques beyond cascaded maps** | **SOFT LIMIT.** Virtual/ray-traced shadow maps need compute and indirect draw, so WebGL2 cannot host them. **But we are not limited by the technique, we are limited by what we feed it**: 58.8% of triangles go into three cascades because the foliage has no shadow-safe LOD. Fix the input before changing the algorithm. **CORROBORATED, AND THIS STUDY UNDER-CLAIMED IT:** §2.3 reported the `shadows=0` timing delta as NOT SEPARATED on a contended box. A fresh-context verifier re-ran it on a quieter machine and the delta **did separate, at -3.09 ms against within-arm spreads of 2.31 and 0.36 ms**. Provenance: independent verifier, independent build, own sweep; not this lane's measurement, and recorded here rather than folded into §2.3 so the two boxes stay distinguishable. | §2.3; `rendering.md` §2.8 R2; verifier sweep 2026-08-19 |
 | **Volumetric atmosphere** | **SHIPPED, not a limit.** Ray-marched Rayleigh + Mie single scattering already runs, with aerial perspective evaluated per terrain fragment at 4 view steps by 2 light steps. `terrainart=0` and the pass split both say it is not a measured cost. | `materials/Atmosphere.glsl.ts`, `TerrainProgram.ts:29-30` |
 | **Volumetric clouds** | **SOFT LIMIT.** Doable in WebGL2 as a raymarched fullscreen or shell pass; WebGPU makes it cleaner via `storageTexture3D` (new in r185) and compute-generated noise volumes. This is the one roadmap item where WebGPU has a genuine, shipped advantage. Cost is fill rate, which §2.4 addresses. | three.js r185 `webgpu_volume_cloud` |
 | **Texture streaming / virtual texturing** | **HARD LIMIT, and identical on WebGPU.** Neither WebGL2 nor WebGPU exposes sparse or partially-resident textures; gpuweb has no proposal for it. True megatextures are unavailable in a browser at all, and any VT must be a hand-rolled software indirection table. **This is therefore not a WebGPU argument.** We are at 104.2 MB of 260 MB budget and KTX2 + Basis is already live, so it is not pressing. | `assets/Loaders.ts`, gpuweb issue #380 |
@@ -412,9 +446,15 @@ commit.
 
 ### 4.3 Maturity risk
 
-- The official r185 manual still says: *"The renderer itself is still in an
-  experimental state... depending on your application and scene setup, you will
-  encounter missing features or a better performance with `WebGLRenderer`."*
+- The official r185 manual still says, **quoted in full so the sentence is not
+  tilted by an ellipsis**: *"The renderer itself is still in an experimental
+  state, although its maturity level has been greatly improved in the last years.
+  Depending on your application and scene setup, you will encounter missing
+  features or a better performance with `WebGLRenderer`."* **The concessive
+  clause is real and cuts the other way**: three's own maintainers say the
+  renderer has improved substantially. What has not changed is that they still
+  call it experimental and still name `WebGLRenderer` as potentially faster for a
+  given scene.
 - **Issue #30560, the WebGPU UBO/draw-call performance tracker, has been open
   since 2025-02-19 and is the only open issue in the entire three.js repository
   carrying the "High priority" label.** Its reproduction is 20,000 non-instanced
@@ -522,8 +562,8 @@ pre-alpha gate.
 **The corollary matters as much as the recommendation: build the frame-cost gate
 before the next art wave, and do not put the only GPU that can run it out of
 reach.** The frame went from 0.99 ms to about 10 ms in three and a half weeks
-with nothing watching, and `StatsProbe` is publishing an ALERT right now that no
-check reads.
+with nothing watching, and the program count is sitting at 41 against a
+documented alert of 40 that no check reads.
 
 ### The work this study actually recommends, in order
 
@@ -595,10 +635,15 @@ carry both.
 **Q6. Frame cost grew tenfold in three and a half weeks with nothing gating it.
 Do you want a gate that can block an art wave?**
 *Evidence:* W3 recorded 0.99 ms for the whole frame on 2026-07-25; it is about 10
-ms today. `StatsProbe` already defines ALERT at 300 draws / 2.7 M triangles / 25
-ms p99 and FAIL at 500 / 4.0 M / 40 ms, and **nothing reads them**. The p99 is at
-ALERT now. A gate that can go red will occasionally stop a lane from landing
-something that looks good, and that is the cost of having one.
+ms today, with the §2.5 caveats attached. `StatsProbe` already defines ALERT at
+300 draws / 2.7 M triangles / 25 ms p99 and FAIL at 500 / 4.0 M / 40 ms, and
+`ARCHITECTURE.md` §17.1 defines a program alert at 40, and **nothing reads any of
+them**. **The program count is at 41 right now and no check went red.** (An
+earlier draft also claimed the p99 was at ALERT; that came off a contended box,
+a verifier read it at 14 with the client reporting `ok`, and it is withdrawn. The
+structural breach stands on its own.) A gate that can go red will occasionally
+stop a lane from landing something that looks good, and that is the cost of
+having one.
 
 ---
 
