@@ -1,4 +1,7 @@
-# Admin Master Controller — Context
+# Admin Master
+
+**ROUTED FROM A3, 2026-08-19/20.** The terrain splat's phase 2 (the 75 to 600 m far field) is BLOCKED on world-gen delivering the per-chunk float64 phase attribute already named in TerrainArt.glsl.ts's header; it was a nicety and is now load-bearing. Owner: world-gen. To be allocated and dispatched when phase 2 opens. Also standing for Reid's ruling: A3 refused the Polyhaven download (agent-authorisation grounds, correct) and shipped synthesised layers with a named ingest seam; the verifier judges them a competent procedural substrate that clears phase 1 but not photoreal, so the ingest ruling is worth taking before A5 re-authors vegetation.
+ Controller — Context
 
 > **Domain owner:** Admin (Tier 0) · **Last updated:** 2026-08-10 (fresh orchestrator session: D-016 to D-018 logged, [VISION.md](../VISION.md) written, VM bootstrap dispatched)
 > **Plan of record:** [review-2026-06-16/RETHINK.md](../review-2026-06-16/RETHINK.md): Phase **R** (consolidation) → **P** (progression) → **S** (seam), approved by Reid 2026-07-05.
