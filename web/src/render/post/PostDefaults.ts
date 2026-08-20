@@ -58,6 +58,61 @@ export const POST_DEFAULTS: PostTuning = {
   aoPower: 1.15,
   // Depth weight, per metre. 8 keeps the blur inside a 12 cm depth band.
   aoDepthSigma: 8,
+  // RN-2190. THE NEAR-FIELD RESIDUAL, AFTER A1'S RETUNE. Four arms on the
+  // `meadowfield` pose (`docs/screenshots/RN2190_*`), real capture, one flag
+  // apart: AO takes 20.7% of the carpeted r4 near-field rung against roughly
+  // 14% bare, against a much smaller mid-field `box` excess. The excess tracks
+  // DEPTH-EDGE DENSITY, not distance alone: `normalAndEdgeFromDepth` already
+  // taps the four full-res neighbours to build the AO normal, and a blade
+  // silhouette a texel wide puts one or two of those taps past the blade onto
+  // whatever is behind it, which GTAO cannot distinguish from a solid
+  // occluding wall. `aoThinEdgeM` is metres of mean neighbour depth deviation
+  // at which the damping below saturates: 0.05 m puts it well under a real
+  // occluder's typical edge jump (tens of centimetres to metres, a rock
+  // against open ground) and comfortably over a solid surface's own depth
+  // noise at these radii, measured on the r4 rung with `?aothin=0` as the
+  // control.
+  aoThinEdgeM: 0.05,
+  // RN-2190. SHRINKING THE SEARCH RADIUS WAS TRIED FIRST AND MEASURED
+  // BACKWARDS (see AoGlsl.ts's comment on the horizon loop): OF_AO_STEPS is a
+  // fixed count over [0, radiusUV], so a smaller radius on a thin-geometry
+  // pixel resamples the SAME close occluder at higher density and reads MORE
+  // occlusion, not less. `aoThinAmount` instead pulls the computed RESULT
+  // toward 1.0 (no occlusion) by this fraction at full thin saturation, which
+  // has no such coupling to sample density. `?aothin=0` is the exact
+  // pre-RN-2190 control.
+  //
+  // RN-2190, MEASURED AGAINST TWO RECTANGLES AT NEARLY THE SAME RANGE THAT
+  // DISAGREED, WHICH IS WHY THIS IS 0.35 AND NOT THE LARGER NUMBER THAT LOOKED
+  // BETTER ON ONE OF THEM. meadowfield's `box` (the shot's own committed
+  // rectangle, inverted live: about 5.7 m, NOT the mid-field -- do not confuse
+  // it with the unrelated `midfield` shot's 27 m strip of the same name) and
+  // its r4 rung (4 m) sit almost on top of each other, and the excess this
+  // lane is chartered to fix lives at r4 (AO share 20.7% aothin=0 against a
+  // 15.1% bare control, a 5.6-point gap) while `box` was ALREADY close to its
+  // own bare control before this lane touched anything (15.8% against 16.2%,
+  // effectively no defect). One amount cannot fix one and leave the other: at
+  // 0.6, r4 lands at 13.9% (good, within 1.2 points of bare) but `box` is
+  // driven to 9.3%, 6.9 points UNDER its own bare reading -- a bigger error in
+  // the other direction than the one being fixed. At 0.35, r4 lands at 16.7%
+  // (1.6 points over bare, an honest partial fix) and `box` at 12.0% (4.2
+  // points under, smaller than 0.6's overshoot). 0.35 is the point where
+  // neither rectangle's new error exceeds the other's old one; a genuinely
+  // separate fix for `box` specifically is future work, not this default.
+  aoThinAmount: 0.35,
+  // RN-2190. THE DISTANCE GATE PROTECTS THE FAR FIELD, NOT THE MID FIELD --
+  // `box` is close range and gets the SAME treatment as r4 regardless of these
+  // two numbers (see aoThinAmount's note). What 8 m / 22 m buys is the r25 and
+  // r55 rungs (25 m, 55 m, inside the carpet's own fade zone): with the gate
+  // disabled entirely (`?aothinnear=0&aothinfar=0.02`), r4 and `box` reproduce
+  // the aothin=0 control to the digit (72.16 and 90.16), which is the positive
+  // proof the gate does nothing until it is asked to. At the shipped 8/22, r25
+  // and r55 move by about 2 to 3 counts (roughly 2%) against their own
+  // aothin=0 reading rather than by zero -- the row is 5 px tall and its far
+  // edge dips inside 22 m at this pose's range compression, which is disclosed
+  // rather than chased further.
+  aoThinNearM: 8,
+  aoThinFarM: 22,
   // 0.45 m, which is a little over the density-weighted mean understorey height
   // of 0.281 m and well under cascade 0's 15.5 mm-per-texel resolution limit for
   // a blade. The term is bounded BY DISTANCE, which is what stops it ever

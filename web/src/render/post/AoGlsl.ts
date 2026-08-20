@@ -51,6 +51,17 @@ uniform mat4 uProj;
 uniform float uRadius;
 uniform float uMaxScreen;
 uniform float uFalloffInv;
+/** RN-2190. 1 / the edge magnitude (metres) at which thin-geometry damping
+ *  saturates. See normalAndEdgeFromDepth below. */
+uniform float uThinEdgeInv;
+/** RN-2190. How far the AO result is pulled toward 1.0 (no occlusion) at full
+ *  thin-geometry saturation. 0.0 is the exact pre-RN-2190 expression
+ *  (aothin=0's target). */
+uniform float uThinAmount;
+/** RN-2190. View-space distance (metres) inside which the thin-geometry term
+ *  runs at full strength, and beyond which it fades to zero by uThinFarM. */
+uniform float uThinNearM;
+uniform float uThinFarM;
 
 ${DEPTH_GLSL}
 
@@ -66,7 +77,24 @@ float rotationOffset(vec2 p) {
   return mod(i * 5.0 + floor(i / 4.0) * 3.0, 16.0) / 16.0;
 }
 
-vec3 normalFromDepth(vec2 uv, vec3 P) {
+/**
+ * RN-2190. Returns the reconstructed normal in .xyz AND, in .w, the mean
+ * absolute view-space depth DEVIATION of the four immediate full-res
+ * neighbours from the centre -- reusing the same four taps this function
+ * already spent on the normal, so the edge term costs zero extra fetches.
+ *
+ * WHY THIS IS THE THIN-GEOMETRY SIGNAL. A gently curved SOLID surface (open
+ * ground, a machine hull) keeps this small even at a grazing angle, because
+ * all four neighbours sit on the same continuous sheet the centre does. A
+ * grass-blade silhouette a texel or two wide does not: one or two of the four
+ * taps land past the blade's edge onto whatever is behind it, which can be
+ * tens of centimetres further away. That is exactly the geometry GTAO cannot
+ * tell apart from a solid occluding wall, which is the mechanism RN-2190
+ * measured (20.9% vs 14.0% AO share at the r4 near-field rung against 15.9%
+ * vs 14.5% at the mid-field box): the excess tracks depth-edge density, not
+ * distance alone, and thin foliage is where that density concentrates.
+ */
+vec4 normalAndEdgeFromDepth(vec2 uv, vec3 P) {
   vec2 t = uFullTexel;
   vec2 ul = uv - vec2(t.x, 0.0);
   vec2 ur = uv + vec2(t.x, 0.0);
@@ -82,7 +110,9 @@ vec3 normalFromDepth(vec2 uv, vec3 P) {
   vec3 dy = abs(Pd.z - P.z) < abs(Pu.z - P.z) ? (P - Pd) : (Pu - P);
   vec3 n = cross(dx, dy);
   float l = length(n);
-  return l < 1e-12 ? vec3(0.0, 0.0, 1.0) : n / l;
+  vec3 normal = l < 1e-12 ? vec3(0.0, 0.0, 1.0) : n / l;
+  float edge = 0.25 * (abs(Pl.z - P.z) + abs(Pr.z - P.z) + abs(Pd.z - P.z) + abs(Pu.z - P.z));
+  return vec4(normal, edge);
 }
 
 float horizon(vec2 suv, vec3 P, vec3 V, float current) {
@@ -105,13 +135,39 @@ void main() {
   if (isBackground(d)) { gl_FragColor = vec4(1.0); return; }
 
   vec3 P = viewFromDepth(vUv, d);
-  vec3 N = normalFromDepth(vUv, P);
+  vec4 ne = normalAndEdgeFromDepth(vUv, P);
+  vec3 N = ne.xyz;
   vec3 V = normalize(-P);
 
   // World radius projected to UV. uProj[0][0] survives both the reversed-Z flip
   // and the log-depth path untouched, because both rewrite only row 2.
   float radiusUV = min(0.5 * uProj[0][0] * uRadius / max(0.05, -P.z), uMaxScreen);
   if (radiusUV < uTexel.x) { gl_FragColor = vec4(1.0); return; }
+  // RN-2190. thin saturates to 1 where the depth-edge magnitude (ne.w, metres)
+  // is large relative to uThinEdgeInv's threshold; applied to the RESULT below,
+  // not to radiusUV. A SHRUNK RADIUS WAS TRIED FIRST AND MEASURED BACKWARDS:
+  // OF_AO_STEPS is a fixed count spread across [0, radiusUV], so shrinking the
+  // radius on a thin-geometry pixel does not exclude the near occluder that
+  // makes it thin, it re-samples the SAME close region at higher density and
+  // finds that occluder's true horizon angle more precisely than the coarser
+  // full-radius search did -- which measures MORE occlusion, not less. Two
+  // shots, one flag apart, confirmed the sign: meadowfield r4 read 69.73 with
+  // the shrunk radius against 72.16 with it off, forestfloor box 19.52
+  // against 19.79, both DARKER than the pre-RN-2190 baseline. Damping the
+  // computed visibility directly has no such coupling to the step density.
+  float thin = clamp(ne.w * uThinEdgeInv, 0.0, 1.0);
+  // RN-2190. DISTANCE-GATED: measured on meadowfield's rangeRects, the excess
+  // this term corrects is concentrated at the r4 near-field rung (AO share
+  // 20.7% against a bare control's 15.1%) and is already small to nonexistent
+  // at the 27 m mid-field box (15.8% against 16.2% bare, i.e. carpet and bare
+  // already agree there). The edge-magnitude signal alone does not see that
+  // difference, because a blade silhouette's view-space depth jump is a
+  // property of the GEOMETRY and is roughly distance-invariant, not of how far
+  // the camera stands from it: applied undamped by distance, this term over-
+  // corrected the box (measured 9.3%, UNDER its own bare control) while fixing
+  // r4 correctly. uThinNearM/uThinFarM hold it at full strength through the
+  // near rungs and fade it out before the mid field.
+  thin *= 1.0 - smoothstep(uThinNearM, uThinFarM, -P.z);
 
   float noise = rotationOffset(gl_FragCoord.xy);
   float visibility = 0.0;
@@ -145,7 +201,13 @@ void main() {
       (-cos(2.0 * h2 - n) + cosN + 2.0 * h2 * sinN));
   }
 
-  gl_FragColor = vec4(clamp(visibility / float(OF_AO_SLICES), 0.0, 1.0), 0.0, 0.0, 1.0);
+  // RN-2190. Pull the RESULT toward fully visible (1.0, no occlusion) for
+  // high-frequency depth, by uThinAmount at full saturation. aothin=0 sets
+  // uThinAmount to 0.0 at the call site, which is the algebraic identity and
+  // makes this line exactly the pre-RN-2190 one.
+  float raw = clamp(visibility / float(OF_AO_SLICES), 0.0, 1.0);
+  float ao = mix(raw, 1.0, thin * uThinAmount);
+  gl_FragColor = vec4(ao, 0.0, 0.0, 1.0);
 }
 `;
 

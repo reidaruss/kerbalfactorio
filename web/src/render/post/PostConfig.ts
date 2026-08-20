@@ -60,6 +60,16 @@ export interface PostTuning {
   aoStrength: number;
   aoPower: number;
   aoDepthSigma: number;
+  /** RN-2190. Metres of mean neighbour depth deviation at which thin-geometry
+   *  damping saturates. See AoGlsl's normalAndEdgeFromDepth. */
+  aoThinEdgeM: number;
+  /** RN-2190. How far the AO result is pulled toward no occlusion at full
+   *  thin-geometry saturation. 0 is off. */
+  aoThinAmount: number;
+  /** RN-2190. View-space metres: full strength inside aoThinNearM, zero
+   *  beyond aoThinFarM. See AoGlsl's distance-gate comment. */
+  aoThinNearM: number;
+  aoThinFarM: number;
   /** March length in metres. The whole reason the term is a CONTACT shadow. */
   csLengthM: number;
   csSteps: number;
@@ -214,6 +224,14 @@ export function parsePost(search: string, quality: 'low' | 'med' | 'high'): Post
       aoRadiusM: Math.max(0.02, n(p, 'aoradius', POST_DEFAULTS.aoRadiusM)),
       aoStrength: Math.min(1, Math.max(0, n(p, 'aostrength', POST_DEFAULTS.aoStrength))),
       aoPower: Math.max(0.1, n(p, 'aopower', POST_DEFAULTS.aoPower)),
+      // RN-2190. `?aothin=0` is the isolator: it forces the amount to 0.0,
+      // which is algebraically the pre-RN-2190 AO_FS expression, regardless of
+      // what ?aothinamount= asks for. `?aothinedge=` sweeps the threshold alone.
+      aoThinEdgeM: Math.max(0.001, n(p, 'aothinedge', POST_DEFAULTS.aoThinEdgeM)),
+      aoThinAmount: p.get('aothin') === '0'
+        ? 0 : Math.min(1, Math.max(0, n(p, 'aothinamount', POST_DEFAULTS.aoThinAmount))),
+      aoThinNearM: Math.max(0, n(p, 'aothinnear', POST_DEFAULTS.aoThinNearM)),
+      aoThinFarM: Math.max(0.01, n(p, 'aothinfar', POST_DEFAULTS.aoThinFarM)),
       csLengthM: Math.max(0.01, n(p, 'cslength', POST_DEFAULTS.csLengthM)),
       csSteps: Math.min(24, Math.max(2, n(p, 'cssteps', POST_DEFAULTS.csSteps) | 0)),
       csThickM: Math.max(0.01, n(p, 'csthick', POST_DEFAULTS.csThickM)),

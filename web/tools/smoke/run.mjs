@@ -315,6 +315,8 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // effect each, per standing rule 7.
   'post', 'ao', 'bloom', 'grade', 'aa', 'contact',
   'aoscale', 'aoslices', 'aosteps', 'aoradius', 'aostrength', 'aopower',
+  // RN-2190, thin-geometry AO damping. `aothin=0` is the isolator.
+  'aothin', 'aothinedge', 'aothinamount', 'aothinnear', 'aothinfar',
   'bloomlevels', 'bloomstrength', 'bloomthresh', 'exposure', 'msaa', 'fxaalod',
   'cslength', 'cssteps', 'csthick', 'csstrength',
   // RN-207, the look-development grade. `curve=0` returns the contrast term to
