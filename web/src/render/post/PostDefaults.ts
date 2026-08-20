@@ -20,7 +20,16 @@ export const POST_DEFAULTS: PostTuning = {
   // measurable contrast change.
   aoSlices: 3,
   aoSteps: 6,
-  aoRadiusM: 0.9,
+  // RN-2130, retuned BY EYE against the meadow hero frame, which is the
+  // process the fidelity charter's Option D installs and is why no instrument
+  // delta is quoted for it. 0.9 m is a metre-scale occlusion radius chosen for
+  // machine feet and belt legs, and it is the wrong radius for an understorey
+  // card 0.28 m tall: at 0.9 m every tuft in the meadow occludes its whole
+  // neighbourhood and the frame reads as dark patches with grass in them
+  // rather than grass with shade under it. 0.55 m is a little under twice the
+  // density-weighted mean understorey height, so a blade still shades its own
+  // base and stops shading the next clump over.
+  aoRadiusM: 0.55,
   aoFalloff: 0.55,
   // 9% of the screen. Without this, standing with your face against a wall makes
   // every AO pixel sample the whole framebuffer and the cost spikes on exactly
@@ -30,8 +39,23 @@ export const POST_DEFAULTS: PostTuning = {
   // because the terrain program computes its own light from uSunDir and there is
   // no ambient channel to reach into. Holding a little back is the honest
   // correction for occluding light that was never occludable.
-  aoStrength: 0.9,
-  aoPower: 1.35,
+  //
+  // RN-2130: 0.9 -> 0.60, AND THE ARGUMENT ABOVE IS WHY, TAKEN FURTHER. If
+  // this multiplies total radiance then a strength of 0.9 says "a fully
+  // occluded surface receives a tenth of all light in the universe", which is
+  // not a correction, it is a hole. The measurement on the meadow hero frame
+  // before this change: near-ground loFrac 0.318, i.e. nearly a third of the
+  // ground at the player's feet below display luma 24, at a 33 degree sun on
+  // open flat plain. `aoStrength` is now a PER-CHANNEL weight at the shader
+  // (see AoGlsl's AO_APPLY_FS and ToneDrive's OCC_TINT_DAY): this number is
+  // the red channel's strength and green and blue are 0.86 and 0.62 of it, so
+  // the effective grey strength is nearer 0.47 and what is left in the hollow
+  // is sky-coloured rather than absent.
+  aoStrength: 0.6,
+  // 1.35 -> 1.15. The power curve steepens the dark end of the occlusion image,
+  // which was compensating for a term that had already been asked to do too
+  // much. With the strength honest, the compensation is a second darkening.
+  aoPower: 1.15,
   // Depth weight, per metre. 8 keeps the blur inside a 12 cm depth band.
   aoDepthSigma: 8,
   // 0.45 m, which is a little over the density-weighted mean understorey height
@@ -107,10 +131,19 @@ export const POST_DEFAULTS: PostTuning = {
   // it and the STRENGTH does the visible work instead. Radial decay at these
   // values is a halo and not a lift: the lift falls by roughly 4x from the
   // source to 100 px and is under 0.03 of 255 beyond 300 px.
-  bloomThreshold: 0.75,
+  // RN-2130, BLOOM RESTRAINT. 0.75 -> 0.86 and 0.14 -> 0.10, and the reason is
+  // the shoulder rather than the bloom. The tone response now compresses
+  // everything above display 0.58, so a halo that was authored against an
+  // uncompressed top end lands on a top end that has moved down: at the old
+  // values the bloom was spending its lift inside the range the shoulder is
+  // pulling back, which reads as haze rather than as glow. The threshold stays
+  // well clear of 0.4, where the sweep in the note above measured bloom
+  // becoming a global lift instead of a halo, and that remains the boundary
+  // this constant is defending.
+  bloomThreshold: 0.86,
   bloomKnee: 0.5,
   bloomScatter: 0.85,
-  bloomStrength: 0.14,
+  bloomStrength: 0.1,
   // RN-208, THE LOOK-DEVELOPMENT CALIBRATION, AND THE CRITERION THAT CHOSE IT.
   //
   // ART-DIRECTION.md asks for grounded, muted, layered colour in which "value
@@ -153,17 +186,38 @@ export const POST_DEFAULTS: PostTuning = {
   // saturation 0.527 -> 0.578 and mean chroma 57.7 -> 65.7. At 0.92 the same
   // frame reads chroma 56.8 against the shipped 57.7, i.e. hue is doing
   // fractionally LESS work than before while value does 29 per cent more.
+  // RN-2130: THIS IS STILL THE NOON EXPOSURE AND IT IS STILL 1.2. ToneDrive.ts
+  // now drives the live value off the sun's elevation and lands on exactly
+  // this number at a high sun, deliberately: 1.2 is the one exposure in this
+  // project that was MEASURED (the largest value at which shadow occupancy
+  // does not move, three sites, four elevations, above) and a look lane does
+  // not get to discard a calibration because it wants a different picture. The
+  // half of the arc that moves is the half nobody ever calibrated. This field
+  // also remains the value `?tone=0` restores, which is what makes the whole
+  // fidelity lane switchable off in one flag.
   exposure: 1.2,
   contrast: 1.45,
   curveMix: 1,
-  saturation: 0.92,
-  // Graded TOWARD the desert biome, which already reads well: warm in the light,
-  // slightly cool in shade. Both tints average to 1.0 across RGB so the grade
-  // moves hue, not exposure. UNCHANGED at RN-208: the split tone was not
-  // measured against the new curve and moving two things at once without a
-  // control is how a look becomes unattributable.
-  shadowTint: [0.97, 0.995, 1.035],
-  highlightTint: [1.035, 1.005, 0.96],
+  // 0.92 -> 0.94. The green harmonisation removes hue DISAGREEMENT rather than
+  // hue, so a frame that has stopped arguing with itself can carry slightly
+  // more chroma than one that has not. Two hundredths, and it is stated as the
+  // judgement it is.
+  saturation: 0.94,
+  // RN-2130. THE PALETTE, and it is no longer "toward the desert biome".
+  //
+  // The decision is written out in full in ToneDrive.ts: ONE MEADOW, LIT AT TWO
+  // TEMPERATURES. Warm dry-straw light on what the sun touches, cool blue-green
+  // in what it does not, because the sky is the only other lamp in the scene.
+  // The RN-208 tints were +-0.035 either side of neutral, which is a hint at a
+  // split tone rather than one; these have a measured max deviation 0.14
+  // along the warm/cool axis rather than along the desert's orange/teal one.
+  //
+  // BOTH STILL AVERAGE TO ABOUT 1.0 ACROSS RGB, which is the invariant RN-208
+  // established and this lane keeps: the split tone moves hue and must not
+  // become a second exposure control, because there is now a real one.
+  // ToneDrive adds the dawn warmth ON TOP of the highlight side only.
+  shadowTint: [0.91, 0.99, 1.14],
+  highlightTint: [1.055, 1.01, 0.93],
   // 0 at RN-208, was 0.012. A shadow lift is a lifted BLACK POINT, which is the
   // first thing ART-DIRECTION.md's "pastel" names. The term stays (it is one
   // multiply-add and it takes a NEGATIVE value to crush instead), because the

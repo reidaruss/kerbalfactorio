@@ -38,6 +38,7 @@ import { ContactPass } from './ContactPass.js';
 import { UnderwaterPass } from './UnderwaterPass.js';
 import { BLOOM_DOWN_FS, BLOOM_UP_FS } from './BloomGlsl.js';
 import { COMPOSITE_FS } from './CompositeGlsl.js';
+import { TONE, writeToneUniforms } from './ToneDrive.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import type { PostFlags, PostTuning } from './PostConfig.js';
 
@@ -111,7 +112,7 @@ export class PostStack {
     }, { defines: dd }));
 
     this.aoApply = new Blit(postMaterial('of.ao.apply', AO_APPLY_FS, {
-      tAo: { value: null }, uStrength: { value: tune.aoStrength },
+      tAo: { value: null }, uStrength: { value: new THREE.Vector3() },
       uPower: { value: tune.aoPower },
     }, { multiply: true }));
 
@@ -163,6 +164,11 @@ export class PostStack {
       uHighlightTint: { value: new THREE.Vector3(...tune.highlightTint) },
       uLift: { value: tune.lift }, uVignette: { value: tune.vignette },
       uVignetteSoft: { value: tune.vignetteSoft },
+      // RN-2130, the fidelity lane's tone response and palette. ToneDrive.ts
+      // owns every value that goes into these four and states why. Seeded at
+      // the shipped noon value; ToneDrive overwrites it every frame.
+      uShoulder: { value: 0 }, uShoulderKnee: { value: 0.50 },
+      uGreenPull: { value: 0 }, uGreenAxis: { value: new THREE.Vector3(1, 1, 1) },
     }));
 
     // three's own FXAA 3.11 port, with EXACTLY one substitution: its `Sample`
@@ -296,7 +302,11 @@ export class PostStack {
     // not sample anything the scene framebuffer owns.
     const a = this.aoApply.u;
     a.tAo.value = t.aoFull.texture;
-    a.uStrength.value = this.tune.aoStrength;
+    // RN-2130: per-channel, so occluded light keeps a sky tint. See AoGlsl.
+    const ot = TONE.occTint;
+    (a.uStrength.value as THREE.Vector3).set(
+      this.tune.aoStrength * ot[0], this.tune.aoStrength * ot[1],
+      this.tune.aoStrength * ot[2]);
     a.uPower.value = this.tune.aoPower;
     this.host.setTarget(t.scene);
     this.host.drawFullScreen(this.aoApply.mesh);
@@ -347,16 +357,9 @@ export class PostStack {
     c.tScene.value = t.scene.texture;
     c.tBloom.value = bloomTex;
     c.uBloomStrength.value = this.flags.bloom ? this.tune.bloomStrength : 0;
-    c.uExposure.value = this.tune.exposure;
-    c.uGradeMix.value = this.flags.grade ? 1 : 0;
-    c.uContrast.value = this.tune.contrast;
-    c.uCurveMix.value = this.tune.curveMix;
-    c.uSaturation.value = this.tune.saturation;
-    (c.uShadowTint.value as THREE.Vector3).set(...this.tune.shadowTint);
-    (c.uHighlightTint.value as THREE.Vector3).set(...this.tune.highlightTint);
-    c.uLift.value = this.tune.lift;
-    c.uVignette.value = this.flags.grade ? this.tune.vignette : 0;
-    c.uVignetteSoft.value = this.tune.vignetteSoft;
+    // RN-2130: exposure, shoulder, warmth and palette in one call, because the
+    // art direction is one decision and reads as one in ToneDrive.ts.
+    writeToneUniforms(c, this.tune, this.flags.grade);
     const useAa = this.flags.aa;
     this.host.setTarget(useAa ? t.ldr : null);
     this.host.drawFullScreen(this.composite.mesh);

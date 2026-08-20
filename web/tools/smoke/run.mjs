@@ -228,6 +228,23 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // airless night are separable. Registered in the same commit that introduces
   // it, per this list's own rule.
   'starlight', 'starlightamp', 'terrainfloor',
+  // RN-2130, FIDELITY LANE A1, the image pipeline. Five flags, each restoring
+  // the state immediately before the term it names, registered in the same
+  // commit that introduces them per this list's rule.
+  // `tone=0`      the elevation-driven exposure, the highlight shoulder, the
+  //               dawn warmth and the occlusion tint all become no-ops and the
+  //               composite runs at the fixed 1.2 it ran at before.
+  // `ambientfill=0` restores BOTH halves of the shadow fill in one flag: the
+  //               pre-A1 daylight floor (0.030, 0.034, 0.045) and the pre-A1
+  //               sky-ambient weight 0.32. They are one control on purpose,
+  //               because a term whose two halves have two switches has an off
+  //               state that is an argument rather than a measurement.
+  // `occtint=0`   the AO multiply goes back to a neutral grey, i.e. the three
+  //               channels occluded by the same amount, which is algebraically
+  //               the pre-A1 apply pass.
+  // `shoulderamp=` sweeps the shoulder without touching the exposure drive.
+  // `greenpull=`  sweeps the green harmonisation; 0 is the exact off state.
+  'tone', 'ambientfill', 'occtint', 'shoulderamp', 'greenpull',
   // RN-1251, the same floor for the STOCK materials, which had their own two
   // W4 hex literals instead. Three values and the middle one is the point, on
   // RN-1201's precedent: `stockfloor=0` does not install the writer at all and
