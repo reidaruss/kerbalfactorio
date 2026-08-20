@@ -49,8 +49,13 @@
 //     --evalfile=tools/smoke/probes/artframe.js --evalargs='{"shot":"limb"}' \
 //     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
 //
-// The three `vista*` shots take the file's own `--scenario=walk` line at the
-// top of this header, with the shot name changed.
+// AND ONE MORE AT RN-2130, the fidelity charter's first hero frame:
+//   meadow       the plains site at a standing eye, pitch -8, dot 0.55: the
+//                pose Reid's own screenshot was taken at, promoted out of
+//                RN-2065's reject list because the frame the lane is judged
+//                on has to be the frame the player stands in.
+// The three `vista*` shots and `meadow` take the file's own `--scenario=walk`
+// line at the top of this header, with the shot name changed.
 //
 // ==========================================================================
 // WHY THIS FILE EXISTS AT ALL, given `artshot.js` and the `*shot.js` family
@@ -416,6 +421,53 @@
         nearG: [0.2000, 0.7100, 0.8000, 0.7600],
       },
       why: 'the same vista at the top of the day arc: shortest shadows',
+    },
+    // RN-2130 (FIDELITY LANE A1). `meadow`: THE POSE REID'S OWN SCREENSHOT WAS
+    // TAKEN AT, PROMOTED FROM A SWEEP REJECT TO A MANIFEST ROW.
+    //
+    // The plains site (-7.9675, 116.53189, biome 2) is RN-2065's most damning
+    // reject and it is kept in that row's prose as evidence. The fidelity
+    // charter (`docs/web/FIDELITY-GAP-2026-08-19.md`) makes it a HERO FRAME
+    // instead, and the promotion is the point: the frame the lane is judged on
+    // has to be the frame the player actually stands in, not the one that
+    // photographs best. The storyline puts the player on flat ground gathering
+    // wood for the first several hours; the vista set never photographs that.
+    //
+    // WHY THIS POSE AND NOT `vista`'s. `vista` is a RANGE ladder: a 4.7 km
+    // ridge at pitch -2 with six ridge lines in it, and its subject is the air.
+    // This shot's subject is the GROUND CARPET at 2 to 30 m and the shade
+    // inside it, so the pitch is -8 (the horizon sits at about y = 0.30 and the
+    // meadow gets two thirds of the frame) and the sun is dot 0.55, about 33
+    // degrees, which is the hour that casts a readable prop shadow rather than
+    // the near-zenith light that hides the defect this lane is fixing.
+    //
+    // IT IS THE MOST EXPENSIVE FRAME IN THIS FILE and that is recorded rather
+    // than avoided: 2,759,465 triangles / 71 calls at RN-2065, over the
+    // StatsProbe ALERT threshold, on flat ground with nothing built. Cost is
+    // L2's subject, not A1's; this lane must not make it worse and does not
+    // claim to make it better.
+    //
+    // THE RECTANGLES ARE A SKY-TO-GROUND BALANCE, which is section 1
+    // difference 4's actual complaint, plus the shade patch difference 3 is
+    // about. `skyHi`/`skyHz` against `nearG`/`mid` is the balance; `hzBand` is
+    // the milk wall; `shade` sits in the near meadow where the understorey
+    // casts, so "shadowed grass reads blue-green, never black" becomes a
+    // reading (`warm` and `sat` on that box) instead of an adjective.
+    meadow: {
+      scenario: 'walk', needsSandbox: false,
+      lat: -7.9675, lon: 116.53189, yaw: 120, pitch: -8,
+      sunDot: 0.55, sunTol: 0.05,
+      box: [0.2500, 0.5200, 0.7500, 0.7000],
+      extra: {
+        skyHi: [0.3500, 0.0500, 0.6500, 0.1500],
+        skyHz: [0.4000, 0.2200, 0.6000, 0.2800],
+        hzBand: [0.0500, 0.3000, 0.4000, 0.3400],
+        mid: [0.3000, 0.4000, 0.7000, 0.4600],
+        nearG: [0.2000, 0.6600, 0.8000, 0.7400],
+        shade: [0.0600, 0.7000, 0.2600, 0.7500],
+      },
+      why: 'the PLAINS MEADOW at a standing eye: hero frame 1 of the fidelity '
+        + 'charter, the ground carpet and the shade inside it',
     },
     // THE TWO FLY POSES, AND THEY NEED A DIFFERENT SCENARIO, WHICH IS THE
     // WHOLE REASON THIS FILE HAD NONE.
@@ -1242,7 +1294,8 @@
   // old spawn drifted 1,704.789 m and changed biome without anything noticing.
   // If this ridge ever moves, `setup.eyeAltM` says so in the report instead of
   // the pose quietly becoming a different pose.
-  if (name === 'vista' || name === 'vistadawn' || name === 'vistanoon') {
+  if (name === 'vista' || name === 'vistadawn' || name === 'vistanoon'
+      || name === 'meadow') {
     const w0 = of.world();
     of.teleport(A.lat ?? S.lat, A.lon ?? S.lon, 2.0);
     await sleep(2.0);
