@@ -108,7 +108,8 @@ export function makeBatch(group: THREE.Group, name: string,
   // that have neither (a `coarse:` bark batch, or anything at all under
   // `?wind=0 ?rockmat=0`). A tree trunk lit by a floor while its own leaves are
   // lit by the sky is the shape this closes.
-  applyPropSkyAmbient(material, `nodes:${name}`);
+  applyPropSkyAmbient(material, `nodes:${name}`,
+    name.startsWith('leaf:') || name.startsWith('grass:'));
   const mesh = new THREE.BatchedMesh(START_CAPACITY, s.verts, s.idx, material);
   mesh.name = `nodes:${name}`;
   mesh.castShadow = true;

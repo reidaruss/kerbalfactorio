@@ -107,8 +107,12 @@ function hook(shader: { uniforms: Record<string, { value: unknown }>;
   // that most need it (the meadow's near ground IS props) by being called from
   // inside this one. This hook owns the VERTEX stage and that one owns the
   // FRAGMENT stage, so they cannot eat each other's anchors.
+  // `true`: this hook is installed on foliage batches and nowhere else
+  // (`applyWind`'s callers gate on `isFoliageMaterial` and on the `leaf:` /
+  // `grass:` node families), so RN-2205's translucency belongs on every
+  // program that reaches here and on no program that does not.
   injectPropSkyAmbient(shader as unknown as
-    { uniforms: Record<string, THREE.IUniform>; fragmentShader: string });
+    { uniforms: Record<string, THREE.IUniform>; fragmentShader: string }, true);
 }
 
 /**

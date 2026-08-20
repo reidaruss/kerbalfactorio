@@ -393,6 +393,12 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // measurement of the term rather than of two different shaders. A number
   // sweeps it.
   'propsky',
+  // RN-2205, standing rule 7. The foliage translucency approximation, the
+  // charter's difference 5 ("no translucency approximation"), using A2's own
+  // wrap-plus-forward-lobe model and A2's own two constants so the carpet and
+  // the props glow into a low sun by the same amount. `foliagetrans=0` zeroes
+  // the gain with the program unchanged, so the pair is a value control.
+  'foliagetrans',
   // RN-2204, standing rule 7. `propcullbiome=0` narrows per-instance frustum
   // culling back to the understorey batches, which is the pre-widening build
   // exactly, so it is the control for the 344,118-triangle drop. `propcull=0`

@@ -79,6 +79,39 @@ GRASS_B_FANS = (
 )
 
 
+# RN-2206, THE BLADE GETS A FOURTH SEGMENT, and it is a POLYGON BUDGET spend
+# rather than a shape change: every vertex the extra segment adds sits on the
+# arc the three-segment blade was already trying to draw.
+#
+# WHY HERE AND WHY NOW. The fidelity charter's difference 5 is "chunky low-poly
+# with hard facet shading"; the ceiling study's answer to it is that triangles
+# are not what this game is short of. Both were true and neither was actionable
+# until something paid, and RN-2204 paid: widening per-instance frustum culling
+# to the biome prop batches gave back 1,220,532 triangles at the meadow
+# (3,039,951 -> 1,819,419) and 344,118 at the forest floor, pixel-identical.
+# This is that budget being spent on the two props the meadow frame is mostly
+# made of.
+#
+# WHAT A SEGMENT BUYS, and it is silhouette, not shading. `pc.blade` builds
+# `segs` levels plus a tip, so segs 3 is two quads and a triangle (five tris)
+# and segs 4 is three and a triangle (seven). A blade in this game ARCHES: it
+# leaves the ground at one angle and its tip droops. Three levels can only put
+# ONE bend in that arc, so the outline is two straight runs meeting at a corner,
+# and a corner at 1 m is exactly what "chunky" describes. Four levels put two
+# bends in it, which is the difference between a folded strip and a curve at
+# the range the player actually stands.
+#
+# THE FERN ALREADY DID THIS and is the precedent rather than a coincidence:
+# `build_props_forest.fern` says "segs 4 and a bend close to the frond length is
+# what makes a frond arch rather than stand". The grass was left at 3 when the
+# understorey cards were the triangle emergency; the cards are a separate atlas
+# and are NOT touched here, because `detail_cards.glb` is 3.2 million instances
+# per square kilometre and one triangle there costs 6,873 (build_props_forest's
+# own arithmetic).
+#
+# LOD2 IS UNTOUCHED at segs 2. The far rung's job is mass, not curve.
+
+
 def grass_tuft_a():
     """A meadow patch built from a few overlapping FANS, not a ring of
     individually spaced blades: each fan's blades share a near-common base
@@ -88,7 +121,7 @@ def grass_tuft_a():
     between THEM is the patch; the overlap inside one fan is the mass."""
     p = hc.Parts()
     for cx, cy, count, h, seed, nheads in GRASS_A_FANS:
-        p.extend(pc.tuft(count, h, 0.115, 0.030, seed, bend=0.22, segs=3,
+        p.extend(pc.tuft(count, h, 0.115, 0.030, seed, bend=0.22, segs=4,
                          droop=0.32, role="Grass", h_var=0.32,
                          loc=(cx, cy, 0.0), heads=nheads,
                          head_role="LeafLight"))
@@ -111,7 +144,7 @@ def grass_tuft_b():
     the top line - the whole difference in read between A and B at 15 m."""
     p = hc.Parts()
     for cx, cy, count, h, seed, nheads in GRASS_B_FANS:
-        p.extend(pc.tuft(count, h, 0.125, 0.035, seed, bend=0.32, segs=3,
+        p.extend(pc.tuft(count, h, 0.125, 0.035, seed, bend=0.32, segs=4,
                          droop=0.38, role="Grass", alt_role="LeafDry",
                          alt_every=3, h_var=0.34, phase=17.0,
                          loc=(cx, cy, 0.0), heads=nheads,

@@ -118,15 +118,52 @@ import { TERRAIN_SKY_AMBIENT } from './TerrainAmbient.js';
  *
  * RN-150-safe: a MISSING parameter is missing, never `Number(null) === 0`.
  */
-const RAW = new URLSearchParams(self.location.search).get('propsky');
+const Q = new URLSearchParams(self.location.search);
+const RAW = Q.get('propsky');
 export const PROP_SKY_INSTALLED = RAW !== 'off';
 const SCALE = ((): number => {
   const f = RAW === null || RAW === 'off' ? NaN : Number(RAW);
   return Number.isFinite(f) ? f : 1;
 })();
 
+/**
+ * RN-2205, FOLIAGE TRANSLUCENCY, and the numbers are A2'S rather than new ones.
+ *
+ * The fidelity charter's difference 5 names it outright: our props are "chunky
+ * low-poly with hard facet shading AND NO TRANSLUCENCY APPROXIMATION". A2 built
+ * one for the carpet and its GLSL is the model here, term for term:
+ *
+ *   GrassGlsl.ts:324  wrapN = max((dot(n, sd) + uTrans.x) / (1 + uTrans.x), 0)
+ *   GrassGlsl.ts:325  fwd   = pow(max(dot(rd, sd), 0), 3)
+ *   GrassGlsl.ts:326  trans = albedo * uTrans.y * (wrapN*0.35 + fwd*0.65)
+ *                           * sunT * 1.45 * mix(shadow, 1, 0.35)
+ *
+ * THE CONSTANTS ARE THE SAME CONSTANTS (0.55 wrap, 0.42 gain), and that is the
+ * "coordinated with how the carpet shades" requirement taken literally: a tuft
+ * of carpet grass and a scatter fern standing in it are one material to the
+ * eye, and if the two glowed into a low sun by different amounts the seam
+ * between the layers would show exactly where A2 spent a lane making it
+ * invisible. They are TRANSCRIBED rather than imported because `GrassMaterial`
+ * builds them inside a `transFromQuery` local and this lane may not edit
+ * `render/grass`; the transcription is named here so the next mover sees both
+ * copies, which is the least bad of the two second-authority failures.
+ *
+ * `?foliagetrans=0` zeroes the gain (the program is unchanged, so the pair is a
+ * value control), and a number scales it.
+ */
+const FOL_RAW = Q.get('foliagetrans');
+const FOL_WRAP = 0.55;
+const FOL_GAIN = ((): number => {
+  if (FOL_RAW === '0') return 0;
+  const f = FOL_RAW === null ? NaN : Number(FOL_RAW);
+  return 0.42 * (Number.isFinite(f) ? f : 1);
+})();
+
 /** The one place the flag's value lives, so the shader and the report agree. */
 const uPropSky: THREE.IUniform<number> = { value: SCALE };
+/** x = wrap width, y = gain. The carpet's `uTrans` packing, deliberately. */
+const uFolTrans: THREE.IUniform<THREE.Vector2> =
+  { value: new THREE.Vector2(FOL_WRAP, FOL_GAIN) };
 
 /**
  * The bundle spliced into every hooked program.
@@ -143,6 +180,7 @@ const BUNDLE: Record<string, THREE.IUniform> = {
   uBodyCenter: { value: new THREE.Vector3() },
   uSkyAmbient: { value: TERRAIN_SKY_AMBIENT },
   uPropSky,
+  uFolTrans,
 };
 
 let published = false;
@@ -175,6 +213,7 @@ const DECL = /* glsl */`
   uniform vec3  uBodyCenter;
   uniform float uSkyAmbient;
   uniform float uPropSky;
+  uniform vec2  uFolTrans;
 `;
 
 /**
@@ -199,6 +238,60 @@ const TERM = /* glsl */`
   }
 `;
 
+
+/**
+ * RN-2205. Spliced into the FOLIAGE programs only, which is why there are two
+ * hooks below rather than one hook and a uniform set to zero: a boulder is not
+ * a thin leaf, and a rock batch should not pay `getShadowMask` and a
+ * transmittance march for a term that is identically zero on it. Two hooks are
+ * two programs and they ARE two different programs, so the cache-key difference
+ * is the truth rather than a cost.
+ *
+ * `1.45` is `TERRAIN_SUN_IRRADIANCE`, the same literal the terrain and the
+ * carpet both inline. The trailing `PI` is the convention change the sky term
+ * explains above, and it is what makes the carpet's explicit `albedo *`
+ * implicit here.
+ *
+ * ============ THE ONE TERM THAT IS NOT THE CARPET'S, AND WHY ============
+ *
+ * The carpet closes with `mix(shadow, 1.0, 0.35)`, so a blade under a cascade
+ * keeps 35 per cent of its glow. THIS SHADER CANNOT READ THAT SHADOW. The
+ * carpet is a `ShaderMaterial` and samples the cascades itself; a stock
+ * `MeshStandardMaterial` in three r185 exposes no shadow factor to a splice.
+ * `getShadowMask()` is defined only by `shadowmask_pars_fragment`, which
+ * `meshphysical` does not include (checked in node_modules, not assumed -- the
+ * first attempt used it and the whole build went to `VALIDATE_STATUS false`),
+ * and `getShadow()` itself takes a five-argument r166+ signature plus a choice
+ * of WHICH of the three cascades to sample, which is a per-version, per-rig
+ * hard-coding this file should not own.
+ *
+ * So the factor is a CONSTANT, and it is the carpet's own shadowed floor rather
+ * than 1: a foliage prop glows by the amount a SHADED blade of carpet grass
+ * glows, everywhere, instead of by the amount a SUNLIT one does. That is the
+ * conservative direction of the two. It costs the sunlit crown 65 per cent of
+ * the effect it could have had, and it buys the guarantee that a fern on a
+ * shadowed forest floor cannot light itself, which is the artefact that would
+ * have been visible in exactly the hero frame this lane is judged on.
+ * `?foliagetrans=` sweeps it if a later lane gets the real shadow.
+ */
+const OF_TRANS_SHADOW = '0.35';
+const TRANS = /* glsl */`
+  {
+    vec3 ofTSd = normalize(uSunDir);
+    vec3 ofTPm = cameraPosition - uBodyCenter;
+    vec3 ofTSunT = uAtmosOn > 0.5
+      ? ofAtmoSunTransmittance(ofTPm, ofTSd, 3) : vec3(1.0);
+    vec3 ofTN = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+    vec3 ofTRd = -normalize((vec4(normalize(vViewPosition), 0.0) * viewMatrix).xyz);
+    float ofTWrap =
+      max((dot(ofTN, ofTSd) + uFolTrans.x) / (1.0 + uFolTrans.x), 0.0);
+    float ofTFwd = pow(max(dot(ofTRd, ofTSd), 0.0), 3.0);
+    irradiance += uFolTrans.y * (ofTWrap * 0.35 + ofTFwd * 0.65)
+      * ofTSunT * 1.45 * ${OF_TRANS_SHADOW} * PI;
+  }
+`;
+
+
 /** Anchors that went missing, so a three upgrade that renames a chunk is a
  *  reported number rather than a term that quietly stopped existing. */
 const misses: string[] = [];
@@ -217,13 +310,15 @@ interface Splicable {
  * having their existing hook call it. Both anchors put their include back, so
  * neither splice can eat the other's and the order between them is free.
  */
-export function injectPropSkyAmbient(shader: Splicable): void {
+export function injectPropSkyAmbient(shader: Splicable,
+                                    foliage = false): void {
   if (!PROP_SKY_INSTALLED) return;
   for (const k of Object.keys(BUNDLE)) shader.uniforms[k] = BUNDLE[k];
   const before = shader.fragmentShader;
+  if (foliage) spliceTrans++;
   shader.fragmentShader = shader.fragmentShader
     .replace(F_COMMON, `${F_COMMON}\n${ATMOSPHERE_PARS}\n${DECL}`)
-    .replace(F_LIGHTS, `${F_LIGHTS}\n${TERM}`);
+    .replace(F_LIGHTS, `${F_LIGHTS}\n${TERM}${foliage ? TRANS : ''}`);
   if (shader.fragmentShader === before) { misses.push('both anchors'); return; }
   if (!shader.fragmentShader.includes('ofSkyAmb')) misses.push(F_LIGHTS);
   if (!shader.fragmentShader.includes('ofAtmoScatter')) misses.push(F_COMMON);
@@ -240,7 +335,11 @@ export function injectPropSkyAmbient(shader: Splicable): void {
  * per batch is a fresh program per batch (`PropWind` and `RockShader` both
  * carry this note; it is repeated because it is silent and expensive).
  */
-function hook(shader: Splicable): void { injectPropSkyAmbient(shader); }
+function hook(shader: Splicable): void { injectPropSkyAmbient(shader, false); }
+/** The same, for a batch whose role is a plant. See `TRANS`. */
+function hookFoliage(shader: Splicable): void {
+  injectPropSkyAmbient(shader, true);
+}
 
 /**
  * Install the standalone hook, and ONLY where the slot is free. Returns false
@@ -248,13 +347,15 @@ function hook(shader: Splicable): void { injectPropSkyAmbient(shader); }
  * is expected to chain `injectPropSkyAmbient` itself, and the counters below
  * are what say whether it did.
  */
-export function applyPropSkyAmbient(m: THREE.Material, tag: string): boolean {
+export function applyPropSkyAmbient(m: THREE.Material, tag: string,
+                                    foliage = false): boolean {
   if (!PROP_SKY_INSTALLED) return false;
   if (m.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile) {
     chained.push(tag);
     return false;
   }
-  m.onBeforeCompile = hook as unknown as THREE.Material['onBeforeCompile'];
+  const fn = (foliage ? hookFoliage : hook) as unknown;
+  m.onBeforeCompile = fn as THREE.Material['onBeforeCompile'];
   m.needsUpdate = true;
   installed.push(tag);
   return true;
@@ -262,6 +363,7 @@ export function applyPropSkyAmbient(m: THREE.Material, tag: string): boolean {
 
 const installed: string[] = [];
 const chained: string[] = [];
+let spliceTrans = 0;
 
 /**
  * The probe surface, and it publishes the three things a vacuous green would
@@ -272,13 +374,18 @@ export function propSkyState(): {
   scale: number; installedFlag: boolean; flagPresent: boolean;
   published: boolean; spliced: number;
   installed: string[]; chained: string[]; misses: string[];
-  skyAmbient: number;
+  skyAmbient: number; folWrap: number; folGain: number;
+  folFlagPresent: boolean; folPrograms: number;
 } {
   return {
     scale: SCALE, installedFlag: PROP_SKY_INSTALLED, flagPresent: RAW !== null,
     published, spliced,
     installed: [...installed], chained: [...chained], misses: [...misses],
     skyAmbient: BUNDLE.uSkyAmbient.value as number,
+    folWrap: FOL_WRAP, folGain: FOL_GAIN, folFlagPresent: FOL_RAW !== null,
+    // Programs the translucency actually reached. Zero here with a nonzero
+    // gain is the vacuous green: the term is configured and in no shader.
+    folPrograms: spliceTrans,
   };
 }
 
