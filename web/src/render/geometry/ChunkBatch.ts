@@ -18,6 +18,8 @@
 
 import * as THREE from 'three';
 import type { ChunkBlobLayout, ChunkBlobViews } from '../../world/ChunkFormat.js';
+import type { Vec3d } from '../../world/PlanetBody.js';
+import { fillCanopyIndex } from './ChunkCanopy.js';
 import type { SharedIndex } from './SharedIndex.js';
 
 /** three's per-geometry record inside BatchedMesh. Private there, used here. */
@@ -37,7 +39,8 @@ interface BatchedPrivate {
   _visibilityChanged: boolean;
 }
 
-const ATTRS = ['position', 'normal', 'uv', 'aBiome', 'aHeight', 'aFadeT0'] as const;
+const ATTRS = ['position', 'normal', 'uv', 'aBiome', 'aHeight', 'aFadeT0',
+  'aCanopy'] as const;
 
 /** The pooled attribute set, allocated once as the template every slot copies. */
 function templateGeometry(verts: number, index: SharedIndex): THREE.BufferGeometry {
@@ -48,6 +51,11 @@ function templateGeometry(verts: number, index: SharedIndex): THREE.BufferGeomet
   g.setAttribute('aBiome', new THREE.BufferAttribute(new Uint8Array(verts * 4), 4, false));
   g.setAttribute('aHeight', new THREE.BufferAttribute(new Float32Array(verts), 1));
   g.setAttribute('aFadeT0', new THREE.BufferAttribute(new Float32Array(verts), 1));
+  // RN-2265. The canopy area index. A seventh section, written by the CLIENT
+  // rather than by /core: the field is world-gen's `canopyWeight` and the
+  // client is where world-gen's TypeScript lives, so nothing crosses the wasm
+  // boundary and the chunk wire format (ChunkFormat.ts) is untouched.
+  g.setAttribute('aCanopy', new THREE.BufferAttribute(new Float32Array(verts), 1));
   // Passing the REAL index means addGeometry's own copy loop writes the correct
   // vertexStart-offset triangles for every slot, so a chunk that does not need
   // the mirrored winding never touches the index buffer again.
@@ -65,6 +73,8 @@ export class ChunkBatch extends THREE.BatchedMesh {
   /** Which winding each slot currently carries, so a re-upload is skipped. */
   private readonly flipped: Uint8Array;
   private readonly m4 = new THREE.Matrix4();
+  /** RN-2265. Each slot's 64-bit body-frame anchor, retained for the refill. */
+  private readonly anchors: Float64Array;
 
   constructor(
     capacity: number, layout: ChunkBlobLayout, index: SharedIndex,
@@ -76,6 +86,7 @@ export class ChunkBatch extends THREE.BatchedMesh {
     this.index = index;
     this.name = name;
     this.flipped = new Uint8Array(capacity);
+    this.anchors = new Float64Array(capacity * 3);
     // The batch spans every resident chunk, so an object-level frustum test is
     // meaningless; per-INSTANCE culling (on by default) is the one that matters.
     this.frustumCulled = false;
@@ -94,9 +105,17 @@ export class ChunkBatch extends THREE.BatchedMesh {
     this.info = this.priv._geometryInfo;
   }
 
-  /** Bytes this batch holds on the GPU: vertex sections plus its index buffer. */
+  /**
+   * Bytes this batch holds on the GPU: vertex sections plus its index buffer.
+   *
+   * 32 and not 28 since RN-2265: position 12 + normal 3 + uv 4 + aBiome 4 +
+   * aHeight 4 + aFadeT0 4 is 31, padded to 32 by the aCanopy float, which is
+   * therefore free in practice on any driver that aligns a vertex to four
+   * bytes. Counted honestly at 4 anyway: 1,217 verts x 4 B x 128 slots x two
+   * batches is 1.25 MB, against the pool's own 12.6 MB of retained blobs.
+   */
   get bytes(): number {
-    return this.capacity * (this.verts * 28 + this.index.indexCount * 4);
+    return this.capacity * (this.verts * 32 + this.index.indexCount * 4);
   }
 
   /**
@@ -105,12 +124,21 @@ export class ChunkBatch extends THREE.BatchedMesh {
    * when the winding actually changes (three of /core's six cube faces are
    * left-handed; see SharedIndex).
    */
-  upload(slot: number, src: ChunkBlobViews, boundingRadiusM: number): void {
+  upload(slot: number, src: ChunkBlobViews, boundingRadiusM: number,
+    anchor: Vec3d): void {
     this.write(slot, 'position', src.position);
     this.write(slot, 'normal', src.normal);
     this.write(slot, 'uv', src.uv);
     this.write(slot, 'aBiome', src.biome);
     this.write(slot, 'aHeight', src.height);
+    // RN-2265. The anchor is RETAINED because the canopy index has to be
+    // re-derived after `EdgeStitch` moves an edge vertex, and `stitched()` has
+    // no anchor of its own. Keeping the anchor beside the slot is also what
+    // makes that re-derivation impossible to forget.
+    this.anchors[slot * 3] = anchor.x;
+    this.anchors[slot * 3 + 1] = anchor.y;
+    this.anchors[slot * 3 + 2] = anchor.z;
+    this.fillCanopy(slot, src.position, src.height, src.biome);
     const flip = this.index.needsFlip(src.position, src.normal) ? 1 : 0;
     if (flip !== this.flipped[slot]) { this.flipped[slot] = flip; this.writeIndex(slot, flip === 1); }
     const info = this.info[slot];
@@ -170,10 +198,40 @@ export class ChunkBatch extends THREE.BatchedMesh {
     return (a.array as Float32Array).subarray(s, s + this.verts);
   }
 
-  /** Re-flag the two attributes edge stitching writes through the subarrays. */
+  /**
+   * Re-flag the two attributes edge stitching writes through the subarrays.
+   *
+   * RN-2265: and RE-DERIVE the canopy index, because the stitch has just moved
+   * edge vertices onto a coarser neighbour's lattice. Skipping this would leave
+   * one vertex row carrying the field sampled at its PRE-SNAP position while
+   * the coarse neighbour carries it at the post-snap one, i.e. a step in the
+   * treeline along every 2:1 depth boundary in the frame -- exactly the seam
+   * the "evaluate at world position, filter nothing" rule exists to avoid.
+   */
   stitched(slot: number): void {
     this.write(slot, 'position', null);
     this.write(slot, 'aHeight', null);
+    this.fillCanopy(slot, this.positions(slot), this.heights(slot),
+      this.biomes(slot));
+  }
+
+  /** Live view of the slot's per-vertex biome record, for the canopy refill. */
+  private biomes(slot: number): Uint8Array {
+    const a = this.geometry.getAttribute('aBiome') as THREE.BufferAttribute;
+    const s = this.info[slot].vertexStart * 4;
+    return (a.array as Uint8Array).subarray(s, s + this.verts * 4);
+  }
+
+  private fillCanopy(slot: number, position: Float32Array, height: Float32Array,
+    biome: Uint8Array): void {
+    const a = this.geometry.getAttribute('aCanopy') as THREE.BufferAttribute;
+    const off = this.info[slot].vertexStart;
+    const dst = (a.array as Float32Array).subarray(off, off + this.verts);
+    fillCanopyIndex(dst, position, height, biome, this.verts,
+      this.anchors[slot * 3], this.anchors[slot * 3 + 1],
+      this.anchors[slot * 3 + 2]);
+    a.needsUpdate = true;
+    a.addUpdateRange(off, this.verts);
   }
 
   /** Draw-range indices for one slot, for the agent-facing chunk dump. */

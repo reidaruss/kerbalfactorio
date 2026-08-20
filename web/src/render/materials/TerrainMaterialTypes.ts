@@ -41,5 +41,12 @@ export interface TerrainMaterials {
   readonly far: THREE.ShaderMaterial;
   /** Push the per-frame globals. Per-chunk uniform state stays at zero. */
   update(bodyCenterEngine: THREE.Vector3, simTimeSecs: number): void;
+  /**
+   * RN-2265. The canopy impostor tier's realised ground reach, metres, or 0
+   * when that tier is not running. Written every frame from `Scatter
+   * .canopyReachOutM`; see TerrainTreeline.ts for why the material may not
+   * derive it for itself.
+   */
+  setTreelineReach(reachM: number): void;
   dispose(): void;
 }

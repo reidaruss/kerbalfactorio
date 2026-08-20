@@ -27,6 +27,8 @@ import { fineMFromQuery, horizonOccFromQuery, reliefCellFromQuery,
   reliefCellNoiseFromQuery, reliefGradFromQuery, reliefGradUvFromQuery,
   reliefSwingFromQuery } from './TerrainReliefQuery.js';
 import type { TerrainMaterialOptions } from './TerrainMaterialTypes.js';
+import { onCanopyTone, treelineAmpFromQuery, treelineMottleFromQuery }
+  from './TerrainTreeline.js';
 import { SPLAT_FADE_ALBEDO, SPLAT_FADE_NORMAL, SPLAT_MAPS }
   from './TerrainSplat.js';
 
@@ -205,6 +207,20 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
   // as an array, so TerrainProgram's destructure can name-check each one.
   const [splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow] =
     SPLAT_MAPS.map((f) => groundTexture(f));
+  // RN-2265. THE FAR TREELINE: (amp, mottle, realised ground reach). The third
+  // component is written every frame from the SCATTER's own reach (see
+  // TerrainMaterials.setTreelineReach) and starts at 0, which is "the canopy
+  // tier is not running", so a frame taken before the first scatter update
+  // shows the pre-lane ground rather than a treeline nothing is handing over
+  // from. Shared by reference into both materials for splatFarAmp's reason.
+  const treeline: THREE.IUniform<THREE.Vector3> = {
+    value: new THREE.Vector3(
+      treelineAmpFromQuery(), treelineMottleFromQuery(), 0),
+  };
+  const treelineTone: THREE.IUniform<THREE.Vector3> = {
+    value: new THREE.Vector3(),
+  };
+  onCanopyTone((r, g, b) => { treelineTone.value.set(r, g, b); });
   const wetBand = wetBandFromQuery(o.water);
   const wetDir = new THREE.Vector3(
     o.water?.dirX ?? 0, o.water?.dirY ?? 1, o.water?.dirZ ?? 0);
@@ -219,7 +235,7 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     fineLum, reliefGrad, reliefGradUv, artFineM, reliefFineM, artCoarseM,
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
-    splatAmp, splatFade, splatFarAmp,
+    splatAmp, splatFade, splatFarAmp, treeline, treelineTone,
     splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,
   };
 }

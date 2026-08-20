@@ -15,6 +15,7 @@ import { ATMOSPHERE_PARS } from './Atmosphere.glsl.js';
 import { TERRAIN_ART_PARS } from './TerrainArt.glsl.js';
 import { CASCADE_GLSL } from './CascadeShadow.glsl.js';
 import { BAYER } from './TerrainDither.glsl.js';
+import { TERRAIN_TREELINE_PARS } from './TerrainTreeline.glsl.js';
 import type { DepthPolicy } from '../DepthPolicy.js';
 
 export function terrainFragPars(depth: DepthPolicy): string {
@@ -173,6 +174,16 @@ export function terrainFragPars(depth: DepthPolicy): string {
     uniform float uMetresPerUnit;
     uniform vec3 uCascadeFar;
     uniform float uSkyAmbient;
+    // RN-2265. THE FAR TREELINE. x amplitude (?treeline=0 / ?treelineamp=),
+    // y mottle amplitude, z the instance tier's REALISED ground reach in
+    // metres, published every frame by Scatter itself rather than re-derived
+    // here (see TerrainTreeline.ts's handover note). z <= 0 is "the canopy tier
+    // is off", which turns this term off with it: ?canopy=0 stays the exact
+    // no-canopy-anywhere frame RN-2225 measured against.
+    uniform vec3 uTreeline;
+    // The canopy CARD's own mean rendered albedo, linear, read off the live
+    // material by SurfaceBind rather than copied. See TerrainTreeline.ts.
+    uniform vec3 uTreelineTone;
     varying vec3 vBiomeColor;
     varying vec4 vMatW;
     varying vec4 vRelW;
@@ -189,7 +200,13 @@ export function terrainFragPars(depth: DepthPolicy): string {
     varying float vFade;
     varying float vViewZ;
     varying vec2 vChunkUv;
+    // RN-2265. The canopy AREA INDEX at this fragment: world-gen's own
+    // canopyWeight times the biome's crown area per unit ground, evaluated
+    // per terrain vertex on the CPU (ChunkCanopy.ts) because that field's
+    // integer-lattice hash is not expressible in GLSL ES 1.00.
+    varying float vCanopy;
     ${BAYER}
     ${CASCADE_GLSL}
+    ${TERRAIN_TREELINE_PARS}
 `;
 }

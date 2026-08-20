@@ -13,6 +13,8 @@
 // The cut below it lands on the line after region 4's `#endif`, never inside a
 // preprocessor region.
 
+import { TERRAIN_TREELINE_BLOCK } from './TerrainTreeline.glsl.js';
+
 export const TERRAIN_FRAG_ALBEDO = /* glsl */`
       // GROUND TEXTURE (RN-78): RN-77's tiling fields on the chunk UV at
       // integer repeats per quad, mixed by the per-biome weights (the whole
@@ -330,6 +332,7 @@ export const TERRAIN_FRAG_ALBEDO = /* glsl */`
         vec4 rel = relWa * relA + relWb * relB;
       #endif
 
+${TERRAIN_TREELINE_BLOCK}
       // /core's maxRelief is a nominal 6,000 m on Forge but baseHeight peaks
       // above it (6,520 m measured), so the snowline is expressed past 1.0
       // rather than clamped, and it never reaches pure white.

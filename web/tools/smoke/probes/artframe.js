@@ -735,6 +735,20 @@
         hzBand: [0.2000, 0.3500, 0.8000, 0.3750],
         under: [0.3500, 0.8500, 0.6500, 0.9800],
         shadowStep: [0.1875, 0.5900, 0.5625, 0.6444],
+        // RN-2265. THE HANDOVER PAIR, and the two y bounds are SOLVED from the
+        // pose rather than found by looking. This camera is at 1,200 m with a
+        // 60 degree vertical field and a 14 degree pitch, so a pixel at
+        // vertical NDC v looks down at depression 14 - atan(v tan 30), and the
+        // ground it hits is h / tan(depression) away. Solving that at the
+        // canopy tier's realised reach (canopyReachM(3500, 1200) = 3,500 m)
+        // gives y = 0.5746, and the two rectangles are the equal-height bands
+        // either side of it: `treeIn` is ground from 3,500 m in to 3,086 m,
+        // where the impostors are still being drawn at their 0.16 edge weight,
+        // and `treeOut` is 3,500 m out to 4,027 m, where there has never been
+        // a tree of any kind. If the far treeline hands over, these two read
+        // the same; if it does not, the boundary is a step between them.
+        treeIn: [0.2000, 0.5746, 0.8000, 0.6100],
+        treeOut: [0.2000, 0.5392, 0.8000, 0.5746],
       },
       why: 'the MID-ALTITUDE FLIGHT VIEW at 1,200 m over FOREST, not the spawn',
     },

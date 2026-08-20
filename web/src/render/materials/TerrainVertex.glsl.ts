@@ -20,6 +20,13 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     attribute vec4 aBiome;
     attribute float aHeight;
     attribute float aFadeT0;
+    // RN-2265. The canopy area index, one float per vertex, written on the CPU
+    // by ChunkCanopy.fillCanopyIndex from world-gen's own canopyWeight. It is
+    // an attribute and not a uniform because it varies WITHIN a chunk (a
+    // 165 m stand against a 115 m cell at the handover), and it is CPU-side
+    // because ScatterTuning's field is an integer-lattice hash and this
+    // material compiles as GLSL ES 1.00, which has no integer type.
+    attribute float aCanopy;
     uniform vec3 uBiomeColor[${BIOME_COUNT}];
     uniform vec4 uBiomeMat[${BIOME_COUNT}];
     uniform vec4 uBiomeRelief[${BIOME_COUNT}];
@@ -41,6 +48,7 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     varying float vFade;
     varying float vViewZ;
     varying vec2 vChunkUv;
+    varying float vCanopy;
 
     void main() {
       #include <batching_vertex>
@@ -79,6 +87,13 @@ export function terrainVertexShader(depth: DepthPolicy): string {
       // quarter of a ground pixel at 2 m, against pM's quantum of nearly nine
       // pixels there. No new attribute, no upload, no CPU work.
       vChunkUv = uv;
+      // Straight through. The nonlinearity (Beer-Lambert) is deliberately in
+      // the FRAGMENT and not here: it depends on the per-pixel viewing angle,
+      // and interpolating a cover fraction across a triangle that spans a
+      // kilometre of depression angle would be wrong by tens of per cent at
+      // the horizon. The area index is the linear quantity, so it is the one
+      // that may be interpolated.
+      vCanopy = aCanopy;
       // The SIGN of aFadeT0 selects the half of the dissolve: positive is the
       // incoming chunk fading in, negative is the outgoing one fading out. One
       // attribute, written once, carries both.

@@ -1,6 +1,6 @@
 # Rendering & Graphics: Master Controller Context
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-20 (RN-2245 to RN-2249, `lane/crown-asset`: the far tier's impostor card wears a CROWN texture (`canopy`, a third card family) instead of the conifer frond it shared with every bough card in the game -- at the 3x3 read a distant tree goes from a 20-count flat chip to a 127-count top-lit crown, for zero triangles, zero instances and zero draw calls. Full record in section 2.16. NOTE ON THIS LINE ITSELF, kept from RN-2244: it had grown to 280 KB of concatenated lane summaries; it is a POINTER and every lane replaces it rather than appending, because a header line is not a log.) (RN-2260 to RN-2264, `lane/pool-ceiling`: the canopy prop pool has its own ceiling now, 131,072 instead of sharing the 65,536 memory guard every other batch uses, because the card merge (2.15) concentrated the whole canopy tier onto ONE material batch and a real FOREST-site aerial frame asks it for 77,998 -- 12,462 past the old ceiling, 16% of the stand silently not drawn. A capped hero frame can no longer pass as valid: `artframe.js` now reads the pool's own refused count and fails the frame rather than reporting `valid: true` over a truncated stand. Full record in section 2.16, keeping this line short per 2.15.6's own note.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-20 (RN-2265 to RN-2269, `lane/far-ground`: the far aerial ground is a LANDSCAPE again. The canopy impostor tier reaches 3,500 m from a 1,200 m eye and the horizon is 37,947 m, so 91 per cent of an aerial frame was past every tree in the world and read as bare biome palette. The terrain material now carries the canopy itself, driven by a per-vertex attribute holding world-gen's OWN `canopyWeight` -- CPU-side because that field's integer-lattice hash cannot be written in GLSL ES 1.00 -- through Beer-Lambert on the viewing angle, which is simultaneously the handover: the material paints exactly the density the instances are missing, so there is no second fade constant and no boundary. Zero triangles, zero instances, zero draw calls. Full record in section 2.18. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
 
@@ -5234,3 +5234,360 @@ proved by rebuild rather than argued (texgen: 55 of 55 pre-existing PNGs
 byte-identical; Blender: two passes, one sha256). `npx tsc --noEmit`, `vite
 build`, `npm run check` 8/8 as separate steps before push. Branch
 `lane/crown-asset`, pushed, **not merged to main**.
+
+---
+
+## 2.18 THE FAR AERIAL GROUND (RN-2265 to RN-2269, 2026-08-20, `lane/far-ground`)
+
+Base `origin/main` at `6e094c88`. One owned `vite preview` on 5691, a sentinel
+written into that dist and fetched back over the wire before every probe round
+(`RN2265-D-1787231875721` on the arm every published number comes from), killed
+by the PID `netstat` named. Routed by the crown-asset verifier's closing
+verdict: *the stand reads as woods and the world does not read as forested,
+because the trees run out at about a kilometre and a half while the frame runs
+to a 38 km horizon.*
+
+### 2.18.1 The defect, in one line of arithmetic
+
+`canopyReachM(3500, 1200)` is **3,500 m**. The horizon from a 1,200 m eye on
+Forge is `sqrt(2 R h)` = **37,947 m**. So **91 per cent of the ground in an
+aerial frame is past every tree in the world**, and it reads as the bare biome
+palette however dense WG-220's tables get. From a standing eye the reach is
+1,400 m, which is the "kilometre and a half" the verifier saw.
+
+### 2.18.2 (a) not (b), and the refusal is arithmetic rather than taste
+
+**A COARSER FOURTH IMPOSTOR TIER IS REFUSED.** One card per 165 m stand cell out
+to 10 km is `pi * 1e8 / 165^2` = 11,500 cards, which is affordable; out to the
+38 km horizon it is **166,000**, which is more than the canopy pool RN-2260 had
+to double to hold 78,000. And it cannot be PLACED at any count: past 5,259 m of
+eye distance the resident terrain is depth 7, a prop is positioned by bilinear
+interpolation inside one mesh cell, and RN-2230 refused that band **by name**
+because 230 m of quantisation puts a stand on the wrong side of a valley. A
+material term has no such floor, costs no instance and no draw call, and covers
+the whole horizon rather than the first quarter of it. Measured after the fact
+and consistent with the refusal: `triangles` 251,873 and `calls` 27 are
+**identical to the digit in both arms** at `forestair`, 225,589 / 26 at
+`flyover`, and `programs` 53 / 41 likewise -- no new permutation, because the
+isolator is a uniform and not a define.
+
+### 2.18.3 THE FIELD IS EVALUATED ON THE CPU, AND THAT IS FORCED, NOT PREFERRED
+
+`ScatterTuning.standAt` / `groveAt` are trilinear value noise over an **integer
+lattice hash** (`ihash3`: three `Math.imul`s, an xor and two unsigned shifts,
+all modulo 2^32). The terrain material compiles as **GLSL ES 1.00** --
+`TerrainProgram.makeTerrainMaterial` builds a plain `ShaderMaterial` with
+`varying`/`texture2D` source and no `glslVersion`, and TerrainArt.glsl says so in
+its own comment -- and ESSL 1.00 has **no integer type and no bitwise
+operators**. A 32-bit wrapping multiply is not expressible there and a highp
+float's 24 mantissa bits cannot emulate one. **An exact GLSL mirror of that
+field is not awkward, it is not writable.**
+
+That is load-bearing rather than trivia, because the whole point is that the
+material's clearings are the INSTANCE tier's clearings. A statistically-similar
+substitute field would paint a green wash across a clearing the player can see
+trees standing around, at exactly the ranges where a 165 m stand is still ten to
+twenty pixels wide.
+
+So `ChunkCanopy.fillCanopyIndex` calls world-gen's OWN `canopyWeight(altM,
+standAt(w), groveAt(w))` at every terrain vertex, at the same `anchor +
+chunk-local position` coordinate `ScatterSample.sampleChunk:199-213` calls them
+at, and `ChunkBatch` ships the result as a seventh per-vertex attribute
+(`aCanopy`, one float, `varying float vCanopy`). Four consequences worth having:
+
+1. **The sampling rate is the terrain mesh's own**, i.e. 115 m cells at depth 8
+   across the 3.5 km handover and 1.8 km at the 38 km horizon, so the field is
+   sampled finely where the camera is and coarsely where the pixels are. The
+   quadtree already pays for that.
+2. **Chunk edges agree by construction**, because a vertex's value is a pure
+   function of its world position. NO filtering is applied for exactly that
+   reason: a smoothing pass, or a depth-dependent lowpass, would draw a line
+   along every chunk seam and along every 2:1 depth boundary.
+3. `EdgeStitch` snaps edge vertices AFTER upload, so `ChunkBatch.stitched`
+   **re-derives** the attribute from the snapped positions. Without that, one
+   vertex row would carry the field at its pre-snap position while the coarse
+   neighbour carried it at the post-snap one -- the same seam by another route.
+   The 64-bit anchor is retained per slot for this.
+4. **The chunk WIRE FORMAT is untouched.** `ChunkFormat.ts` and `/core` do not
+   know about this; the attribute is written by the client, on the render side,
+   from TypeScript world-gen already ships.
+
+**STATED LIMIT, and it is the honest one.** `standAt`'s second octave is
+`STAND_DETAIL_M` = 52 m (period ~104 m) and is therefore below the mesh's
+Nyquist point at every depth this term is visible at. It contributes as extra
+raggedness on a wood's margin rather than as a resolved feature. It does not
+crawl -- it is a function of world position, so it is STATIC aliasing, which
+reads as landscape -- and it is 0.28 of `standAt` against the 165 m octave's
+0.72, which IS resolved (a 330 m dominant period against 115 m cells is 2.9
+samples per period).
+
+### 2.18.4 BEER-LAMBERT IS THE MECHANISM, AND IT IS ALSO THE HANDOVER
+
+The attribute is not a coverage fraction, it is a **canopy AREA INDEX**:
+`mu = sum(density_per_km2 * crownArea_m2) / 1e6`, crown plan area per unit
+ground inside a closed stand, times `canopyWeight` in [0,1].
+`ChunkCanopy.BIOME_CANOPY_MU` derives it LIVE from `Registry.BIOME_PROPS` (a
+copied table is a constant copied from the thing it watches) against the three
+crown ellipses `contracts.json` publishes (pine 3.85 x 2.55, fir 2.9 x 2.2,
+broadleaf 8.4 x 10.5 -> 7.711 / 5.011 / 69.272 m2). **Measured, printed by the
+digest tool:** Plains **0.126062**, Forest **1.013983**, Hills **0.319518**,
+Mountains **0.019777**, and exactly 0.000000 for Ocean, Beach, Polar and the
+three lunar biomes. Forest passing 1.0 is why an INDEX and not a fraction:
+crowns overlap.
+
+For randomly placed crowns the transmittance of the layer along a ray at
+depression `s` is `exp(-mu / s)`, so the full canopy covers `1 - exp(-mu/s)` and
+the instances at `canopyDistanceWeight` `w` cover `1 - exp(-mu w / s)`. The
+terrain is drawn BEHIND the cards, so as a fraction of the ground the instances
+left visible it has to supply
+
+```
+(Cfull - Cinst) / (1 - Cinst)  =  1 - exp(-mu (1 - w) / s)
+```
+
+**the same law on the density the instances are MISSING.** That single
+expression is the whole term, and it is also the whole handover:
+
+- at `w = 1` (inside `CANOPY_NEAR_FULL_M` = 690 m, the harvest ring's own outer
+  margin) it is identically **zero**, so `TreeField`'s minable trees keep their
+  ground and every walk pose is untouched by construction;
+- at `w = 0` (past the realised reach) it is the full canopy;
+- the `0.16 -> 0` step `canopyDistanceWeight` takes AT the reach is cancelled to
+  the digit by this term's own step the other way, because both are the same
+  exponential of the same product.
+
+**There is no second fade constant anywhere in this lane.** That is
+TerrainCoverFar's C4 argument arriving as an identity instead of as a curve
+somebody has to remember to keep inverted. The mirror of `canopyDistanceWeight`
+that the GLSL implements is compared against the LIVE function at module load,
+over the whole band at four reaches, and **throws** on a disagreement past 1e-9
+(`assertTreelineMatchesScatter`, on `assertFarCoverMatchesGrass`'s precedent).
+
+**The angle is what makes a horizon read as forest, and nothing is scaled to
+make it happen.** Hills' 0.32 index reads as 26 per cent cover at three
+kilometres and as a closed wall at twenty, because a wood seen edge-on is solid
+however open it is in plan. `TREE_SIN_MIN` 0.02 rad floors the depression only
+for a ray exactly tangent to the datum (the horizon ground itself is at 1.81
+degrees, sin 0.0316, so the floor never binds on drawn ground).
+
+### 2.18.5 The green is READ OFF THE CARD, not copied
+
+`SurfaceBind.apply` finalises the canopy material's colour (palette base,
+divided by `albedo_mean_linear`, then `applyFoliageTone`) and publishes it to
+`TerrainTreeline` **in the same statement**. What the terrain stores is
+`color * albedoMean`, the card's MEAN RENDERED albedo, because the divide exists
+so the card texture's own mean puts the product back on the palette and a
+terrain fragment has no card texture to supply that mean.
+
+**Read back off the live page rather than asserted:** the canopy material is
+`(0.20533, 0.35420, 0.16551)` and `__ofTerrainArt.treeline()` reports the
+terrain's tone as **`(0.089977, 0.155212, 0.072528)`, `live: true`**, i.e. the
+publish fired and the ground is not painting the fallback. That read-back exists
+because a term whose colour is read off another subsystem has one new failure
+mode -- the publish never fires -- and a plausible green is invisible in a frame.
+There is no canopy hex in this lane at all, which is the point: RN-2249 gave the
+crown card `Leaf`'s hex to the digit precisely so this seam could not be a
+colour step, and a copy here would have re-opened it.
+
+The `?treelinemottle=` break-up is `ofArtVnoise` at WG-223's own 34 m crown
+scale, retired on the material's standard `0.125 -> 0.333 of the wavelength`
+footprint curve. **Honest scope:** that curve puts it fully out by a ~11 m
+footprint, which at this pose is about 2.5 km, so the mottle is a HANDOVER-BAND
+term and the structure further out is world-gen's stand and grove field, which
+is the correct authority for it anyway. It is an approximation of `crownAt` and
+not `crownAt` itself, and that is allowed for the one stated reason: it is
+texture, not placement, and there is nothing left for it to line up with.
+
+### 2.18.6 THE BOUNDARY PROOF, and the instrument had to be solved rather than eyeballed
+
+`forestair` gains two rectangles whose y bounds are SOLVED from the pose: at
+1,200 m with a 60 degree vertical field and a 14 degree pitch, a pixel at
+vertical NDC `v` looks down at `14 - atan(v tan 30)` degrees and hits ground
+`h / tan(depression)` away, so the realised reach (3,500 m) is at **y =
+0.5746**. `treeIn` is the band from there in to 3,086 m, where impostors are
+still drawn at their 0.16 edge weight; `treeOut` is the band from there out to
+4,027 m, where there has never been a tree of any kind.
+
+**A raw step between them is NOT the measurement**, because the two bands are at
+different ranges and the pose's own haze gradient runs across them. So a third
+arm was run: `?canopy=0`, no vegetation of any kind, which is the gradient the
+pose has anyway. Three fresh processes per arm, every reading bit-identical to
+two decimals within an arm:
+
+| arm | treeIn luma | treeOut luma | step | residual vs bare |
+|---|---|---|---|---|
+| `?canopy=0` (no vegetation) | 90.25 | 96.73 | **6.48** | -- |
+| `?treeline=0` (instances only) | 90.35 | 96.73 | **6.38** | **-0.10** |
+| shipped | 100.51 | 106.43 | **5.92** | **-0.56** |
+
+**Both bands move by about ten counts and the DIFFERENTIAL between them moves by
+0.56**, against a 6.48-count gradient the pose carries with nothing planted at
+all. Ninety-four per cent of what the term adds is common-mode across the
+boundary, and the sign is toward LESS step, not more. That is a handover and not
+a hole. The `-0.10` row is worth keeping too: the instance edge at its own reach
+was already invisible at this site, because the 0.16 edge weight leaves almost
+nothing in the last band -- which is the thing `CANOPY_EDGE_W` was put there to
+do, confirmed here from the outside for the first time.
+
+### 2.18.7 The numbers, `?treeline=0` one flag apart, fresh process each
+
+**`forestair`** (Forest, 1,200 m, `poolRefused` 0 both arms, `valid` true both):
+`box` luma 91.26 -> **102.97**, iqr 25.28 -> **31.86**; `hzBand` 171.62 ->
+**177.93**; `under` iqr 4.93 -> **9.29**; `shadowStep` iqr 12.43 -> **25.36**.
+`skyBand` **153.69 both arms, rgb identical to the digit** -- the negative
+control. Every scatter counter identical (`canopyProps` 77,998, `canopyCells`
+4,909, `canopyPlanetMean` 0.1786).
+
+**`flyover`** (Hills): `box` luma 125.04 -> **128.60**, iqr 48.89 -> **34.61**;
+`shadowStep` luma 112.19 -> **124.24**, iqr 35.69 -> **19.35**; `under` and
+`skyBand` unmoved (98.95 -> 98.92, 149.03 -> 149.03). **THE IQR FALL IS
+REPORTED AS A LEVEL RISE AT THE DARK END AND NOT AS A LOSS OF CONTRAST, because
+the percentiles say which:** on `shadowStep`, **p95 is 143.30 in BOTH arms, to
+the digit**, while p05 goes 89.09 -> 99.67 and p50 106.02 -> **126.81**. The
+bright quarter of that rectangle does not move at all; the term fills the dark
+half with canopy. **Not fully explained and recorded as such:** a p95 identical
+to two decimals across a term that moves the median by twenty counts is a
+suspiciously exact number, and this lane did not find what pins it. `?clouds=0`
+was run as a control and moved `skyBand` 149.03 -> 141.16 while leaving every
+ground rectangle bit-identical, which at least rules the cloud shadow out --
+whatever the dark band across that pose is, it is not cloud.
+
+**Walk scenarios untouched, and the WG-220 counters DO reproduce on this base:**
+`forestfloor` `propsPlaced` **41,300**, `cellsScattered` **25,655**,
+`deliveredFraction` 1.0002, `box` **22.82 / iqr 18.78 identical to the digit in
+both arms**; `meadow` `propsPlaced` **52,139**, `cellsScattered` 26,124, and
+`box` / `nearG` / `mid` / `shade` / `hzBand` / both sky rectangles **all
+identical to the digit**. Only `world` (the whole frame, which contains ground
+past 690 m) moves, by 0.08 and 0.05 counts respectively. This contradicts
+2.17.8's owed item 6, which reported those two counters as not reproducing; they
+reproduce here on `6e094c88`, matching 2.16.4.
+
+**COST, WG-189 interleaved, 3 pairs a pose, same build one flag apart:**
+`forestair` p50 median **6.5 -> 6.9 ms**, and the **0.4 ms is explicitly not
+reported as a result**: the before arm's own three readings span 0.5 ms and the
+after arm's span 1.1, so the gap is under one arm's noise. `flyover` **5.0 ->
+4.9 ms**, i.e. nothing. Triangles, calls, programs and `vramMB` identical to the
+digit in every pair.
+
+**DETERMINISM.** The PICTURE cannot prove it and that is worth recording: three
+fresh-process captures of one build return every committed rectangle
+bit-identical to two decimals and **three different PNG sha256s**
+(`093290...`, `d8d993...`, `f0b8da...`), which is NUMBERS.md's own
+same-process/fresh-process entry seen from the other side. So the FIELD is
+digested directly, by `web/tools/smoke/rn2265field.ts` (esbuild-bundled, run in
+a fresh node process): `fillCanopyIndex` over a fixed 256x256 body-frame grid
+spanning 8 km at the forestair site returns FNV-1a32 **`2a9c637e`**, mean
+**0.301646551**, min **0.012167792**, max **1.013982654**, 65,536 of 65,536
+non-zero, **identical across three fresh processes**. No texgen tile was added,
+so texgen determinism is not in play; `assets/textures/dist` is untouched.
+
+### 2.18.8 The two judgements, against "a forested world with clearings, from the air"
+
+**`forestair` (Forest, 1,200 m): MET, and this is the hero.**
+(`RN2265_forestair_{before,after}.png`.) The before frame is the one the
+verifier described: two stands of speckle in the near-left corner, and then
+nothing -- a grey-blue plate running to a bare horizon, with the only structure
+in the far two thirds being a cloud shadow. It is a forest that stops. The after
+frame has woods and clearings from the bottom of the frame to the horizon: a
+dark closed mass through the middle distance with pale open ground bitten into
+it, a chain of clearings running left across the mid-field, and the wooded read
+carrying past twenty kilometres into the haze rather than dying at three and a
+half. Crucially **there is no line where it changes hands** -- the instance
+speckle at the bottom left and the material canopy above it are the same green
+and the same clumps, which is 2.18.6 measured and 2.18.5's read-off tone in the
+picture. **Honest limits, three of them.** The far half reads a little PALE and
+a little uniform: past about 2.5 km the mottle has retired and the only
+structure is the stand field, and the aerial perspective is doing most of the
+rest. Second, the woods read LIGHTER than the ground between them, which is
+correct against the shipped assets (the cards are that green and RN-347 made the
+Forest substrate dark litter on purpose) and is the opposite of a real aerial
+photograph, where a canopy is darker than a field -- the missing piece is
+inter-crown self-shadowing, which no term in this game has yet and which is
+routed in 2.18.10. Third, the very furthest band is a colour again rather than a
+landscape: at 20 km a 165 m stand is half a pixel, and nothing but haze should
+be visible there.
+
+**`flyover` (Hills, 1,200 m): MET, and much more quietly, which is correct.**
+(`RN2265_flyover_{before,after}.png`.) Hills is 72 stems a hectare by WG-220's
+own design and its area index is 0.32 against Forest's 1.01, so the honest
+outcome is more woodland rather than a forest. Before: the instance stands run
+out and above them sits a pale plate with a hard, cascade-jagged dark band
+across it and no vegetated read at all. After: that band has become a soft
+dark-green mass that continues the woods rather than cutting them off, and there
+are faint green tones carrying up toward the horizon. It is a smaller change
+than at Forest and it should be. **Honest limit and the one thing a verifier
+should look at first:** the box iqr falls 48.89 to 34.61, which is BELOW
+2.17.5's own crown-asset figure, and the percentiles above say it is the dark
+end rising rather than the bright end being lost. It is still a real change to
+this lane's predecessor's headline number and it is stated here rather than
+buried. `?treeline=0` restores 48.89 exactly.
+
+**`vista` (Mountains, a 4.7 km ridge): the negative control, and it PASSES
+absolutely.** Every one of the eight committed rectangles -- `box`, `world`,
+`skyL`, `skyR`, `skyHz`, `hzBand`, `mid`, `nearG` -- is **bit-identical to two
+decimals across the two arms in two separate processes**. The ridge does not
+green. This is a stronger result than it looks: it is also the check on the one
+substitution this lane makes, `/core`'s `aHeight` standing in for
+`sampleChunk`'s `hypot(w) - bodyRadiusM` as the altitude fed to the treeline
+ramp. If those were not the same quantity, a 4.7 km ridge would be below the
+treeline and would be painted.
+
+### 2.18.9 Rails, and the cross-domain notes
+
+`npx tsc --noEmit`, `npx vite build` and `cd web && npm run check` run as
+SEPARATE steps with each exit status read on its own; **8 of 8**. `check:limits`
+caught this lane once and is why the shader block lives in
+`TerrainTreeline.glsl.ts` rather than in `TerrainFragAlbedo.glsl.ts`: that file's
+cap counts GLSL comment lines inside a template literal as code, and the term's
+comment took it to 437 of 400. `web/wasm/dist/*` and `test/expected.json`
+untouched; no texgen file, no Blender file, no density table, no
+`assets/textures/dist` byte. New page params `treeline`, `treelineamp`,
+`treelinemottle`, all three registered in `run.mjs`'s `PAGE_PARAMS` in the same
+commit that introduces them (RN-152's scar).
+
+**THREE FILES OUTSIDE RENDERING WERE TOUCHED AND EACH IS FLAGGED FOR ADMIN
+RATHER THAN ASSUMED:**
+
+1. `web/src/world/Scatter.ts` gains ONE public accessor,
+   `get canopyReachOutM()`, over two existing private getters. No behaviour
+   change. It exists so the material's handover reads the instance tier's OWN
+   realised reach instead of re-deriving `canopyReachM` on the render side,
+   which would be a second copy of an expression that must never disagree.
+2. `web/src/world/TerrainStream.ts`: the four `pool.upload` call sites pass
+   `view.anchor`. The anchor is REQUIRED and not optional on purpose -- an
+   upload that defaulted it to the origin would place a whole chunk's treeline
+   somewhere else on the planet with every counter reading correct.
+3. `web/src/app/Systems.ts`: one line beside the existing `s.scatter.update`,
+   pushing that reach into the material.
+
+`ScatterTuning.ts` is IMPORTED FROM AND NOT EDITED, which is what WG-223 exposed
+`crownWeightAt` and its siblings for. **Note back to world-gen, not an edit:**
+this lane consumes `canopyWeight` / `standAt` / `groveAt` per terrain vertex, so
+those three are now on a hot path in the render upload as well as in the
+scatter, and a change to their cost or their signature is a rendering break.
+
+### 2.18.10 Owed
+
+1. **INTER-CROWN SELF-SHADOWING, and it is the largest remaining lever**
+   (2.18.8). A canopy's low albedo is mostly crowns shadowing each other, and
+   nothing in this game models it: the card carries a lit-top/shaded-underside
+   ramp for ONE crown and the far material carries the card's mean. The
+   principled form is a sun-transmittance through the layer,
+   `exp(-k mu / sin(sunElev))`, which needs the sun direction in the albedo
+   block where it is not currently in scope. It would darken closed Forest and
+   leave open Hills alone, which is exactly the axis 2.18.8 is short of.
+2. **The mottle retires at about 2.5 km** (2.18.5), so the 5 to 20 km band
+   carries the stand field and nothing else. A second, coarser break-up octave
+   is the obvious answer and was NOT added here, because the grove field is
+   already at that scale and a second noise on top of it would be two answers to
+   one question.
+3. **`shadowStep`'s p95 is identical to two decimals across a term that moves
+   its median twenty counts** (2.18.7), and this lane does not know why.
+4. **The 52 m stand octave is below the mesh's Nyquist point** at every depth
+   this term is drawn at (2.18.3). Fixing it means sampling the field finer than
+   the terrain mesh, which means a texture and a chunk atlas, and it is not
+   worth that today.
+5. **`?canopy=0` now switches the far treeline off with the instance tier**, by
+   design, so the pre-RN-2225 frame is `?canopy=0` and the pre-RN-2265 frame is
+   `?treeline=0`. Two flags, two states, named here so nobody looks for one flag
+   that gives both.

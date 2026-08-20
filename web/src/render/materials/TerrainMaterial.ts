@@ -47,6 +47,7 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       near.uniforms.uTime.value = simTimeSecs;
       far.uniforms.uTime.value = simTimeSecs;
     },
+    setTreelineReach(reachM) { s.treeline.value.z = reachM; },
     dispose() { near.dispose(); far.dispose(); groundTex.value.dispose(); },
   };
 }
