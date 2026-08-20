@@ -85,8 +85,9 @@ verdict.
 Frames in `docs/screenshots/RN2065_<shot>.png`.
 
 **`station` came back as the INTERIOR again.** `captureDiag.drawEyeDistM` 4.316,
-`alpha` 0.924 (inside [0,1], so the RN-2035 clamp defect is not what did it),
-`drawnParts` 2, `staleMaxM` 0. The `yawOff: 105` framing RN-1935 chose does not
+`drawnParts` 2, `staleMaxM` 0, `alpha` 0.924 this run (alpha varies per run and
+stays inside [0,1], so the RN-2035 clamp defect is ruled out; INTERIOR is the
+stable fact). The `yawOff: 105` framing RN-1935 chose does not
 hold on this build, so **the storyline's climax destination still has no
 judgeable exterior frame**, which is section 2.8 R5 unclosed. It is out of this
 audit's scope and is re-flagged rather than re-diagnosed. The `limb` shot below
@@ -131,8 +132,10 @@ as primary evidence below; the sixth is the accepted pose and is
 - **plains** (-7.9675, 116.53189), biome 2. The single most damning frame in
   the set and the reason it is kept: the world visibly ENDS at the canopy ring
   and everything past it is one uniform dark band to a dead-flat horizon. It is
-  also **2,759,465 triangles, 71 calls, p50 32.1 ms**, at a standing eye on flat
-  ground with nothing built.
+  also **2,759,465 triangles, 71 calls**, over the 16.6 ms budget and over the
+  2.7M triangle alert on every box measured (absolute milliseconds are
+  box-and-run-dependent: this audit's p50 read 32.1 ms), at a standing eye on
+  flat ground with nothing built.
 - **forest** (-19.85, -72.7853), biome 3, 1,420,222 tris, p50 13.6 ms. Canopy
   fills the frame; also holds two detached prop fragments floating in the sky.
 - **hills2** (22.286, 108.84406). Distant snow reads as flat white paper over a
@@ -140,9 +143,12 @@ as primary evidence below; the sixth is the accepted pose and is
 - **mtn at yaw 300 and at yaw 210.** Both stand the eye on a slope facing
   uphill. Recorded because it is the trap in picking a viewpoint by elevation:
   a high site is not a high view, and the walker lands where the oracle puts him.
-- **mtn at yaw 120**, biome 5, 591,906 tris, 47 calls, p50 10.1 ms. Shipped, and
-  it is the CHEAPEST of the six by a factor of 4.7 against plains. The frame
-  with the most distance in it is not the expensive one.
+- **mtn at yaw 120**, biome 5, 591,906 tris, 47 calls. Shipped, and it is the
+  CHEAPEST of the six, at a ratio of about 4.5x against plains (absolute
+  milliseconds are box-and-run-dependent: this audit's p50 read 10.1 ms here
+  against 32.1 ms on plains, a 4.7x ratio; section 8 gives a second reading of
+  this same pose). The frame with the most distance in it is not the expensive
+  one.
 
 ---
 
@@ -229,7 +235,7 @@ stack · **(b)** engine work inside WebGL2 · **(c)** likely needs WebGPU ·
 | **1** | **Aerial perspective / haze** | `flyover.hzBand` iqr 20.08 with the atmosphere and 89.17 without; `vista.hzBand` iqr **3.00** from a 4.7 km ridge; `flyover_400` still a total whiteout at 400 m | SE's planetary haze is ranged: a mountain silhouette 20 km out is desaturated and still legible, and altitude thins it | The boundary-layer aerosol is referenced to a fixed 400 m scale above the ray's LOWER end, so a downward or long ray accumulates full sea-level density and removes 77.5% of the horizon's contrast, and climbing makes it worse instead of better | **BLOCKING** | (a)+(b) |
 | **2** | **Vegetation at range and from the air** | `flyover` at 1,200 m: **188,081 triangles**. At 400 m: **231,089**. A standing eye on plains: **2,759,465**. Not one tree in any of the four aerial frames over a spawn the world-gen puts 1,296 trees in, and the two `?atmos=0` controls prove they are ABSENT rather than hazed out | SE draws surface detail continuously from the ground to orbit, with no radius at which the world empties | The scatter rings are radii about the OBSERVER (canopy 620 m, understorey 78 m) and there is **no impostor or billboard tier anywhere in `web/src/render`**, so the planet is bare the moment the eye leaves the ground; the exact trigger is NOT diagnosed here and is the lane's first job, because at 400 m the 620 m ring still subtends a 474 m horizontal disc of ground and the frame is empty anyway | **BLOCKING** | (b) |
 | **3** | **Terrain material past ~75 m** | `flyover.under` iqr **7.21 with the atmosphere OFF** at a 1.2 km slant; `vista.hzBand` iqr 3.00 to 4.00 at every hour; `midfield` ground smeared from ~30 m | SE's voxel surface carries its material to the horizon; a distant slope reads as rock, sand or ice by its surface, not only by its tint | The terrain has **no albedo, normal or ORM texture at all** (per-biome vertex tint plus procedural modulation), the ground-texture term fades out 35 to 75 m and the relief bump 30 to 60 m, and the macro tint does not start until 600 m, so **75 m to 600 m is a genuine texture hole** and past 4 km the surface is one flat biome hex | **BLOCKING** | (b) |
-| **4** | **Frame cost at a standing eye** | plains vista: **2,759,465 triangles, 71 calls, p50 32.1 ms** on an RTX 4060 Ti at 1600x900, nothing built; `midfield` p99 **64.6 ms**; `ruin` p99 44.0 ms | not a look gap, a budget: everything in this table has to fit inside what is left | The frame is already over `StatsProbe`'s ALERT triangle threshold (2.7e6) and at twice a 60 Hz budget on flat ground, because the understorey is card geometry at LOD0 with only two LOD rungs and no impostor, so every fix above competes for headroom that is not there | **BLOCKING** | (b), (c) if density AND distance are both wanted |
+| **4** | **Frame cost at a standing eye** | plains vista: **2,759,465 triangles, 71 calls**, over the 16.6 ms budget and over the 2.7M triangle alert on every box measured, at a ratio of about 4.5x against the vista pose's cost (absolute milliseconds are box-and-run-dependent: this audit's p50 read 32.1 ms); `midfield` p99 **64.6 ms**; `ruin` p99 44.0 ms | not a look gap, a budget: everything in this table has to fit inside what is left | The frame is already over `StatsProbe`'s ALERT triangle threshold (2.7e6) and over the 16.6 ms frame budget on flat ground, because the understorey is card geometry at LOD0 with only two LOD rungs and no impostor, so every fix above competes for headroom that is not there | **BLOCKING** | (b), (c) if density AND distance are both wanted |
 | **5** | **Shadow reach and the cascade edge** | `flyover_noatmos` at 1,200 m: a hard-edged **texel-staircase black region** over the NEAR half; the same control at 400 m: the same staircase with the dark side on the FAR half; the same boundary as a parallelogram in `midfield` at a standing eye; splits `[22, 80, 300]`, 3 cascades, PCF, 2048 | SE shadows terrain to the horizon and the cascade transition is invisible | Shadows stop at **300 m**, and at altitude a large region renders fully occluded with a snapped-texel staircase edge instead of falling back to lit; **the dark side flips between 400 m and 1,200 m, which is what says the region tracks the cascade's own ortho box (centre = eye + forward x far x 0.35, half-extent far x 0.72) and not the terrain** | **BLOCKING** | (b) for reach, (a) for the edge |
 | **6** | **The low-sun half of the day arc** | section 3: `nearG` -80% while `hzBand` +12.8%, far-to-near ratio **7.01**; `basedusk` skyHigh warm -87.69 (section 2.8 R7, unchanged) | SE's dawn reddens the sky, warms the terrain and silhouettes the distance | The in-scatter term is not attenuated by the sun's own path, so at 5.85 degrees the ground goes near-black while the haze in front of the distant ridge gets BRIGHTER than it is at noon | **BLOCKING** | (a)+(b) |
 | **7** | **The world's edge at 620 m** | `RN2065_sweep_plains`, `RN2065_sweep_forest`: a hard tone ring at the 78 m understorey edge and a hard prop cull at 620 m, then one uniform band to the horizon | SE has no distance at which content stops | Same mechanism as #2 seen from the ground: two LOD rungs (296 to 310 tris, then 22 to 30) and a hard radius, with nothing beyond it | **BLOCKING** | (b), same lane as #2 |
@@ -378,9 +384,13 @@ closed by whichever lane touches the sky, since it costs one manifest row.
 - **The aerial perspective ramp is monotonic and correct in shape.** `nearG` to
   `mid` to `hzBand`: iqr 27.93 / 15.21 / 3.00, sat 0.175 / 0.067 / 0.053. The
   ordering is right at every rung; only the magnitude is wrong.
-- **The vista pose is cheap.** 591,906 triangles and p50 6.9 ms for the frame
-  with the most distance in it, against 2,759,465 and 32.1 ms for a flat plains
-  frame at a standing eye. Distance is not what costs.
+- **The vista pose is cheap.** 591,906 triangles for the frame with the most
+  distance in it, against 2,759,465 triangles for a flat plains frame at a
+  standing eye: the plains pose is over the 16.6 ms budget and over the 2.7M
+  triangle alert on every box measured, at a ratio of about 4.5x against the
+  vista pose (absolute milliseconds are box-and-run-dependent: this audit's p50
+  read 6.9 ms for vista here and 10.1 ms in section 2.3 for the identical pose
+  and triangle count, against 32.1 ms for plains). Distance is not what costs.
 - **The sun disc is the right angular size**, 0.53 degrees, since RN-1520.
 - **The water shader is better than the world it is in**: five wave trains,
   Fresnel at F0 0.02, depth-scaled refraction and a noise-broken foam band. Gap
