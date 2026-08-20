@@ -182,7 +182,7 @@ export function parsePost(search: string, quality: 'low' | 'med' | 'high'): Post
   // `?clear=` ("a painted sky makes every void pixel opaque, so the census would
   // silently read zero"), applied to a layer that recolours every pixel.
   //
-  //   ?clear=RRGGBB  Loop.countHoles compares presented pixels against the clear
+  //   ?clear=RRGGBB  LoopFrameHash.countHoles compares presented pixels against the clear
   //     colour with a +/-12 per-channel tolerance. Magenta through ACES, an sRGB
   //     encode, a split tone and a vignette is not magenta within 12 counts, so
   //     every crack and hole probe would read ZERO holes and pass.

@@ -1,5 +1,5 @@
 // Crack census. Run with ?clear=ff00ff and this counts the pixels where the
-// void shows THROUGH the terrain (Loop.countHoles), which is the only reliable
+// void shows THROUGH the terrain (LoopFrameHash.countHoles), which is the only reliable
 // way to separate a real LOD crack from a dark-shaded steep face. Optionally
 // walks first, so the count covers a moving resident set and not one pose.
 //
