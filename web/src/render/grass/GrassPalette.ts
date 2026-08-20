@@ -33,6 +33,7 @@
 
 import * as THREE from 'three';
 import { BIOME_COUNT } from '../materials/BiomePalette.js';
+import { COVER_VALUE } from './GrassTuning.js';
 
 /** ?grasstint= scales the chroma rotation. 0 makes every blade exactly the
  *  ground colour, which is the isolator for "is the greening doing this". */
@@ -61,13 +62,30 @@ export interface CoverBiome {
  * the Ocean biome renders as flat blue terrain (world audit gap 11) and putting
  * grass on it would be a second wrong thing.
  */
+/** How far a fully "dry" instance walks its rotation back toward the bare
+ *  substrate. `?grassdry=0` collapses the spread to nothing, which is the
+ *  control for "is the variation this term or is it the card's own value
+ *  noise". */
+const DRY_SPREAD = 0.62 * ((): number => {
+  const v = new URLSearchParams(self.location.search).get('grassdry');
+  const f = v === null ? NaN : Number(v);
+  return Number.isFinite(f) ? f : 1;
+})();
+
 export const COVER: readonly CoverBiome[] = [
   { k: 0.00, green: 0.00, h: 1.00 },   // 0 Ocean
-  { k: 0.12, green: 0.35, h: 0.80 },   // 1 Beach: marram, sparse, sun-bleached
-  { k: 1.00, green: 1.00, h: 1.00 },   // 2 Plains: the meadow pose's own biome
-  { k: 0.85, green: 0.85, h: 0.90 },   // 3 Forest: floor cover under a canopy
-  { k: 0.72, green: 0.72, h: 0.92 },   // 4 Hills: thin turf over stony ground
-  { k: 0.20, green: 0.40, h: 0.70 },   // 5 Mountains: scree stubble
+  { k: 0.12, green: 0.30, h: 0.80 },   // 1 Beach: marram, sparse, sun-bleached
+  // THIRD CAPTURE: Plains was 1.00 and the field measured sat 0.603 against the
+  // bare ground's 0.526 and read as a lawn rather than as grassland. The SE
+  // reference's grass is olive, not emerald, and RN-347 already recorded that a
+  // saturated green primary is the thing this project's foliage keeps getting
+  // wrong. 0.74 with the dry drift above lands the field in the low 0.55s with
+  // real blade-to-blade spread, which is the shape of the reference rather than
+  // just a lower number.
+  { k: 1.00, green: 0.74, h: 1.00 },   // 2 Plains: the meadow pose's own biome
+  { k: 0.85, green: 0.68, h: 0.90 },   // 3 Forest: floor cover under a canopy
+  { k: 0.72, green: 0.58, h: 0.92 },   // 4 Hills: thin turf over stony ground
+  { k: 0.20, green: 0.32, h: 0.70 },   // 5 Mountains: scree stubble
   { k: 0.00, green: 0.00, h: 1.00 },   // 6 Polar
   { k: 0.00, green: 0.00, h: 1.00 },   // 7 Regolith
   { k: 0.00, green: 0.00, h: 1.00 },   // 8 MoonHighland
@@ -105,9 +123,17 @@ function luma(r: number, g: number, b: number): number {
  * per carpet cell and there are thousands of them per chunk.
  */
 export function coverAlbedo(
-  substrate: THREE.Color, biome: number, out: THREE.Color,
+  substrate: THREE.Color, biome: number, out: THREE.Color, dry = 0,
 ): THREE.Color {
-  const k = coverOf(biome).green * TINT_AMP;
+  // THE DRY DRIFT (third capture). One green for every blade in a biome is a
+  // lawn, and a lawn is what the second capture looked like: sat 0.60 across
+  // the whole field with nothing varying but value. A real meadow carries
+  // living and dying grass side by side, so the rotation weight is scattered
+  // per instance about its biome's figure. It is applied to the ROTATION and
+  // not to the colour, so a drier blade lands further back along the same line
+  // toward the substrate rather than somewhere else entirely: the whole field
+  // still cannot disagree with the ground, it just disagrees by varying amounts.
+  const k = coverOf(biome).green * TINT_AMP * (1 - DRY_SPREAD * dry);
   if (!(k > 0)) return out.copy(substrate);
   const r0 = substrate.r, g0 = substrate.g, b0 = substrate.b;
   const l0 = luma(r0, g0, b0);
@@ -115,16 +141,16 @@ export function coverAlbedo(
   const g = g0 * (1 + 0.30 * k);
   const b = b0 * (1 - 0.15 * k);
   const l = luma(r, g, b);
-  const s = l > 1e-6 ? l0 / l : 1;
+  const s = (l > 1e-6 ? l0 / l : 1) * COVER_VALUE;
   return out.setRGB(r * s, g * s, b * s);
 }
 
 /** What the carpet is doing, for a probe and for the A3 handover. */
 export function coverPaletteState(): {
-  tintAmp: number; rows: { biome: number; k: number; green: number; h: number }[];
+  tintAmp: number; value: number; drySpread: number; rows: { biome: number; k: number; green: number; h: number }[];
 } {
   return {
-    tintAmp: TINT_AMP,
+    tintAmp: TINT_AMP, value: COVER_VALUE, drySpread: DRY_SPREAD,
     rows: COVER.map((c, i) => ({ biome: i, k: c.k, green: c.green, h: c.h })),
   };
 }

@@ -174,8 +174,6 @@ export function sampleGrass(
       // luminance. THIS IS THE HARD REQUIREMENT: the colour is the ground's.
       const band = hgt[cy * DIM + cx] / (d.maxReliefM || 1);
       terrainAlbedo(biomeCol, Math.max(0, Math.min(1, slopeCos)), band, SUB);
-      coverAlbedo(SUB, v.biome, COV);
-      const cr = enc(COV.r), cg = enc(COV.g), cb = enc(COV.b);
 
       const i10 = i00 + 3, i01 = i00 + DIM * 3, i11 = i01 + 3;
       const seed = (keyBase ^ Math.imul(cy * CELLS + cx, 0x1b873593)
@@ -187,6 +185,12 @@ export function sampleGrass(
         const yaw = frac(hash32(seed, k * 8 + 2)) * Math.PI * 2;
         const j0 = frac(hash32(seed, k * 8 + 3));
         const j1 = frac(hash32(seed, k * 8 + 4));
+        // THE COLOUR IS PER INSTANCE, not per cell, because the dry drift is a
+        // blade-to-blade property. The SUBSTRATE it is derived from is per cell
+        // (the ground does not change inside 1.8 m), so the terrain sample
+        // above stays hoisted and only the rotation runs here.
+        coverAlbedo(SUB, v.biome, COV, frac(hash32(seed, k * 8 + 5)));
+        const cr = enc(COV.r), cg = enc(COV.g), cb = enc(COV.b);
         local[n * 3] = bilerp(pos, i00, i10, i01, i11, 0, u, w);
         local[n * 3 + 1] = bilerp(pos, i00, i10, i01, i11, 1, u, w);
         local[n * 3 + 2] = bilerp(pos, i00, i10, i01, i11, 2, u, w);

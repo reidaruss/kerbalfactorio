@@ -312,9 +312,26 @@
       lat: -7.9675, lon: 116.53189, yaw: 150, pitch: -12,
       sunDot: 0.70, sunTol: 0.06,
       box: [0.2000, 0.5200, 0.8000, 0.6000],
+      // RN-2145 FIRST CAPTURE, AND THE FIXTURE WAS WRONG BEFORE THE FEATURE
+      // WAS. The three rectangles above were hand-written fractions, and
+      // inverting the flat-plane range map afterwards put them at 3.8 to 4.5 m,
+      // 8.5 to 11.8 m and 11.8 to 16 m: NOT ONE OF THEM REACHED THE MID FIELD,
+      // which is the band a carpet is most likely to leave bald and the band
+      // the whole judgement is about. At a 2 m eye and a 60 degree fov, 25 m to
+      // 60 m of ground occupies about seven pixels, so a hand-picked fraction
+      // cannot land there and a rectangle that names a range it does not have
+      // is worse than no rectangle (RN-1857's own reason for this mechanism).
+      //
+      // `rangeRects` places them LIVE off this capture's own observer, and the
+      // report prints `rangeM` for each, so if the terrain moves the eye the
+      // fixture says so out loud instead of quietly measuring somewhere else.
+      // The four rungs are the four questions: 4 m is at the feet where any
+      // carpet wins, 10 m is where the near rung is still dense, 25 m is the
+      // handover, and 55 m is inside the fade and is where "bald in the middle
+      // distance" would show.
+      rangeRects: [4, 10, 25, 55],
+      rangeRowsPx: 5,
       extra: {
-        near: [0.2000, 0.7000, 0.8000, 0.7600],
-        far: [0.2000, 0.4600, 0.8000, 0.5000],
         sky: [0.3000, 0.1000, 0.7000, 0.2000],
       },
       why: 'the MEADOW: plains at a standing eye, the frame section 1 '

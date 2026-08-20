@@ -40,8 +40,16 @@ export const GRASS_ON = q.get('grass') !== '0';
 export const GRASS_RAW: Readonly<Record<string, string | null>> = {
   grass: q.get('grass'), grassdens: q.get('grassdens'),
   grassfade: q.get('grassfade'), grasspx: q.get('grasspx'),
-  grasstint: q.get('grasstint'),
+  grasstint: q.get('grasstint'), grasssharp: q.get('grasssharp'),
+  grasstrans: q.get('grasstrans'), grassval: q.get('grassval'),
 };
+
+/** A flat multiplier on the cover albedo's VALUE, applied after the luminance-
+ *  preserving chroma rotation so the two are separable: the rotation is the
+ *  rule and this is the one knob for "is the carpet sitting at the same level
+ *  as the ground it stands on". `?grassval=` sweeps it and 1 is the honest
+ *  default (the carpet IS the ground's albedo and nothing more). */
+export const COVER_VALUE = num('grassval', 1);
 
 /**
  * NEAR TUFT DENSITY, instances per square metre at the eye.
@@ -53,15 +61,17 @@ export const GRASS_RAW: Readonly<Record<string, string | null>> = {
  * tuft is TUFT_QUADS crossed quads, each taking a u-slice of CARD_U_SPAN, so it
  * carries `TUFT_QUADS * CARD_U_SPAN * 11` painted blades:
  *
- *   2 quads x 0.42 span x 11 blades = 9.24 blades per tuft
- *   14 tufts/m2 x 9.24              = 129 blades per square metre
+ *   2 quads x 0.27 span x 11 blades = 5.94 blades per tuft
+ *   32 tufts/m2 x 5.94              = 190 blades per square metre at the eye,
+ *                                     falling through the brief's 50 to 150 band
+ *                                     between about 2 m and 6 m (see DENS_HALF_M)
  *
  * which is inside the brief's band and near its top, where a meadow wants to
  * be. `?grassdens=` scales it; 0 leaves the layer constructed and empty, which
  * is deliberately NOT the same control as `?grass=0` (one measures the cost of
  * an empty pass, the other removes the pass).
  */
-export const NEAR_PER_M2 = 14 * num('grassdens', 1);
+export const NEAR_PER_M2 = 32 * num('grassdens', 1);
 
 /**
  * The density falloff's half-distance, in metres. Density is
@@ -71,11 +81,32 @@ export const NEAR_PER_M2 = 14 * num('grassdens', 1);
  * A flat-per-m2 carpet is the thing to avoid; it is a wall of instances at the
  * horizon and a thin one at your feet.
  */
-export const DENS_HALF_M = 9;
+export const DENS_HALF_M = 10;
 
-/** The near tuft's card, in metres, at the eye. Grown with range by `growAt`. */
-export const TUFT_W_M = 0.30;
-export const TUFT_H_M = 0.26;
+/** The near tuft's card, in metres, at the eye. Grown with range by `growAt`.
+ *
+ * RN-2145 FIRST CAPTURE, and the number moved because the picture said so.
+ * At 0.30 m wide over a 0.42 u span the card carries 4.6 painted blades, i.e.
+ * a blade is 6.5 cm across, and the FIRST MEADOW FRAME CAME BACK AS SOLID
+ * TAPERED WEDGES with no blade separation at all. The cause is the card
+ * family's own stated design: `texgen.py` set the blade width to clear the
+ * 0.35 alpha cutoff so "distant mips converge toward solid rather than
+ * dissolving", and at 4 m a 0.42 u span across 58 px is a mip-3 fetch where
+ * the 1.6-texel gaps between blades average away. Fewer, wider blades per
+ * card is the fix that survives the mip: 0.27 span is three blades, whose
+ * gaps are 2.5 texels at the same mip and are still there. */
+//
+// SECOND CAPTURE: 0.18 x 0.30 still read as GREEN SHARK FINS. The painted blade
+// is 5 to 8 per cent of the card's width, so a 0.18 m card makes a 3.5 to 5.3 cm
+// blade against a 30 cm height: an aspect of about 1:6.7, which is a succulent
+// and not a grass. Real grass is nearer 1:30, and the floor on how thin we can
+// go is the harness's own: FXAA only, no MSAA, no TAA (world audit gap 17), so
+// an alpha-tested blade under about 4 px shimmers in motion. 0.13 x 0.34 puts
+// the blade at 3.2 cm and 1:10.6, which is 6.3 px at 4 m: as slim as this
+// renderer can hold still, and stated as the constraint it is rather than as a
+// choice.
+export const TUFT_W_M = 0.13;
+export const TUFT_H_M = 0.38;
 /** Crossed quads per near tuft. Two is the cheapest shape that reads from any
  *  bearing; a third quad is +50% triangles for a silhouette the per-instance
  *  yaw already scrambles across the field. */
@@ -84,8 +115,9 @@ export const TUFT_QUADS = 2;
  *  shearing it: one segment can only translate the tip, which detaches the card
  *  from its own root line at any visible amplitude. */
 export const TUFT_SEGS = 2;
-/** The u-slice one quad takes out of the 11-blade periodic card. */
-export const CARD_U_SPAN = 0.42;
+/** The u-slice one quad takes out of the 11-blade periodic card. See TUFT_W_M
+ *  for why it is three blades and not five. */
+export const CARD_U_SPAN = 0.27;
 
 /**
  * THE FAR RUNG, and it is a different card rather than the near one scaled up.
@@ -100,10 +132,10 @@ export const CARD_U_SPAN = 0.42;
 export const MAT_W_M = 1.10;
 export const MAT_H_M = 0.42;
 /** Far-rung instances per square metre, flat. Coverage per instance is
- *  MAT_W_M * MAT_H_M = 0.462 m2 of vertical curtain, so 1.7/m2 is 0.79 of the
+ *  MAT_W_M * MAT_H_M = 0.462 m2 of vertical curtain, so 1.55/m2 is 0.72 of the
  *  ground area standing up: at the grazing angle a standing eye sees the mid
  *  field through, that is a closed carpet. */
-export const MAT_PER_M2 = 1.7 * num('grassdens', 1);
+export const MAT_PER_M2 = 1.55 * num('grassdens', 1);
 /** Where the far rung fades IN, in metres. Inside this the near tufts own the
  *  ground and a second card layer would only add overdraw. */
 export const MAT_IN_LO_M = 12;

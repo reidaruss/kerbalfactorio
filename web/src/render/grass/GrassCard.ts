@@ -83,7 +83,10 @@ export function buildCardGeometry(spec: CardSpec): THREE.InstancedBufferGeometry
       // A blade is narrower at the tip. Tapering the CARD as well as the
       // painted blade keeps the alpha-cut silhouette off the card's own edge,
       // where a mip would otherwise erode a straight vertical line.
-      const half = 0.5 * (1 - 0.30 * v);
+      // RN-2145 first capture: 0.30 was too much. Combined with the painted
+      // blades' own taper it turned the card into a single triangle, which is
+      // half of why the first meadow frame read as wedges rather than grass.
+      const half = 0.5 * (1 - 0.14 * v);
       for (let s = 0; s < 2; ++s) {
         const x = (s === 0 ? -half : half);
         const i = q * vertsPerQuad + r * 2 + s;

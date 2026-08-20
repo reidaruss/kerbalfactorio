@@ -44,6 +44,13 @@ export interface GrassMaterialOptions {
   readonly name: string;
 }
 
+/** A page number, with RN-150's rule: a MISSING parameter is missing, not 0. */
+function numQ(name: string, dflt: number): number {
+  const v = new URLSearchParams(self.location.search).get(name);
+  const f = v === null ? NaN : Number(v);
+  return Number.isFinite(f) ? f : dflt;
+}
+
 /** Translucency: x wrap width, y forward-scatter gain, z tip value lift.
  *  `?grasstrans=0` removes all three, which is the isolator for "is the glow
  *  this term or is it the grade". */
@@ -88,6 +95,13 @@ export function createGrassMaterial(o: GrassMaterialOptions): GrassMaterialHandl
     uCard: { value: null as THREE.Texture | null },
     uAlphaTest: { value: 0.35 },
     uCardMean: { value: 1 },
+    // `?grasssharp=1` is the exact control: it makes the rescale the identity,
+    // so the arm is the raw alpha comparison the props take.
+    uSharp: { value: ((): number => {
+      const v = new URLSearchParams(self.location.search).get('grasssharp');
+      const f = v === null ? NaN : Number(v);
+      return Number.isFinite(f) ? f : 3.2;
+    })() },
     uPxPerRad: { value: 779.4 },
     uFadePx: { value: new THREE.Vector2(FADE_PX_HI, FADE_PX_LO) },
     uGrow: { value: new THREE.Vector2(GROW_M, GROW_MAX) },
@@ -96,6 +110,17 @@ export function createGrassMaterial(o: GrassMaterialOptions): GrassMaterialHandl
     uOut: { value: o.rung.outM.clone() },
     uWindGain: { value: o.rung.windGain },
     uTrans: { value: transFromQuery() },
+    // THE LEAN AND THE RAMP, both swept by one flag each because both are look
+    // terms judged on a frame rather than derived from anything.
+    // `?grasslean=0` stands every card dead vertical, which is the exact
+    // pre-lean state and the before half of that pair; `?grassramp=0` flattens
+    // the root-to-tip value ramp to 1.0 at both ends, likewise.
+    uLean: { value: new THREE.Vector2(0.30, 0.34)
+      .multiplyScalar(numQ('grasslean', 1)) },
+    uRamp: { value: numQ('grassramp', 1) === 0
+      ? new THREE.Vector2(1, 1)
+      : new THREE.Vector2(1 - 0.50 * numQ('grassramp', 1),
+        1 + 0.30 * numQ('grassramp', 1)) },
   });
 
   const material = new THREE.ShaderMaterial({

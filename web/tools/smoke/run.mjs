@@ -352,7 +352,8 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // `grasspx=` and `grassfade=` move the fade window, which is in PIXELS of
   // apparent card height and not in metres; see GrassTuning's note on why.
   'grass', 'grassdens', 'grasstint', 'grasspx', 'grassfade',
-  'grasstrans', 'grasstransamp',
+  'grasstrans', 'grasstransamp', 'grasssharp', 'grassval',
+  'grasslean', 'grassramp', 'grassdry',
   // RN-102, standing rule 7. `leafvar=0` bakes the flat greyscale vertex
   // colour, i.e. the pre-RN-102 bytes exactly; the runtime pair lives on
   // `__ofProps.setLeafVar` because a reload cannot hold the frame equal.

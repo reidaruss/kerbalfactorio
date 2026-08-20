@@ -62,6 +62,8 @@ export function grassVertexShader(depth: DepthPolicy): string {
     uniform float uWindTime;
     uniform float uWindAmp;
     uniform float uWindGain;
+    /** x common lean, y per-instance lean scatter. Both in card heights. */
+    uniform vec2 uLean;
 
     varying vec3 vWorld;
     varying vec3 vUp;
@@ -125,6 +127,30 @@ export function grassVertexShader(depth: DepthPolicy): string {
       vec3 world = iPos
         + dx * (position.x * wM) + upW * (position.y * hM) + dz * (position.z * wM);
 
+      // THE LEAN, and it is the single change that stopped the carpet reading
+      // as a pin cushion. THIRD CAPTURE: with every card standing dead vertical
+      // the field came back as rows of green plastic pins, because a vertical
+      // alpha-cut card has a straight silhouette and nothing in a meadow does.
+      // Real grass arcs, and a real meadow is COMBED: most blades lean the same
+      // way because the same weather has been over all of them, with enough
+      // per-blade scatter that it is not a texture.
+      //
+      // uLean.x is the common bearing's weight and uLean.y the per-instance
+      // scatter, and the bearing is derived from the SAME vector PropWind takes
+      // its phase from, so the set of the field and the direction gusts travel
+      // are one fact and not two. It rides aBend, so it is a bend and not a
+      // shear and the root does not move.
+      float leanH = fract(iParam.x * 7.31);
+      float leanA = leanH * 6.2831853;
+      vec2 leanV = uLean.x * vec2(0.83, 0.56)
+                 + uLean.y * (vec2(cos(leanA), sin(leanA)) * 2.0 - 1.0) * 0.5;
+      float leanK = aBend * hM * (0.55 + 0.9 * leanH);
+      world += (t0 * leanV.x + t1 * leanV.y) * leanK;
+      // Keep the tip on its own arc rather than letting the blade stretch: a
+      // bend conserves length, and without this a hard lean makes every card
+      // visibly longer than the one beside it.
+      world -= upW * (leanK * dot(leanV, leanV) * 0.5);
+
       // WIND. PropWind's harmonics and PropWind's clock; see this file's header
       // for why the text is copied and what the coupling actually is. The reach
       // is aBend (a cantilever profile, GrassCard), so displacement is ZERO at
@@ -186,12 +212,16 @@ export function grassFragmentShader(depth: DepthPolicy): string {
      *  0.15 per cent, so the manifest's number is used and there is no second
      *  authority on what the card's mean is. */
     uniform float uCardMean;
+    /** Alpha sharpen about the cutoff. 1 is the raw comparison. */
+    uniform float uSharp;
     uniform vec3 uBodyCenter;
     uniform vec3 uAmbient;
     uniform float uSkyAmbient;
     uniform vec3 uCascadeFar;
-    /** x wrap width, y forward-scatter gain, z tip lift. */
+    /** x wrap width, y forward-scatter gain, z unused (see uRamp). */
     uniform vec3 uTrans;
+    /** The root-to-tip value ramp: x at the root, y at the tip. */
+    uniform vec2 uRamp;
 
     varying vec3 vWorld;
     varying vec3 vUp;
@@ -206,7 +236,23 @@ export function grassFragmentShader(depth: DepthPolicy): string {
     void main() {
       ${depth.fragmentBody}
       vec4 card = texture2D(uCard, vUv);
-      if (card.a < uAlphaTest) discard;
+      // MIP-SHARPENED ALPHA (RN-2145, and the first capture is why it exists).
+      //
+      // of_grass_a.png was authored so that "distant mips converge toward
+      // solid rather than dissolving" (texgen.py's own note, RN-177/178): the
+      // blade width was widened until the coverage cleared the 0.35 cutoff, so
+      // a box-filtered mip fills the gaps between blades instead of eroding the
+      // blades. That is right for a card that must not disappear at range and
+      // wrong for a carpet, whose whole subject is the gaps.
+      //
+      // Rescaling the sampled alpha about the cutoff restores the separation
+      // the mip flattened, without touching the texture and therefore without
+      // moving a single prop that uses the same family. It cannot recover
+      // structure a very high mip has destroyed entirely, and it is not asked
+      // to: the pixel fade has retired the card by then. ?grasssharp=1
+      // restores the raw comparison exactly, which is the control for this term.
+      float ca = (card.a - uAlphaTest) * uSharp + uAlphaTest;
+      if (ca < uAlphaTest) discard;
 
       vec3 pM = vWorld - uBodyCenter;
       vec3 camM = cameraPosition - uBodyCenter;
@@ -224,7 +270,23 @@ export function grassFragmentShader(depth: DepthPolicy): string {
       // toward cover green at constant luminance (GrassPalette.coverAlbedo).
       // The tip lift is the one place a blade is allowed to disagree with the
       // ground, and it is a thin-tissue effect rather than a colour choice.
-      vec3 albedo = vCol * (card.rgb * uCardMean) * (1.0 + uTrans.z * vTip);
+      // THE ROOT-TO-TIP GRADIENT, and it is doing two jobs at once.
+      //
+      // A carpet is a volume, and the light that reaches the bottom of one has
+      // been through the top of it. Without a gradient every blade is one flat
+      // colour over its whole length, which is what made the second capture
+      // read as plastic: no cue that there is anything BETWEEN the blades. This
+      // is the cheap standing approximation for that occlusion, and it is the
+      // same term that gives a blade its tip highlight, so one expression buys
+      // the depth and the translucency read together.
+      //
+      // It is VALUE-NEUTRAL BY CONSTRUCTION over a uniformly-sampled card
+      // (the mean of the ramp is 1 within a per cent), so it moves the spread
+      // and not the level: RN-1900's rule for a variation term, applied here
+      // because the level is what the luminance-matched cover colour is
+      // carefully holding and this must not spend it.
+      float tipRamp = mix(uRamp.x, uRamp.y, smoothstep(0.0, 0.55, vTip));
+      vec3 albedo = vCol * (card.rgb * uCardMean) * tipRamp;
 
       // ---- THE SAME LIGHTING EXPRESSION THE GROUND USES ----
       // Not a similar one. uAmbient and uSkyAmbient are the SHARED OBJECTS
