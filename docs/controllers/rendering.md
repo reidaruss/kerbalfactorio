@@ -1,6 +1,6 @@
 # Rendering & Graphics: Master Controller Context
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-20 (RN-2240 to RN-2244, `lane/card-material`: the canopy `_LOD3` impostor card is now ONE material (Leaf) instead of two authored plus two silent LOD2 fallbacks, and ScatterEmit skips acquiring a canopy prop's parts that have no rung of their own at LOD3 -- flyover canopy instances 91,760 -> 22,940 (exactly a quarter), triangles 312,601 -> 209,525, calls 29 -> 26, frame p50 (3 interleaved pairs) 7.5 -> 3.6 ms. Full record in section 2.15. NOTE ON THIS LINE ITSELF: it had grown to 280 KB of concatenated lane summaries; replaced with a pointer rather than appended to, because a header line is not a log.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-20 (RN-2260 to RN-2264, `lane/pool-ceiling`: the canopy prop pool has its own ceiling now, 131,072 instead of sharing the 65,536 memory guard every other batch uses, because the card merge (2.15) concentrated the whole canopy tier onto ONE material batch and a real FOREST-site aerial frame asks it for 77,998 -- 12,462 past the old ceiling, 16% of the stand silently not drawn. A capped hero frame can no longer pass as valid: `artframe.js` now reads the pool's own refused count and fails the frame rather than reporting `valid: true` over a truncated stand. Full record in section 2.16, keeping this line short per 2.15.6's own note.)
 
 
 
@@ -4738,3 +4738,174 @@ the first probe against it; both preview servers killed by PID
 (`Get-NetTCPConnection -LocalPort <port> -State Listen`) after the sweep.
 Density tables and `Registry.ts` untouched (canopy-density lane's). Branch
 `lane/card-material`, not merged to main.
+
+## 2.16 THE POOL CEILING (RN-2260 to RN-2264, 2026-08-20, `lane/pool-ceiling`)
+
+`lane/pool-ceiling`, base `origin/main` at f08edd7c. Routed by the WG-220
+verifier: at the FOREST biome the canopy tier saturates the shared 65,536
+instance pool (HUD `POOL FULL`, 12,462 not drawn, 16% of the stand), even
+after 2.15 halved pool pressure by making the far card single-material. All
+five numbers used.
+
+### 2.16.1 Why the card merge made this WORSE, not better, for one batch
+
+2.15 collapsed a canopy tree from four material parts (`Bark`, `Leaf`,
+`LeafDeep`, `LeafLight`) to one: `ScatterEmit.emit` now skips acquiring the
+three parts whose own `_LOD3` is absent, so only `OF_Leaf:canopy` ever
+receives a slot. That is the right fix for instance COUNT (a quarter as many
+slots for the same trees) and the wrong shape for CEILING PRESSURE: the whole
+tier's demand, which used to spread across four independent 65,536-slot
+batches (so no single batch could plausibly fill), now lands on ONE. A forest
+that would have asked each of four batches for ~19,500 instances instead asks
+one batch for the full count. The ceiling was never raised to match, because
+nothing before this lane had actually measured a FOREST-biome aerial frame
+against it (WG-227's `forestair`, added in the same lane that raised the
+density table, is the first shot that reaches the number).
+
+**Measured directly against `origin/main` at f08edd7c (the unmodified
+"before"), `forestair`, real Windows D3D11 (ANGLE), RTX 4060 Ti:**
+`canopyProps` (the scatter's own count of trees it placed) 77,998;
+`OF_Leaf:canopy` batch `live` 65,536, `cap` 65,536, `refused` **12,462**
+(15.98%, the "16%" the routed finding names). `PropLibrary.grow()`'s
+`console.error('[of] prop pool ... is FULL ...')` fires exactly once
+(`b.warned`) and, correctly, fails any `run.mjs` invocation that captures this
+pose (`smoke: FAILURES`) -- the defect is loud in the harness sense already.
+What it was NOT loud in: `artframe.js`'s own JSON never read the pool's
+`refused` count, so a hero-frame capture that only inspects the returned
+object (rather than the exit code) could still read `valid: true` over a
+truncated stand. See 2.16.3.
+
+### 2.16.2 The ceiling, and its memory arithmetic
+
+`web/src/render/instancing/PropLibrary.ts`. `Batch` gained its own `maxCap`
+field, set at `batchFor()` time: `CANOPY_MAX_CAPACITY` (new, 131,072) for the
+canopy suffix's batch, the existing `MAX_CAPACITY` (65,536, unmoved) for every
+other. `grow()` reads `b.maxCap` instead of the module constant; `stats().
+ceiling` sums each batch's own `maxCap` instead of `batches.size *
+MAX_CAPACITY`, so the reported guard rail is exact rather than assuming every
+batch shares one number.
+
+**Sized the same way every ceiling in this file already is sized**: the next
+power-of-two double from `START_CAPACITY` (2,048) that clears the worst
+measured case. 77,998 sits between 65,536 and 131,072, so one more double:
+`2,048 -> ... -> 65,536 -> 131,072`, 68% of headroom above the worst case
+measured so far (the WG-220 lane's own FOREST-density figure), same growth
+shape (O(1) amortised, a batch that never fills never pays) as every other
+pool in the project.
+
+**A DEDICATED ceiling rather than a raised shared one, and the reason is
+evidence, not caution.** Canopy already had its own BATCH (RN-2233's
+`CANOPY_SUFFIX`, so scrub and rocks were never sharing a reservation with
+trees in the first place -- `PropLibrary`'s batches are keyed one per
+material+suffix and grow independently). What was shared was the CEILING
+CONSTANT. Raising `MAX_CAPACITY` itself to 131,072 would apply the new
+guard to the understorey's `:detail` batch and every near-biome batch too,
+none of which has ever been measured anywhere near the old 65,536 (the
+densest, `OF_Grass`, is the batch the constant was already raised FOR, and
+sits far under it today). A blanket raise would be a guard that guards
+nothing for those classes while doubling their worst-case reservation for no
+measured reason, so the split constant is the one with evidence behind it.
+
+**Memory.** Same arithmetic as the existing `MAX_CAPACITY` comment (100 B of
+CPU-side typed array plus 80 B of texture per slot), doubled: 131,072 slots is
+about 10.5 MB of texture (up from 5.2 MB) plus about 13.1 MB of CPU-side typed
+array, and it is paid ONLY by the one batch (`OF_Leaf:canopy`) that actually
+grows into it -- `grow()` still starts doubling from 2,048. The three other
+canopy-suffixed batches (`Bark`/`LeafDeep`/`LeafLight`) also carry the raised
+`maxCap` now (they share `isCanopy`'s branch, since a batch's ceiling is
+decided by its suffix, not by whether 2.15's skip ever lets it fill), but they
+stay at `live: 0` by construction -- 2.15's `ScatterEmit` skip refuses every
+acquire against them -- so the extra headroom on those three costs nothing
+real; `stats().ceiling`'s reported sum (below) counts it anyway, which is
+conservative rather than wrong.
+
+### 2.16.3 Loud when hit: the settleGate-class fix
+
+2.14.4 found the identical SHAPE of defect in the scatter backlog: a gate
+that only asked whether the terrain had converged, not whether anything had
+grown on it, so a partial forest was reported as a settled frame. The pool
+ceiling has the same failure mode from a different angle: `console.error`
+fires once per batch (`b.warned`), so a sweep taking several readings in one
+process would only see it on the FIRST hit, and `artframe.js`'s own returned
+JSON carried no `refused` field at all -- a hero frame could be captured,
+inspected, and judged without anyone reading the one place the truncation was
+recorded.
+
+`web/tools/smoke/probes/artframe.js`: every shot's return now computes
+`poolRefused` from `stats().props.refused` (0 when there is no props record at
+all, e.g. an orbital shot) and sets `valid: poolRefused === 0` instead of the
+old unconditional `valid: true`. `poolRefused` and `poolCeiling` are also
+added to the `scatter` block for every shot, alongside `canopyProps` and the
+rest of WG-220's own counters, so a reader never has to cross-reference a
+separate pool query to see whether a frame was truncated. This makes hitting
+the ceiling structurally impossible to publish as a settled frame from this
+probe again, on the same logic 2.14.4 used for the backlog.
+
+### 2.16.4 The proof: `forestair`, before and after
+
+Two builds (`vite build --outDir dist-before` at unmodified f08edd7c,
+`--outDir dist-after` on this branch), two owned `vite preview` servers
+(127.0.0.1:5561 / :5562, `--strictPort`), sentinel text written into each
+dist and fetched back over its own port before the first probe, both killed
+by PID (`netstat -ano` on the `LISTENING` port) after. `tools/smoke/
+rn2260sweep.mjs` (new; `wg220sweep.mjs`'s own `shot === 'flyover' ? 'surface'
+: 'walk'` routes `forestair` to the wrong scenario, since WG-227 built
+`forestair` as `flyover`'s pose over different ground and needs `surface`
+too), WG-189's interleaved method, 3 pairs, arm order rotated.
+
+| | before (f08edd7c) | after |
+|---|---|---|
+| `canopyProps` (trees placed) | 77,998 | 77,998 (unchanged -- same forest) |
+| `OF_Leaf:canopy` live / cap | 65,536 / 65,536 | **77,998 / 131,072** |
+| pool `refused` | **12,462** | **0** |
+| `valid` (this lane's own gate) | **false** | **true** |
+| frame triangles | 251,873 | 251,873 |
+| draw calls | 27 | 27 |
+| `vramEstimateMB` | 104.2 | 104.2 |
+| `poolCeiling` (sum of `maxCap`) | 1,376,256 | 1,638,400 |
+| p50 (3 interleaved pairs) | **5.70** (5.8/5.6/5.7, spread 0.20) | **6.40** (6.2/6.7/6.4, spread 0.50) |
+
+**Triangles and draw calls are IDENTICAL to the digit in both arms, and that
+is a real finding rather than a null result.** The 12,462 refused trees were
+never in this pose's view frustum at all (canopy batches keep per-instance
+frustum culling, RN-2204): they were somewhere else on the 3,500 m-radius
+disc, not necessarily behind the camera at THIS yaw. The defect is therefore
+not "this exact picture is missing trees" but "16% of the forest does not
+exist anywhere the camera could ever turn to see it" -- which is the worse of
+the two and the reason a live-count/refused-count fix matters even when one
+photographed frame does not visibly move. `p50` before, **5.70 ms, matches the
+WG-220 verifier's own 5.8 ms reading** (the brief's stated headroom check).
+After the fix: **6.40 ms, +0.70 ms, 10.2 ms under the 16.6 ms budget.**
+
+**VRAM: `vramEstimateMB` does not move (104.2 -> 104.2), and this is an
+INSTRUMENT GAP, not a finding that the ceiling is free.** `StatsProbe.ts`
+computes it from `extraVramBytes + r.post.vram` -- render-target and
+post-stack memory -- and does not account for `BatchedMesh`'s own per-instance
+matrix/colour textures at all, contrary to what the `MAX_CAPACITY` comment in
+`PropLibrary.ts` claims ("Reported as `vramEstimateMB` before and after").
+**The real delta is the arithmetic in 2.16.2: +5.2 MB of texture (65,536 more
+slots x 80 B) on the one batch that fills, +6.5 MB of CPU-side typed array**,
+against the study's 104 of 260 MB budget -- comfortably inside it either way.
+Flagged rather than fixed: `vramEstimateMB`'s blind spot to instance-pool
+textures is a pre-existing gap this lane did not introduce and is out of this
+lane's scope to correct.
+
+**Determinism**: three fresh Chrome processes (the sweep's own 3 repeats) on
+the after build return `canopyProps` 77,998, triangles 251,873 and
+`poolRefused` 0 to the digit every time. **Walk-scenario counters untouched**,
+checked directly rather than assumed (the fix is scoped to the `:canopy`
+suffix and the understorey's `:detail` batches are a different key entirely):
+`forestfloor` `propsPlaced` **41,300**, `meadow` `propsPlaced` **52,139**,
+both matching WG-220's own 6.9.7 identity table exactly, `cellsCapped`/
+`chunksCapped` 0/0, `scatterBacklog` 0 on the after build.
+
+### 2.16.5 Rails
+
+`npx tsc --noEmit` clean, `vite build` clean, `cd web && npm run check` 8/8.
+Only three files changed vs `origin/main`: `PropLibrary.ts`, `artframe.js`
+(the `poolRefused`/`valid` wiring), and the new `tools/smoke/rn2260sweep.mjs`.
+`web/wasm/dist/*` and `test/expected.json` untouched. No texgen/Blender file
+and no density table touched (other lanes' scope). Both scratch preview
+servers killed by PID after the sweep; `dist-before`/`dist-after` are
+`web/dist-*/`-gitignored and were deleted rather than committed. Branch
+`lane/pool-ceiling`, not merged to main.
