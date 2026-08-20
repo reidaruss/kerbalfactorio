@@ -124,7 +124,10 @@ export class Scatter {
      * and the after picture are one binary apart (standing rule 7).
      */
     private readonly canopyRadiusM = 0,
-    /** `?canopyshade=0` keeps the understorey at full density under trees. */
+    /** RN-2225 remedy: DEFAULT OFF pending an Admin ruling, so the
+     *  understorey stays at full density under trees and the near ground is
+     *  the state it has been in since WG-116. `?canopyshade=1` re-arms it.
+     *  Full argument and the judged frames: `Config.ts`, this line. */
     private readonly canopyShade = true,
   ) {
     this.em = new PropEmitter(lib, fair, grassShort);

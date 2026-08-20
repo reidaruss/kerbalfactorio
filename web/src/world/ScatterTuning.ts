@@ -428,7 +428,13 @@ export const CANOPY_FLOOR_W = 0.10;
  * atlas is a floor of ferns, litter and dead wood in the first place, and its
  * own docstring says so. Ground cover under a closed canopy is sparse because
  * the light is. The saving is real and it is measured separately from the tree
- * cost (`?canopyshade=0`) so neither number can be used to flatter the other.
+ * cost (`?canopyshade=`) so neither number can be used to flatter the other.
+ *
+ * RN-2225 remedy, 2026-08-20: this term is DEFAULT OFF pending an Admin
+ * ruling. It was dead code from WG-116 until the far tier woke it, and woken
+ * it cuts the forestfloor understorey by 38.5 per cent as a spatially UNIFORM
+ * thinning rather than as the patchy dark-under-trees pattern that would read
+ * as shade. See `Config.canopyShade` and `docs/screenshots/RN2225_shade_*`.
  */
 export const CANOPY_SHADE = 0.45;
 
