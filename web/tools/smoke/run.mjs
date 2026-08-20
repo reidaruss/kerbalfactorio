@@ -326,6 +326,9 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   'aoscale', 'aoslices', 'aosteps', 'aoradius', 'aostrength', 'aopower',
   // RN-2190, thin-geometry AO damping. `aothin=0` is the isolator.
   'aothin', 'aothinedge', 'aothinamount', 'aothinnear', 'aothinfar',
+  // RN-2220, thin-geometry contact-shadow damping, AoGlsl's pattern reused
+  // with its own tunable. `csthin=0` is the isolator.
+  'csthin', 'csthinedge', 'csthinamount', 'csthinnear', 'csthinfar',
   'bloomlevels', 'bloomstrength', 'bloomthresh', 'exposure', 'msaa', 'fxaalod',
   'cslength', 'cssteps', 'csthick', 'csstrength',
   // RN-207, the look-development grade. `curve=0` returns the contrast term to
@@ -394,6 +397,10 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   'grass', 'grassdens', 'grasstint', 'grasspx', 'grassfade',
   'grasstrans', 'grasstransamp', 'grasssharp', 'grassval',
   'grasslean', 'grassramp', 'grassdry',
+  // RN-2220, standing rule 7. `grassbend=0` is the exact pre-RN-2220 control
+  // for the blade-normal shading bend (GrassGlsl's `ns`, the second,
+  // independent blend toward up spent only on ndl/skyView).
+  'grassbend',
   // RN-102, standing rule 7. `leafvar=0` bakes the flat greyscale vertex
   // colour, i.e. the pre-RN-102 bytes exactly; the runtime pair lives on
   // `__ofProps.setLeafVar` because a reload cannot hold the frame equal.

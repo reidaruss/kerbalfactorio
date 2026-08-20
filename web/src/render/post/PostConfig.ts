@@ -80,6 +80,18 @@ export interface PostTuning {
   csStrength: number;
   /** Hard cap on the march in UV, so a close-up surface cannot walk the frame. */
   csMaxScreen: number;
+  /** RN-2220. Metres of mean neighbour depth deviation at which thin-geometry
+   *  damping saturates. Same construction as aoThinEdgeM (AoGlsl's
+   *  normalAndEdgeFromDepth), its own tunable and its own default: the two
+   *  passes share no uniform. */
+  csThinEdgeM: number;
+  /** RN-2220. How far the contact-shadow OCCLUSION is pulled toward 0 (no
+   *  shadow) at full thin-geometry saturation. 0 is off (csthin=0). */
+  csThinAmount: number;
+  /** RN-2220. View-space metres: full strength inside csThinNearM, zero beyond
+   *  csThinFarM. See ContactGlsl's distance-gate comment. */
+  csThinNearM: number;
+  csThinFarM: number;
   /** Underwater extinction per METRE, per channel. Red hardest. See below. */
   uwSigma: [number, number, number];
   /** Scalar multiplier on uwSigma: "how murky is this water". */
@@ -236,6 +248,11 @@ export function parsePost(search: string, quality: 'low' | 'med' | 'high'): Post
       csSteps: Math.min(24, Math.max(2, n(p, 'cssteps', POST_DEFAULTS.csSteps) | 0)),
       csThickM: Math.max(0.01, n(p, 'csthick', POST_DEFAULTS.csThickM)),
       csStrength: Math.min(1, Math.max(0, n(p, 'csstrength', POST_DEFAULTS.csStrength))),
+      csThinEdgeM: Math.max(0.001, n(p, 'csthinedge', POST_DEFAULTS.csThinEdgeM)),
+      csThinAmount: p.get('csthin') === '0'
+        ? 0 : Math.min(1, Math.max(0, n(p, 'csthinamount', POST_DEFAULTS.csThinAmount))),
+      csThinNearM: Math.max(0, n(p, 'csthinnear', POST_DEFAULTS.csThinNearM)),
+      csThinFarM: Math.max(0.01, n(p, 'csthinfar', POST_DEFAULTS.csThinFarM)),
       uwExtinction: Math.max(0, n(p, 'uwext', POST_DEFAULTS.uwExtinction)),
       uwTintScale: Math.max(0, n(p, 'uwtint', POST_DEFAULTS.uwTintScale)),
       uwScatterFrac: Math.max(0, n(p, 'uwscatter', POST_DEFAULTS.uwScatterFrac)),
