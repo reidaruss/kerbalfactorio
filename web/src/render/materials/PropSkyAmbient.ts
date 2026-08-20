@@ -69,7 +69,11 @@
 // Written here rather than only in the ledger, because a term whose measured
 // effect is not beside it is a term somebody later mistakes for a look knob.
 // Three interleaved repeats per arm, one server, one build, arm order rotated
-// every repeat; every luma below reproduced to 0.00 across its three runs.
+// every repeat. The MEAN lumas below reproduced to 0.00 across their three
+// runs; the SPREAD statistics did not, and `iqr` was observed at both 16.36 and
+// 16.43, so the tolerance on those is +-0.07 rather than zero. Stated because a
+// tolerance quoted tighter than the instrument delivers is a defect in the same
+// class as the numbers it is guarding.
 //
 //   forestfloor  box   19.79 -> 19.89   +0.10
 //   meadow       nearG 68.44 -> 68.69   +0.25
