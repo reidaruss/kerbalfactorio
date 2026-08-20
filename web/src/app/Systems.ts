@@ -386,21 +386,12 @@ export function registerSystems(s: Services, loop: Loop): void {
     // rebased every 4 km, so a radius measured from it would put the foliage
     // ring kilometres away from the player.
     s.scatter.update(s.terrain.residentViews.values(), eye);
-    // RN-2145. The ground-cover carpet, on the same views and the same eye.
-    //
-    // PIXELS PER RADIAN IS PUSHED AND NOT ASSUMED. The carpet's fade is
-    // expressed in apparent size (GrassTuning's FADE_PX note: a fade constant
-    // must be derived from what it protects, RN-1855), so it needs the one
-    // quantity that turns metres at a range into pixels on this frame:
-    // drawingBufferHeight / (2 tan(fovY/2)). Reading it here rather than
-    // caching it is what makes the fade move with a resize instead of quietly
-    // becoming a metre value that was right once.
-    // `domElement.height` IS the drawing-buffer height (the canvas attribute,
-    // not the CSS box), so it already carries the device pixel ratio and does
-    // not need one applied.
-    const dbh = s.renderer.domElement.height;
+    // RN-2145. The carpet, same views, same eye. The third argument is pixels
+    // per radian (`domElement.height` IS the drawing buffer, so the device
+    // ratio is already in it); the carpet's fade is in apparent size and is
+    // read live so a resize moves it. See GrassCover.update and GrassTuning.
     s.grass.update(s.terrain.residentViews.values(), eye,
-      dbh / (2 * Math.tan((cam.fov * Math.PI) / 360)));
+      s.renderer.domElement.height / (2 * Math.tan((cam.fov * Math.PI) / 360)));
     // RN-821. THE STATION, recomposed from its f64 body-frame pose, every
     // frame, and never cached in engine space. Here rather than in `onDrain`
     // for the reason the vessel is here: the visibility gate is a distance

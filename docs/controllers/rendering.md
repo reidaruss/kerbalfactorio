@@ -1,6 +1,6 @@
 # Rendering & Graphics: Master Controller Context
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-19 (RN-2065 to RN-2075 used of the RN-2065 to RN-2084 block, `lane/world-audit`: **THE WORLD LOOK AUDIT. THE WORLD IS FINISHED TO ABOUT FORTY METRES AND UNFINISHED PAST IT, AND NINE OF THE TEN CANONICAL FRAMES WERE TAKEN INSIDE THAT FORTY METRES.** Full ranked queue with evidence in [docs/web/WORLD-AUDIT-2026-08-19.md](../web/WORLD-AUDIT-2026-08-19.md), summarised in section 2.10 below. **FIVE NEW CANONICAL POSES** in `artframe.js` (`vista`, `vistadawn`, `vistanoon` at one pose one `sunDot` apart on a Mountains ridge; `flyover` at 1,200 m and `limb` at 120 km, both of which needed their own `--scenario=` because **`Controller.teleport` DISCARDS its altitude argument** and a walk-mode run would have photographed the ground with every field reading correct). **THE FOUR MEASUREMENTS THAT RANK THE QUEUE.** (1) **A `?atmos=0` NEGATIVE CONTROL SPLITS ONE APPARENT DEFECT INTO TWO**: at 1,200 m the horizon band reads iqr **20.08 with the atmosphere and 89.17 without** (the haze is taking **77.5%** of the distance) while the ground DIRECTLY BELOW reads **7.79 and 7.21**, i.e. the haze takes none of it and that flatness is terrain with no material to lose. Either finding alone would have been filed as the other. (2) **THE DAY ARC INVERTS THE FRAME**: at one fixed pose, sun 66.89 -> 44.31 -> 5.85 degrees, near scree luma **167.51 -> 134.14 -> 33.01** while the far ridge goes **205.31 -> 198.86 -> 231.51**, so the far-to-near ratio runs 1.23 -> 1.48 -> **7.01** and at dawn the distance is seven times brighter than the player's feet. (3) **THE SKY BRIGHTENS TOWARD THE SUN AND NEVER REDDENS**: the sun-side sky is **1.84x** the anti-sun side at a 5.85 degree sun (110.83 against 60.35, so the scattering integral does resolve direction and section 8 is a TUNING lane), while the horizon sky's `warm` moves **14.83 counts across 61 degrees of elevation** and sits at -86 at dawn. (4) **THE WORLD EMPTIES THE MOMENT THE EYE LEAVES THE GROUND**: `flyover` is **188,081 triangles at 1,200 m and 231,089 at 400 m** against **2,759,465** at a standing eye on plains, with not one tree in any aerial frame and both `?atmos=0` controls proving they are ABSENT rather than hazed. **AND THE COST CEILING IS ALREADY BREACHED WITHOUT ANY OF THIS**: that 2,759,465-triangle plains frame is 71 calls, over `StatsProbe`'s ALERT triangle threshold and over the 16.6 ms frame budget on every box measured, at a ratio of about 4.5x against the vista pose's cost (absolute milliseconds are box-and-run-dependent: this audit's p50 read 32.1 ms), at a standing eye with nothing built; `midfield` p99 is **64.6 ms**. **NOT ONE OF THE TOP FIVE GAPS NEEDS WEBGPU OR NATIVE**, and the audit says so with reasons rather than as an opinion: the two atmosphere gaps are shader-local in `ofAtmoAerial` and `TerrainFragLight`, the vegetation gap is a third baked LOD rung in a pipeline that already bakes LOD2, the shadow gap is a fourth cascade plus a heightfield horizon term, and the one plausible (c) is DISTANT GEOMETRIC relief, handed to the RN-2085 ceiling study with this lane's numbers attached. **TWO GREENS WORTH THE SAME WEIGHT AS THE REDS**: the `limb` frame at 120 km is **AT BAR** (ring luma 93.27, iqr 101.39, sat 0.626 over a 0.10 sky, 52,913 triangles, 21 calls, p50 1.1 ms) and the atmosphere is a real shared analytic integral rather than a gradient. **ONE LATENT DEFECT FOUND AND FIXED**: `artframe.js` read `of.game().mode` and `of.game()` is null with no gameplay, so the first shot ever run outside `--scenario=walk` died with a TypeError out of `page.evaluate` before any shot code ran. **`station` CAME BACK INTERIOR AGAIN** (`drawEyeDistM` 4.316; `alpha` varies per run and stays inside [0,1] -- this audit read 0.924 -- so the RN-2035 clamp is ruled out and INTERIOR is the stable fact), so section 2.8 R5 stays open and is re-flagged rather than re-diagnosed.) (**RN-2085 to RN-2090 used of the RN-2085 to RN-2099 block, `lane/ceiling-study`: THE BROWSER IS NOT THE BLOCKER, and the measurement says where the blocker is. Full document at [docs/web/CEILING-STUDY-2026-08-19.md](../web/CEILING-STUDY-2026-08-19.md); the decision row is RN-2085 in §3 below; the six questions for Reid are §7 of that document. Headline: ~10 ms/frame at `forestfloor` on a real D3D11 RTX 4060 Ti at 1600x900 against a 16.6 ms budget, 76 of 150 budgeted draw calls, 1.45 M of 2.7 M budgeted triangles, and 58.8 PER CENT OF EVERY TRIANGLE IN THE FRAME IS SHADOW-MAP GEOMETRY, which is §2.8 R2's already-diagnosed foliage-LOD defect and not a platform property. Two instruments landed, `web/tools/smoke/probes/ceiling.js` and `web/tools/smoke/ceilingsweep.mjs`; no game code.**) (Earlier the same day: RN-2050 to RN-2052 used of the RN-2050 to RN-2059 block, `lane/rn-resisters`, THE THREE RENDERING LINE-CAP RESISTERS DECOMPOSED RATHER THAN EXEMPTED, per Reid's ruling of the same day. `check:limits` **51 -> 48**, `cd web && npm run check` **6 of 7** with only the pre-existing `check:limits` red and `check:boot` green. **`TerrainMaterial.ts` 989 -> 53**, `createTerrainMaterials` (565 lines) decomposed into four named phases over one explicit state object whose type is `ReturnType<typeof buildTerrainUniformState>`, derived rather than declared so the two cannot drift; six siblings (`TerrainUniformState`, `TerrainProgram`, `TerrainArtHandle`, `TerrainAmpQuery`, `TerrainReliefQuery`, `TerrainMaterialTypes`). **`TerrainShader.ts` 884 -> 64**, the 690-line GLSL `main()` split into five named chunk constants concatenated in identical order (`TerrainFragPars/Setup/Albedo/Bump/Light.glsl.ts`), **proven BYTE-IDENTICAL** rather than merely pixel-close (real modules, log 90,439 chars sha256 `bdf0ec82...`, plain 90,372 sha256 `8fd8f416...`; an earlier stubbed-harness figure published in this row was corrected, see RN-2054). **`Scatter.ts` 714 -> 365**, the 200-line sampler and the nineteen counters given explicit state (`ScatterSample`, `ScatterCounters`, `ScatterTypes`); its `forestfloor` frame is **bit-identical** to a HEAD-source frame from a different build and process. **THE FINDING THAT GENERALISES IS ABOUT THE INSTRUMENT, NOT THE THREE FILES: a same-build pngdiff control taken inside ONE server process is not a noise band.** Two back-to-back `midfield` shots on one process measured 0.00% and looked like determinism; rebuilding the SAME HEAD source into a fresh process and re-shooting put the real same-source band at **0.00% to 2.94%** for `midfield` and **1.61% to 3.92%** for `forestfloor`. The same trap sits in the probe reports: **139 fields of the three terrain probes differ between HEAD and a HEAD REBUILD**, against 140 for the TerrainMaterial split, so a bare "N fields moved" reading would have condemned a behaviour-preserving change. See RN-2050 to RN-2054 in section 3 and NUMBERS.md's RN-2050 to RN-2059 row.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-19 (**RN-2145 to RN-2152 used of the RN-2145 to RN-2159 block, `lane/a2-carpet`: THE GROUND-COVER CARPET, fidelity lane A2, closing the gap analysis section 1 difference 1. Two GPU-instanced rungs behind TWO draw calls, reusing texgen's existing grass card unchanged; every blade takes the terrain's own albedo beneath it and rotates it toward green AT CONSTANT LUMINANCE, so the fade cannot show as a value step; the fade itself is expressed in PIXELS of apparent card height and computed live from the camera, not typed in metres. Measured at the new `meadow` pose on real D3D11: 74,939 instances, +2 draw calls, +254,518 triangles (+9.2%), VRAM and programs unmoved, frame cost -0.44 ms against within-arm spreads of 3.83 and 2.10 and therefore NOT SEPARATED. Determinism proven by a full drop-and-rebuild round trip, digest identical. **THE LARGEST FINDING IS OWED TO LANE A1: screen-space AO takes 44 to 57 per cent of the carpeted ground's luminance against 31 to 32 per cent of the bare ground's, which is the whole difference between the carpet reading brighter than the ground it replaced (+14%, AO off) and darker (-7% at 8 m, -34% at 4 m, AO on).** Four defects were found by LOOKING and none of them by a number: the card mips to a solid wedge, the blades read as shark fins, the field reads as a pin cushion, the colour reads as a lawn. And the fixture was wrong before the feature was: `meadow`'s first rectangles landed at 3.8 to 11.8 m and never reached the mid field. Full record in section 2.11 below.**) (RN-2065 to RN-2075 used of the RN-2065 to RN-2084 block, `lane/world-audit`: **THE WORLD LOOK AUDIT. THE WORLD IS FINISHED TO ABOUT FORTY METRES AND UNFINISHED PAST IT, AND NINE OF THE TEN CANONICAL FRAMES WERE TAKEN INSIDE THAT FORTY METRES.** Full ranked queue with evidence in [docs/web/WORLD-AUDIT-2026-08-19.md](../web/WORLD-AUDIT-2026-08-19.md), summarised in section 2.10 below. **FIVE NEW CANONICAL POSES** in `artframe.js` (`vista`, `vistadawn`, `vistanoon` at one pose one `sunDot` apart on a Mountains ridge; `flyover` at 1,200 m and `limb` at 120 km, both of which needed their own `--scenario=` because **`Controller.teleport` DISCARDS its altitude argument** and a walk-mode run would have photographed the ground with every field reading correct). **THE FOUR MEASUREMENTS THAT RANK THE QUEUE.** (1) **A `?atmos=0` NEGATIVE CONTROL SPLITS ONE APPARENT DEFECT INTO TWO**: at 1,200 m the horizon band reads iqr **20.08 with the atmosphere and 89.17 without** (the haze is taking **77.5%** of the distance) while the ground DIRECTLY BELOW reads **7.79 and 7.21**, i.e. the haze takes none of it and that flatness is terrain with no material to lose. Either finding alone would have been filed as the other. (2) **THE DAY ARC INVERTS THE FRAME**: at one fixed pose, sun 66.89 -> 44.31 -> 5.85 degrees, near scree luma **167.51 -> 134.14 -> 33.01** while the far ridge goes **205.31 -> 198.86 -> 231.51**, so the far-to-near ratio runs 1.23 -> 1.48 -> **7.01** and at dawn the distance is seven times brighter than the player's feet. (3) **THE SKY BRIGHTENS TOWARD THE SUN AND NEVER REDDENS**: the sun-side sky is **1.84x** the anti-sun side at a 5.85 degree sun (110.83 against 60.35, so the scattering integral does resolve direction and section 8 is a TUNING lane), while the horizon sky's `warm` moves **14.83 counts across 61 degrees of elevation** and sits at -86 at dawn. (4) **THE WORLD EMPTIES THE MOMENT THE EYE LEAVES THE GROUND**: `flyover` is **188,081 triangles at 1,200 m and 231,089 at 400 m** against **2,759,465** at a standing eye on plains, with not one tree in any aerial frame and both `?atmos=0` controls proving they are ABSENT rather than hazed. **AND THE COST CEILING IS ALREADY BREACHED WITHOUT ANY OF THIS**: that 2,759,465-triangle plains frame is 71 calls, over `StatsProbe`'s ALERT triangle threshold and over the 16.6 ms frame budget on every box measured, at a ratio of about 4.5x against the vista pose's cost (absolute milliseconds are box-and-run-dependent: this audit's p50 read 32.1 ms), at a standing eye with nothing built; `midfield` p99 is **64.6 ms**. **NOT ONE OF THE TOP FIVE GAPS NEEDS WEBGPU OR NATIVE**, and the audit says so with reasons rather than as an opinion: the two atmosphere gaps are shader-local in `ofAtmoAerial` and `TerrainFragLight`, the vegetation gap is a third baked LOD rung in a pipeline that already bakes LOD2, the shadow gap is a fourth cascade plus a heightfield horizon term, and the one plausible (c) is DISTANT GEOMETRIC relief, handed to the RN-2085 ceiling study with this lane's numbers attached. **TWO GREENS WORTH THE SAME WEIGHT AS THE REDS**: the `limb` frame at 120 km is **AT BAR** (ring luma 93.27, iqr 101.39, sat 0.626 over a 0.10 sky, 52,913 triangles, 21 calls, p50 1.1 ms) and the atmosphere is a real shared analytic integral rather than a gradient. **ONE LATENT DEFECT FOUND AND FIXED**: `artframe.js` read `of.game().mode` and `of.game()` is null with no gameplay, so the first shot ever run outside `--scenario=walk` died with a TypeError out of `page.evaluate` before any shot code ran. **`station` CAME BACK INTERIOR AGAIN** (`drawEyeDistM` 4.316; `alpha` varies per run and stays inside [0,1] -- this audit read 0.924 -- so the RN-2035 clamp is ruled out and INTERIOR is the stable fact), so section 2.8 R5 stays open and is re-flagged rather than re-diagnosed.) (**RN-2085 to RN-2090 used of the RN-2085 to RN-2099 block, `lane/ceiling-study`: THE BROWSER IS NOT THE BLOCKER, and the measurement says where the blocker is. Full document at [docs/web/CEILING-STUDY-2026-08-19.md](../web/CEILING-STUDY-2026-08-19.md); the decision row is RN-2085 in §3 below; the six questions for Reid are §7 of that document. Headline: ~10 ms/frame at `forestfloor` on a real D3D11 RTX 4060 Ti at 1600x900 against a 16.6 ms budget, 76 of 150 budgeted draw calls, 1.45 M of 2.7 M budgeted triangles, and 58.8 PER CENT OF EVERY TRIANGLE IN THE FRAME IS SHADOW-MAP GEOMETRY, which is §2.8 R2's already-diagnosed foliage-LOD defect and not a platform property. Two instruments landed, `web/tools/smoke/probes/ceiling.js` and `web/tools/smoke/ceilingsweep.mjs`; no game code.**) (Earlier the same day: RN-2050 to RN-2052 used of the RN-2050 to RN-2059 block, `lane/rn-resisters`, THE THREE RENDERING LINE-CAP RESISTERS DECOMPOSED RATHER THAN EXEMPTED, per Reid's ruling of the same day. `check:limits` **51 -> 48**, `cd web && npm run check` **6 of 7** with only the pre-existing `check:limits` red and `check:boot` green. **`TerrainMaterial.ts` 989 -> 53**, `createTerrainMaterials` (565 lines) decomposed into four named phases over one explicit state object whose type is `ReturnType<typeof buildTerrainUniformState>`, derived rather than declared so the two cannot drift; six siblings (`TerrainUniformState`, `TerrainProgram`, `TerrainArtHandle`, `TerrainAmpQuery`, `TerrainReliefQuery`, `TerrainMaterialTypes`). **`TerrainShader.ts` 884 -> 64**, the 690-line GLSL `main()` split into five named chunk constants concatenated in identical order (`TerrainFragPars/Setup/Albedo/Bump/Light.glsl.ts`), **proven BYTE-IDENTICAL** rather than merely pixel-close (real modules, log 90,439 chars sha256 `bdf0ec82...`, plain 90,372 sha256 `8fd8f416...`; an earlier stubbed-harness figure published in this row was corrected, see RN-2054). **`Scatter.ts` 714 -> 365**, the 200-line sampler and the nineteen counters given explicit state (`ScatterSample`, `ScatterCounters`, `ScatterTypes`); its `forestfloor` frame is **bit-identical** to a HEAD-source frame from a different build and process. **THE FINDING THAT GENERALISES IS ABOUT THE INSTRUMENT, NOT THE THREE FILES: a same-build pngdiff control taken inside ONE server process is not a noise band.** Two back-to-back `midfield` shots on one process measured 0.00% and looked like determinism; rebuilding the SAME HEAD source into a fresh process and re-shooting put the real same-source band at **0.00% to 2.94%** for `midfield` and **1.61% to 3.92%** for `forestfloor`. The same trap sits in the probe reports: **139 fields of the three terrain probes differ between HEAD and a HEAD REBUILD**, against 140 for the TerrainMaterial split, so a bare "N fields moved" reading would have condemned a behaviour-preserving change. See RN-2050 to RN-2054 in section 3 and NUMBERS.md's RN-2050 to RN-2059 row.)
 
 
 
@@ -1861,6 +1861,167 @@ is ruled out). Section 2.8 R5 stays open: INTERIOR is the stable fact and the
 storyline's climax destination still has no judgeable exterior frame. Re-flagged
 rather than re-diagnosed, because it is not a world-graphics question and this
 lane had no mandate to reopen it.
+
+---
+
+## 2.11 THE GROUND-COVER CARPET (RN-2145 to RN-2152, 2026-08-19, `lane/a2-carpet`). FIDELITY LANE A2
+
+> Closes the gap analysis' **section 1 difference 1**: "the ground IS grass
+> there; here grass sits ON the ground", named there as roughly half the
+> perceived gap to the D-020 bar. Judged by the hero-frame process (gap doc
+> Option D), not by instrument deltas. Frames: `docs/screenshots/RN2145_*`.
+
+### 2.11.1 What it is
+
+A **separate layer from the prop scatter**, which keeps bushes and trees. Two
+GPU-instanced rungs behind **two draw calls**, both reusing texgen's existing
+`grass` family (`of_grass_a.png`, 1024, `alpha_test` 0.35): no new texture
+family, no `texgen.py` change, no `ROLE_FAMILY` entry.
+
+| rung | card | tris/instance | density | reach |
+|---|---|---|---|---|
+| tuft | 2 crossed quads, 2 height segments, 0.27 u span (3 painted blades) | 8 | `32 / (1 + d/10)^2` per m2 | 26 m, hands over from 20 m |
+| mat | 1 quad, 1 segment, full 11-blade span, 1.10 x 0.42 m | 2 | 1.55 per m2 flat | 95 m, fades in over 12 to 20 m |
+
+Files: `web/src/render/grass/{GrassTuning,GrassPalette,GrassCard,GrassGlsl,GrassMaterial,GrassPool,GrassSample,GrassCover}.ts`.
+Instruments: `web/tools/smoke/probes/{grasscover,grasswind}.js`. Pose:
+`artframe.js`'s new `meadow` row.
+
+### 2.11.2 The three rules that make it a carpet rather than denser scatter
+
+**COLOUR COMES FROM THE GROUND, AND THE FADE CANNOT SHOW AS A VALUE STEP.**
+Every instance samples `BiomePalette.terrainAlbedo` at its own cell (the
+acknowledged CPU twin of the four lines the terrain fragment draws the ground
+with) and rotates it toward green **at constant Rec.709 luminance**
+(`GrassPalette.coverAlbedo`). Worked: Plains `0x6d6a47` is linear (0.153, 0.144,
+0.063), luma 0.140; the rotation gives `#4E723E` at luma 0.140 exactly. So what
+is lost across the fade is chroma and texture, never light. **Measured with the
+one-flag isolator `?grasstint=0`** (blades exactly the substrate colour): the
+rotation costs 1 to 3 per cent of luma at every range rung, which is the
+luminance preservation working.
+
+**LIGHT COMES FROM THE SAME PLACE THE GROUND'S DOES.** The carpet is a
+`ShaderMaterial` holding `TERRAIN_AMBIENT`, `TERRAIN_SKY_AMBIENT`, the
+atmosphere record, `uBodyCenter` and `uCascadeFar` **by reference** (RN-64's
+argument, WaterMaterial's pattern), and inlining the same
+`TERRAIN_SUN_IRRADIANCE`. It is the **fifth ShaderMaterial on the DW-10 ledger**
+and the argument for it is lane A1's measurement: `StockFill.stockFloor` lights
+scattered props from the ambient FLOOR only and the sky-ambient weight never
+reaches an instance, so a carpet lit that way would sit in the old grey floor
+while the ground under it wore the sky tint.
+
+**THE FADE IS IN PIXELS, NOT METRES** (RN-1855's derive-do-not-type rule).
+`px = cardHeight * grow * (viewportH / (2 tan(fovY/2))) / dist`, computed live
+in the vertex shader from the camera's own pixels per radian, which `Systems`
+pushes each frame. At the reference viewport the window lands at about **60 to
+92 m**, and the metres are the consequence rather than the input.
+
+### 2.11.3 What the frames found that no number would have
+
+Four defects, each caught by looking and each recorded because the cause is
+reusable:
+
+1. **The card mipped to a solid wedge.** `texgen.py` widened the blade until the
+   coverage cleared the 0.35 cutoff so that "distant mips converge toward solid
+   rather than dissolving". Right for a prop card, wrong for a carpet whose
+   subject IS the gaps. Fixed by fewer wider blades per card (u span 0.42 to
+   0.27) plus a rescale of the sampled alpha about the cutoff; **the texture is
+   untouched, so no prop moves**. `?grasssharp=1` is the exact control.
+2. **Green shark fins.** A 0.18 m card over three blades is a 5 cm blade at
+   30 cm tall, aspect 1:6.7. 0.13 x 0.38 gives 1:10.6 and 6.3 px at 4 m, which
+   is as slim as FXAA-only alpha testing holds still (world-audit gap 17).
+3. **A pin cushion.** Vertical cards have straight silhouettes and nothing in a
+   meadow does. A per-instance LEAN combed by a common bearing derived from
+   PropWind's own phase vector moved the read more than any other change.
+4. **A lawn.** One green per biome measured sat 0.603 against bare ground's
+   0.526. Plains' rotation weight dropped to 0.74 and gained a per-instance DRY
+   DRIFT **along the same line toward the substrate**, so blades vary without
+   any of them being able to disagree with the ground. Now 0.576.
+
+**AND THE FIXTURE WAS WRONG BEFORE THE FEATURE WAS.** `meadow`'s first
+rectangles were hand-written fractions; inverting the range map afterwards put
+them at 3.8, 8.5 and 11.8 m, so **not one reached the mid field**, which is the
+band a carpet is most likely to leave bald and the band the judgement is about.
+At a 2 m eye, 25 to 60 m of ground is about seven pixels, so a hand-picked
+fraction cannot land there. They are `rangeRects [4, 10, 25, 55]` now.
+
+### 2.11.4 The numbers
+
+Real D3D11, RTX 4060 Ti through ANGLE, 1600x900, `meadow` pose (Plains
+-7.9675 / 116.53189, yaw 150, pitch -12, sun dot 0.699 measured):
+
+| quantity | value |
+|---|---|
+| instances | 74,939 (tuft 17,440, mat 57,499) over 25 chunks |
+| draw calls | **+2** (71 to 73), programs **unmoved at 44** |
+| triangles | **+254,518**, 2,762,904 to 3,017,422 (**+9.2%**) |
+| VRAM | **unmoved**, 104.2 MB |
+| resident chunks | **unmoved**, 330 |
+| refused / cells capped / backlog | 0 / 0 / 0 |
+| `placedPerM2` / `askedPerM2` / delivered | 2.12 / 1.89 / **1.123** |
+| frame cost (WG-189, 5 interleaved repeats, 400 frames) | **-0.44 ms against within-arm spreads of 3.83 and 2.10: NOT SEPARATED** |
+
+**The triangle number is the one to argue with, and it is stated as a breach.**
+The plains standing eye was **already over `StatsProbe`'s 2.7 M ALERT before
+this lane** (2,762,904; the world audit flagged the same pose at 2,759,465) and
+the carpet takes it to 3,017,422. Two things bound it and neither is an excuse:
+the carpet **casts no shadow**, so its triangles are drawn ONCE where a prop
+triangle is drawn four times (the ceiling study's 58.8 per cent), and 254,518 is
+**30 per cent of the 853,675 triangles that study priced as recoverable shadow
+waste**. The frame-cost gate the ceiling study asks for would have flagged this,
+and it still does not exist.
+
+**Determinism** (`probes/grasscover.js`, a real round trip and not a re-read:
+1.2 km away so every chunk is dropped, then back so every chunk is rebuilt from
+its own key): digest `54cbcf74-456b1741` to `6ab96204-f8849c97` away (the
+control is armed) to `54cbcf74-456b1741` back, **74,939 instances both times**.
+
+**Wind** (`probes/grasswind.js`, the clock pinned at three offsets in one
+settled sequence, mean per-tile luma change): carpet + props **3.77**, props
+only **2.28** (`?grass=0`), neither **0.63** (`?wind=0`). All three separate.
+The still arm is a control that WENT RED first: `?wind=0` drops PropWind's hook,
+which stops the props and cannot stop a `ShaderMaterial` reading the shared
+clock directly, so the carpet kept swaying with the flag off (34.59 counts where
+there must be none). The carpet now reads PropWind's `enabled`.
+
+### 2.11.5 THE FINDING THIS LANE OWES ANOTHER, AND IT IS THE LARGEST ONE HERE
+
+**Screen-space AO takes 44 to 57 per cent of the carpeted ground's luminance
+against 31 to 32 per cent of the bare ground's, and that alone is the difference
+between the carpet reading brighter than the ground it replaced and darker.**
+Four arms, one flag apart on one build, `meadow` `box`:
+
+| | AO on | AO off | AO takes |
+|---|---|---|---|
+| carpet off | 63.08 | 91.50 | 31.1% |
+| carpet on | 58.66 | 104.47 | **43.9%** |
+
+At the 4 m rung it is worse: bare 58.40 / 85.25 (31.5%), carpeted 38.26 / 89.26
+(**57.1%**). On `forestfloor`, where there is no direct sun to hide it, the
+carpeted floor reads **10.02 with AO on and 26.87 with it off**, against the
+bare floor's 23.98. **So the carpet is not darkening the ground; the AO is
+darkening the carpet.** This is the gap analysis' difference 3 (AO at strength
+0.9, radius 0.9 m reads as hard dark blobs) meeting a layer with real depth
+complexity. `render/post/*` is lane A1's and this lane did not touch it.
+
+### 2.11.6 The seam this lane publishes to A3, and the honest partial result
+
+`GrassPalette.coverAlbedo(substrate, biome, out, dry)` and the `COVER` table are
+**the carpet side of the fade-target contract**. A3's far-field grass layer
+should target `coverAlbedo` at the fade end, and then far ground and near carpet
+agree by construction rather than by tuning.
+
+**Until it does, the residual is real and is visible in the frame:** past the
+fade the ground is the bare biome substrate again, and on the meadow pose that
+is a khaki band along the horizon where the green stops. The luminance-matched
+rotation means it is a CHROMA step and not a value step, and the aerial
+perspective has already taken most of the chroma out by then, but it is there.
+**This lane cannot close it from its own files without repainting the biome
+palette, which is RN-347's decision and A3's ground.**
+
+Two more stated limits: the carpet **casts no shadow** (deliberate, see the
+triangle note), and at 2 to 4 m there is still bare substrate visible between
+blades. The near field reads as a meadow; it does not yet read as turf.
 
 ---
 
