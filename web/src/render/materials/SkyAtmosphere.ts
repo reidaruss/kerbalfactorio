@@ -14,6 +14,8 @@ import { ATMOSPHERE_PARS } from './Atmosphere.glsl.js';
 import { TERRAIN_AMBIENT, TERRAIN_SKY_AMBIENT, TERRAIN_SUN_IRRADIANCE }
   from './TerrainAmbient.js';
 import type { QualityTier } from '../../app/Config.js';
+import { createCloudUniforms, SKY_CLOUDS_GLSL, type CloudUniforms }
+  from './SkyClouds.js';
 
 /** View / light ray-march sample counts per tier. Cost is viewSteps*lightSteps. */
 const STEPS: Record<QualityTier, [number, number]> = {
@@ -56,6 +58,8 @@ export interface SkyAtmosphere {
    * same call stack, and it is cleared, so no presented frame can observe it.
    */
   setGroundMode(on: boolean): void;
+  /** RN-2175. Seconds on the sim clock; drives the cloud drift and nothing else. */
+  setTime(s: number): void;
   dispose(): void;
 }
 
@@ -67,16 +71,17 @@ export interface SkyAtmosphere {
  * does not move. SkyIbl raises it around one synchronous capture.
  */
 export function createSkyAtmosphere(
-  atmos: AtmosphereUniforms, tier: QualityTier,
+  atmos: AtmosphereUniforms, tier: QualityTier, seed = 0,
 ): SkyAtmosphere {
   const [viewSteps, lightSteps] = STEPS[tier];
   const uCamPosM = { value: new THREE.Vector3() };
   const uGroundOn = { value: 0 };
   const uGroundAlbedo = { value: new THREE.Color(0.5, 0.5, 0.5) };
   const uGroundGain = { value: 1 };
+  const clouds: CloudUniforms = createCloudUniforms(seed);
   const material = new THREE.ShaderMaterial({
     uniforms: {
-      ...atmos, uCamPosM, uGroundOn, uGroundAlbedo, uGroundGain,
+      ...atmos, ...clouds, uCamPosM, uGroundOn, uGroundAlbedo, uGroundGain,
       // SHARED BY REFERENCE with both terrain materials, on the atmosphere
       // record's own precedent (DW-22). These two are the terrain's ambient
       // model, and the ground radiance below is a copy of TerrainShader's
@@ -100,6 +105,7 @@ export function createSkyAtmosphere(
     fragmentShader: /* glsl */`
       #include <common>
       ${ATMOSPHERE_PARS}
+      ${SKY_CLOUDS_GLSL}
       uniform vec3  uCamPosM;
       uniform float uGroundOn;
       uniform vec3  uGroundAlbedo;
@@ -147,17 +153,32 @@ export function createSkyAtmosphere(
           // and it is in the direction of too much bounce inside a shadow, where
           // the direct term is already gone.
           vec3 sd = normalize(uSunDir);
-          vec3 skyTrans;
-          vec3 skyAmb = ofAtmoScatter(uCamPosM, up, 1.0e9,
-                                      OF_VIEW_STEPS, OF_LIGHT_STEPS, skyTrans) * uSkyAmbientK;
+          vec3 skyAmb = ofAtmoSkyAmb(uCamPosM, up,
+                                     OF_VIEW_STEPS, OF_LIGHT_STEPS) * uSkyAmbientK;
           vec3 sunT = uAtmosOn > 0.5
             ? ofAtmoSunTransmittance(uCamPosM, sd, ${GROUND_SUN_STEPS})
             : vec3(1.0);
           gl_FragColor = vec4(uGroundAlbedo * uGroundGain
             * (uGroundAmbient + skyAmb + sunT * (uSunIrradiance * max(dot(up, sd), 0.0))), 1.0);
         } else {
-          gl_FragColor = vec4(
-            ofAtmoScatter(uCamPosM, rd, 1.0e9, OF_VIEW_STEPS, OF_LIGHT_STEPS, trans), 1.0);
+          vec3 sky = ofAtmoScatter(uCamPosM, rd, 1.0e9,
+                                   OF_VIEW_STEPS, OF_LIGHT_STEPS, trans);
+          // RN-2175. THE BOUNDARY LAYER IN THE SKY, and this is its ONLY call
+          // site: the terrain's own upward sky-ambient ray issues the same
+          // ofAtmoScatter with the same 1.0e9 and cannot reach this line, so
+          // the confinement is the call graph exactly as ofAtmoAerial's is.
+          // The CPU probe in TerrainAmbient evaluates the same expression, which
+          // is why the ambient agrees with the sky it is derived from.
+          vec3 skySunT = uAtmosOn > 0.5
+            ? ofAtmoSunTransmittance(uCamPosM, normalize(uSunDir), ${GROUND_SUN_STEPS})
+            : vec3(1.0);
+          // Clouds UNDER the aerosol, deliberately: a deck at 2.6 km is inside
+          // the boundary layer's column for a shallow ray, so the haze must sit
+          // in front of it and take a distant cell toward the horizon's colour
+          // exactly as it takes a distant ridge.
+          vec3 withCloud = uGroundOn > 0.5 ? sky
+            : ofSkyClouds(sky, uCamPosM, rd, up, skySunT, uAeroRef.x);
+          gl_FragColor = vec4(ofAtmoSkyAero(withCloud, uCamPosM, rd, skySunT), 1.0);
         }
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -185,6 +206,11 @@ export function createSkyAtmosphere(
     setGroundAlbedo(c) { uGroundAlbedo.value.copy(c); },
     setGroundGain(k) { uGroundGain.value = k; },
     setGroundMode(on) { uGroundOn.value = on ? 1 : 0; },
-    dispose() { mesh.geometry.dispose(); material.dispose(); },
+    setTime(t) { clouds.uCloudTime.value = t; },
+    dispose() {
+      mesh.geometry.dispose();
+      material.dispose();
+      clouds.uCloudTex.value?.dispose();
+    },
   };
 }
