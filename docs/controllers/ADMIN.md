@@ -1,5 +1,8 @@
 # Admin Master
 
+**TWO ADMIN GATE DEFECTS, 2026-08-20, both mine.** (a) The check:roles transient struck a SECOND time, again on the first check-all run immediately after a merge, again passing standalone seconds later and on the full rerun: two sightings makes it a lane per the rule recorded at the first sighting; allocated below. (b) Worse and structural: every chained merge gate of the form `npm run check 2>&1 | tail -2 && ... && git push` had a VACUOUS exit status, because the pipe hands the chain tail's exit code, not the check's. The crown-asset merge pushed with check:roles red because of exactly this. All earlier chained merges were re-verified green after the fact by their standalone reruns, but the discipline was broken the whole time. THE RULE, now binding on Admin: the gate command runs ALONE and its own exit status is read (bash pipefail or a separate un-piped invocation) BEFORE any push command is typed; gate and push never share a chain.
+
+
 **ADMIN'S OWN RESOLVER BUG, 2026-08-20, caught by lane A4.** The NUMBERS.md conflict resolver Admin has used all session takes only the FIRST conflict region in the file (a bare next() over the markers), so the a3-splat merge shipped a second, unresolved conflict region (two trap-catalogue entries) onto pushed main, where it sat until A4's lane read the binding document and reported it. Resolved by union (both entries kept). THE RULE: the resolver must LOOP over every conflict region in the file and the merge commit must grep the whole file for markers afterwards; a gate that does not parse the ledger will never catch this class.
 
 
