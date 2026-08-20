@@ -1,6 +1,6 @@
 # Rendering & Graphics: Master Controller Context
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-20 (RN-2240 to RN-2244, `lane/card-material`: the canopy `_LOD3` impostor card is now ONE material (Leaf) instead of two authored plus two silent LOD2 fallbacks, and ScatterEmit skips acquiring a canopy prop's parts that have no rung of their own at LOD3 -- flyover canopy instances 91,760 -> 22,940 (exactly a quarter), triangles 312,601 -> 209,525, calls 29 -> 26, frame p50 (3 interleaved pairs) 7.5 -> 3.6 ms. Full record in section 2.15. NOTE ON THIS LINE ITSELF: it had grown to 280 KB of concatenated lane summaries; replaced with a pointer rather than appended to, because a header line is not a log.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-20 (RN-2245 to RN-2249, `lane/crown-asset`: the far tier's impostor card wears a CROWN texture (`canopy`, a third card family) instead of the conifer frond it shared with every bough card in the game -- at the 3x3 read a distant tree goes from a 20-count flat chip to a 127-count top-lit crown, for zero triangles, zero instances and zero draw calls. Full record in section 2.16. NOTE ON THIS LINE ITSELF, kept from RN-2244: it had grown to 280 KB of concatenated lane summaries; it is a POINTER and every lane replaces it rather than appending, because a header line is not a log.)
 
 
 
@@ -4738,3 +4738,328 @@ the first probe against it; both preview servers killed by PID
 (`Get-NetTCPConnection -LocalPort <port> -State Listen`) after the sweep.
 Density tables and `Registry.ts` untouched (canopy-density lane's). Branch
 `lane/card-material`, not merged to main.
+
+## 2.16 THE CROWN ASSET (RN-2245 to RN-2249, 2026-08-20, `lane/crown-asset`)
+
+`lane/crown-asset`, base `origin/main` at f08edd7c. **RN-2245 to RN-2249 used;
+RN-2250 to RN-2254 surrendered unused** (abandoned per NUMBERS.md rule 4, never
+reuse): two commits covered the block. Frames `docs/screenshots/RN2245_*`.
+Routed here by BOTH WG-220 verifications, which reached the same sentence
+independently: the air view is now purely asset-limited, because a nine-pixel
+green blob has no canopy texture.
+
+### 2.16.1 The defect, and why no density could have fixed it
+
+The far tier (2.14) draws every tree past `CANOPY_NEAR_M` as a four-triangle
+crossed-quad impostor, and since RN-2202 that card has worn `leaf`. **`leaf` is
+a picture of one conifer FROND.** It has to be: `OF_Leaf` is also the material
+on the bough cards of `tree_conifer.glb` and the crown cards of
+`tree_broadleaf.glb`, i.e. on the tree the player is standing next to, and a
+frond is the right picture there.
+
+Minified to the three-to-nine pixels an aerial tree actually gets, a frond is a
+featureless green chip. **Measured on the shipped bytes** (box-filter to 3x3,
+cut at the manifest's own `alpha_test` 0.35, Rec.709 luma):
+
+| | 3x3, texels surviving | luma range | spread | 6x6 spread |
+|---|---|---|---|---|
+| `of_leaf_a.png` | 7 / 9 | 185..205 | **20** | 38 |
+| `of_canopy_a.png` | 8 / 9 | 109..236 | **127** | 175 |
+
+The leaf card's nine-pixel read is 200, 200, 200. The crown card's is a rounded
+blob with a top corner cut and a **223 / 178 / 113** ramp down its three rows.
+That is the whole lane in one table: WG-220 put six times the stems in the
+frame and every one of them was still a flat chip.
+
+### 2.16.2 THE LID, PRICED AND REFUSED, AND THE REFUSAL IS NOT THE OBVIOUS ONE
+
+The classic third quad, a horizontal lid across the crown top, was the brief's
+own second item. The lazy refusal is "at 14 degrees of pitch a lid presents
+`sin 14` = 0.242 of its area against the vertical pair's `cos 14` = 0.970, so
+it is a quarter of a quad for fifty per cent more triangles". **That argument
+is wrong twice and it is worth writing down why**, because the next lane to
+look at this will reach for it.
+
+**(1) The pitch is not 14 degrees where it matters.** -14 is the camera's, i.e.
+the frame CENTRE's. The flyover frame spans depression -16 to +44 (2.14.1), and
+the visible canopy runs from the frame's bottom edge at 1,243 m ground (44
+degrees) out to the reach at 3,500 m (19 degrees). The lid-to-pair ratio is
+`(d/h) * tan(depression) / 1.273` (the 1.273 is `E[|cos|+|sin|]` over yaw for
+the crossed pair). **(2) The area ratio `d/h` is not small for the species that
+matters.** Off `contracts.json`, crown card height is `H * (1 - crown_lo)`:
+pine 3.85 x 5.40 (`d/h` 0.472), fir 2.90 x 6.60 (0.333), **broadleaf 8.40 x
+10.50 over a 5.04 m card, `d/h` = 2.083** -- and WG-222 made the mix
+broadleaf-led on purpose. So at the frame's near edge a broadleaf lid would
+present **1.58x the crossed pair's projected area**, not a quarter of it. The
+cheap refusal is arithmetic that flatters the answer it was reaching for.
+
+**THE REAL REFUSAL IS THAT THERE IS NO PICTURE TO PUT ON IT.** A lid needs a
+TOP-DOWN crown. This family authors a SIDE view and must, because `cos` beats
+`sin` at every depression in the frame and the vertical pair is 97 per cent of
+the read at the centre. Mapping the side card onto a horizontal quad lays an
+ovoid crown flat with its apex pointing sideways, foreshortened, **worst
+exactly where the lid is most visible**, at the near edge. Authoring a top-down
+picture is a second family, a second megabyte and a second role: a lane, not a
+line. And the fill cost is the bad kind, an alpha-tested plane at grazing
+incidence over 46,575 instances.
+
+**So: two crossed quads, unchanged, and the condition is written down rather
+than the conclusion.** The lid becomes right the moment a top-down crown
+texture exists, and its value is `(d/h) * tan(depression)`, which for the
+broadleaf at the frame's near edge is 2.0. That makes it the largest remaining
+lever in the far tier and it is routed as owed (2.16.8), not dismissed.
+
+### 2.16.3 The card, and what "judged at nine pixels" changed about it
+
+`texgen._canopy_strips`, a third entry in `ALBEDO_FAMILIES` under every
+determinism rule that module already holds: no RNG (`_hash01` only), no
+transcendental past `sqrt` (which is why the crown profile and the rim are
+parametrised by DEPTH down the card rather than by an angle), and
+`_render_card` **untouched**, so `leaf` and `grass` rebuild bit-identical.
+
+Three things survive a mip chain to a 3x3 read and nothing else does: the alpha
+coverage, the LOW-frequency value field, and how ragged the outline is. So the
+card is five tiers of large crown MASS (capsule strips, so the compositor's
+deepest-clearance rule turns every meeting between two masses into an internal
+shadow line) darkening from base 1.00 at the apex to 0.55 at the underside,
+with a finer half-lit/half-shadow clump tier over them, a rim of round tufts
+straddling an ovoid profile, and nine detached outliers. **Leaf detail was
+deliberately not authored**: it is gone by the second mip and the tier ramp is
+still there at the last one.
+
+Three shapes were built and removed, each for a reason the code records: a ring
+of radial spikes (read as a cactus; replaced by round tufts, because what breaks
+a real canopy outline is clumps straddling it), four thin apical sprigs (read as
+antennae), and one wide leader (read as a horn). The conifer read comes from
+`pc.build_atlas` stretching one card into the pine's 3.85 x 2.55 and the
+broadleaf's 8.40 x 10.50 boxes, which is where a species difference belongs
+when one card serves three crowns.
+
+**Coverage 0.7217 at the shipped 1024, measured then asserted** in a 0.66..0.78
+band. The floor is the load-bearing edge and this family is the one that most
+needs it: mip alpha converges toward the card's own coverage, so a card under
+`alpha_test` 0.35 dissolves at exactly the distance this family exists to be
+seen from. 0.66 is nearly twice it. `wrap` is **clamp in both axes**, the one
+line differing from its two siblings: `leaf`/`grass` are periodic fields,
+`canopy` is one object with a transparent margin.
+
+### 2.16.4 A NEW ROLE THAT COSTS NO DRAW CALL, WHICH IS THE PART TO READ
+
+`build_props_canopy.py`'s `ORDER` gains a fifth name, over a comment that said
+a fifth name is a draw call. It is not, and the reason is RN-2244's own fix:
+`ScatterEmit.emit` refuses a canopy part whose OWN `lods[LOD3]` is -1. `Canopy`
+is authored at `_LOD3` alone, so all four near roles are now refused and
+`OF_Canopy:canopy` **replaces** `OF_Leaf:canopy` as the one live batch rather
+than joining it. An empty batch drops out of the frame, the same mechanism
+RN-2244 measured taking the calls 29 to 26, and the `:canopy` suffix never
+casts, so no cascade pays either. Measured, both hero poses: `props.batches`
+21 -> 22 (one more BatchedMesh REGISTERED) and `render.calls` unchanged
+(nothing more DRAWN). Those two counters disagreeing is the claim, not a
+discrepancy.
+
+`isFoliageMaterial` gains `OF_Canopy`, and it is the edit a reader would not
+predict from "the far card gets its own texture". That one prefix test is the
+sole authority behind the foliage base-contact bake, the normal bend, the wind,
+the sky-ambient term and `setLeafVar`. Move the card onto a role that does not
+start with `OF_Leaf` and all four stop silently, with no error and nothing in a
+counter. Same shape of defect as the one this lane is fixing.
+
+**TINT VARIATION WAS ALREADY WIRED AND IS PRESERVED RATHER THAN ADDED**, which
+is the honest answer to the brief's third item. `ScatterEmit.emit` calls
+`tintFor(look, seed, k)` per instance, then `PropLibrary.tint`, then
+`setColorAt`; `tintFor` carries the value jitter (0.66 plus a 0.60 span), the
+5.5 per cent flower branch, A2's dry drift (`DRY_T_GAIN` 0.85 toward
+1.34/1.10/0.58) and an independent chroma mute. `look` comes from
+`lookOf(parts.map(material))`, and a canopy stem's part list still contains its
+`OF_Leaf*` LOD0/LOD2 crowns, so it still resolves `foliage` after this change.
+**So the cards were never all one green; they were all one SHAPE**, and the
+tint had nothing to vary except the overall level of a flat chip. With a crown
+that has a lit top and a shaded underside, the same per-instance value drift
+now separates one crown from its neighbour, which is visible in the flyover
+pair.
+
+Palette hex and `FoliageTone` row are `Leaf`'s **to the digit**, and that is a
+measurement decision: the surface pipeline divides each family's own
+`albedo_mean_linear` back out through `material.color`, so an identical hex
+makes the frame's mean green provably unmoved and leaves the whole before/after
+difference attributable to structure. It also closes the 550 m seam, where a
+harvest tree's `_LOD3` card just inside `CANOPY_NEAR_M` is `OF_Leaf` and a
+canopy crown just outside it is this.
+
+### 2.16.5 The numbers, measured
+
+Two owned `vite preview` servers, `--outDir dist-before/dist-after --port
+5481/5482 --strictPort`, distinct sentinel text written into each dist and
+fetched back over its own port before the first probe, both killed by PID
+(`Get-NetTCPConnection -LocalPort <port> -State Listen`, PIDs 12272 / 30444;
+5483 / 5484 for the walk round, PIDs 32428 / 38184). Real Windows D3D11
+(ANGLE), RTX 4060 Ti, 1600x900. The before arm is `origin/main` at f08edd7c
+rebuilt from a detached checkout, and the arms are proved distinct by their
+entry hashes over the wire (`index-7J0JxVAX.js` against `index-DQpTNO8i.js`)
+and by `props_canopy.glb` sha `cfa22846` against `146c9f9c`.
+
+| flyover (Hills) | before | after |
+|---|---|---|
+| triangles | 225,589 | **225,589** |
+| draw calls | 26 | **26** |
+| props instances | 46,575 | **46,575** |
+| `canopyProps` / `canopyM2` | 46,575 / 43.54 km2 | identical |
+| live canopy batch | `OF_Leaf:canopy` 46,575 | **`OF_Canopy:canopy` 46,575** |
+| the other four `*:canopy` | 0 each | 0 each |
+| `props.batches` (registered) | 21 | 22 |
+| box luma | 126.20 | 125.04 |
+| box iqr | 45.77 | **48.89** |
+| `under` luma / iqr | 102.35 / 13.57 | 98.95 / **21.61** |
+| `skyBand`, `hzBand` | luma 149.03 / 190.65 | **identical to the digit** |
+
+`under` is the near ground band, where the canopy is largest in frame: **its
+iqr rises 59 per cent** while its mean moves 3.4 counts. That is the mean-
+neutral divide doing what it promised (the picture did not get greener or
+darker) while the crown structure arrives (the picture got more contrast within
+a tree). `skyBand` and `hzBand` identical to the digit is the negative control:
+nothing outside the canopy tier moved.
+
+**WG-189 interleaved, 3 pairs, flyover:**
+
+| pair | before p50 | after p50 |
+|---|---|---|
+| 1 | 6.0 | 4.8 |
+| 2 | 4.9 | 5.3 |
+| 3 | 4.9 | 5.1 |
+| **median** | **4.9** | **5.1** |
+
+**The 0.2 ms is NOT a result and is not reported as one.** The before arm's own
+three readings span 1.1 ms, so the gap is a fifth of one arm's noise. The claim
+is that the frame is unmoved, and the reason it must be is upstream of the
+timer: triangles, instances and draw calls are identical to the digit, and the
+only thing that changed is which 1 MB PNG one batch samples.
+
+**Forestair (Forest):** triangles 251,873, calls 27, instances 65,536,
+`canopyProps` 77,998, `exhausted`/`refused` 12,462, **all identical in both
+arms**. box luma 92.09 -> 91.26, iqr 26.44 -> 25.28; `under` 64.00 -> 61.93.
+One instrument reading moved a long way and this lane does not fully explain
+it: the box's column autocorrelation goes **peak 0.888 at lag 16 to peak -0.035
+with no periodic structure found**. A 0.888 column periodicity in a dense field
+of identical flat chips is what "every tree is the same picture on a lattice"
+would look like, and a shaded crown carrying per-instance value drift is what
+would break it; but `flyover` moves 0.65 at lag 8 to 0.72 at lag 7 in the same
+comparison, so the effect is not universal and the explanation is offered as a
+hypothesis, not a finding.
+
+**THE GROUND IDENTITY, quoted, and it exposed a stale record.** forestfloor and
+meadow, one commit apart, fresh process each:
+
+| | forestfloor | meadow |
+|---|---|---|
+| `propsPlaced` both arms | **41,281** | **52,118** |
+| `cellsScattered` both arms | 25,654 | 26,124 |
+| triangles both arms | 1,278,694 | 1,995,427 |
+| box luma / iqr both arms | 31.24 / 23.86 | 86.40 / 52.44 |
+
+Every field identical to the digit across the two builds. **But the brief asked
+for 41,300 and 52,139, and today's `origin/main` does not produce them**: this
+lane reads 41,281 and 52,118 on BOTH arms, 19 and 21 counts low, with
+`cellsScattered` also one short of WG-220's 25,655. The difference predates
+this commit and is therefore not this lane's, but WG-220's walk counters no
+longer reproduce and the next lane should not treat them as a fixture. Recorded
+in NUMBERS.md rather than left in this section.
+
+### 2.16.6 Determinism and gates
+
+Full clean-tree `texgen.py` (no `--only`: the card loop is skipped entirely
+when `only` is set, so a card family cannot be generated any other way).
+**All 55 pre-existing outputs in `assets/textures/dist` are byte-for-byte
+identical**, hashed before and after; the only files that move are the new
+`of_canopy_a.png` and `surfaces.json`, whose diff is 16 inserted lines and zero
+deletions (the family row plus one `roles` entry). `texgen.py check` 228 checks
+PASS including the measured coverage band and the recomputed
+`albedo_mean_linear` 0.4382; `texgen.py selftest` **71 checks, 0 failures**,
+with the card family's five checks (u seam, coverage band, dilation kills
+halos, halo FAILS undilated, tip rows clear) all exercised on `canopy` and its
+negative controls still able to fail.
+
+`props_canopy.glb` rebuilt twice from the changed script, byte-identical both
+times, sha256 `146c9f9c`. `validate_glb.py props_canopy` PASS, every row,
+including `tris_total 2008 <= 2008` **unchanged** and `materials 5 <= 5`.
+`check_shadow_lod.py props_canopy` verdict unchanged (canopy never earns a
+cascade). `cd web && npm run check` **8 of 8**; `npx tsc --noEmit` clean; `vite
+build` clean. `web/wasm/dist/*` and `test/expected.json` untouched. No density
+table, no `Registry.ts`, and nothing under `web/src/render/instancing` pool
+internals (RN-2260's lane, concurrent).
+
+`check-proplods.mjs` gains a case for the shape this creates and had none for:
+a part that exists at LOD3 and NOWHERE ELSE, so a canopy stem's ladder is two
+disjoint ladders. Its first draft asserted `meshAtTier(card, 0)` returns the
+card and was **wrong**: the walk-down goes toward FINER rungs and there are
+none below LOD3, so it returns null. The corrected case asserts the null and
+then asserts `PropLibrary`'s own `rungs[0] ?? meshAtTier(rungs, PROP_LODS - 1)`
+derivation, which is what keeps the part alive. Every pre-existing case is
+untouched.
+
+### 2.16.7 The two hero judgements, written against the bar
+
+**BAR: a distant wood must read as CANOPY, with internal structure at range and
+an irregular edge, not as scrub.**
+
+**`flyover` (Hills, 1,200 m, pitch -14, 46,575 trees over 43.5 km2): MET, and
+this is the usable hero.** Before, every tree is a ragged pale-and-dark
+speckle: at tree scale there is no top, no bottom and no volume, and the
+population reads as lichen on the hillside. After, each tree is a rounded
+crown with a lit upper surface and a distinctly darker underside, and the
+crowns read as separate objects with mass and with a shadow side, at the same
+46,575 count, the same 225,589 triangles and the same 26 calls, HUD-confirmed
+on both frames. The stands still read as OPEN WOODLAND rather than closed
+forest, and that is correct rather than a shortfall: Hills is 72 stems a
+hectare by WG-220's own design. **The honest reservation**: in the densest
+clumps the after arm reads slightly heavier than the before arm, because the
+crown undersides are now present where a flat chip had none. It is 1.16 counts
+of box luma and 3.4 of `under`, it is what a real canopy does, and it is stated
+rather than tuned away, because compressing the dark end is exactly what would
+take the 127-count nine-pixel spread back toward the 20 this lane exists to
+fix.
+
+**`forestair` (Forest, same pose): CANNOT BE JUDGED AGAINST THE BAR TODAY, and
+this lane will not pretend otherwise.** The frame carries **POOL FULL: 12,462
+NOT DRAWN** on both arms, 16 per cent of its trees, and the truncation leaves a
+hard bare edge across the middle of the picture with the far half of the ground
+empty. Whatever the card does, the pose is not photographing a forest. What CAN
+be said, on the trees that are drawn: they read as individual crowns with lit
+tops and shaded undersides where the before arm read as an undifferentiated
+fine speckle mat, and the column autocorrelation collapse above agrees. **This
+independently confirms, on this lane's own after build, the prerequisite
+Admin's RN-2260 row already names** ("prerequisite for any forest-site hero
+frame"). The forest hero frame is owed and is owed to that lane, not to this
+one.
+
+### 2.16.8 Owed
+
+1. **THE LID, with the arithmetic that makes it worth a lane** (2.16.2): a
+   top-down crown texture plus a third quad, worth `(d/h) * tan(depression)` =
+   **2.0** for the broadleaf at the flyover's near edge. Largest remaining
+   lever in the far tier.
+2. **The forest hero frame** is blocked on RN-2260 (2.16.7).
+3. **`floratex.js` (`web/tools/smoke/probes/floratex.js:52`) filters
+   `family === 'leaf' || 'grass'` and so does not see the canopy family.** NOT
+   fixed here on purpose: the same probe asserts `mapSize === 256` at line 65,
+   which is already stale against the shipped 1024 cards, so adding `canopy` to
+   the filter would newly fail a probe on a pre-existing defect. Named, and it
+   is a two-line fix for whoever takes the probe.
+4. **`Registry.ts`'s "ZERO NEW DRAW CALLS ... a single new role name would have
+   cost one draw in the near pass and one in each of the three shadow
+   cascades" is now wrong in both halves** (2.16.4). Not touched: `Registry.ts`
+   is the density lane's file and this lane's rails forbid it.
+5. **`TreeConifer_Stump_LOD3`/`TreeBroadleaf_Stump_LOD3` remain 24 triangles
+   across two materials**, still dormant, still named (RN-2244's own owed item,
+   re-checked and unchanged).
+6. **WG-220's walk counters 41,300 / 52,139 do not reproduce** on today's main
+   (2.16.5).
+
+### 2.16.9 Rails
+
+Sentinel written into each served dist and fetched back over its own port
+before the first probe against it; every preview server killed by PID. Two
+commits, the pointer nit separate from the asset as briefed. Determinism
+proved by rebuild rather than argued (texgen: 55 of 55 pre-existing PNGs
+byte-identical; Blender: two passes, one sha256). `npx tsc --noEmit`, `vite
+build`, `npm run check` 8/8 as separate steps before push. Branch
+`lane/crown-asset`, pushed, **not merged to main**.
