@@ -163,6 +163,23 @@ export class Scatter {
   }
 
   /**
+   * RN-2265, PUBLISHED FOR RENDERING. The canopy impostor tier's REALISED
+   * ground reach this frame, metres, or 0 when the tier is not running.
+   *
+   * The terrain material's far treeline hands over from this tier exactly where
+   * it stops, and the handover is `1 - canopyDistanceWeight(g, reach)`. Reading
+   * the reach off the tier itself rather than re-deriving `canopyReachM` on the
+   * render side is the whole point: a second copy of this expression is a
+   * constant copied from the thing it watches, and the two would silently
+   * disagree the first time `?canopy=` or `CANOPY_REACH_PER_ALT` moved. No
+   * behaviour changes here; this is an accessor over two existing private
+   * getters. See rendering.md 2.18 and TerrainTreeline.ts.
+   */
+  get canopyReachOutM(): number {
+    return this.canopyGoverns ? this.reachM : 0;
+  }
+
+  /**
    * RN-2228. GROUND distance from the eye to a point on the surface.
    *
    * The eye is `eyeAltM` above the ground and every tier here is a disc ON the

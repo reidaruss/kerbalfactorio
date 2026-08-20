@@ -233,7 +233,7 @@ export class TerrainStream {
       restitched++;
       // Re-upload the pristine payload first: snapping is destructive and a
       // stride can shrink as well as grow.
-      this.pool.upload(v.pooled, v.blob, this.layout, v.maxOffsetM);
+      this.pool.upload(v.pooled, v.blob, this.layout, v.maxOffsetM, v.anchor);
       if (!anyStitch(want)) continue;
       // These are LIVE windows into the batch's attribute buffers, so the snap
       // happens in place exactly as it did against a per-chunk pooled geometry.
@@ -267,7 +267,7 @@ export class TerrainStream {
     if (view !== undefined) {
       // Same key regenerated (a dig or a neighbour-depth restitch): reuse the slot.
       view.refresh(c);
-      this.pool.upload(view.pooled, c.blob, this.layout, c.maxOffsetM);
+      this.pool.upload(view.pooled, c.blob, this.layout, c.maxOffsetM, view.anchor);
       this.placeInScene(view);
       return;
     }
@@ -281,7 +281,7 @@ export class TerrainStream {
     // written for every NEW view and never for a refresh (same terrain, no fade).
     view.fadeT0 = this.nowSecs;
     this.pool.setFadeStart(pooled, view.fadeT0);
-    this.pool.upload(pooled, c.blob, this.layout, c.maxOffsetM);
+    this.pool.upload(pooled, c.blob, this.layout, c.maxOffsetM, view.anchor);
     this.views.set(c.key, view);
     this.placeInScene(view);
     this.metrics.chunksBuilt++;
@@ -310,7 +310,7 @@ export class TerrainStream {
         this.pool.release(view.pooled);
         view.pooled = next;
         this.pool.setFadeStart(next, view.fadeT0);
-        this.pool.upload(next, view.blob, this.layout, view.maxOffsetM);
+        this.pool.upload(next, view.blob, this.layout, view.maxOffsetM, view.anchor);
         view.visible = false;
         view.strides = [...NO_STITCH] as EdgeStrides;
       }

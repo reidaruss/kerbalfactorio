@@ -17,6 +17,7 @@
 import type * as THREE from 'three';
 import type { SharedIndex } from './SharedIndex.js';
 import type { ChunkBlobLayout } from '../../world/ChunkFormat.js';
+import type { Vec3d } from '../../world/PlanetBody.js';
 import { chunkBlobViews } from '../../world/ChunkFormat.js';
 import { ChunkBatch } from './ChunkBatch.js';
 
@@ -81,9 +82,20 @@ export class ChunkGeometryPool {
     this.batch(p).setSkirtVisible(p.slot, skirt);
   }
 
-  /** Copy one chunk's five sections into the slot. No allocation. */
-  upload(p: PooledSlot, blob: ArrayBuffer, layout: ChunkBlobLayout, boundingRadiusM: number): void {
-    this.batch(p).upload(p.slot, chunkBlobViews(blob, layout), boundingRadiusM);
+  /**
+   * Copy one chunk's five sections into the slot and derive the sixth. No
+   * allocation.
+   *
+   * RN-2265: `anchor` is the chunk's 64-bit body-frame origin, and it is
+   * REQUIRED rather than optional. The canopy index is a function of absolute
+   * body-frame position (world-gen's stand and grove fields are), and an
+   * upload that silently defaulted it to the origin would place a whole chunk's
+   * treeline somewhere else on the planet while every counter read correct.
+   */
+  upload(p: PooledSlot, blob: ArrayBuffer, layout: ChunkBlobLayout,
+    boundingRadiusM: number, anchor: Vec3d): void {
+    this.batch(p).upload(p.slot, chunkBlobViews(blob, layout), boundingRadiusM,
+      anchor);
   }
 
   setFadeStart(p: PooledSlot, tSecs: number): void {

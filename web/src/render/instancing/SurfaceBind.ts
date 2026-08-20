@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 
 import { applyFoliageTone } from './FoliageTone.js';
+import { publishCanopyTone } from '../materials/TerrainTreeline.js';
 import type { Family } from './SurfaceRoles.js';
 
 export interface Surface {
@@ -85,6 +86,15 @@ export function apply(r: Reg): void {
     // separate, isolable act. Rewriting from `baseColor` on every call is what
     // makes both idempotent, so `setMaps` can be flipped any number of times.
     applyFoliageTone(r.mat.color, r.family);
+    // RN-2265. THE FAR TREELINE READS ITS GREEN OFF THIS LINE, and it is
+    // published here rather than copied because the far ground and the near
+    // cards MEET at the canopy handover: two copies of one green is a colour
+    // step at a fixed radius around the player, the one artefact a handover
+    // exists to prevent (RN-2249's own argument for giving the crown card
+    // `Leaf`'s hex to the digit). What the terrain wants is the card's MEAN
+    // RENDERED albedo, so the mean the divide above took out is multiplied
+    // back in: a terrain fragment has no card texture to supply it.
+    if (r.family === 'canopy') publishCanopyTone(r.mat.color, on ? (s.albedoMean as number) : 1);
     r.mat.needsUpdate = true;
     // NO early return (RN-455). A tiling body family carries an albedo AND a
     // normal AND an orm, and the `return` that used to sit here is why the

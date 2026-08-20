@@ -37,7 +37,8 @@ export function makeTerrainMaterial(
     fineFreq, fineW, fineLum, reliefGrad, reliefGradUv, artFineM, reliefFineM,
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
     horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
-    splatAmp, splatFade, splatFarAmp, splatGrass, splatDirt, splatRock, splatCliff,
+    splatAmp, splatFade, splatFarAmp, treeline, treelineTone,
+    splatGrass, splatDirt, splatRock, splatCliff,
     splatScree, splatSnow } = s;
   // UniformsLib.lights is MANDATORY for a lights:true ShaderMaterial: three
   // writes ambientLightColor / directionalLights / directionalShadowMap
@@ -105,6 +106,10 @@ export function makeTerrainMaterial(
     // own pattern rather than splatAmp's vector one), so passed through
     // rather than re-wrapped.
     uSplatFarAmp: splatFarAmp,
+    // RN-2265. The far treeline: (amp, mottle, realised ground reach) and the
+    // canopy card's own mean rendered albedo. Both shared by reference.
+    uTreeline: treeline,
+    uTreelineTone: treelineTone,
     uSplatGrass: splatGrass,
     uSplatDirt: splatDirt,
     uSplatRock: splatRock,

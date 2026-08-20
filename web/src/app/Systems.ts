@@ -412,6 +412,11 @@ export function registerSystems(s: Services, loop: Loop): void {
     // by, so the canopy's ground-distance conversion cannot disagree with them
     // about how high the eye is. See `Scatter.groundDistM`.
     s.scatter.update(s.terrain.residentViews.values(), eye, s.observer.altM);
+    // RN-2265. The terrain's far treeline hands over exactly where this tier
+    // stops, so it is told the tier's OWN realised reach here, in the same
+    // statement pair, rather than re-deriving canopyReachM from the same
+    // altitude one file away. See TerrainTreeline.ts.
+    s.materials.setTreelineReach(s.scatter.canopyReachOutM);
     // RN-2145. The carpet, same views, same eye. The third argument is pixels
     // per radian (`domElement.height` IS the drawing buffer, so the device
     // ratio is already in it); the carpet's fade is in apparent size and is

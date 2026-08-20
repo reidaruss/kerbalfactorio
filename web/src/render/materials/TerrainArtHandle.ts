@@ -11,6 +11,7 @@
 // is about the state and not about either material.
 
 import { ART_DEFAULT, fineAmpFromQuery, specAmpFromQuery} from './TerrainAmpQuery.js';
+import { canopyToneNow } from './TerrainTreeline.js';
 import { horizonOccFromQuery, reliefCellFromQuery, reliefCellNoiseFromQuery,
   reliefGradFromQuery, reliefGradUvFromQuery, reliefSwingFromQuery }
   from './TerrainReliefQuery.js';
@@ -353,6 +354,25 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
     texState(): { w: number; h: number } {
       const img = groundTex.value.image as { width?: number; height?: number } | null;
       return { w: img?.width ?? 0, h: img?.height ?? 0 };
+    },
+    // RN-2265. THE FAR TREELINE, read back rather than assumed. A term whose
+    // colour is READ OFF ANOTHER SUBSYSTEM at runtime has one new failure mode
+    // -- the publish never fires and the fallback ships -- and that failure is
+    // invisible in a frame, because a plausible green is still a green. This
+    // is what makes it measurable: `live` false means the canopy material has
+    // not been bound yet and the ground is painting the fallback.
+    treeline(): {
+      amp: number; mottle: number; reachM: number;
+      tone: { r: number; g: number; b: number; live: boolean };
+    } {
+      const v = s.treeline.value;
+      return {
+        amp: v.x, mottle: v.y, reachM: v.z,
+        tone: {
+          r: s.treelineTone.value.x, g: s.treelineTone.value.y,
+          b: s.treelineTone.value.z, live: canopyToneNow().live,
+        },
+      };
     },
     ...terrainSplatHandle(s),
   };

@@ -240,6 +240,12 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // sweeps it. Registered in the same commit that introduces them, per this
   // list's own rule and RN-152's scar.
   'splatfar', 'splatfaramp',
+  // RN-2265. THE FAR TREELINE, the terrain material's canopy read past the
+  // impostor tier's realised reach. `treeline=0` is the exact pre-RN-2265
+  // ground and is the negative control every proof in that lane is taken
+  // against; `treelineamp=` scales the coverage, `treelinemottle=` the
+  // 34 m crown-scale value break-up inside it.
+  'treeline', 'treelineamp', 'treelinemottle',
   // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
   // night exactly); `starlightamp=` sweeps it.
   // RN-952, the DAYLIGHT floor underneath it, which had no control at all and
