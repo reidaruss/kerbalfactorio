@@ -22,13 +22,13 @@ import { normalize, setBaseShade, setLeafVar, type BaseBake }
 import { applyWind } from './PropWind.js';
 import { attachSurface, familyForRole, roleOfMaterialName, surfacesReady }
   from './Surfaces.js';
+import { emptyLods, groupTiers, meshAtTier, PROP_LODS,
+  type PropPart } from './PropLods.js';
 
-/** One primitive of one prop: which batch it lives in, and its two LOD ids. */
-export interface PropPart {
-  readonly material: string;
-  readonly lod0: number;
-  readonly lod2: number;
-}
+// The barrel: `ScatterEmit` and `Scatter` name `PropPart` through this module
+// and did before the ladder existed, so the type moves and no import site does.
+export { geomAtTier, PROP_LODS } from './PropLods.js';
+export type { PropPart } from './PropLods.js';
 
 /**
  * Batch-key suffix for the ground-detail understorey, and THE reason this class
@@ -166,27 +166,32 @@ export class PropLibrary {
 
   private register(root: THREE.Object3D, suffix: string): void {
     root.updateWorldMatrix(true, true);
-    const byStem = new Map<string, Map<string, { lod0: THREE.Mesh | null; lod2: THREE.Mesh | null }>>();
+    // Grouped by `PropLods.groupTiers`, which keys the rung by its PARSED tier
+    // index instead of by "is it zero". See that file's header: the else-branch
+    // this replaces put every non-zero tier into one slot, so the far geometry
+    // was whichever mesh `traverse` reached last and a `_LOD3` would silently
+    // become the LOD2.
+    const prims: { name: string; materialName: string; mesh: THREE.Mesh }[] = [];
     root.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh !== true || m.name.startsWith('col_')) return;
-      const hit = /^(.*)_LOD(\d)(?:_\d+)?$/.exec(m.name);
-      if (hit === null) return;
-      const stem = hit[1];
-      const mat = (m.material as THREE.Material).name || 'OF_Default';
-      const perMat = byStem.get(stem) ?? new Map();
-      byStem.set(stem, perMat);
-      const slot = perMat.get(mat) ?? { lod0: null, lod2: null };
-      if (hit[2] === '0') slot.lod0 = m; else slot.lod2 = m;
-      perMat.set(mat, slot);
+      prims.push({
+        name: m.name,
+        materialName: (m.material as THREE.Material).name || 'OF_Default',
+        mesh: m,
+      });
     });
-    for (const [stem, perMat] of byStem) {
+    for (const [stem, perMat] of groupTiers(prims)) {
       const list: PropPart[] = [];
-      for (const [mat, pair] of perMat) {
-        const near = pair.lod0 ?? pair.lod2;
-        if (near === null) continue;
+      for (const [mat, rungs] of perMat) {
+        // The NEAREST rung this asset ships, which is LOD0 for everything in
+        // the project and is still derived rather than assumed: a prop that
+        // shipped only a far rung used to draw it near, and still does.
+        const near = meshAtTier(rungs, PROP_LODS - 1) === null
+          ? null : (rungs[0] ?? meshAtTier(rungs, PROP_LODS - 1));
+        if (near === null || near === undefined) continue;
         const key = mat + suffix;
-        const batch = this.batchFor(key, mat, near.material as THREE.Material,
+        const batch = this.batchFor(key, mat, near.mesh.material as THREE.Material,
           suffix === '', suffix !== '' && this.cullDetail);
         // RN-62: EVERY prop takes a base-contact gradient, and the only
         // question is which profile (it used to be plants or nothing, which
@@ -195,19 +200,30 @@ export class PropLibrary {
         // because two copies of "which materials are plants" drift.
         const bake: BaseBake = isFoliageMaterial(mat) ? 'foliage' : 'mineral';
         batch.shaded = true;
-        const lod0 = batch.mesh.addGeometry(normalize(near.geometry, near.matrixWorld, bake));
-        // `?proplod2=0` registers LOD0 in the far slot too: the state the
-        // understorey shipped in before RN-45 authored the detail cards' LOD2.
-        // Standing rule 7, and it matters more than usual because the saving is
-        // an ASSET change, so the only other before/after would be a pair of
-        // BUILDS, which cannot hold the streamed chunk set equal. SCOPED to the
-        // understorey: over every batch it read 2,303,735 against 972,049, but
-        // most of that is the BIOME props' LOD2, shipping since W4 and not this
-        // pass's to claim. Scoped it reads 1,087,719 against 972,049.
-        const far = (this.lod2Enabled || suffix === '')
-          ? (pair.lod2 ?? near) : near;
-        const lod2 = batch.mesh.addGeometry(normalize(far.geometry, far.matrixWorld, bake));
-        list.push({ material: key, lod0, lod2 });
+        const lods = emptyLods();
+        // `?proplod2=0` gives the UNDERSTOREY nothing but its LOD0, so every
+        // tier resolves back down to it: the state the understorey shipped in
+        // before RN-45 authored the detail cards' LOD2. Standing rule 7, and it
+        // matters more than usual because the saving is an ASSET change, so the
+        // only other before/after would be a pair of BUILDS, which cannot hold
+        // the streamed chunk set equal. SCOPED to the understorey: over every
+        // batch it read 2,303,735 against 972,049, but most of that is the
+        // BIOME props' LOD2, shipping since W4 and not that pass's to claim.
+        // Scoped it reads 1,087,719 against 972,049.
+        //
+        // ONE DELIBERATE DIFFERENCE FROM THE OLD CONTROL: it used to add the
+        // LOD0 geometry to the batch TWICE (once per named slot) and hand the
+        // far slot the duplicate. The ladder maps the far tiers back to rung 0
+        // instead, so the pixels are the same and the vertex pool holds one
+        // copy rather than two.
+        const flat = suffix !== '' && !this.lod2Enabled;
+        for (let t = 0; t < PROP_LODS; ++t) {
+          const m = flat ? (t === 0 ? near : null) : rungs[t];
+          if (m === null || m === undefined) continue;
+          lods[t] = batch.mesh.addGeometry(
+            normalize(m.mesh.geometry, m.mesh.matrixWorld, bake));
+        }
+        list.push({ material: key, lods });
       }
       if (list.length > 0 && !this.parts.has(stem)) this.parts.set(stem, list);
     }

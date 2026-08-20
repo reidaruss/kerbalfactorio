@@ -33,6 +33,12 @@ const ALL_CHECKS = [
   'check:roles',
   'check:probes',
   'check:proxies',
+  // RN-2200. The prop LOD ladder's grouping rule, asserted both ways against a
+  // three-rung asset. It is a LINK and not a probe because the defect it guards
+  // is invisible to any probe run against the shipped atlases: they ship two
+  // rungs, and two rungs group identically under the broken rule and the fixed
+  // one. Cheap (no build, no browser), so it runs beside the other static gates.
+  'check:proplods',
   'typecheck',
   'check:pose',
   'check:limits',

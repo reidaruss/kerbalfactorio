@@ -9,6 +9,7 @@
 // touching the code a density measurement is read out of.
 
 import * as THREE from 'three';
+import { geomAtTier } from '../render/instancing/PropLods.js';
 import type { PropLibrary, PropPart } from '../render/instancing/PropLibrary.js';
 import type { PropSpec } from '../assets/Registry.js';
 import {
@@ -189,8 +190,12 @@ export class PropEmitter {
       // PropLibrary.tint: colour is a property of the placement, and `write`
       // runs for every part on every floating-origin rebase.
       this.lib.tint(part.material, slot, tintScratch);
+      // Resolved through the ladder, not read off two named fields: an atlas
+      // that ships no LOD2 walks back down to LOD0 exactly as it always did,
+      // and one that ships a LOD3 no longer overwrites its LOD2 (PropLods).
       b.parts.push({
-        material: part.material, slot, lod0: part.lod0, lod2: part.lod2, lod2M,
+        material: part.material, slot,
+        lod0: geomAtTier(part, 0), lod2: geomAtTier(part, 2), lod2M,
       });
       b.owner.push(n);
     }

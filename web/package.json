@@ -16,6 +16,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "check:limits": "node scripts/check-limits.mjs",
+    "check:proplods": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/check-proplods.mjs",
     "check:proxies": "node scripts/check-proxies.mjs",
     "check:roles": "node scripts/check-roles.mjs",
     "check:boot": "node tools/smoke/boot.mjs",
