@@ -420,6 +420,17 @@ PALETTE = {
     "LeafDeep":     ("2F4F26", 0.00, 0.84, 1.0, None),
     "LeafLight":    ("7FA84E", 0.00, 0.76, 1.0, None),
     "LeafDry":      ("8A7A3E", 0.00, 0.85, 1.0, None),
+    # RN-2245: the far-tier crown impostor. THE HEX AND THE ROUGHNESS ARE
+    # `Leaf`'S TO THE DIGIT, AND THAT IS A MEASUREMENT DECISION, NOT LAZINESS.
+    # The card stands for the same substance a `Leaf` card does, this lane
+    # changes the TEXTURE and not the palette, and the surface pipeline divides
+    # each family's own `albedo_mean_linear` back out through `material.color`
+    # -- so an identical hex makes the frame's mean green provably unmoved and
+    # leaves the whole before/after difference attributable to crown structure.
+    # It also closes the seam at `CANOPY_NEAR_M`: a harvest tree's own `_LOD3`
+    # card just inside 550 m is `OF_Leaf`, and a canopy card just outside it is
+    # this, and they must not differ in tone across that line.
+    "Canopy":       ("4C7A38", 0.00, 0.80, 1.0, None),
     "Grass":        ("6F8F42", 0.00, 0.88, 1.0, None),
     "Ice":          ("CFE6F0", 0.00, 0.25, 1.0, None),
     # --- character ---
@@ -744,7 +755,7 @@ PALETTE = {
 # Roles that must render double-sided. Everything else is backface-culled,
 # which is roughly half the fragment work on a scene made of boxes.
 DOUBLE_SIDED = {"Glass", "Leaf", "LeafDeep", "LeafLight", "LeafDry", "Grass",
-                "Water"}
+                "Canopy", "Water"}
 
 # Roles that are NOT members of their asset's dominant surface family, and so
 # must not wear its tiling maps: no family albedo, no family strand normal, no

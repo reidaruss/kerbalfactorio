@@ -147,7 +147,20 @@ OUT = of.dist_path("props", "props_canopy.glb")
 
 # The pinned slot order, identical on all three props. Adding a fifth name here
 # is a draw call, so it does not happen without an Admin-logged decision.
-ORDER = ["Bark", "LeafDeep", "Leaf", "LeafLight"]
+#
+# RN-2245 IS THAT DECISION, AND THE DRAW CALL IT WAS GUARDING AGAINST DOES NOT
+# ARRIVE. `Canopy` is authored at `_LOD3` ALONE, and RN-2244 already made
+# `ScatterEmit.emit` refuse to acquire a canopy part whose own `lods[LOD3]` is
+# -1. So after this commit `Bark`/`LeafDeep`/`Leaf`/`LeafLight` all have no
+# LOD3 of their own, all four are refused, and the ONE live canopy batch is
+# `OF_Canopy:canopy` instead of `OF_Leaf:canopy` -- a rename of the live batch,
+# not an addition. An empty batch drops out of the frame (that is the same
+# mechanism RN-2244 measured taking the calls 29 -> 26), and the canopy suffix
+# never casts a cascade, so the shadow passes are untouched as well.
+# What the fifth name actually buys is a texture: `leaf` is a picture of one
+# frond and cannot be re-authored as a crown without putting a crown on every
+# bough of every tree the player walks up to. See texgen's `_canopy_strips`.
+ORDER = ["Bark", "LeafDeep", "Leaf", "LeafLight", "Canopy"]
 
 
 # ---------------------------------------------------------------------------
@@ -721,22 +734,39 @@ def broadleaf_lod2():
 # saving." This rung now matches that precedent instead of being the one
 # holdout that kept a second material for a stub nobody was rendering.
 #
-# NO NEW MATERIAL, AND ONE FEWER LIVE AT THIS RUNG. Leaf is already in ORDER
-# and already in `double_sided_ok`, so the card costs no draw call, no texgen
-# family and no ROLE_FAMILY row -- it costs four triangles and nothing else.
+# ONE MATERIAL AT THIS RUNG, AND SINCE RN-2245 IT IS ITS OWN. The rung was
+# `OF_Leaf` and cost no new name; RN-2244's own report then said out loud that
+# the tier's remaining limit was the ASSET, and the WG-220 verifiers agreed
+# from the other side ("a nine-pixel green blob has no canopy texture, so woods
+# read as scrub"). `leaf` is a picture of one conifer frond, `canopy` is a
+# picture of one crown, and a frond minified to nine pixels is a green chip.
+# The name costs one role, one texgen family and one PNG; it does NOT cost a
+# draw call (see ORDER above) and it does not cost a triangle.
 def _impostor(height, crown_lo, key):
-    """Two crossed leaf quads over the crown, and NOTHING ELSE. Four
+    """Two crossed CROWN quads over the crown, and NOTHING ELSE. Four
     triangles, one material.
 
     Fitted to the SAME box as LOD0 and LOD2 by `pc.build_atlas`, which is what
     keeps the plan aspect RN-271 bought: the card is stretched by the same two
     factors the crown is, so the impostor is elliptical in plan exactly where
-    the tree is and the per-instance yaw still changes its projected width.
+    the tree is and the per-instance yaw still changes its projected width. It
+    is also what lets ONE authored crown serve three species: the pine's box is
+    3.85 x 2.55 and the broadleaf's is 8.40 x 10.50, and the ovoid outline in
+    `texgen._canopy_profile` was chosen to survive both stretches.
+
+    STILL TWO CROSSED QUADS AND NOT THREE. The classic third quad -- a
+    horizontal "lid" across the crown top -- was priced against this game's own
+    aerial poses and refused; the arithmetic is in rendering.md 2.16.2, and in
+    one line it is that a lid presents `sin(pitch)` of its area where the
+    vertical pair presents `cos(pitch)`, so at the flyover's and forestair's
+    14 degrees it is 0.249 of one quad's pixels for 50 per cent more triangles.
+    A lid earns its cost past 45 degrees of pitch and this game has no shipped
+    pose there.
     """
     p = hc.Parts()
     z0 = height * crown_lo
     v, f, sm = hc.crossed_quads(2.0, height - z0, z0=z0, yaw_deg=0.0)
-    p.add(v, f, sm, "Leaf", uvs=pc.quad_card_uvs(2, key))
+    p.add(v, f, sm, "Canopy", uvs=pc.quad_card_uvs(2, key))
     return p
 
 

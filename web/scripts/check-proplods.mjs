@@ -156,6 +156,53 @@ check('materials do not share a ladder', () => {
   assert.equal(perMat.get('OF_Leaf')[3].name, 'Canopy_Fir_LOD3');
 });
 
+// RN-2245. THE SHIPPED SHAPE, AND IT IS A LADDER THIS FILE HAD NO CASE FOR: a
+// part that exists at LOD3 and NOWHERE ELSE. `props_canopy.glb` now authors its
+// impostor on `OF_Canopy`, a material the near rungs do not use at all, so the
+// stem's ladder is two DISJOINT ladders rather than one shared one. Every other
+// case in this file (including the `CANOPY` fixture above, which is deliberately
+// left as it was: it is the LOD3-clobber regression and its point is a
+// SAME-material ladder) has the near rungs and the far rung on one material.
+//
+// The empty half of each ladder is the load-bearing part. `PropLibrary.register`
+// keeps a part whose only rung is LOD3 (its `near` derivation falls through
+// `rungs[0] ?? meshAtTier(rungs, PROP_LODS - 1)`), and `ScatterEmit.emit` then
+// refuses every canopy part whose own `lods[3]` is -1 -- which after this commit
+// is all four near materials. That pair is what keeps the tier at ONE instance
+// per tree, and it only works if grouping reports the two halves separately
+// rather than walking one into the other.
+check('a LOD3-only material groups as its own ladder (RN-2245 canopy card)', () => {
+  const perMat = groupTiers([
+    { name: 'Canopy_Pine_LOD0', materialName: 'OF_Bark' },
+    { name: 'Canopy_Pine_LOD0_1', materialName: 'OF_Leaf' },
+    { name: 'Canopy_Pine_LOD2', materialName: 'OF_Leaf' },
+    { name: 'Canopy_Pine_LOD3', materialName: 'OF_Canopy' },
+  ]).get('Canopy_Pine');
+  assert.deepEqual([...perMat.keys()].sort(), ['OF_Bark', 'OF_Canopy', 'OF_Leaf']);
+
+  const card = perMat.get('OF_Canopy');
+  assert.deepEqual(card.map((m) => m && m.name),
+    [null, null, null, 'Canopy_Pine_LOD3'],
+    'the card exists at LOD3 and at no nearer tier');
+  // AND THE WALK-DOWN CANNOT RESCUE IT, WHICH IS THE POINT OF THIS ASSERTION.
+  // `meshAtTier` walks toward the FINER rungs and there are none below LOD3, so
+  // a near request on a far-only part is null -- not the card. That is why
+  // `PropLibrary.register` derives its `near` as
+  // `rungs[0] ?? meshAtTier(rungs, PROP_LODS - 1)` rather than as
+  // `meshAtTier(rungs, 0)`: the second form would drop this part entirely and
+  // the far tier would render nothing, silently, with a correct instance count.
+  assert.equal(meshAtTier(card, 0), null);
+  assert.equal(meshAtTier(card, PROP_LODS - 1).name, 'Canopy_Pine_LOD3');
+  assert.equal(card[0] ?? meshAtTier(card, PROP_LODS - 1),
+    meshAtTier(card, PROP_LODS - 1), 'PropLibrary\'s own near derivation');
+
+  // And the near materials have NO far rung, so the skip refuses them.
+  for (const m of ['OF_Bark', 'OF_Leaf']) {
+    assert.equal(perMat.get(m)[3], null, `${m} must not own an impostor rung`);
+  }
+  assert.equal(perMat.get('OF_Leaf')[2].name, 'Canopy_Pine_LOD2');
+});
+
 if (fails.length > 0) {
   console.error(`\ncheck-proplods: ${fails.length} FAILED: ${fails.join(', ')}`);
   process.exit(1);

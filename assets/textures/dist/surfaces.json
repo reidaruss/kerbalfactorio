@@ -320,6 +320,21 @@
       "texels_per_m": 1097.142857142857,
       "albedo_mean_linear": 0.2062
     },
+    "canopy": {
+      "albedo": {
+        "file": "of_canopy_a.png",
+        "bytes": 143544,
+        "sha256": "5c81f670020e1157369aa2c6723c18b23f3971626eb48aa315ccf57afd2d49de"
+      },
+      "size_px": 1024,
+      "uv_space": "unit",
+      "wrap": {
+        "u": "clamp",
+        "v": "clamp"
+      },
+      "alpha_test": 0.35,
+      "albedo_mean_linear": 0.4382
+    },
     "grass": {
       "albedo": {
         "file": "of_grass_a.png",
@@ -355,6 +370,7 @@
     "Accent": "paintchip",
     "Bark": "bark",
     "BarkLight": "bark",
+    "Canopy": "canopy",
     "Chitin": "fur",
     "ChitinBand": "fur",
     "ChitinUnder": "fur",
