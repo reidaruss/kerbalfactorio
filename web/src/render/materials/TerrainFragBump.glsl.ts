@@ -206,4 +206,34 @@ export const TERRAIN_FRAG_BUMP = /* glsl */`
           n = ofArtBump(n, vWorld, fineHc, fw, fineMc);
           n = ofArtBump(n, vWorld, fineHg, fw, fineM);
         }
+        // RN-2160. THE SPLAT'S NORMAL HALF, and it is the ONE normal term in
+        // this material that is not a surface-gradient bump.
+        //
+        // WHY IT IS DIFFERENT IN KIND. The three calls above all perturb the
+        // normal by the screen gradient of a HEIGHT, which needs no tangent
+        // frame and is why this material has never had one. A splat layer
+        // ships an authored TANGENT-SPACE NORMAL instead, because a normal map
+        // is what a real material's relief is stored as and because deriving
+        // it from a height channel would have cost a fifth channel the four-
+        // channel packing does not have. Orienting one needs a frame, so
+        // ofSplatFrame derives Mikkelsen's cotangent frame from the screen
+        // derivatives of vWorld and the chunk UV. Four extra derivatives, in
+        // uniform control flow, inside a bare-uniform branch.
+        //
+        // ORDER: LAST, after all three bumps, for the detail layer's own
+        // stated reason one comment up. Surface-gradient perturbation is not
+        // commutative and the physically meaningful reading is a material's
+        // own relief sitting ON the shape the coarser terms have made, not the
+        // shape sitting on the material.
+        //
+        // THE FADE IS THE NORMAL BAND (uSplatFade.zw, 30 to 60 m), not the
+        // albedo band, and the difference is the relief bump's argument
+        // verbatim: the chunk UV's world size doubles at every LOD step, so a
+        // coarser ring would draw this layer's relief at double wavelength and
+        // that photographs at a grazing sun as a differently-textured
+        // chunk-shaped patch. 30 to 60 completes inside the max-depth ring.
+        if (uSplatAmp.z > 0.0 && splatFadeN > 0.0) {
+          n = ofSplatFrame(n, vWorld, vChunkUv, splatNxy,
+                           uSplatAmp.z * splatFadeN);
+        }
       #endif`;

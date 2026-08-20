@@ -188,6 +188,78 @@ export const TERRAIN_FRAG_ALBEDO = /* glsl */`
           float mid = ofArtMid(pM, footM, uMidM);
           albedo *= vec3(1.0) + uMidAmp.x * midLum * mid * vTint.xyz;
         }
+        // RN-2160. THE SPLAT: the near-field MATERIAL layer, and the first
+        // term in this material that answers "what is this ground made of"
+        // rather than "how does it vary". Six authored layers blended by
+        // slope, altitude and biome. The weight rules are in
+        // TerrainSplat.glsl.ts; the convergence rule that keeps this in
+        // harmony with the palette is stated in full in TerrainSplat.ts.
+        //
+        // THE BRANCH IS A BARE UNIFORM, which is what makes six texture
+        // fetches free when the term is off (?splat=0, the low quality tier)
+        // instead of costing six fetches multiplied by zero, AND what makes
+        // the fetches inside it legal at all: a fetch in non-uniform control
+        // flow has UNDEFINED LOD, which is RN-78's own scar.
+        //
+        // The locals are declared OUTSIDE the branch because the bump chunk
+        // and the light chunk both read them. #ifndef is not a scope and
+        // locals already cross these section boundaries (this file's header
+        // says so about relP and grain); this is the same pattern.
+        vec3 splatWA = vec3(0.0);
+        vec3 splatWB = vec3(0.0);
+        vec2 splatNxy = vec2(0.0);
+        float splatRough = 1.0;
+        float splatFadeA = 0.0;
+        float splatFadeN = 0.0;
+        if (uSplatAmp.x > 0.0 || uSplatAmp.y > 0.0 || uSplatAmp.z > 0.0) {
+          splatFadeA = 1.0 - smoothstep(uSplatFade.x, uSplatFade.y, dist);
+          splatFadeN = 1.0 - smoothstep(uSplatFade.z, uSplatFade.w, dist);
+          // THE WARP IS APPLIED TO THE SAMPLE COORDINATE ONLY. The bump chunk
+          // differentiates the UNWARPED vChunkUv to build its tangent frame,
+          // because folding the warp's own gradient into the frame is RN-961's
+          // finding in a third place: a difference of a perturbed quantity
+          // carries a term belonging to the perturbation, not to the ground.
+          vec2 wuv = vChunkUv + ofSplatWarp(vChunkUv);
+          // vMatW.x is BiomeMaterial's grass-clump weight and is already the
+          // game's answer to "how vegetated is this biome". Reused rather than
+          // duplicated as a seventh per-biome table, which would have cost a
+          // varying and been a second answer to a settled question.
+          float splatVeg = clamp(vMatW.x * 3.0, 0.0, 1.0);
+          float splatPatch = ofArtVnoise2P(vChunkUv * OF_SPLAT_PATCHP,
+                                           OF_SPLAT_PATCHP);
+          // The snow scalar is not computed until the snowline block below,
+          // weights take 0 for it here and the snow layer is folded in by a
+          // second ofSplatW call after it. Hoisting the snowline instead would
+          // reorder float ops inside a shipped term to suit a new one.
+          ofSplatW(coverSel, flat_, vRelief / max(1.0, uMaxRelief), 0.0,
+                   splatVeg, splatPatch, splatWA, splatWB);
+          vec4 sG = texture2D(uSplatGrass, wuv * OF_SPLAT_REP0);
+          vec4 sD = texture2D(uSplatDirt,  wuv * OF_SPLAT_REP1);
+          vec4 sR = texture2D(uSplatRock,  wuv * OF_SPLAT_REP2);
+          vec4 sC = texture2D(uSplatCliff, wuv * OF_SPLAT_REP3);
+          vec4 sS = texture2D(uSplatScree, wuv * OF_SPLAT_REP4);
+          vec4 sW = texture2D(uSplatSnow,  wuv * OF_SPLAT_REP5);
+          float sval = ofSplatVal(sG, sD, sR, sC, sS, sW, splatWA, splatWB);
+          splatNxy = ofSplatNrm(sG, sD, sR, sC, sS, sW, splatWA, splatWB);
+          splatRough = ofSplatRough(sG, sD, sR, sC, sS, sW, splatWA, splatWB);
+          // THE VALUE HALF, on the same tint axis every other albedo term in
+          // this material rides and MEAN-PRESERVING by the same construction:
+          // sval is centred on zero, so a fixed tint vector moves each
+          // channel's SPREAD and leaves its LEVEL alone. That distinction is
+          // the macro tint's own scar, and it is clause C2 of the convergence
+          // rule.
+          albedo *= vec3(1.0) + uSplatAmp.x * splatFadeA * sval * vTint.xyz;
+          // THE CHROMA HALF, and it is the only term in this material that is
+          // allowed to move HUE. It is safe for exactly one reason, clause C3:
+          // ofSplatHue is a convex combination of vectors whose Rec.709
+          // luminance is 1 (asserted in TypeScript at module load, and it
+          // THROWS rather than warns), luminance is linear, therefore the
+          // result has luminance 1 and this cannot move value. It is also
+          // faded to nothing by 75 m, so the far field and the minimap read
+          // exactly the palette they read today.
+          albedo = mix(albedo, albedo * ofSplatHue(splatWA, splatWB),
+                       uSplatAmp.y * splatFadeA);
+        }
         // RN-148: the relief sample. UNCONDITIONAL like g1/g2 and for the same
         // measured reason (a fetch inside non-uniform control flow has
         // UNDEFINED LOD; RN-78 paid a full hunt for it). One scale, the 16
@@ -222,6 +294,49 @@ export const TERRAIN_FRAG_ALBEDO = /* glsl */`
       float snow = smoothstep(0.86, 1.14, band) * smoothstep(0.45, 0.85, flat_) * 0.9;
       albedo = mix(albedo, vec3(0.88, 0.92, 0.98), snow);
       albedo *= 0.82 + 0.26 * smoothstep(0.0, 0.7, band);
+
+      // RN-2160. THE SPLAT'S SNOW LAYER, folded in now that the snowline
+      // scalar exists. The world audit's gap 10 is that the snow band is "a
+      // smoothstep applied to the albedo with no material behind it, so it
+      // takes the sky ambient straight and reads as paint". The flat white
+      // lerp above IS that band; this is the material behind it.
+      //
+      // ONLY THE WEIGHTS AND THE NORMAL/ROUGHNESS CHANGE, and the albedo is
+      // deliberately NOT re-blended. The white lerp is a shipped term with
+      // shipped reference luminances, and re-running the value and chroma
+      // halves against the new weights would move it; snow's value channel is
+      // authored at a third of the other layers' contrast precisely because
+      // snow's albedo is not where its material lives. Its normal and its
+      // roughness are.
+      //
+      // The six fetches are repeated rather than hoisted, and that is the one
+      // honest cost in this term: hoisting would mean computing the snowline
+      // before the albedo block, which reorders a shipped term. The branch is
+      // snow > 0.0, which is NOT a bare uniform, so these fetches are in
+      // non-uniform control flow and their LOD is undefined by RN-78's rule --
+      // which is exactly why they feed the NORMAL and the ROUGHNESS and not
+      // the albedo: a wrong mip on a roughness detail is a slightly wrong
+      // sheen on a snowfield, while a wrong mip on an albedo is RN-78's
+      // photographed speckle. Snow is also the one layer whose content is
+      // almost all low-frequency, so its mip chain is nearly flat.
+      #ifndef OF_SCALED
+        if (uSplatAmp.z > 0.0 && snow > 0.0) {
+          float sVeg = clamp(vMatW.x * 3.0, 0.0, 1.0);
+          float sPatch = ofArtVnoise2P(vChunkUv * OF_SPLAT_PATCHP,
+                                       OF_SPLAT_PATCHP);
+          vec2 swuv = vChunkUv + ofSplatWarp(vChunkUv);
+          ofSplatW(coverSel, flat_, band, snow, sVeg, sPatch,
+                   splatWA, splatWB);
+          vec4 tG = texture2D(uSplatGrass, swuv * OF_SPLAT_REP0);
+          vec4 tD = texture2D(uSplatDirt,  swuv * OF_SPLAT_REP1);
+          vec4 tR = texture2D(uSplatRock,  swuv * OF_SPLAT_REP2);
+          vec4 tC = texture2D(uSplatCliff, swuv * OF_SPLAT_REP3);
+          vec4 tS = texture2D(uSplatScree, swuv * OF_SPLAT_REP4);
+          vec4 tW = texture2D(uSplatSnow,  swuv * OF_SPLAT_REP5);
+          splatNxy = ofSplatNrm(tG, tD, tR, tC, tS, tW, splatWA, splatWB);
+          splatRough = ofSplatRough(tG, tD, tR, tC, tS, tW, splatWA, splatWB);
+        }
+      #endif
 
       // WET GROUND (RN-57), after snow and the relief ramp because it is a film
       // ON the finished ground rather than another kind of ground. Compiled out

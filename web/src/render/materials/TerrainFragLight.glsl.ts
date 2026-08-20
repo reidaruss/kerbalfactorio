@@ -160,6 +160,32 @@ export const TERRAIN_FRAG_LIGHT = /* glsl */`
           // the biome, so roughVar means one thing everywhere.
           float grainN = grain / max(dot(vMatW, vec4(1.0)), 1e-3);
           float rough = ofArtRough(vGrain.w, vTint.w, grainN, coverSel, snow, wetF);
+          // RN-2160. THE SPLAT'S ROUGHNESS, blended in over the biome's own.
+          //
+          // A MIX AND NOT A MULTIPLY, and the direction matters. ofArtRough
+          // above answers "how rough is this BIOME's ground here"; the splat
+          // answers "how rough is the MATERIAL this fragment is made of", and
+          // where the splat is at full weight the second is the better answer:
+          // a cliff face and a talus apron in the same biome have genuinely
+          // different roughness and the biome table has one row for both.
+          // Multiplying would have made the two claims compound into a floor
+          // neither of them states, which is TerrainTex's named failure mode 1
+          // (the whole ground goes satin) arriving by arithmetic.
+          //
+          // It rides the NORMAL fade rather than the albedo one, because
+          // roughness and normal are one claim: a facet that catches the sun
+          // has to be both tilted and smooth, and a surface that kept its
+          // sheen after its relief faded would glint off flat ground.
+          //
+          // The wet film survives this on purpose: ofArtRough's last mix takes
+          // roughness to 0.10 under water, and mixing back toward a dry
+          // material would undrown a pond edge. wetF is therefore applied
+          // once more here, at the same constant, so the film is the last word
+          // about the surface exactly as it is above.
+          #ifndef OF_SCALED
+            rough = mix(rough, splatRough, uSplatAmp.z * splatFadeN);
+            rough = clamp(mix(rough, 0.10, wetF), 0.15, 1.0);
+          #endif
           vec3 vd = -rd;                  // rd runs camera -> fragment
           lit += uSpecAmp.x
                * sunT * (${SUN_IRR} * ofArtSpec(n, vd, sd, rough) * shadow);

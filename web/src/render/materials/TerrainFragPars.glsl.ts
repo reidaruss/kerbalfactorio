@@ -143,6 +143,26 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // 0 or 1 and not an amplitude, on uReliefGrad's precedent: what 0 restores
     // is a defect, and an intermediate value would be neither state.
     uniform float uFineLum;
+    // RN-2160. THE SPLAT LAYER SET. x value, y chroma, z normal-and-roughness.
+    uniform vec3 uSplatAmp;
+    // (albedoFadeStart, albedoFadeEnd, normalFadeStart, normalFadeEnd) in
+    // METRES of view distance. Two bands rather than one because they protect
+    // two different things: the albedo band is texW's 35-to-75 (where the
+    // existing ground-texture term retires, so the handover to phase 2 is ONE
+    // boundary) and the normal band is the relief bump's 30-to-60, which
+    // completes inside the max-depth ring where the chunk UV's world scale is
+    // constant. See TerrainSplat.ts clause C4.
+    uniform vec4 uSplatFade;
+    // Six layers, six samplers, and the packing is what makes that affordable:
+    // R albedo value, G/B tangent normal xy, A roughness detail, every channel
+    // centred on 0.5. Six layers x albedo/normal/ORM would be eighteen units
+    // and WebGL2 guarantees sixteen.
+    uniform sampler2D uSplatGrass;
+    uniform sampler2D uSplatDirt;
+    uniform sampler2D uSplatRock;
+    uniform sampler2D uSplatCliff;
+    uniform sampler2D uSplatScree;
+    uniform sampler2D uSplatSnow;
     uniform float uFadeDur;
     uniform float uMetresPerUnit;
     uniform vec3 uCascadeFar;

@@ -85,6 +85,11 @@ import { TERRAIN_ART_RELIEF, RELIEF_REPEATS, RELIEF_GRAD_UV }
 import { TERRAIN_ART_WET } from './TerrainWet.glsl.js';
 import { TERRAIN_ART_TEX, TERRAIN_ART_SPEC, TEX_SCALE_GAIN, ROUGH_GRAIN,
   TEX_FINE_REPEATS } from './TerrainTex.glsl.js';
+// RN-2160. The TENTH term, the near-field SPLAT, on TerrainFine's precedent and
+// by the same leaf discipline. It is the first term here that is a MATERIAL
+// rather than a modulation: see TerrainSplat.glsl.ts for the weight rules and
+// TerrainSplat.ts for the convergence rule the whole thing rests on.
+import { TERRAIN_SPLAT, TERRAIN_SPLAT_PARS } from './TerrainSplat.glsl.js';
 
 /**
  * RN-1855. The two PRE-FIX values, kept as named exports rather than typed into
@@ -122,6 +127,10 @@ export { TERRAIN_ART_WET } from './TerrainWet.glsl.js';
 export { TERRAIN_ART_TEX, TERRAIN_ART_SPEC, TEX_SCALE_GAIN, ROUGH_GRAIN,
   TEX_FINE_REPEATS } from './TerrainTex.glsl.js';
 
+// RN-2160. Re-exported for the identical reason: an import site asks TerrainArt
+// for a surface-art symbol and does not need to know which leaf file holds it.
+export { TERRAIN_SPLAT, TERRAIN_SPLAT_PARS } from './TerrainSplat.glsl.js';
+
 // RN-1855. OF_ART_FINE_M and OF_RELIEF_FINE_M are GONE rather than left behind,
 // on RN-1005's rule exactly: they are uniforms now (uArtFineM, uReliefFineM),
 // and a dead define that still compiles is how a lane ends up sweeping one
@@ -153,4 +162,17 @@ export const TERRAIN_ART_PARS = `#define OF_ART_OCT_FINE ${ART_OCT_FINE.toFixed(
   // RN-1900. AFTER TERRAIN_ART_NOISE, which is not cosmetic: ofArtMid calls
   // ofArtVnoise and GLSL ES 1.0 requires a function to be declared before use.
   + TERRAIN_ART_MID
-  + TERRAIN_ART_SPEC;
+  + TERRAIN_ART_SPEC
+  // RN-2160. LAST, and the order is load-bearing: ofSplatWarp calls
+  // ofArtVnoise2P, which TERRAIN_ART_FINE declares, and GLSL ES 1.0 requires a
+  // function to be declared before use.
+  //
+  // Its defines sit HERE, immediately above their only consumer, rather than in
+  // the define block at the top of this expression. The preprocessor does not
+  // care (a #define is in scope from its own line onward and TERRAIN_SPLAT is
+  // the next string concatenated), and the whole set is GENERATED from
+  // TerrainSplat.ts's table, so keeping the generator's output beside the code
+  // it feeds is what stops someone reading the define block and believing those
+  // literals were typed.
+  + TERRAIN_SPLAT_PARS
+  + TERRAIN_SPLAT;
