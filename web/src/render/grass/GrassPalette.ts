@@ -85,7 +85,12 @@ export const COVER: readonly CoverBiome[] = [
   { k: 1.00, green: 0.74, h: 1.00 },   // 2 Plains: the meadow pose's own biome
   { k: 0.85, green: 0.68, h: 0.90 },   // 3 Forest: floor cover under a canopy
   { k: 0.72, green: 0.58, h: 0.92 },   // 4 Hills: thin turf over stony ground
-  { k: 0.20, green: 0.32, h: 0.70 },   // 5 Mountains: scree stubble
+  // VISTA CAPTURE: at k 0.20 / green 0.32 the scree grew a field of pale
+  // spikes that read as ICE SHARDS rather than as vegetation, because the
+  // Mountains substrate is a neutral grey (0x7c7a74) and a weak rotation of a
+  // grey is still a grey. Fewer and greener is the fix: what little grows up
+  // there has to read as alive or it should not be there at all.
+  { k: 0.10, green: 0.55, h: 0.66 },   // 5 Mountains: scree stubble
   { k: 0.00, green: 0.00, h: 1.00 },   // 6 Polar
   { k: 0.00, green: 0.00, h: 1.00 },   // 7 Regolith
   { k: 0.00, green: 0.00, h: 1.00 },   // 8 MoonHighland

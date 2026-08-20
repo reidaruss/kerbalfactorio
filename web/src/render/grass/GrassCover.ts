@@ -200,6 +200,7 @@ export class GrassCover {
   report(): unknown {
     const rows = this.rungs.map((r) => ({
       rung: r.name,
+      digest: r.pool.digest(),
       instances: r.pool.liveInstances,
       triangles: r.pool.liveTriangles,
       chunks: r.pool.chunks,
@@ -213,6 +214,7 @@ export class GrassCover {
       instances: rows.reduce((s, r) => s + r.instances, 0),
       triangles: rows.reduce((s, r) => s + r.triangles, 0),
       refused: rows.reduce((s, r) => s + r.refused, 0),
+      digest: this.rungs.map((r) => r.pool.digest()).join('-'),
       chunksCovered: this.band.size,
       backlog: this.backlog,
       builds: this.builds,

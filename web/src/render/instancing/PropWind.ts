@@ -136,11 +136,22 @@ export function windUpdate(simSecs: number): void {
  * after depend on the props not moving by so much as a rounding difference.
  * `uWindTree` is not exported: it is the tree reach law and a 0.26 m blade has
  * no use for it.
+ *
+ * `enabled` IS EXPORTED AND THE CARPET MUST READ IT, and this line is here
+ * because the first version did not and the control caught it. `?wind=0` drops
+ * the hook, so the props go still; the carpet is a ShaderMaterial that reads
+ * these objects unconditionally, and `__ofWind.freeze` writes `uWindTime`
+ * whether the hook exists or not. So with `?wind=0` the props stood still and
+ * the carpet kept swaying, and `probes/grasswind.js`'s still arm measured 34.59
+ * counts of tile motion where it must measure none. A control that fails to go
+ * red is a finding, and this is the finding.
  */
 export function windUniforms(): {
-  uWindTime: { value: number }; uWindAmp: { value: number };
+  uWindTime: { value: number }; uWindAmp: { value: number }; enabled: boolean;
 } {
-  return { uWindTime: uniforms.uWindTime, uWindAmp: uniforms.uWindAmp };
+  return {
+    uWindTime: uniforms.uWindTime, uWindAmp: uniforms.uWindAmp, enabled,
+  };
 }
 
 // The probe surface, on the `__ofProps` precedent and for its reason: a page

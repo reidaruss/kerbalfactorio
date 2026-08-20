@@ -108,7 +108,11 @@ export function createGrassMaterial(o: GrassMaterialOptions): GrassMaterialHandl
     uDensK: { value: o.rung.densK.clone() },
     uIn: { value: o.rung.inM.clone() },
     uOut: { value: o.rung.outM.clone() },
-    uWindGain: { value: o.rung.windGain },
+    // ZERO WHEN THE HOOK IS OFF. `?wind=0` removes PropWind's hook, which stops
+    // the props but cannot stop a ShaderMaterial that reads the shared clock
+    // directly; the carpet has to opt out itself or the flag is not a control.
+    // See PropWind.windUniforms for the measurement that found this.
+    uWindGain: { value: wind.enabled ? o.rung.windGain : 0 },
     uTrans: { value: transFromQuery() },
     // THE LEAN AND THE RAMP, both swept by one flag each because both are look
     // terms judged on a frame rather than derived from anything.

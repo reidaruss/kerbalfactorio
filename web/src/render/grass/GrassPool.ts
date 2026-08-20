@@ -185,6 +185,46 @@ export class GrassPool {
     this.dirtyHi = -Infinity;
   }
 
+  /**
+   * FNV-1a over the LIVE instance data, for the determinism claim.
+   *
+   * It hashes `local` (chunk-local offsets), `param` and `col` PER BLOCK IN KEY
+   * ORDER rather than the packed buffers in buffer order, and that distinction
+   * is the whole point: the packing order is a function of the order chunks
+   * happened to stream in, which is a property of the run, while the CONTENT of
+   * a chunk's block is a pure function of the seed and the chunk key and is the
+   * thing a determinism claim is actually about. Hashing the buffer would fail
+   * on a re-run that streamed the same chunks in a different order and would
+   * have said "non-deterministic" about something that is not.
+   *
+   * Engine-space `iPos` is deliberately NOT hashed: it is chunk-local plus a
+   * floating-origin-dependent translation, so it is expected to move and its
+   * correctness is `rebase`'s claim, not this one.
+   */
+  digest(): string {
+    let h = 0x811c9dc5 >>> 0;
+    const mix = (x: number): void => {
+      h = Math.imul(h ^ (x & 0xff), 0x01000193) >>> 0;
+      h = Math.imul(h ^ ((x >>> 8) & 0xff), 0x01000193) >>> 0;
+      h = Math.imul(h ^ ((x >>> 16) & 0xff), 0x01000193) >>> 0;
+      h = Math.imul(h ^ ((x >>> 24) & 0xff), 0x01000193) >>> 0;
+    };
+    const f32 = new Float32Array(1);
+    const u32 = new Uint32Array(f32.buffer);
+    const mixF = (x: number): void => { f32[0] = x; mix(u32[0]); };
+    const param = this.aParam.array as Float32Array;
+    const col = this.aCol.array as Uint8Array;
+    for (const key of [...this.blocks.keys()].sort()) {
+      const b = this.blocks.get(key) as Block;
+      for (let i = 0; i < key.length; ++i) mix(key.charCodeAt(i));
+      mix(b.count);
+      for (let i = 0; i < b.count * 3; ++i) mixF(b.local[i]);
+      for (let i = 0; i < b.count * 4; ++i) mixF(param[b.start * 4 + i]);
+      for (let i = 0; i < b.count * 4; ++i) mix(col[b.start * 4 + i]);
+    }
+    return (h >>> 0).toString(16).padStart(8, '0');
+  }
+
   dispose(): void {
     this.mesh.removeFromParent();
     this.geom.dispose();
