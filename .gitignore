@@ -70,3 +70,8 @@ web/dist-*/
 # in-memory string. Per-lane debugging data, not project state.
 web/tools/smoke/results.jsonl
 web/tools/smoke/stdout/
+
+# check-all.mjs (BT-310): a check:roles red's full output, persisted so the
+# BT-310 DIAG_JSON hashes survive past console scrollback. Forensic capture,
+# not project state.
+web/scripts/check-roles-diag/

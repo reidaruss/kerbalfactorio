@@ -67,8 +67,30 @@
 //   node scripts/check-roles.mjs            check the repo (and self-test)
 //   node scripts/check-roles.mjs --selftest only the self-test
 //   node scripts/check-roles.mjs --json     machine-readable report
+//   node scripts/check-roles.mjs --diag     only the BT-310 diagnostic snapshot
+//
+// BT-310 to BT-314. THE POST-MERGE TRANSIENT, seen twice (after the BT-250 and
+// RN-2245 merges): this check failed on the first `npm run check` immediately
+// after a merge commit, then passed standalone seconds later and on a full
+// rerun, both times, with nothing in the repo actually changed in between.
+// Not reproduced after a real effort (30 scripted merges on this box, real
+// merge commits with conflicts, a real LFS-tracked binary rewrite, a real
+// `assets/models/dist/**/*.glb` rewrite, extra multi-MB disk churn to mimic
+// RN-2245's screenshot payload, `node tools/check-all.mjs --only=check:roles`
+// run with zero delay right after `git merge` returns, 30/30 clean). Since the
+// cause could not be forced to happen on demand, this instruments it instead:
+// every failure path below now emits a DIAGNOSTIC line carrying a sha256 of
+// exactly the bytes this run read from SurfaceRoles.ts, surfaces.json, the
+// served manifest (if present) and a stable digest of the assets/models/dist
+// listing (path:size pairs, so a directory-race that under-lists the .glb set
+// shows up as a smaller count and a different hash, not just a vague red).
+// `check-all.mjs` persists that output to a file on any check:roles red (its
+// own stdout is otherwise ephemeral console scrollback), so a THIRD sighting
+// leaves a hash trail instead of another "could not reproduce."
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { execSync } from 'node:child_process';
 import { dirname, join, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -335,9 +357,86 @@ function selftest() {
 }
 
 // ---------------------------------------------------------------------------
+// BT-310. The forensic snapshot. Every function here is best-effort and never
+// throws: the whole point is to describe a failure, including a failure to
+// read the very files being diagnosed, not to add a second way to crash.
+// ---------------------------------------------------------------------------
+
+const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
+
+/** Bytes, size, mtime and a content hash for one file, or why it couldn't be read. */
+function fileDigest(path) {
+  try {
+    const buf = readFileSync(path);
+    const st = statSync(path);
+    return { exists: true, bytes: buf.length, mtimeMs: st.mtimeMs, sha256: sha256(buf) };
+  } catch (e) {
+    return { exists: existsSync(path), error: e.message };
+  }
+}
+
+/**
+ * A stable digest of the .glb listing under `dir`: count, total bytes, and a
+ * hash over the sorted "relpath:size" lines. A directory-listing race that
+ * silently drops files changes the count AND the hash; a race that reads
+ * truncated bytes from a file already in the list would not show here (that
+ * is what `shippedRoles`'s own per-file parse failure is for), which is why
+ * this is a complement to the real check's own error, not a replacement.
+ */
+function modelsDigest(dir) {
+  try {
+    const files = findGlb(dir);
+    let totalBytes = 0;
+    const lines = [];
+    for (const f of files) {
+      const st = statSync(f);
+      totalBytes += st.size;
+      lines.push(`${relative(repoRoot, f).split(sep).join('/')}:${st.size}`);
+    }
+    return { exists: true, count: files.length, totalBytes, listHash: sha256(Buffer.from(lines.join('\n'), 'utf8')) };
+  } catch (e) {
+    return { exists: existsSync(dir), error: e.message };
+  }
+}
+
+function gitHead() {
+  try {
+    return execSync('git rev-parse HEAD', { cwd: repoRoot, encoding: 'utf8' }).trim();
+  } catch (e) {
+    return `unavailable: ${e.message}`;
+  }
+}
+
+function diagnosticSnapshot() {
+  return {
+    atISO: new Date().toISOString(),
+    headCommit: gitHead(),
+    files: {
+      surfaceRolesTs: fileDigest(CLIENT),
+      manifest: fileDigest(MANIFEST),
+      served: existsSync(SERVED) ? fileDigest(SERVED) : { exists: false },
+    },
+    modelsDir: modelsDigest(MODELS),
+  };
+}
+
+/** Printed on every failure path so a persisted log (see check-all.mjs) carries it. */
+function printDiagnostic(reason) {
+  const d = diagnosticSnapshot();
+  console.error(`check-roles: DIAGNOSTIC (${reason}). BT-310: hashes of exactly what `
+    + `this run read, for comparing against the next sighting.`);
+  console.error(`  DIAG_JSON: ${JSON.stringify(d)}`);
+}
+
+// ---------------------------------------------------------------------------
 
 const argv = new Set(process.argv.slice(2));
 const asJson = argv.has('--json');
+
+if (argv.has('--diag')) {
+  console.log(JSON.stringify(diagnosticSnapshot(), null, 2));
+  process.exit(0);
+}
 
 const st = selftest();
 if (!asJson) {
@@ -366,6 +465,7 @@ try {
   client = parseClientTable(readFileSync(CLIENT, 'utf8'));
 } catch (e) {
   console.error(`check-roles: could not read the inputs: ${e.message}`);
+  printDiagnostic('input read threw');
   process.exit(2);
 }
 
@@ -388,6 +488,7 @@ if (vacuous.length > 0) {
   console.error('check-roles: REFUSING TO PASS ON TRIVIAL INPUT. A comparison over '
     + 'an empty set succeeds and means nothing:');
   for (const v of vacuous) console.error(`  ${v}`);
+  printDiagnostic('vacuous input');
   process.exit(2);
 }
 
@@ -430,6 +531,7 @@ if (existsSync(SERVED)) {
 
 if (asJson) {
   console.log(JSON.stringify({ counts, served: servedNote, fails, selftest: st.count, pass: fails.length === 0 }, null, 2));
+  if (fails.length > 0) printDiagnostic('role disagreement (--json)');
   process.exit(fails.length === 0 ? 0 : 1);
 }
 
@@ -441,6 +543,7 @@ if (fails.length > 0) {
   console.error('check-roles: a role the client does not know draws UNTEXTURED. '
     + 'The client says so at runtime too, but only in a browser console, which is '
     + 'why this runs in `npm run check`.');
+  printDiagnostic('role disagreement');
   process.exit(1);
 }
 
