@@ -690,18 +690,43 @@ def broadleaf_lod2():
 # a leaf mass now, not a rectangle. The rung is unblocked by a change somebody
 # else made, which is worth writing down rather than quietly acting on.
 #
-# THE SHAPE, ten triangles: a three-segment trunk (six) up to the crown base,
-# and two crossed leaf quads over the crown (four). The trunk is kept where the
-# harvest trees' card drops it, and the reason is this set's own geometry: a
-# canopy tree carries its crown high over a long bare stem, so a card spanning
-# the whole box would put foliage on the ground at exactly the ranges this rung
-# serves. Six triangles is what it costs to keep the tree standing on something.
+# RN-2240, THE TRUNK STUB CAME OUT, AND IT IS NOT A TRIANGLE SAVING. It reads
+# like one -- twelve triangles down to four -- but the real cost was never on
+# this side of the pipe. PropLibrary batches by MATERIAL and registers one
+# batch per (stem, material) found ANYWHERE the stem appears, not per LOD: a
+# canopy tree's LOD0 and LOD2 use all four of Bark / LeafDeep / Leaf /
+# LeafLight, so `PropLibrary.parts.get('Canopy_Pine')` was always four parts,
+# and ScatterEmit's placement loop acquired an instance slot in EVERY one of
+# them for EVERY canopy tree, because a placed prop is the union of its parts
+# by construction (ScatterEmit.ts:193). The old LOD3 authored Bark and Leaf
+# directly and left LeafDeep and LeafLight unauthored at this rung, so those
+# two parts did not go empty, they fell back to their LOD2 geometry
+# (PropLods.meshAtTier's walk-down rule, correct for an asset with no far rung
+# at all, silently wrong for a rung that dropped ONE material on purpose) --
+# the far tier was drawing a cone's worth of LeafDeep/LeafLight triangles at
+# 91,760 total instances for a canopy population of only 22,940 trees.
 #
-# NO NEW MATERIAL. Bark and Leaf are both already in ORDER and both already in
-# `double_sided_ok`, so this rung adds no draw call, no texgen family and no
-# ROLE_FAMILY row -- it adds ten triangles and nothing else.
-def _impostor(height, crown_lo, trunk_r, key):
-    """Trunk stub to `crown_lo * height`, crossed leaf quads above it.
+# Dropping Bark from this rung, so it authors Leaf alone, is what lets
+# ScatterEmit's canopy-only skip (RN-2240, `part.lods[LOD3] < 0` for a
+# `spec.canopy` prop) refuse Bark, LeafDeep and LeafLight cleanly instead of
+# refusing Bark and falling back on the other two: with all three gone the far
+# tier acquires exactly ONE slot per tree, a real quarter of 91,760. The trunk
+# itself costs nothing to lose: the thickest canopy stem here is 0.26 m in
+# radius (Broadleaf) and no canopy instance is ever nearer than CANOPY_NEAR_M
+# (550 m, past CANOPY_LOD3_M's own 420 m), where a 0.52 m stem is under a
+# pixel wide in the shipped 1600x900 / 60 degree frame -- the identical
+# arithmetic NODE_LOD3_M was derived from for the harvest trees, whose own
+# `_card` (build_tree_conifer.py) already drops its stem the same way and
+# whose docstring says it plainly: "dropping the trunk is the whole of the
+# saving." This rung now matches that precedent instead of being the one
+# holdout that kept a second material for a stub nobody was rendering.
+#
+# NO NEW MATERIAL, AND ONE FEWER LIVE AT THIS RUNG. Leaf is already in ORDER
+# and already in `double_sided_ok`, so the card costs no draw call, no texgen
+# family and no ROLE_FAMILY row -- it costs four triangles and nothing else.
+def _impostor(height, crown_lo, key):
+    """Two crossed leaf quads over the crown, and NOTHING ELSE. Four
+    triangles, one material.
 
     Fitted to the SAME box as LOD0 and LOD2 by `pc.build_atlas`, which is what
     keeps the plan aspect RN-271 bought: the card is stretched by the same two
@@ -710,7 +735,6 @@ def _impostor(height, crown_lo, trunk_r, key):
     """
     p = hc.Parts()
     z0 = height * crown_lo
-    p.add(*hc.taper(trunk_r, trunk_r * 0.62, 0.0, z0, seg=3), role="Bark")
     v, f, sm = hc.crossed_quads(2.0, height - z0, z0=z0, yaw_deg=0.0)
     p.add(v, f, sm, "Leaf", uvs=pc.quad_card_uvs(2, key))
     return p
@@ -756,17 +780,17 @@ def _impostor(height, crown_lo, trunk_r, key):
 PROPS = [
     pc.Prop("Canopy_Pine", (3.85, 2.55, PINE_H), pine, ORDER,
             lod2=pine_lod2,
-            lod3=lambda: _impostor(PINE_H, 0.55, 0.16, 22001),
+            lod3=lambda: _impostor(PINE_H, 0.55, 22001),
             collide=False,
             note="crown in the top 45%, bare trunk to 0.55 of height"),
     pc.Prop("Canopy_Fir", (2.90, 2.20, FIR_H), fir, ORDER,
             lod2=fir_lod2,
-            lod3=lambda: _impostor(FIR_H, 0.60, 0.14, 22002),
+            lod3=lambda: _impostor(FIR_H, 0.60, 22002),
             collide=False,
             note="the emergent: crown in the top 38%, bare to 0.62"),
     pc.Prop("Canopy_Broadleaf", (8.40, 10.50, BROAD_H), broadleaf, ORDER,
             lod2=broadleaf_lod2,
-            lod3=lambda: _impostor(BROAD_H, 0.52, 0.26, 22003),
+            lod3=lambda: _impostor(BROAD_H, 0.52, 22003),
             collide=False,
             note="forks at 0.45, crown carried above 0.60"),
 ]

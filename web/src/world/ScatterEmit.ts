@@ -9,7 +9,7 @@
 // touching the code a density measurement is read out of.
 
 import * as THREE from 'three';
-import { geomAtTier } from '../render/instancing/PropLods.js';
+import { geomAtTier, PROP_LODS } from '../render/instancing/PropLods.js';
 import type { PropLibrary, PropPart } from '../render/instancing/PropLibrary.js';
 import type { PropSpec } from '../assets/Registry.js';
 import {
@@ -191,6 +191,24 @@ export class PropEmitter {
     // than by a branch.
     const lod3M = spec.canopy === true ? CANOPY_LOD3_M : lod2M;
     for (const part of list) {
+      // RN-2240. A canopy prop is drawn ONLY at the impostor rung: every
+      // canopy instance stands beyond CANOPY_NEAR_M, which is past
+      // CANOPY_LOD3_M, an invariant asserted at boot (PropLibrary/
+      // BootBodyScope). `list` still holds one part per material the STEM
+      // carries at ANY tier (Bark/LeafDeep/Leaf/LeafLight, from LOD0/LOD2),
+      // so acquiring a slot for every part unconditionally is what made the
+      // far tier four instances per tree: two of those parts have their own
+      // LOD3 (Bark, Leaf, pre-RN-2240) and two never did, so `geomAtTier`'s
+      // walk-down rule -- correct for an asset with NO far rung at all --
+      // quietly bound them to their LOD2 cone/dome geometry at every canopy
+      // range instead. A part with no rung of its own at LOD3 is refused
+      // here rather than falling back, because for a canopy prop this tier
+      // is the only one ever drawn: there is no nearer request this part
+      // needs to answer. Every other prop is untouched (`spec.canopy` gates
+      // it), and a canopy prop whose LOD3 legitimately reuses this part
+      // (none do today) would still be skipped, exactly as `geomAtTier`
+      // itself treats an unauthored tier as absent rather than borrowed.
+      if (spec.canopy === true && part.lods[PROP_LODS - 1] < 0) continue;
       const slot = this.lib.acquire(part.material);
       if (slot < 0) continue;
       // Tinted HERE, where the slot is acquired, and never again. See
