@@ -70,6 +70,19 @@
 // The three `vista*` shots and `meadow` take the file's own `--scenario=walk`
 // line at the top of this header, with the shot name changed.
 //
+// AND ONE MORE AT RN-2145, because the shot set could not frame its own
+// headline defect:
+//   meadow       plains at a standing eye with the props ON, the open-grassland
+//                frame the Space Engineers comparison is actually about. Its
+//                manifest row has the site, the pitch and the rectangles with
+//                the reasons for each. It takes the `--scenario=walk` line at
+//                the top of this header with the shot name changed:
+//
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=walk \
+//     --sandbox=1 --width=1600 --height=900 \
+//     --evalfile=tools/smoke/probes/artframe.js --evalargs='{"shot":"meadow"}' \
+//     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
+//
 // ==========================================================================
 // WHY THIS FILE EXISTS AT ALL, given `artshot.js` and the `*shot.js` family
 // ==========================================================================
@@ -283,6 +296,69 @@
         r35c: [0.1500, 0.3855162, 0.8500, 0.3910718],
       },
       why: 'the MID FIELD at 18 / 27 / 35 m, the band no other shot can see',
+    },
+    // RN-2145. THE MEADOW, AND THE SHOT SET HAD NO SUCH THING.
+    //
+    // The gap analysis' section 1 difference 1 is about a MEADOW: a standing
+    // eye on open grassland, ground filling the lower half, nothing built and
+    // no canopy in the way. Nine canonical frames and five vista poses later,
+    // this project still could not take that picture. `forestfloor` is under a
+    // closed canopy at pitch -26 and its ground is litter; `midfield` is the
+    // right site and turns THE PROPS OFF, which is exactly the layer being
+    // judged; the plains vista is a REJECT kept as evidence about the horizon.
+    // A shot set that cannot frame its own headline defect is the world audit's
+    // section 2.3 finding in miniature, and it costs one manifest row to fix.
+    //
+    // THE SITE IS `midfield`'s, verbatim (lat -7.9675, lon 116.53189, biome 2
+    // Plains), so the two shots are the same ground and any difference between
+    // them is the props and the carpet rather than the place. THE PITCH IS -12
+    // AND NOT -10 or -26: at -10 the ground runs out of the frame at about 30 m
+    // and the near carpet is a strip; at -26 the near carpet is most of the
+    // frame and the mid field, which is the half a carpet is most likely to
+    // leave bald, is invisible. -12 puts the feet at the bottom edge and the
+    // horizon just above centre, which is the composition the SE reference is
+    // in and is what the judgement is about.
+    //
+    // `box` is the MID FIELD, deliberately, and it was chosen before any number
+    // was taken (the "a rectangle chosen after the numbers are in is a rectangle
+    // chosen to agree with them" rule). `near` and `far` are its neighbours:
+    // near is the band a carpet always wins and far is the band it has to hand
+    // over cleanly, so the three together can say "this reads at the feet and
+    // is bald at 40 m" if that is what happened.
+    // MERGE NOTE (Admin, 2026-08-20): RN-2145 published this row under the
+    // name `meadow`; lane A1 landed a different `meadow` pose (yaw 120,
+    // pitch -8, the sky-to-ground balance hero) in the same merge window, so
+    // this row is renamed `meadowfield` to keep both instruments. Every digit
+    // in the RN-2145 record was taken at THIS pose (yaw 150, pitch -12).
+    meadowfield: {
+      scenario: 'walk', needsSandbox: false,
+      lat: -7.9675, lon: 116.53189, yaw: 150, pitch: -12,
+      sunDot: 0.70, sunTol: 0.06,
+      box: [0.2000, 0.5200, 0.8000, 0.6000],
+      // RN-2145 FIRST CAPTURE, AND THE FIXTURE WAS WRONG BEFORE THE FEATURE
+      // WAS. The three rectangles above were hand-written fractions, and
+      // inverting the flat-plane range map afterwards put them at 3.8 to 4.5 m,
+      // 8.5 to 11.8 m and 11.8 to 16 m: NOT ONE OF THEM REACHED THE MID FIELD,
+      // which is the band a carpet is most likely to leave bald and the band
+      // the whole judgement is about. At a 2 m eye and a 60 degree fov, 25 m to
+      // 60 m of ground occupies about seven pixels, so a hand-picked fraction
+      // cannot land there and a rectangle that names a range it does not have
+      // is worse than no rectangle (RN-1857's own reason for this mechanism).
+      //
+      // `rangeRects` places them LIVE off this capture's own observer, and the
+      // report prints `rangeM` for each, so if the terrain moves the eye the
+      // fixture says so out loud instead of quietly measuring somewhere else.
+      // The four rungs are the four questions: 4 m is at the feet where any
+      // carpet wins, 10 m is where the near rung is still dense, 25 m is the
+      // handover, and 55 m is inside the fade and is where "bald in the middle
+      // distance" would show.
+      rangeRects: [4, 10, 25, 55],
+      rangeRowsPx: 5,
+      extra: {
+        sky: [0.3000, 0.1000, 0.7000, 0.2000],
+      },
+      why: 'the MEADOW: plains at a standing eye, the frame section 1 '
+        + 'difference 1 is about, and the one no shot in this file could take',
     },
     // ===================== RN-2065. THE FIVE VISTA POSES =====================
     //
@@ -1315,7 +1391,11 @@
   // the branch rather than copying it is deliberate: the two shots differ only
   // in the manifest row, and a second hand-written copy of this sequence is how
   // one of them ends up pinning the sun before the teleport.
-  if (name === 'forestfloor' || name === 'midfield') {
+  // RN-2145. `meadow` joins the same branch for RN-1900's reason exactly: it is
+  // `midfield`'s site with a different pitch and the props LEFT ON, so a second
+  // copy of this sequence would be a second chance to pin the sun before the
+  // teleport.
+  if (name === 'forestfloor' || name === 'midfield' || name === 'meadowfield') {
     const w0 = of.world();
     of.teleport(S.lat, S.lon, 2.0);
     await sleep(2.0);

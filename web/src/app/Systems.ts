@@ -392,6 +392,12 @@ export function registerSystems(s: Services, loop: Loop): void {
     // rebased every 4 km, so a radius measured from it would put the foliage
     // ring kilometres away from the player.
     s.scatter.update(s.terrain.residentViews.values(), eye);
+    // RN-2145. The carpet, same views, same eye. The third argument is pixels
+    // per radian (`domElement.height` IS the drawing buffer, so the device
+    // ratio is already in it); the carpet's fade is in apparent size and is
+    // read live so a resize moves it. See GrassCover.update and GrassTuning.
+    s.grass.update(s.terrain.residentViews.values(), eye,
+      s.renderer.domElement.height / (2 * Math.tan((cam.fov * Math.PI) / 360)));
     // RN-821. THE STATION, recomposed from its f64 body-frame pose, every
     // frame, and never cached in engine space. Here rather than in `onDrain`
     // for the reason the vessel is here: the visibility gate is a distance

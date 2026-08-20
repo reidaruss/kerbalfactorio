@@ -22,6 +22,7 @@ import type { DigAction } from '../player/DigAction.js';
 import type { LevelAction } from '../player/LevelAction.js';
 import type { LevelRing } from '../world/LevelRing.js';
 import type { Scatter } from '../world/Scatter.js';
+import type { GrassCover } from '../render/grass/GrassCover.js';
 import type { StatsProbe } from '../render/debug/StatsProbe.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { PlanetBody } from '../world/PlanetBody.js';
@@ -144,6 +145,8 @@ export interface Services {
   readonly headlamp: Headlamp;
   readonly props: PropLibrary;
   readonly scatter: Scatter;
+  /** RN-2145. The ground-cover carpet. */
+  readonly grass: GrassCover;
   /** W5. Null in scenarios with no character (there is nobody to dig). */
   readonly voxels: VoxelWorld | null;
   readonly voxelMesh: VoxelMesh | null;
