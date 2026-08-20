@@ -297,17 +297,62 @@ const DRY_DETAIL: readonly PropSpec[] = [
  * BEACH, POLAR, OCEAN and the three moon biomes get nothing. Beach is the pale
  * dry sand Reid picked out of the WG-53 survey and a treeline behind it would
  * be a different picture; the rest have no soil to argue about.
+ *
+ * ============================================================================
+ * WG-222, 2026-08-20. THE WHOLE TABLE IS SIX TIMES WHAT IT WAS, AND THE MIX IS
+ * BROADLEAF-LED. Both halves are arithmetic and neither is taste.
+ *
+ * WHAT WAS WRONG, in the units foresters use. `C()` figures are instances per
+ * square kilometre after `DENSITY_SCALE`, and a square kilometre is a hundred
+ * hectares, so the old FOREST row of 3,840 per km2 is **38 canopy stems per
+ * hectare**. Real mature temperate forest carries 200 to 400 stems a hectare
+ * and even open woodland carries 60 to 120. Thirty-eight is savanna. RN-2225
+ * built the whole far tier correctly and then photographed a savanna: its
+ * flyover realised 366 trees per km2 at the Hills spawn, a 52 m mean spacing,
+ * and its own judgement is the reason this row exists ("it reads as fine
+ * speckle, not as woodland ... what limits the picture is the density the
+ * planet asks for. That is world-gen's table").
+ *
+ * SO THE ASK IS x6: FOREST 23,040 per km2 (230 stems a hectare, inside the
+ * mature band), HILLS 7,200 (72, open woodland), PLAINS 2,520 (25, wooded
+ * grassland) and MOUNTAIN 2,880 at the foot, nearly all of which the treeline
+ * then deletes.
+ *
+ * THESE ARE CLOSED-STAND FIGURES AND THAT IS A CHANGE OF MEANING, stated here
+ * rather than left to be discovered. `ScatterTuning.canopyWeight` is now a
+ * product of THREE terms (grove x stand x treeline, WG-221), and its realised
+ * mean over a biome is about 0.45. So the number on the row is the density on
+ * ground that is inside a closed stand of a closed wood, and the biome average
+ * is a bit under half of it. Written this way on purpose: "how thick is the
+ * forest where there is forest" is a quantity with a real-world referent that
+ * can be checked against a forestry table, and "the average over a landscape
+ * including its fields" is not.
+ *
+ * AND THE MIX MOVES TO BROADLEAF, WHICH IS COVERAGE FOR FREE. What the eye
+ * reads from the air is crown cover, and `contracts.json` gives the three
+ * species wildly different crowns: pine 3.85 x 2.55 m (7.7 m2), fir 2.9 x 2.2
+ * (5.0 m2), broadleaf 8.4 x 10.5 (**69.3 m2, nine times the pine**). The old
+ * Hills mix (110/40/50) averages 22.6 m2 a tree; the same TOTAL density led by
+ * broadleaf (360/120/720 after the x6) averages 44.4 m2. That is 1.96x the
+ * crown cover for the identical instance count, the identical triangle count
+ * and the identical frame cost, and the only thing it costs is that this
+ * planet's hills are deciduous woodland rather than pine plantation. Forest
+ * goes the same way (43.5 m2 against 31.4) and MOUNTAIN deliberately does NOT:
+ * no broadleaf survives at the treeline, so its crown stays 6.9 m2 and its
+ * flanks stay sparse, which is correct and is also why the treeline is still
+ * observable there (see the note above).
+ * ============================================================================
  */
 const CANOPY_FOREST: readonly PropSpec[] = [
-  C('Canopy_Pine', 300), C('Canopy_Fir', 90), C('Canopy_Broadleaf', 250),
+  C('Canopy_Pine', 1200), C('Canopy_Fir', 360), C('Canopy_Broadleaf', 2280),
 ];
-/** Thinner and more coniferous with height, which is what a hillside does. */
+/** Thinner than Forest and deciduous: 72 stems a hectare, an open oak wood. */
 const CANOPY_HILLS: readonly PropSpec[] = [
-  C('Canopy_Pine', 110), C('Canopy_Fir', 40), C('Canopy_Broadleaf', 50),
+  C('Canopy_Pine', 360), C('Canopy_Fir', 120), C('Canopy_Broadleaf', 720),
 ];
 /** Copses in open grass. Broadleaf-dominant: an oak in a field, not a pine. */
 const CANOPY_PLAINS: readonly PropSpec[] = [
-  C('Canopy_Pine', 18), C('Canopy_Fir', 5), C('Canopy_Broadleaf', 47),
+  C('Canopy_Pine', 100), C('Canopy_Fir', 30), C('Canopy_Broadleaf', 290),
 ];
 /**
  * Mountain foot only, and conifer only: no broadleaf survives up here, and the
@@ -315,7 +360,7 @@ const CANOPY_PLAINS: readonly PropSpec[] = [
  * the code DOES rather than something the table omits. See the note above.
  */
 const CANOPY_MOUNTAIN: readonly PropSpec[] = [
-  C('Canopy_Pine', 55), C('Canopy_Fir', 25),
+  C('Canopy_Pine', 330), C('Canopy_Fir', 150),
 ];
 
 /**

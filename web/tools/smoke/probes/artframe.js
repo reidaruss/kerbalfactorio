@@ -703,6 +703,41 @@
       },
       why: 'the MID-ALTITUDE FLIGHT VIEW at 1,200 m over the spawn',
     },
+    // WG-227. THE AERIAL POSE OVER FOREST, and it exists because rendering.md
+    // 2.14.10 item 3 asked for it by name: "the `vista` pose is blind to
+    // vegetation ... a new aerial judgement pose over the Forest biome is
+    // owed". `flyover` above is the spawn, which is HILLS, whose canopy table
+    // is open woodland by design (72 stems a hectare against Forest's 230), so
+    // every aerial judgement this project has ever made about its forests has
+    // been made over ground that is not forest.
+    //
+    // IT IS A SHOT AND NOT AN `--evalargs` OVERRIDE, on `mtnslope`'s own
+    // recorded reason one row up: "an override is a pose that exists in one
+    // shell history ... an `--evalargs` override is not a pose, it is a rumour
+    // about one". A verifier has to be able to reproduce this frame from the
+    // repository alone.
+    //
+    // EVERY FIELD BUT lat/lon IS `flyover`'s, TO THE DIGIT, and deliberately:
+    // altitude, yaw, pitch, sun and all five rectangles. The pair is then one
+    // variable apart (the ground under it) and the two frames' numbers are
+    // directly comparable, which is the whole reason to reuse a framing rather
+    // than compose a prettier one. The site is RN-2065's own surveyed forest
+    // site, the one its reject list records as "forest (-19.85, -72.7853),
+    // biome 3 ... the canopy fills the frame to the horizon line".
+    forestair: {
+      scenario: 'surface', needsSandbox: false, fly: true,
+      lat: -19.85, lon: -72.7853, altM: 1200,
+      yaw: 300, pitch: -14,
+      sunDot: 0.55, sunTol: 0.06,
+      box: [0.2500, 0.4500, 0.7500, 0.7500],
+      extra: {
+        skyBand: [0.2000, 0.0500, 0.8000, 0.1500],
+        hzBand: [0.2000, 0.3500, 0.8000, 0.3750],
+        under: [0.3500, 0.8500, 0.6500, 0.9800],
+        shadowStep: [0.1875, 0.5900, 0.5625, 0.6444],
+      },
+      why: 'the MID-ALTITUDE FLIGHT VIEW at 1,200 m over FOREST, not the spawn',
+    },
     limb: {
       scenario: 'orbit', needsSandbox: false, fly: true,
       // 120 km is 20 km INSIDE the ORBIT band (`Regime.ts` puts the boundary
@@ -1567,7 +1602,11 @@
 
   // RN-2065. THE TWO FLY POSES. See their manifest rows for why they cannot
   // share the branch above: the walking capsule discards the altitude.
-  if (name === 'flyover' || name === 'limb') {
+  // WG-227. `forestair` is `flyover`'s pose over different ground, so it takes
+  // `flyover`'s branch verbatim. Listed here and not only in `SHOTS`, because
+  // this block's own comment says a shot missing from it "IS NEVER POSED" and
+  // reports perfectly correct numbers about the wrong place.
+  if (name === 'flyover' || name === 'forestair' || name === 'limb') {
     const o0 = of.world().observer;
     if (o0.mode !== 'FLY') {
       return { valid: false, shot: name, observerMode: o0.mode,
@@ -3027,6 +3066,37 @@
     postState: post,
     shade,
     shadow: s.shadow, ibl: s.ibl,
+    // WG-220. THE SCATTER'S OWN COUNTERS, ON THE PHOTOGRAPHED FRAME. Purely
+    // additive: nothing above reads it, every existing field is untouched, and
+    // it is `null` on any build whose `of.stats()` carries no props record.
+    //
+    // It is here rather than in a second probe because a canopy-density claim
+    // is an arithmetic statement about the frame ("this many crowns over this
+    // much visible ground") and taking the count in one process and the
+    // picture in another is exactly how two arms drift apart. `canopyProps` is
+    // INSTANCES, not trees: `props_canopy.glb` authors its `_LOD3` across four
+    // materials, so a far tree occupies four slots until RN-2240 lands.
+    scatter: s.props === undefined || s.props === null ? null : {
+      canopyProps: s.props.canopyProps, canopyCells: s.props.canopyCells,
+      canopyM2: s.props.canopyM2, canopyPerM2: s.props.canopyPerM2,
+      canopyDelivered: s.props.canopyDelivered,
+      canopyRadiusM: s.props.canopyRadiusM, canopyShade: s.props.canopyShade,
+      canopyBareCells: s.props.canopyBareCells,
+      canopyShadeMean: s.props.canopyShadeMean,
+      canopyShadeSd: s.props.canopyShadeSd,
+      canopyShadeMax: s.props.canopyShadeMax,
+      canopyShadeCells: s.props.canopyShadeCells,
+      canopyPlanetMean: s.props.canopyPlanetMean,
+      canopyPlanetSd: s.props.canopyPlanetSd,
+      canopyOfferedCells: s.props.canopyOfferedCells,
+      canopySlopeCells: s.props.canopySlopeCells,
+      propsPlaced: s.props.propsPlaced, cellsScattered: s.props.cellsScattered,
+      wantedPerM2: s.props.wantedPerM2, placedPerM2: s.props.placedPerM2,
+      deliveredFraction: s.props.deliveredFraction,
+      cellsCapped: s.props.cellsCapped, chunksCapped: s.props.chunksCapped,
+      chunksRefused: s.props.chunksRefused,
+      scatterBacklog: s.props.scatterBacklog, chunks: s.props.chunks,
+    },
     render: { triangles: s.draw.triangles, calls: s.draw.calls,
       programs: s.draw.programs, vramMB: s.vramEstimateMB,
       frameMs: { p50: r2(s.frameMs.p50), p95: r2(s.frameMs.p95),

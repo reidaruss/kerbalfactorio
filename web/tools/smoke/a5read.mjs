@@ -19,5 +19,15 @@ process.stdin.on('end', () => {
   parts.push(`tris ${j.render.triangles}`);
   parts.push(`calls ${j.render.calls}`);
   parts.push(`p50 ${f(j.render.frameMs.p50)}`);
+  // WG-220. The canopy counters off the SAME photographed frame, so a coverage
+  // claim and the picture it is a claim about cannot come from two processes.
+  const sc = j.scatter;
+  if (sc) {
+    parts.push(`cInst ${sc.canopyProps}`);
+    parts.push(`cM2 ${sc.canopyM2}`);
+    parts.push(`cDel ${f(sc.canopyDelivered)}`);
+    parts.push(`placed ${sc.propsPlaced}`);
+    parts.push(`cap ${sc.cellsCapped}/${sc.chunksCapped}`);
+  }
   console.log('  ' + parts.join('  '));
 });

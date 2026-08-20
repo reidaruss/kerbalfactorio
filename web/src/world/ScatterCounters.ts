@@ -36,6 +36,42 @@ export class ScatterCounters {
   canopyWanted = 0;
   canopyM2 = 0;
   /**
+   * WG-223. THE CROWN-SCALE SHADE FIELD'S OWN DISTRIBUTION, and it exists
+   * because rendering.md 2.14.7b's verdict was a claim about a distribution
+   * that nothing in this file could measure.
+   *
+   * That record judged `CANOPY_SHADE` worse and diagnosed it structurally:
+   * "at a forest site `shadeW` is close to 1 across the entire visible floor,
+   * so the term lands as a spatially UNIFORM cut". That is a statement about
+   * the MEAN and the SPREAD of a field, and it had to be reached by putting two
+   * screenshots side by side, because the only published number was the
+   * resulting prop count. A sum, a sum of squares, a count and a max make the
+   * same statement arithmetic: a field that saturates reads mean ~1 with
+   * spread ~0, and a patchy one reads a mean near the middle with a real
+   * spread. Reported as `canopyShadeMean` / `canopyShadeSd` / `canopyShadeMax`.
+   *
+   * Over cells where the field is non-zero, i.e. over ground that has any
+   * canopy at all, because the mean over a whole planet's worth of bare rock
+   * would answer a question nobody asked.
+   */
+  canopyShadeSum = 0;
+  canopyShadeSq = 0;
+  canopyShadeN = 0;
+  canopyShadeMax = 0;
+  /**
+   * WG-223. THE SAME FOUR OVER THE PLANET WEIGHT, i.e. over exactly what
+   * `shadeW` USED to be before the crown field was multiplied in.
+   *
+   * Two distributions over the identical cell set, in one run, is what turns
+   * "it is patchy now" from an assertion into a measurement: the pair reads
+   * `canopyPlanetMean` near 1 with a small spread (2.14.7b's saturation) beside
+   * `canopyShadeMean` near the middle with a real one. Measuring the old shape
+   * in the new build is also the only honest way to make the comparison, since
+   * the before-arm binary has no counter to read.
+   */
+  canopyPlanetSum = 0;
+  canopyPlanetSq = 0;
+  /**
    * Cells the canopy was OFFERED, and the two ways it refused them.
    *
    * `canopyOfferedCells` is the denominator and it is not decoration. The first
@@ -100,6 +136,9 @@ export interface ScatterStats {
   canopyCells: number; canopyM2: number; canopyPerM2: number;
   canopyDelivered: number; canopyOfferedCells: number;
   canopySlopeCells: number; canopyBareCells: number; slopeRejectCells: number;
+  canopyShadeMean: number; canopyShadeSd: number; canopyShadeMax: number;
+  canopyShadeCells: number;
+  canopyPlanetMean: number; canopyPlanetSd: number;
   staleMaxM: number; staleChunks: number;
 }
 
@@ -158,6 +197,22 @@ export function scatterStats(c: ScatterCounters, d: ScatterStatsDeps): ScatterSt
     canopySlopeCells: c.canopySlopeCells,
     canopyBareCells: c.canopyBareCells,
     slopeRejectCells: c.slopeRejectCells,
+    // WG-223. See `canopyShadeSum`. Zero cells reports zeros rather than NaN,
+    // and `canopyShadeCells` is the denominator that tells the two apart.
+    canopyShadeCells: c.canopyShadeN,
+    canopyShadeMean: c.canopyShadeN > 0
+      ? Math.round((c.canopyShadeSum / c.canopyShadeN) * 1e4) / 1e4 : 0,
+    canopyShadeSd: c.canopyShadeN > 0
+      ? Math.round(Math.sqrt(Math.max(0,
+        c.canopyShadeSq / c.canopyShadeN
+        - (c.canopyShadeSum / c.canopyShadeN) ** 2)) * 1e4) / 1e4 : 0,
+    canopyShadeMax: Math.round(c.canopyShadeMax * 1e4) / 1e4,
+    canopyPlanetMean: c.canopyShadeN > 0
+      ? Math.round((c.canopyPlanetSum / c.canopyShadeN) * 1e4) / 1e4 : 0,
+    canopyPlanetSd: c.canopyShadeN > 0
+      ? Math.round(Math.sqrt(Math.max(0,
+        c.canopyPlanetSq / c.canopyShadeN
+        - (c.canopyPlanetSum / c.canopyShadeN) ** 2)) * 1e4) / 1e4 : 0,
     // WG-64. Must be 0.000000. See `staleMaxM`.
     staleMaxM: Math.round(c.staleMaxM * 1e6) / 1e6,
     staleChunks: c.staleChunks,

@@ -273,7 +273,30 @@ export class TreeField {
     // BODY-FRAME METRES (WG-62), so the same ground gives the same forest.
     const altM = this.M._of_surface_height(this.body, this.editsHandle(), cx, cy, cz);
     const stand = standAt(cx * R, cy * R, cz * R);
-    const w = canopyWeight(altM, stand);
+    // WG-221. THE HARVEST RING DOES NOT TAKE THE GROVE MASK, and the literal
+    // 1 is that decision rather than a placeholder: `groveWeight(1)` is exactly
+    // 1, so this call is bit-for-bit the two-term weight this line has always
+    // computed and every harvest count in the game is unchanged to the digit.
+    //
+    // It is a design refusal and not only a regression guard. The grove field
+    // is 760 m across and the harvest ring is 620 m, so a player stands inside
+    // about ONE grove cell: masking this layer would mean a spawn that rolls a
+    // clearing has no wood within walking distance, and the storyline's first
+    // hour is gathering wood. The far tier can afford woods and fields because
+    // nothing in it is reachable; this layer cannot, for the same reason
+    // `TREE_RADIUS_M`'s own docstring refuses a distance fade here ("a harvest
+    // node ... is a thing you can chop, so it must be there before you decide
+    // to walk to it").
+    //
+    // OWED, AND NAMED RATHER THAN HIDDEN: the two layers now disagree about
+    // groves across the 550-690 m crossfade, so a player standing where the
+    // grove field says "open" sees the harvest ring's normal density hand over
+    // to a thin far tier. RN-2228 built that seam on the two densities being
+    // about equal across it. Routed in world-gen.md section 6.6 rather than
+    // fixed here, because the fix is either a harvest-side mask (which needs a
+    // spawn guarantee) or a grove floor raised until the disagreement is under
+    // the noise, and both are decisions with consequences outside this lane.
+    const w = canopyWeight(altM, stand, 1);
     if (w <= 0) { this.treelineCells++; return; }
     const areaKm2 = (R * c.dLat) * (R * c.dLon * c.cosL) / 1e6;
     const e = density * w * areaKm2;

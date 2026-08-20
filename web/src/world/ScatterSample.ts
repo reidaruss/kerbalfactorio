@@ -22,7 +22,7 @@ import {
   CELLS, DIM, MIN_SLOPE_COS, DETAIL_RADIUS_M, RADIUS_M,
   DETAIL_FAR_GROW, WET_REJECT_M, detailWeight, keyHash, type Tier,
   CANOPY_MIN_SLOPE_COS, CANOPY_SHADE, canopyWeight,
-  canopyDistanceWeight, standAt,
+  canopyDistanceWeight, standAt, groveAt, crownAt, crownShade, canopyFarGrow,
 } from './ScatterTuning.js';
 import { CLUSTER_SHIFT } from '../render/ScatterLook.js';
 import { PropEmitter, type Build } from './ScatterEmit.js';
@@ -188,6 +188,9 @@ export function sampleChunk(
       // silently coupled to that coincidence. Two names cost nothing and stop
       // a later change to either radius from moving the other term.
       let shadeW = 0;
+      // WG-223. What `shadeW` WOULD have been before the crown field, kept for
+      // the counter pair alone. See `ScatterCounters.canopyPlanetSum`.
+      let planetShadeW = 0;
       if (canopy.total > 0) {
         c.canopyOfferedCells++;
         if (slopeCos < CANOPY_MIN_SLOPE_COS) {
@@ -196,14 +199,34 @@ export function sampleChunk(
           const wx = a.x + pos[i00], wy = a.y + pos[i00 + 1], wz = a.z + pos[i00 + 2];
           const altM = Math.hypot(wx, wy, wz) - d.bodyRadiusM;
           const stand = standAt(wx, wy, wz);
+          // WG-221. The grove field, sampled beside the stand field and for
+          // the same reason: both are pure functions of this cell's world
+          // position, so a chunk grows the same forest whatever depth it
+          // arrives at and whoever streamed it in.
+          const grove = groveAt(wx, wy, wz);
           // TWO independent weights, multiplied and NOT merged. `canopyWeight`
-          // is a property of the PLANET (stands, treeline) and is the same for
-          // this cell whoever is looking at it; the distance term is a
-          // property of the VIEW and exists only to hide the ring's edge.
+          // is a property of the PLANET (groves, stands, treeline) and is the
+          // same for this cell whoever is looking at it; the distance term is
+          // a property of the VIEW and exists only to hide the ring's edge.
           // Keeping them apart is what lets the first be a determinism claim
           // and the second an art-direction one.
-          shadeW = canopyWeight(altM, stand);
-          treeW = shadeW * canopyDistanceWeight(Math.sqrt(g2), treeR);
+          const planetW = canopyWeight(altM, stand, grove);
+          // WG-223. THE UNDERSTOREY'S SHADE TERM IS NOW CROWN-SCALE, which is
+          // the fix rendering.md 2.14.7b named and the only reason the crown
+          // field exists. Still default OFF (`Config.canopyShade`): what
+          // changes is the SHAPE of the arm Admin is being asked to rule on,
+          // from a term that saturates across a whole forest floor to one
+          // that is dark under a clump of crowns and bright in the gap.
+          shadeW = planetW <= 0 ? 0 : planetW * crownShade(crownAt(wx, wy, wz));
+          // WG-223. THE COMPARATOR IS THE PRE-WG-221 FIELD EXACTLY, which is
+          // this function with the grove forced to 1 (`groveWeight(1) === 1`),
+          // and not `planetW`. `planetW` already carries the grove mask, so
+          // quoting it as "what 2.14.7b measured" would credit this lane's own
+          // grove field to the field it is being compared against and make the
+          // crown term look like it did less than it did.
+          planetShadeW = canopyWeight(altM, stand, 1);
+          const gM = Math.sqrt(g2);
+          treeW = planetW * canopyDistanceWeight(gM, treeR);
           if (treeW <= 0) c.canopyBareCells++;
           else {
             canopyCells++;
@@ -211,8 +234,15 @@ export function sampleChunk(
             // The skirt is withheld past the understorey ring: five contact
             // cards at the foot of a tree 300 m away are five instances that
             // carry no pixels, and the cards are not drawn out there anyway.
+            //
+            // WG-225. `grow` is no longer 1. Every tree out here is already an
+            // impostor card (`CANOPY_NEAR_M` 550 m is past `CANOPY_LOD3_M`
+            // 420 m), and past the near seam a card stands for a patch of
+            // canopy rather than for one tree. See `CANOPY_FAR_GROW` for the
+            // arithmetic that says no density reaches forest-credible crown
+            // cover one-instance-per-tree at this range.
             canopyWanted += d.em.drawTier(b, canopy,
-              canopy.total * perKm2 * treeW, 8192, 1,
+              canopy.total * perKm2 * treeW, 8192, canopyFarGrow(gM),
               d2 <= DETAIL_RADIUS_M * DETAIL_RADIUS_M);
             canopyProps += b.n - n0;
           }
@@ -239,6 +269,22 @@ export function sampleChunk(
           // two are reported as separate numbers and `?canopyshade=0` turns
           // this term off without touching the trees.
           const shade = d.canopyShade ? 1 - CANOPY_SHADE * shadeW : 1;
+          // WG-223. THE SHADE FIELD'S DISTRIBUTION, SAMPLED EXACTLY WHERE THE
+          // TERM ACTS and nowhere else. The first version of this counter
+          // accumulated at every canopy-offered cell out to the whole reach,
+          // which answers a question nobody asked: rendering.md 2.14.7b's
+          // claim is about THE FLOOR THE PLAYER IS LOOKING AT ("close to 1
+          // across the entire visible floor"), and the understorey exists only
+          // inside `DETAIL_RADIUS_M`. Measured over the disc it read 0.32
+          // against 0.16, which would have been quoted as evidence about a
+          // region the shade term never multiplies. Both terms are recorded
+          // over the identical cell set, so the pair is a comparison.
+          c.canopyShadeSum += shadeW;
+          c.canopyShadeSq += shadeW * shadeW;
+          c.canopyPlanetSum += planetShadeW;
+          c.canopyPlanetSq += planetShadeW * planetShadeW;
+          c.canopyShadeN++;
+          if (shadeW > c.canopyShadeMax) c.canopyShadeMax = shadeW;
           // Bigger the further out, which buys coverage back per instance.
           // See DETAIL_FAR_GROW.
           const grow = 1 + DETAIL_FAR_GROW * (1 - wt);
