@@ -137,7 +137,22 @@ const SHOULDER_KNEE = 0.52;
 // (audit gap 8, class (a)); this is the grade doing what a grade is for while
 // the model catches up, and it is labelled as a grade rather than smuggled in
 // as physics.
-const WARM_LOWSUN: readonly [number, number, number] = [1.090, 0.998, 0.888];
+//
+// RN-2235 TO RN-2239, THE RETUNE OWED SINCE A4. A4's own handoff (rendering.md
+// 2.12.5): "when L5 warms the scattering integral, WARM_LOWSUN must come back
+// down or the two will double up." L5 (A4, RN-2175) shipped and now carries the
+// sky's and the haze's colour in the integral itself (decision 4, `ofAtmoSkyAero`),
+// so this constant's job shrank from "paint the whole dawn warm" to "keep a
+// reduced highlight warmth for SURFACES only" -- the split A4 wrote down without
+// being able to make. A4's arithmetic recommended [1.030, 0.999, 0.963], one
+// third of the old deviation from neutral; verified by eye against `vistadawn`
+// and `dawnsun` at RN-2235 and landed unchanged. Before, the grade alone put
+// ~37.5 of `skyHz`'s +56.51 dawn warm counts on top of the physics' own 83.3,
+// i.e. the sepia was the GRADE re-warming a sky the integral had already
+// warmed; after, the grade contributes a small, deliberately visible highlight
+// lift and the anti-solar sky (`skyR`, frame-right at this pose) is free to read
+// blue-violet instead of neutral. See rendering.md 2.13 for the frame numbers.
+const WARM_LOWSUN: readonly [number, number, number] = [1.030, 0.999, 0.963];
 
 // --------------------------------------------------------------------------
 // GREEN HARMONISATION. The sage-olive axis every green in the frame is pulled

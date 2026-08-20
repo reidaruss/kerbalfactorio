@@ -207,6 +207,17 @@ defects, not one: the far half is the atmosphere, and the near half is terrain
 that has no material to lose. Either one alone would have been misdiagnosed as
 the other.
 
+**CORRECTION, 2026-08-20 (SUPERSEDED, kept above rather than rewritten).**
+`?atmos=0` deletes the sky box outright, so a third of `hzBand`'s rectangle
+sits on pure void in the "OFF" arm; most of the 89.17 counted above is the
+ground-against-nothing step, not lost terrain contrast, and `hzBand` cannot
+measure this term by construction. Fidelity lane A4's verifier (rendering.md
+2.12.2) re-ran the honest control, `?aerosol=0` (sigma zeroed, sky PAINTED
+rather than deleted), on the all-ground `flyover.box` rectangle instead:
+the aerosol term was taking **44.5 per cent** of that contrast, not 77.5 per
+cent of a rectangle that was a third void. Treat 77.5% above as void; 44.5% is
+the basis.
+
 The same pair at **400 m** says the near-field half is a ramp and not a cliff:
 `under` iqr 6.49 with the atmosphere and 9.28 without, i.e. the haze is already
 taking 30 per cent of the contrast off ground four hundred metres below the
@@ -232,7 +243,7 @@ stack · **(b)** engine work inside WebGL2 · **(c)** likely needs WebGPU ·
 
 | # | Domain | What we render now (evidence) | The Space Engineers bar | The gap, in one sentence | Severity | Class |
 |---|---|---|---|---|---|---|
-| **1** | **Aerial perspective / haze** | `flyover.hzBand` iqr 20.08 with the atmosphere and 89.17 without; `vista.hzBand` iqr **3.00** from a 4.7 km ridge; `flyover_400` still a total whiteout at 400 m | SE's planetary haze is ranged: a mountain silhouette 20 km out is desaturated and still legible, and altitude thins it | The boundary-layer aerosol is referenced to a fixed 400 m scale above the ray's LOWER end, so a downward or long ray accumulates full sea-level density and removes 77.5% of the horizon's contrast, and climbing makes it worse instead of better | **BLOCKING** | (a)+(b) |
+| **1** | **Aerial perspective / haze** | `flyover.hzBand` iqr 20.08 with the atmosphere and 89.17 without; `vista.hzBand` iqr **3.00** from a 4.7 km ridge; `flyover_400` still a total whiteout at 400 m | SE's planetary haze is ranged: a mountain silhouette 20 km out is desaturated and still legible, and altitude thins it | The boundary-layer aerosol is referenced to a fixed 400 m scale above the ray's LOWER end, so a downward or long ray accumulates full sea-level density and removes 77.5%~~SUPERSEDED 2026-08-20: `?atmos=0` deletes the sky and voids a third of `hzBand`; A4's verifier's honest `?aerosol=0` control puts the real figure at **44.5%** off `flyover.box` (rendering.md 2.12.2)~~ of the horizon's contrast, and climbing makes it worse instead of better | **BLOCKING** | (a)+(b) |
 | **2** | **Vegetation at range and from the air** | `flyover` at 1,200 m: **188,081 triangles**. At 400 m: **231,089**. A standing eye on plains: **2,759,465**. Not one tree in any of the four aerial frames over a spawn the world-gen puts 1,296 trees in, and the two `?atmos=0` controls prove they are ABSENT rather than hazed out | SE draws surface detail continuously from the ground to orbit, with no radius at which the world empties | The scatter rings are radii about the OBSERVER (canopy 620 m, understorey 78 m) and there is **no impostor or billboard tier anywhere in `web/src/render`**, so the planet is bare the moment the eye leaves the ground; the exact trigger is NOT diagnosed here and is the lane's first job, because at 400 m the 620 m ring still subtends a 474 m horizontal disc of ground and the frame is empty anyway | **BLOCKING** | (b) |
 | **3** | **Terrain material past ~75 m** | `flyover.under` iqr **7.21 with the atmosphere OFF** at a 1.2 km slant; `vista.hzBand` iqr 3.00 to 4.00 at every hour; `midfield` ground smeared from ~30 m | SE's voxel surface carries its material to the horizon; a distant slope reads as rock, sand or ice by its surface, not only by its tint | The terrain has **no albedo, normal or ORM texture at all** (per-biome vertex tint plus procedural modulation), the ground-texture term fades out 35 to 75 m and the relief bump 30 to 60 m, and the macro tint does not start until 600 m, so **75 m to 600 m is a genuine texture hole** and past 4 km the surface is one flat biome hex | **BLOCKING** | (b) |
 | **4** | **Frame cost at a standing eye** | plains vista: **2,759,465 triangles, 71 calls**, over the 16.6 ms budget and over the 2.7M triangle alert on every box measured, at a ratio of about 4.5x against the vista pose's cost (absolute milliseconds are box-and-run-dependent: this audit's p50 read 32.1 ms); `midfield` p99 **64.6 ms**; `ruin` p99 44.0 ms | not a look gap, a budget: everything in this table has to fit inside what is left | The frame is already over `StatsProbe`'s ALERT triangle threshold (2.7e6) and over the 16.6 ms frame budget on flat ground, because the understorey is card geometry at LOD0 with only two LOD rungs and no impostor, so every fix above competes for headroom that is not there | **BLOCKING** | (b), (c) if density AND distance are both wanted |
