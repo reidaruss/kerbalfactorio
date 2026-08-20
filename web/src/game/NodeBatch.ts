@@ -28,211 +28,19 @@
 // Rock's normal map.
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MAX_CAPACITY, registerPool, type PoolReport } from './InstancePools.js';
-import { attachSurface, copyUv, familyForMaterial, type Family }
-  from '../render/instancing/Surfaces.js';
-import { applyWind } from '../render/instancing/PropWind.js';
-import { assertPartMatBase, bakePartMat, partMatEnabled }
-  from '../render/materials/PartMaterial.js';
-import { applyRockMat, rockMatEnabled } from '../render/materials/RockShader.js';
-import { attachShadowLod, emptyIndex, indexRow, publishLadders, type LodRow }
-  from '../render/ShadowLod.js';
-import { surfaceDeviation, triCount } from '../render/ShadowLodMeasure.js';
+import { LODS, VARIANTS, type Batch, type NodePart } from './NodeBatchTypes.js';
+import { ROCK_CHANNEL, concat, mineralFamily, normalize, scanTemplates }
+  from './NodeGeometry.js';
+import { makeBatch } from './NodeMaterial.js';
+import { ladder } from './NodeLadder.js';
 
-/**
- * Which batches take the per-mineral material channel, asked ONCE and answered
- * in ONE place, because the hook install and the vertex bake must agree.
- *
- * MINERAL FAMILIES ONLY, and the exclusions are decisions rather than
- * omissions. `leaf:` and `grass:` already carry `applyWind`, and a second
- * `onBeforeCompile` on the same material would overwrite the first, so hooking
- * them would silently stop the crowns swaying. `flat:` holds Water and Oil
- * (RN-181 moved the foliage roles out of it), and giving a pool surface its
- * authored response is a change nobody asked for and is out of scope for a
- * pass about rock.
- */
-function mineralFamily(name: string): boolean {
-  // RN-742 adds `stone:`, and it is the one that MATTERS most of the three:
-  // the host rock is the bulk of every boulder, the whole spire and all the
-  // scree, and after the role move it is no longer reached by `coarse:`. A
-  // family split that forgot this line would have silently taken the per-part
-  // channel away from the exact surfaces this pass exists to skin, and it would
-  // have looked like the channel simply doing nothing rather than like a bug.
-  return name.startsWith('coarse:') || name.startsWith('ore:')
-    || name.startsWith('stone:');
-}
-
-/**
- * Whether the per-part channel is LIVE, read once at module load from two
- * immutable URL flags rather than per batch, so `makeBatch`'s base constants
- * and `build`'s bake gate cannot disagree about it mid-build.
- *
- * BOTH flags, not just `rockmat`. `?rockmat=0` removes the hook, and
- * `?partmat=0` leaves the hook installed but makes `injectPartMat` and
- * `bakePartMat` no-ops, so in that second state nothing divides the base back
- * out and it must stay at its old literal value. See `makeBatch`.
- */
-const ROCK_CHANNEL = rockMatEnabled() && partMatEnabled();
-
-/** Merge one family's primitives into a single geometry. One is already merged. */
-function concat(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  if (list.length === 1) return list[0];
-  const g = mergeGeometries(list, false);
-  if (g === null) return list[0];
-  g.computeBoundingSphere();
-  return g;
-}
-
-/** The depletion variants, in the order their geometry ids are stored. */
-export const VARIANTS = ['Full', 'Half', 'Low'] as const;
-/** LOD tiers per variant. The assets author 0, 1 and 2; anything past this is
- *  ignored rather than silently folded into the far slot, which is the defect
- *  `PropLibrary`'s else-branch still carries. */
-export const LODS = 3;
-
-/** How far a node draws its LOD0 / LOD1 geometry, in metres OF ITS OWN SIZE.
- *
- * The comparison is `distance / scale`, not distance, and that is the whole
- * point: since WG-116 a tree's scale carries its yield and the world holds
- * trees from 0.82 to 2.39 of the authored height, so one absolute distance
- * would either pop the big ones or pay LOD0 for the small ones. Screen size is
- * what an LOD is actually about and distance over size is its cheap proxy.
- *
- * The two numbers were measured, not chosen: world-gen.md section 6.5.
- */
-export const NODE_LOD1_M = 55;
-export const NODE_LOD2_M = 165;
-/** Fraction of a threshold a node must cross back through before it switches
- *  down again. Without it a node sitting on a boundary rewrites its geometry id
- *  every frame, which is cheap per node and is not cheap at a thousand. */
-export const NODE_LOD_HYST = 0.12;
-
-/** One material a piece of node art uses, and its geometry per (variant, LOD),
- *  -1 = absent. THREE LODs, because every node .glb in the project has shipped
- *  `_LOD1` and `_LOD2` meshes since it was authored and this file loaded
- *  neither: a harvest tree drew its 791-triangle LOD0 at 600 m while the 16
- *  triangle impostor the same file contained was dead bytes. */
-export interface NodePart {
-  readonly material: string;
-  readonly geom: number[][];
-}
-
-interface Batch {
-  mesh: THREE.BatchedMesh;
-  live: number;
-  /**
-   * Slots handed back by `release`, ready to be handed out again.
-   *
-   * A BatchedMesh instance cannot be deleted, so a re-populated clearing used to
-   * consume a fresh slot for every node it laid and never give the old ones
-   * back. That was survivable at 24 nodes and is not now that a patch's outcrops
-   * are nodes too: the third regrow would cross the capacity, `acquire` would
-   * start returning -1, and the world would come back with pieces of it simply
-   * not drawn, silently and only sometimes.
-   */
-  free: number[];
-  /** THIS batch's current instance count. It doubles; see `grow`. */
-  cap: number;
-}
-
-/**
- * DW-28. Instances per material, as a STARTING size that doubles on demand up
- * to a ceiling, never a fixed wall.
- *
- * This was a hard `128` with no growth path and a silent `-1` on exhaustion,
- * which is the exact failure DW-28 exists to prevent and which this project has
- * paid for twice: a fixed 256 in `MachineBatch` stopped the factory drawing at
- * about 150 machines while every indicator read healthy, and the same shape in
- * `PropLibrary` was measured this week to be costing 25% of the foliage. The
- * comment on `free` two dozen lines above even PREDICTED it ("the third regrow
- * would cross the capacity, `acquire` would start returning -1, and the world
- * would come back with pieces of it simply not drawn, silently and only
- * sometimes"), which makes it the most expensive kind of known bug.
- *
- * The start is deliberately still small, because the clearing genuinely holds a
- * couple of dozen nodes: growth is for the case nobody predicted, and paying
- * for 16,384 instances up front to guard against it is the opposite mistake.
- */
-const START_CAPACITY = 128;
-
-/**
- * Strip to what every geometry in a batch must agree about (see PropLibrary),
- * and BAKE the source material's colour into a per-vertex attribute so several
- * roles can share one material. `mat.color` is already in the renderer's linear
- * working space (GLTFLoader converted it), which is the space three expects a
- * vertex colour to be in, so the components copy across untouched.
- *
- * `bake` is the source material AGAIN, and passing it is what turns the
- * per-part roughness and metalness channel on for this primitive; `null` means
- * do not bake. It is a separate argument rather than a flag read in here on
- * purpose: `PartMaterial` does not know which hook will read its attribute, so
- * only the caller can know whether one will be compiled, and a bake with no
- * consumer is a dead per-vertex buffer that no program binds (RockShader.ts
- * failure mode (b)). Colour is baked unconditionally right below and always
- * has been; this rides beside it.
- */
-function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4,
-                   tint: THREE.Color,
-                   bake: THREE.MeshStandardMaterial | null): THREE.BufferGeometry {
-  const g = new THREE.BufferGeometry();
-  const pos = src.getAttribute('position') as THREE.BufferAttribute;
-  g.setAttribute('position', pos.clone());
-  const nrm = src.getAttribute('normal');
-  g.setAttribute('normal', nrm !== undefined
-    ? (nrm as THREE.BufferAttribute).clone()
-    : new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3));
-  copyUv(src, g, pos.count, 'nodes');   // UNCONDITIONAL. See Surfaces.copyUv.
-  const col = new Float32Array(pos.count * 3);
-  for (let i = 0; i < pos.count; ++i) {
-    col[i * 3] = tint.r; col[i * 3 + 1] = tint.g; col[i * 3 + 2] = tint.b;
-  }
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  // The channel the merge used to throw away, carried exactly the way the
-  // colour one line up is: the proof that per-vertex data survives this merge
-  // and the BatchedMesh behind it was already sitting there.
-  if (bake !== null) bakePartMat(g, pos.count, bake, bake.name);
-  const idx = src.getIndex();
-  if (idx !== null) g.setIndex(idx.clone());
-  else {
-    const seq = new Uint32Array(pos.count);
-    for (let i = 0; i < pos.count; ++i) seq[i] = i;
-    g.setIndex(new THREE.BufferAttribute(seq, 1));
-  }
-  g.applyMatrix4(world);
-  g.computeBoundingSphere();
-  return g;
-}
-
-/**
- * Which batch a role belongs to: `<surface>:<shading>`, and BOTH halves matter.
- *
- * Metalness alone put Leaf and Grass in the same bucket as Rock and Bark. That
- * was free while nothing was textured and it stopped being free the moment the
- * bucket got a map, because Leaf and Grass are `flat_roles`: the texture pass
- * recorded a reason for each ("sub-pixel blades at any real viewing distance",
- * "a double-sided card whose normal map fights the flat-shaded silhouette"), and
- * a rock normal map on a foliage card is worse than no map at all. Splitting on
- * the surface family is what preserves that decision through the batching.
- *
- * The cost is at most two extra batches, which at 53 draws of a 150 budget is
- * the cheap side of the trade (ASSET-SPECS 2.9).
- */
-function familyOf(m: THREE.Material): string {
-  const s = m as THREE.MeshStandardMaterial;
-  return `${familyForMaterial(m)}:${(s.metalness ?? 0) > 0.5 ? 'metal' : 'matte'}`;
-}
-
-/** A candidate primitive found in a template, before any batch exists. */
-interface Found {
-  file: string;
-  variant: number;
-  lod: number;
-  material: string;
-  source: THREE.Material;
-  geometry: THREE.BufferGeometry;
-  world: THREE.Matrix4;
-}
+// The barrel keeps every symbol this file used to publish, so no import site
+// outside it changes (BT-276 rule 1). NodeField.ts takes the three distances and
+// NodePart; RuinSites.ts takes the hysteresis.
+export { LODS, NODE_LOD1_M, NODE_LOD2_M, NODE_LOD_HYST, VARIANTS }
+  from './NodeBatchTypes.js';
+export type { NodePart } from './NodeBatchTypes.js';
 
 export class NodeBatch {
   readonly group = new THREE.Group();
@@ -264,26 +72,7 @@ export class NodeBatch {
    * dead buffer per material.
    */
   build(templates: ReadonlyMap<string, { root: string; scene: THREE.Object3D }>): void {
-    const found: Found[] = [];
-    for (const [file, t] of templates) {
-      t.scene.updateWorldMatrix(true, true);
-      t.scene.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (m.isMesh !== true || m.name.startsWith('col_')) return;
-        // GLTFLoader appends _0/_1/... per primitive of a multi-material mesh.
-        const hit = /^(.*)_LOD(\d)(?:_\d+)?$/.exec(m.name);
-        if (hit === null) return;
-        const lod = Number(hit[2]);
-        if (!(lod >= 0 && lod < LODS)) return;
-        const v = VARIANTS.indexOf(hit[1].replace(`${t.root}_`, '') as typeof VARIANTS[number]);
-        if (v < 0) return;   // a Stump or anything else outside the three variants
-        found.push({
-          file, variant: v, lod, geometry: m.geometry, world: m.matrixWorld,
-          material: familyOf(m.material as THREE.Material),
-          source: m.material as THREE.Material,
-        });
-      });
-    }
+    const found = scanTemplates(templates);
 
     const size = new Map<string, { verts: number; idx: number; src: THREE.Material }>();
     for (const f of found) {
@@ -294,7 +83,7 @@ export class NodeBatch {
       size.set(f.material, s);
     }
     for (const [name, s] of size)
-      this.batches.set(name, this.makeBatch(name, s, this.cull));
+      this.batches.set(name, makeBatch(this.group, name, s, this.cull));
 
     // Everything a file draws in one family, for one variant, MERGES into one
     // geometry. A tree's Full variant is bark plus two leaf roles: three
@@ -347,150 +136,7 @@ export class NodeBatch {
       geo.set(key, g);
       part.geom[Number(vs)][Number(ls)] = b.mesh.addGeometry(g);
     }
-    this.ladder(geo);
-  }
-
-  /**
-   * THE SECOND SAVING ON THE NODES, and it is not the one the tree lane took.
-   *
-   * `NODE_LOD1_M` / `NODE_LOD2_M` is a DISTANCE ladder and it pays 81.9% on the
-   * forest because the trees are spread over a 620 m ring. It does nothing at
-   * all for the tree three metres away, which still draws its LOD0 into all
-   * three cascades. This is that other half: a cascade whose texels are 211 mm
-   * cannot resolve a leaf card either way, whatever the node's distance says.
-   *
-   * The two COMPOSE and do not fight, because `attachShadowLod` takes the
-   * coarser of the two: a node already at LOD2 for distance is never promoted
-   * back to LOD1 by a near cascade. Rocks, spires and trees all cast, so all
-   * three are in it.
-   *
-   * WHAT IT ACTUALLY PAYS, measured, and it is small: -470 triangles at the
-   * RN-15 camera, -1,880 at Plains and ZERO at Forest. The trees are the reason.
-   * `tree_conifer`'s Full variant deviates 925 mm at LOD1 and 3,126 mm at LOD2,
-   * and `tree_broadleaf`'s leaf row 1,070 mm, so the crowns are refused at every
-   * cascade and only the boulders and spires (58 to 110 mm at LOD1) are ever
-   * admitted. A node ladder authored for DISTANCE is not a ladder authored for
-   * a 15.47 mm texel, and this is the number that says so.
-   */
-  private ladder(geo: ReadonlyMap<string, THREE.BufferGeometry>): void {
-    const rows: LodRow[] = [];
-    for (const [family, b] of this.batches) {
-      const ix = emptyIndex();
-      for (const [file, parts] of this.parts) {
-        for (const part of parts) {
-          if (part.material !== family) continue;
-          for (let v = 0; v < VARIANTS.length; ++v) {
-            const ids = part.geom[v];
-            const base = geo.get(`${file}|${v}|0|${family}`);
-            if (base === undefined) continue;
-            const row: LodRow = {
-              label: `${file}|${VARIANTS[v]}|${family}`,
-              ids,
-              tris: ids.map((_, l) => {
-                const g = geo.get(`${file}|${v}|${l}|${family}`);
-                return g === undefined ? 0 : triCount(g);
-              }),
-              dev: ids.map((_, l) => {
-                if (l === 0) return 0;
-                const g = geo.get(`${file}|${v}|${l}|${family}`);
-                return g === undefined ? Infinity : surfaceDeviation(base, g);
-              }),
-            };
-            rows.push(row);
-            indexRow(ix, row);
-          }
-        }
-      }
-      attachShadowLod(b.mesh, ix);
-    }
-    publishLadders('nodes', rows);
-  }
-
-  private makeBatch(name: string,
-                    s: { verts: number; idx: number; src: THREE.Material },
-                    cull: boolean): Batch {
-    const metal = name.endsWith(':metal');
-    const ore = name.startsWith('ore:');
-    // Does this batch carry the per-mineral channel? ONE predicate, shared with
-    // the bake gate in `build`, because a hook with no attribute and an
-    // attribute with no hook are both silent.
-    const rock = ROCK_CHANNEL && mineralFamily(name);
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xffffff, vertexColors: true,
-      // RN-158: the ore SEAM bucket. The old world had iron and copper seams
-      // in `coarse:metal` at metalness 1.0, i.e. a MIRROR whose only image is
-      // the sky: the iron crown photographed as ice and copper read near-black
-      // at any sun not overhead (RN-81). Ore in rock is MINERAL: dielectric
-      // base with a modest sheen, and the sparkle comes from the ore ORM's
-      // authored roughness spread (0.42..1.0 multiplier on this constant), not
-      // from mirror metalness. 0.72 x 0.42 puts a facet crest at 0.30, a wet
-      // glint; the dusty matrix stays near 0.72.
-      //
-      // THESE TWO ARE NOW A BASE, NOT A RESPONSE, whenever `rock` is true, and
-      // the distinction is the whole of RockShader.ts. The injected GLSL turns
-      // `roughnessFactor` (which is `roughness x ormG` at that point) into
-      // `authored x ormG` by dividing this constant straight back out, so with
-      // the channel ON these numbers decide nothing at all: the FAMILY MAP
-      // supplies the variation and the AUTHORED ROLE supplies the level. They
-      // decide the fallback, and only the fallback, when the channel is off.
-      //
-      // WHICH IS WHY THE MATTE BASE MOVES OFF ZERO, AND ONLY THEN.
-      // `assertPartMatBase` throws unless both are > 0, because a zero
-      // denominator is a total and silent loss of the channel rather than a
-      // visible one, and `coarse:matte` has always been metalness 0.0. 0.02 is
-      // enough for the ratio to carry and changes nothing it multiplies: every
-      // role in that bucket authors metalness 0.0 (Rock, RockDark, Sand, Soil,
-      // Regolith), so `partM = metalnessFactor x (0.0 / 0.02)` is 0 and the
-      // EFFECTIVE metalness stays exactly 0. With the channel off it stays the
-      // literal 0.0, which is what makes `?rockmat=0` bit-exact with the build
-      // before this pass rather than merely similar to it.
-      metalness: ore ? 0.25 : metal ? 1.0 : rock ? 0.02 : 0.0,
-      roughness: ore ? 0.72 : metal ? 0.38 : 0.88,
-      // The leaf roles are authored double sided (of_lib DOUBLE_SIDED). Side
-      // still keys on metalness ONLY, not on the new surface split, so the
-      // bucketing change cannot move a silhouette: this is a materials pass.
-      side: metal ? THREE.FrontSide : THREE.DoubleSide,
-    });
-    material.name = `nodes:${name}`;
-    attachSurface(material, name.split(':')[0] as Family, `nodes:${name}`);
-    // WIND (RN-98): the harvest trees' crowns sway; trunks stay near-rigid by
-    // never being hooked (Bark is `coarse`, so it is not in this batch). The
-    // hook keys on the FOLIAGE families (RN-181 moved the leaf roles out of
-    // `flat` into `leaf`; `grass` never reaches a node but is listed so the
-    // rule reads as what it means). `flat` is deliberately NOT hooked any
-    // more: after the move it can only hold non-plants (Water, Oil), and a
-    // swaying pool surface was exactly the latent wrong-sway the old prefix
-    // permitted. Boulder roles are coarse or (since RN-158) `ore`.
-    if (name.startsWith('leaf:') || name.startsWith('grass:')) {
-      applyWind(material, `nodes:${name}`);
-    }
-    // THE PER-MINERAL CHANNEL, on the mineral families only. `mineralFamily`
-    // carries the reason the other three are excluded; the short form is that
-    // `leaf:` and `grass:` are already hooked one branch up and a material
-    // holds ONE `onBeforeCompile`, so hooking them here would not add a channel,
-    // it would delete the wind. The assert runs before the install so a bad
-    // base is a throw at boot rather than a channel that is quietly inert.
-    if (rock) {
-      assertPartMatBase(material);
-      applyRockMat(material, `nodes:${name}`);
-    }
-    const mesh = new THREE.BatchedMesh(START_CAPACITY, s.verts, s.idx, material);
-    mesh.name = `nodes:${name}`;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    // A whole-batch cull would only ever be a false negative: a node batch
-    // always has something in it near the player.
-    mesh.frustumCulled = false;
-    mesh.sortObjects = false;
-    // PER-INSTANCE CULLING, and the line it replaces was RIGHT WHEN WRITTEN.
-    // It said per-instance culling "cost more than they save at this object
-    // count", and the object count was the 60 m clearing's two dozen nodes.
-    // WG-116 put a 620 m ring of trees in these same batches, so the count is
-    // now over a thousand and most of them are behind the player or outside a
-    // given shadow cascade. `?nodecull=0` is the one-binary control.
-    mesh.perObjectFrustumCulled = cull;
-    this.group.add(mesh);
-    return { mesh, live: 0, free: [], cap: START_CAPACITY };
+    ladder(this.batches, this.parts, geo);
   }
 
   partsOf(file: string): readonly NodePart[] | null { return this.parts.get(file) ?? null; }
