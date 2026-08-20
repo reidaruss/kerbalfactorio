@@ -98,8 +98,13 @@ interface Batch {
   free: number[];
   /** Slots ever handed out: the batch's high-water mark, not its live count. */
   live: number;
-  /** Current reservation. Doubles on demand up to MAX_CAPACITY (DW-28). */
+  /** Current reservation. Doubles on demand up to `maxCap` (DW-28). */
   cap: number;
+  /** RN-2260. This batch's own ceiling: `CANOPY_MAX_CAPACITY` for the canopy
+   *  suffix's batch, `MAX_CAPACITY` for every other. Read by `grow()` instead
+   *  of the module constant so one class's worst case cannot inflate every
+   *  other batch's guessed guard rail. */
+  maxCap: number;
   grows: number;
   refused: number;
   warned: boolean;
@@ -148,8 +153,43 @@ const LEGACY_CAPACITY = 7000;
  * REACHES it, and a batch only reserves what it has grown into: `grow()` still
  * doubles from 2,048, so a batch that never fills never pays. Reported as
  * `vramEstimateMB` before and after.
+ *
+ * This is the ceiling for every batch EXCEPT the canopy's own (see
+ * `CANOPY_MAX_CAPACITY` below, RN-2260). Left unmoved for `:detail` and the
+ * near biome batches: nothing measured has asked them for more than the
+ * `OF_Grass` figure this constant was already raised for, and a blanket raise
+ * would be a guard that guards nothing for those classes while still growing
+ * their worst-case reservation for no measured reason.
  */
 const MAX_CAPACITY = 65536;
+/**
+ * RN-2260. THE CANOPY'S OWN CEILING, dedicated rather than shared, because the
+ * shared 65,536 truncated a real forest. RN-2240's single-material card
+ * (rendering.md 2.15) collapsed every canopy tree from four material parts to
+ * one (`OF_Leaf:canopy` only; `Bark`/`LeafDeep`/`LeafLight` are now refused at
+ * `ScatterEmit.emit` before they ever reach `acquire`), so the tier's whole
+ * instance demand, which used to be spread across four batches, now lands on
+ * ONE. The WG-220 density lane's own worst-case FOREST emission is 77,998
+ * canopy trees (NUMBERS.md RN-2260 row) -- past the shared ceiling by 12,462,
+ * a silent 16% of the stand not drawn (HUD read `POOL FULL` but no probe
+ * gated on it).
+ *
+ * Sized like every other ceiling in this file: the next power-of-two double
+ * from `START_CAPACITY` (2,048) that clears the worst case, so growth is
+ * still O(1) amortised and the number follows a measured demand rather than a
+ * second guessed constant. 65,536 < 77,998 <= 131,072: one more double,
+ * 68% of headroom above the worst case measured so far.
+ *
+ * MEMORY, same arithmetic as `MAX_CAPACITY`'s own comment, doubled: 131,072
+ * slots is about 10.5 MB of texture (up from 5.2 MB at the old ceiling) plus
+ * about 13.1 MB of CPU-side typed array, and ONLY the canopy's single
+ * `OF_Leaf:canopy` batch can ever reserve it -- every other batch (including
+ * the near biome's own Leaf/Bark/etc. materials, which do not carry this
+ * suffix) still tops out at `MAX_CAPACITY`. A batch that never fills never
+ * pays (`grow()` still starts doubling from 2,048), so this only costs
+ * anything on a site whose realised canopy count actually clears 65,536.
+ */
+const CANOPY_MAX_CAPACITY = 131072;
 /** Props are small; a 33^2 chunk's worth of geometry is a few thousand verts. */
 const MAX_VERTS = 60000;
 
@@ -269,7 +309,8 @@ export class PropLibrary {
         // the boot assertion that keeps it true.
         const batch = this.batchFor(key, mat, near.mesh.material as THREE.Material,
           suffix === '',
-          this.cullDetail && (suffix !== '' || this.cullBiome));
+          this.cullDetail && (suffix !== '' || this.cullBiome),
+          suffix === CANOPY_SUFFIX);
         // RN-62: EVERY prop takes a base-contact gradient, and the only
         // question is which profile (it used to be plants or nothing, which
         // left boulders meeting the terrain along a hard silhouette). The
@@ -309,7 +350,7 @@ export class PropLibrary {
 
   private batchFor(
     key: string, role: string, source: THREE.Material, casts: boolean,
-    cull: boolean,
+    cull: boolean, isCanopy: boolean,
   ): Batch {
     const hit = this.batches.get(key);
     if (hit !== undefined) return hit;
@@ -375,7 +416,9 @@ export class PropLibrary {
     // rather than inherited, and `?propcull=` is the isolation.
     mesh.perObjectFrustumCulled = cull;
     const batch: Batch = {
-      mesh, free: [], live: 0, cap: cap0, grows: 0, refused: 0, warned: false,
+      mesh, free: [], live: 0, cap: cap0,
+      maxCap: isCanopy ? CANOPY_MAX_CAPACITY : MAX_CAPACITY,
+      grows: 0, refused: 0, warned: false,
       shaded: false, savedColour: null,
       foliage: isFoliageMaterial(role), savedTint: null, far: new Set<number>(),
     };
@@ -429,7 +472,7 @@ export class PropLibrary {
    * across, so every live slot keeps its transform and its geometry id.
    */
   private grow(b: Batch, name: string): boolean {
-    const next = this.growable ? Math.min(MAX_CAPACITY, b.cap * 2) : b.cap;
+    const next = this.growable ? Math.min(b.maxCap, b.cap * 2) : b.cap;
     if (next <= b.cap) {
       b.refused++;
       if (!b.warned) {
@@ -492,10 +535,10 @@ export class PropLibrary {
       shaded: boolean;
     }[];
   } {
-    let capacity = 0; let grows = 0; let baseShaded = 0;
+    let capacity = 0; let grows = 0; let baseShaded = 0; let ceiling = 0;
     const perMaterial = [];
     for (const [name, b] of this.batches) {
-      capacity += b.cap; grows += b.grows;
+      capacity += b.cap; grows += b.grows; ceiling += b.maxCap;
       if (b.shaded) baseShaded++;
       // `casts` is published because it is now the difference between two
       // batches of the same material, and a triangle count that does not say
@@ -509,10 +552,16 @@ export class PropLibrary {
     // `refused` IS `exhausted`: every refused acquire is one instance that was
     // placed and is not on screen. They are one number under two names because
     // the HUD contract asks for `refused` and the older probes read `exhausted`.
+    //
+    // RN-2260. `ceiling` is now the SUM of each batch's own `maxCap` rather
+    // than `batches.size * MAX_CAPACITY`: the canopy batch's ceiling is
+    // `CANOPY_MAX_CAPACITY` and every other batch's is `MAX_CAPACITY`, so a
+    // flat multiply would overstate every non-canopy batch's guard and (once
+    // there is more than one canopy-suffixed batch) understate the canopy's.
     return {
       name: 'props', batches: this.batches.size, props: this.parts.size,
       instances: this.instancesLive, exhausted: this.exhausted,
-      capacity, ceiling: this.batches.size * MAX_CAPACITY, grows,
+      capacity, ceiling, grows,
       refused: this.exhausted, growable: this.growable, baseShaded, perMaterial,
     };
   }

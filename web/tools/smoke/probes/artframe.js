@@ -3019,8 +3019,19 @@
   // own report depends on: `pose`, `setup`, `captureDiag` and every stat
   // above are all read before this point and are therefore identical either
   // way.
+  // RN-2260. THE POOL CEILING, READ ON THE PHOTOGRAPHED FRAME rather than
+  // trusted from the one-time `console.error` `PropLibrary.grow()` fires
+  // (that fires once per batch, `b.warned`, so a sweep taking several readings
+  // in one process only sees it on the FIRST hit). `refused`/`exhausted` never
+  // decrement once a slot is denied, so this is exactly the settleGate class
+  // of fix (2.14.4, `scatterBacklog`): a hero frame whose prop pool has ever
+  // refused an instance THIS SESSION is a truncated frame, and `valid` must
+  // say so on every capture of it, not only the first.
+  const poolRefused = s.props === undefined || s.props === null
+    ? 0 : (s.props.refused ?? s.props.exhausted ?? 0);
   return {
-    valid: true, shot: name, why: S.why,
+    valid: poolRefused === 0, shot: name, why: S.why,
+    poolRefused,
     // RN-2018. The enemy-suppression receipt, published rather than assumed,
     // so a frame taken without it is distinguishable from one taken with it in
     // the JSON alone. See the `peaceful` block above for the pair it cost.
@@ -3096,6 +3107,7 @@
       cellsCapped: s.props.cellsCapped, chunksCapped: s.props.chunksCapped,
       chunksRefused: s.props.chunksRefused,
       scatterBacklog: s.props.scatterBacklog, chunks: s.props.chunks,
+      poolRefused, poolCeiling: s.props.ceiling ?? null,
     },
     render: { triangles: s.draw.triangles, calls: s.draw.calls,
       programs: s.draw.programs, vramMB: s.vramEstimateMB,
