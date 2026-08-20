@@ -1895,7 +1895,7 @@ improved nor worsened it (2,785,433 before and after, to the triangle).
 2. **A palette, stated as a palette: ONE MEADOW, LIT AT TWO TEMPERATURES.** Warm
    dry-straw light on what the sun touches, cool blue-green in what it does not,
    because the sky is the only other lamp in the scene. Split tone widened from
-   +-0.035 to about +-0.12 along the warm/cool axis (`shadowTint` [0.91, 0.99,
+   +-0.035 to a measured max deviation 0.14 along the warm/cool axis (`shadowTint` [0.91, 0.99,
    1.14], `highlightTint` [1.055, 1.01, 0.93], both still averaging ~1.0 so the
    grade moves hue and not exposure), plus a **green harmonisation** that pulls
    the vegetation hue family onto one sage-olive axis **at each pixel's own

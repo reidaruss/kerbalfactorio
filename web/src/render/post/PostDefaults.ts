@@ -209,7 +209,7 @@ export const POST_DEFAULTS: PostTuning = {
   // TEMPERATURES. Warm dry-straw light on what the sun touches, cool blue-green
   // in what it does not, because the sky is the only other lamp in the scene.
   // The RN-208 tints were +-0.035 either side of neutral, which is a hint at a
-  // split tone rather than one; these are roughly +-0.06 and they are pulled
+  // split tone rather than one; these have a measured max deviation 0.14
   // along the warm/cool axis rather than along the desert's orange/teal one.
   //
   // BOTH STILL AVERAGE TO ABOUT 1.0 ACROSS RGB, which is the invariant RN-208

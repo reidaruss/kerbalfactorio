@@ -110,7 +110,7 @@ const EXPOSURE_NOON = 1.20;
 // there: nothing in the mid tones can move, by construction, which is what
 // makes this a shoulder and not a contrast knob wearing one.
 //
-// 0.20 at noon and 0.46 at a low sun. The noon value is small on purpose: at
+// 0.50 at noon and 0.72 at a low sun. The noon value is small on purpose: at
 // 44 degrees the far ridge is at 198.86 with hiFrac 0.001, i.e. bright but not
 // clipped, and it wants restraint rather than rescue. At 5.85 degrees the same
 // ridge is at 231.51 with hiFrac 1.000 -- every pixel of it above 200 -- and

@@ -165,8 +165,9 @@ export class PostStack {
       uLift: { value: tune.lift }, uVignette: { value: tune.vignette },
       uVignetteSoft: { value: tune.vignetteSoft },
       // RN-2130, the fidelity lane's tone response and palette. ToneDrive.ts
-      // owns every value that goes into these four and states why.
-      uShoulder: { value: 0 }, uShoulderKnee: { value: 0.58 },
+      // owns every value that goes into these four and states why. Seeded at
+      // the shipped noon value; ToneDrive overwrites it every frame.
+      uShoulder: { value: 0 }, uShoulderKnee: { value: 0.50 },
       uGreenPull: { value: 0 }, uGreenAxis: { value: new THREE.Vector3(1, 1, 1) },
     }));
 
