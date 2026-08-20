@@ -1,5 +1,8 @@
 # Admin Master
 
+**ADMIN'S OWN RESOLVER BUG, 2026-08-20, caught by lane A4.** The NUMBERS.md conflict resolver Admin has used all session takes only the FIRST conflict region in the file (a bare next() over the markers), so the a3-splat merge shipped a second, unresolved conflict region (two trap-catalogue entries) onto pushed main, where it sat until A4's lane read the binding document and reported it. Resolved by union (both entries kept). THE RULE: the resolver must LOOP over every conflict region in the file and the merge commit must grep the whole file for markers afterwards; a gate that does not parse the ledger will never catch this class.
+
+
 **ROUTED FROM A3, 2026-08-19/20.** The terrain splat's phase 2 (the 75 to 600 m far field) is BLOCKED on world-gen delivering the per-chunk float64 phase attribute already named in TerrainArt.glsl.ts's header; it was a nicety and is now load-bearing. Owner: world-gen. To be allocated and dispatched when phase 2 opens. Also standing for Reid's ruling: A3 refused the Polyhaven download (agent-authorisation grounds, correct) and shipped synthesised layers with a named ingest seam; the verifier judges them a competent procedural substrate that clears phase 1 but not photoreal, so the ingest ruling is worth taking before A5 re-authors vegetation.
  Controller — Context
 
