@@ -12,6 +12,7 @@
 // function, so the horizon cannot disagree with the sky.
 
 import * as THREE from 'three';
+import { ATMOSPHERE_CHAPMAN, ATMOSPHERE_LAYER } from './AtmosphereAero.glsl.js';
 
 export interface AtmosphereParams {
   /** Ground radius in metres: the shell light rays are occluded by. */
@@ -50,6 +51,14 @@ export interface AtmosphereParams {
   aerosolTint: THREE.Vector3;
   /** Aerosol phase anisotropy. */
   aerosolG: number;
+  /**
+   * RN-2175. THE SCATTERING CURVATURE THE SUN PATH IS INTEGRATED AGAINST, as a
+   * MULTIPLE of `planetRadiusM`. 1 is the body's own curvature and is the
+   * physically literal answer; see `forgeAtmosphere` for why Forge ships more.
+   * Only the grazing half of the day can feel it: `ofChapman`'s high-sun limit
+   * is H / sin(elevation) whatever R is.
+   */
+  sunCurveK: number;
 }
 
 /**
@@ -69,7 +78,31 @@ export function forgeAtmosphere(planetRadiusM: number): AtmosphereParams {
     betaM: 3.5e-6,
     mieG: 0.76,
     sunIntensity: 15.0,
-    // 4.5e-4 per metre with a 400 m scale height ABOVE THE LOCAL GROUND (see
+    // RN-2175. 4.5e-4 -> 1.4e-4 PER METRE, i.e. a Koschmieder visual range of
+    // 8.7 km -> 27.9 km, which is the world audit's gap 1 in its own words:
+    // "the ordering is right at every rung; only the magnitude is wrong".
+    //
+    // WHAT IT IS MEASURED AGAINST, because the audit's own two instruments turn
+    // out not to measure this term (NUMBERS.md, and the lane report). `?atmos=0`
+    // deletes the SKY BOX, so a horizon-straddling rectangle fills a third of
+    // itself with void; and `flyover.hzBand` straddles the horizon, so a third
+    // of it is sky the aerosol cannot reach by construction. Against the honest
+    // control -- `?aerosol=0`, sky intact, every sky rectangle bit-identical --
+    // the flyover's all-ground `box` reads iqr 27.36 hazed against 56.47 clear,
+    // so the term was taking 51.6 per cent of the contrast off the ground of a
+    // 1,200 m flight. 8.7 km of visibility is a hazy day by the WMO's own
+    // table, and the bar (a 20 km silhouette desaturated and still legible) is
+    // a clear one.
+    //
+    // WHAT IT COSTS, STATED: the vertical column through the layer is exactly
+    // sigma x H, so the planet seen from orbit loses aerosol haze in the same
+    // proportion, 0.18 of optical depth down to 0.056. Raising H to hold that
+    // product was measured and rejected: a taller layer puts an eye at 1,200 m
+    // back INSIDE it and gives most of the flyover's contrast straight back.
+    // The `limb` shot is re-taken as a regression rather than assumed away, and
+    // the limb's praise in the audit is Rayleigh's, not this term's.
+    //
+    // 1.4e-4 per metre with a 400 m scale height ABOVE THE LAYER'S BASE (see
     // `ofAtmoAerial`, which is where that reference is set, and why).
     //
     // The pair is chosen against two constraints that pull opposite ways, and
@@ -90,7 +123,7 @@ export function forgeAtmosphere(planetRadiusM: number): AtmosphereParams {
     // = 0.49 of the layer at the player's own feet and moved 0.3% of the mid
     // band's pixels. Referencing the local ground instead is worth about 2x, and
     // it is worth it everywhere rather than only here.
-    aerosolSigma: 4.5e-4,
+    aerosolSigma: 1.4e-4,
     aerosolScaleM: 400,
     // 0.55 isotropic against a mild g = 0.35, and the two were set together to
     // compress the phase function's dynamic range rather than to be right.
@@ -113,7 +146,42 @@ export function forgeAtmosphere(planetRadiusM: number): AtmosphereParams {
     // as a filter. The absolute level is set so the haze sits a little ABOVE the
     // radiance of the ground it veils in the anti-solar direction, because haze
     // that is darker than what it covers is not haze, it is a shadow.
-    aerosolTint: new THREE.Vector3(0.38, 0.39, 0.43),
+    // RN-2175. NEUTRAL, NOT BLUE-BIASED, and the change is one third of audit
+    // gap 8. This vector multiplies `uSunColor` to give the haze its radiance,
+    // so it colours EVERY distant surface in the game; at (0.38, 0.39, 0.43) it
+    // pushed the whole far field cold at every hour, which is precisely the
+    // "brightens toward the sun and never reddens" the audit measured. The
+    // first attempt's finding that a STRONGLY blue coefficient darkens rather
+    // than hazes still stands and is why this is not warm either: it is flat,
+    // and the colour of the haze now comes from `sunT`, which reddens on the
+    // sun's own path. That is the term that should own it.
+    // 0.32 and not the old 0.38-0.43, and the cut is what the SKY entry point
+    // costs. The level was set against the GROUND the haze veils, so it is the
+    // radiance of sunlit terrain; a sky ray at twenty degrees is looking at a
+    // source three to five times darker, and the same level over-brightens it.
+    // Measured on the `dawnsun` pose, which is the frame that finds this: at
+    // 0.40 every sky rectangle looking INTO a 5.85 degree sun sits above 200
+    // with hiFrac 0.5 to 0.65, i.e. the forward lobe clips the whole upper
+    // frame. Flat across the channels for the first attempt's reason, unchanged.
+    aerosolTint: new THREE.Vector3(0.32, 0.32, 0.32),
+    // 10.6x Forge's own 600 km, i.e. Earth's curvature, and it is the single
+    // constant in this lane that is a CHOICE rather than a correction.
+    //
+    // Forge is a 600 km body carrying a 5.6 km scale height (D-006). Feed those
+    // two numbers to an exact Chapman integral and the grazing sun column at a
+    // 5.85 degree sun is 36,940 m against Earth's 70,320: about half. Half the
+    // airmass is half the reddening, so a physically exact single-scattering
+    // model on this planet CANNOT produce a sunset, and no amount of tuning
+    // inside the integral changes that, because the shortfall is the planet's
+    // radius and the radius is a gameplay decision.
+    //
+    // So the sun path alone is integrated against Earth's curvature, which
+    // takes the 5.85 degree column to 52,285 m, and the choice is safe in a way
+    // a gain on the optical depth would not be: `ofChapman`'s high-sun limit is
+    // H / sin(elevation) INDEPENDENT OF R, so this constant is algebraically
+    // incapable of moving the noon sky. `?sunarc=1` restores the body's own
+    // curvature and `?sunarc=0` restores the pre-RN-2175 three-step march.
+    sunCurveK: 10.6,
   };
 }
 
@@ -147,6 +215,10 @@ export function airlessAtmosphere(planetRadiusM: number): AtmosphereParams {
     aerosolMs: 0,
     aerosolTint: new THREE.Vector3(0, 0, 0),
     aerosolG: 0,
+    // Never reached: every scattering term is zero, so no sun path is ever
+    // integrated. 1 rather than 0 so a future caller that forgets the gate gets
+    // the body's own curvature and not a division by zero.
+    sunCurveK: 1,
   };
 }
 
@@ -174,6 +246,25 @@ export interface AtmosphereUniforms {
   /** Haze radiance multiplier on uSunColor. */
   uAeroTint: { value: THREE.Vector3 };
   uAeroG: { value: number };
+  /** RN-2175. (scattering curvature radius m, 1 = analytic Chapman sun path). */
+  uSunArc: { value: THREE.Vector2 };
+  /** RN-2175. 1 while the sky ray carries the boundary layer. `?skyaero=0`. */
+  uSkyAero: { value: number };
+  /**
+   * RN-2175. THE HEMISPHERICAL SKY RADIANCE, sampled on the CPU once per frame
+   * (SkyProbe.ts) and shared BY REFERENCE like everything else in this record,
+   * so the terrain, the grass carpet, the water and the sky's ground shell all
+   * read one number. `w` is 1 while it is in use and 0 under `?skyirr=0`, where
+   * every consumer falls back to the zenith march it used before.
+   */
+  uSkyIrr: { value: THREE.Vector4 };
+  /**
+   * RN-2175. THE LAYER'S OWN BASE ALTITUDE, in metres above `uPlanetR`, and a
+   * mode selector. `x` is the ground under the OBSERVER (written per frame by
+   * SkyPass); `y` is 1 for that reference and 0 for the pre-RN-2175 per-ray one,
+   * which is what `?aerobase=0` restores. See `ofAtmoAerial`.
+   */
+  uAeroRef: { value: THREE.Vector2 };
 }
 
 /**
@@ -194,12 +285,67 @@ export function createAtmosphereUniforms(p: AtmosphereParams, on: boolean): Atmo
     uMieG: { value: p.mieG },
     uAtmosOn: { value: on ? 1 : 0 },
     uAerosol: {
-      value: new THREE.Vector3(p.aerosolSigma, p.aerosolScaleM, p.aerosolMs),
+      value: new THREE.Vector3(
+        p.aerosolSigma * AEROSOL_AMP, p.aerosolScaleM, p.aerosolMs),
     },
     uAeroTint: { value: p.aerosolTint.clone() },
     uAeroG: { value: p.aerosolG },
+    uAeroRef: { value: new THREE.Vector2(0, AERO_DATUM_ON ? 1 : 0) },
+    uSunArc: {
+      value: new THREE.Vector2(
+        p.planetRadiusM * (SUN_ARC_K === null ? p.sunCurveK : SUN_ARC_K),
+        SUN_ARC_K === 0 ? 0 : 1),
+    },
+    uSkyAero: { value: SKY_AERO_ON ? 1 : 0 },
+    uSkyIrr: { value: new THREE.Vector4(0, 0, 0, SKY_IRR_ON ? 1 : 0) },
   };
 }
+
+/**
+ * RN-2175. `?aerosol=` scales the boundary-layer extinction; `0` removes the
+ * term entirely WITH THE SKY STILL PAINTING, which is the control this term has
+ * never had.
+ *
+ * `?atmos=0` was the only aerosol-off arm available and it is not one: it
+ * deletes the sky box, so a rectangle that straddles the horizon fills a third
+ * of itself with pure void and reports an inter-quartile range that is mostly
+ * the ground-against-nothing step. The world audit's headline "the haze is
+ * destroying 77.5 per cent of the horizon's contrast" was taken that way and is
+ * measured against a contaminated reference; see NUMBERS.md.
+ */
+const AEROSOL_AMP = ((): number => {
+  const v = new URLSearchParams(self.location.search).get('aerosol');
+  const f = v === null ? NaN : Number(v);
+  return Number.isFinite(f) ? f : 1;
+})();
+
+/**
+ * `?skyirr=0` restores the pre-RN-2175 ambient in one flag: the zenith-only
+ * march in every shader that has one AND lane A1's two authored floor endpoints
+ * in TerrainAmbient. Standing rule 7: a term whose two halves have two switches
+ * is a term whose off state is an argument rather than a measurement.
+ */
+export const SKY_IRR_ON =
+  new URLSearchParams(self.location.search).get('skyirr') !== '0';
+
+/** `?skyaero=0` takes the boundary layer back out of the sky ray, exactly. */
+const SKY_AERO_ON =
+  new URLSearchParams(self.location.search).get('skyaero') !== '0';
+
+/** `?aerobase=0` restores the pre-RN-2175 per-ray reference, exactly. */
+const AERO_DATUM_ON =
+  new URLSearchParams(self.location.search).get('aerobase') !== '0';
+
+/**
+ * `?sunarc=` on the `stockfloor` precedent: absent ships `sunCurveK`, `0` puts
+ * the three-step march back, and any other number is a curvature multiple, so
+ * `?sunarc=1` is the body's own curvature. RN-150-safe: missing is MISSING.
+ */
+const SUN_ARC_K = ((): number | null => {
+  const v = new URLSearchParams(self.location.search).get('sunarc');
+  const f = v === null ? NaN : Number(v);
+  return Number.isFinite(f) ? f : null;
+})();
 
 export const ATMOSPHERE_PARS = /* glsl */`
   uniform vec3  uSunDir;
@@ -214,6 +360,10 @@ export const ATMOSPHERE_PARS = /* glsl */`
   uniform vec3  uAerosol;
   uniform vec3  uAeroTint;
   uniform float uAeroG;
+  uniform vec2  uAeroRef;
+  uniform vec2  uSunArc;
+  uniform float uSkyAero;
+  uniform vec4  uSkyIrr;
 
   // Entry and exit parameters of a ray against a sphere centred on the origin.
   // A miss returns (1, -1), so every caller's "y > x" test rejects it.
@@ -239,6 +389,8 @@ export const ATMOSPHERE_PARS = /* glsl */`
     return od;
   }
 
+  ${ATMOSPHERE_CHAPMAN}
+
   // Transmittance from a point straight out to space along dir. This is what
   // reddens the sun at the terminator, and it is the same integral the sky uses.
   vec3 ofAtmoSunTransmittance(vec3 p, vec3 dir, int steps) {
@@ -246,7 +398,7 @@ export const ATMOSPHERE_PARS = /* glsl */`
     if (h.y <= 0.0) return vec3(1.0);
     vec2 g = ofAtmoHit(p, dir, uPlanetR);
     if (g.x > 0.0 && g.y > g.x) return vec3(0.0);
-    vec2 od = ofAtmoOD(p, dir, max(h.x, 0.0), h.y, steps);
+    vec2 od = ofSunOD(p, dir, steps);
     return exp(-(uBetaR * od.x + uBetaM * 1.1 * od.y));
   }
 
@@ -282,8 +434,7 @@ export const ATMOSPHERE_PARS = /* glsl */`
       odView += dens;
       vec2 gh = ofAtmoHit(p, uSunDir, uPlanetR);
       if (!(gh.x > 0.0 && gh.y > gh.x)) {
-        vec2 lh = ofAtmoHit(p, uSunDir, uAtmoR);
-        vec2 odL = ofAtmoOD(p, uSunDir, 0.0, max(lh.y, 0.0), lightSteps);
+        vec2 odL = ofSunOD(p, uSunDir, lightSteps);
         vec3 att = exp(-(uBetaR * (odView.x + odL.x) + uBetaM * 1.1 * (odView.y + odL.y)));
         sumR += att * dens.x;
         sumM += att * dens.y;
@@ -294,82 +445,8 @@ export const ATMOSPHERE_PARS = /* glsl */`
     return (sumR * uBetaR * phR + sumM * uBetaM * phM) * uSunColor;
   }
 
-  /**
-   * BOUNDARY-LAYER AEROSOL HAZE OVER A PATH THAT TERMINATES ON GEOMETRY.
-   *
-   * THIS IS THE SECOND ATTEMPT AND THE ONLY THING THAT CHANGED IS THE
-   * CONFINEMENT. The first one added the aerosol INSIDE ofAtmoScatter and relied
-   * on a 400 m scale height to keep it off the sky. That is confinement by
-   * HEIGHT and it does not work, because a near-horizon sky ray lies inside the
-   * layer for tens of kilometres: the ground hazed correctly (far-band red 70.2
-   * to 60.9, blue over red 0.393 to 0.460) and the term then failed its own
-   * control, moving sky saturation 0.494 to 0.410 and sky red 81.9 to 97.0. It
-   * was reverted whole, and the sky control is what made that call possible.
-   *
-   * The confinement here is by PATH, and the seam it needs already existed:
-   * every escaping ray in this codebase passes tMax = 1.0e9 and every
-   * terminating ray passes a real metre distance. So the rule is that this is a
-   * SEPARATE ENTRY POINT, called only from the one call site that has a finite
-   * distance to geometry (TerrainShader's aerial perspective). The sky quad, and
-   * the terrain's own upward sky-ambient ray, cannot reach it at all. "The sky
-   * did not move" stops being a tuning result and becomes a property of the call
-   * graph. Note that a #define keyed on "is this the terrain material" would
-   * have got it WRONG, because the sky-ambient ray IS a terrain fragment issuing
-   * an escaping ray; the distinction that matters is the ray, not the material.
-   *
-   * THE OPTICAL DEPTH IS ANALYTIC, NOT MARCHED, and that is what makes it safe
-   * from orbit. For a height profile that is linear along the segment,
-   * INTEGRAL exp(-h/H) ds = L * H / (h1 - h0) * (exp(-h0/H) - exp(-h1/H)), which
-   * self-limits correctly: a viewer 100 km up looking down collects about H
-   * worth of dense air no matter how long the ray is, while a viewer standing on
-   * the ground looking horizontally collects the whole length of it. A midpoint
-   * or Simpson rule would weight its samples by the FULL path length and would
-   * produce an enormous optical depth for a scaled planet seen from space, which
-   * is a failure this closed form structurally cannot have.
-   */
-  vec3 ofAtmoAerial(vec3 col, vec3 ro, vec3 rd, float distM, vec3 sunT) {
-    if (uAtmosOn < 0.5 || uAerosol.x <= 0.0) return col;
-    float H = uAerosol.y;
-    float a0 = max(length(ro) - uPlanetR, 0.0);
-    float a1 = max(length(ro + rd * distM) - uPlanetR, 0.0);
-    // THE LAYER SITS ON THE TERRAIN, NOT ON THE DATUM, and heights are measured
-    // from the LOWER end of the ray. This is what a boundary layer physically is
-    // (it is why mountains stand above the haze and valleys fill with it) and it
-    // is also what makes one pair of constants work at every elevation: measured
-    // from the datum, the same term is 2x weaker on an 860 m hillside than at
-    // sea level and vanishes on a mountain, so it would have to be retuned per
-    // site, which is another way of saying it would be wrong everywhere but one.
-    //
-    // Continuous by construction: the two branches meet where a1 = a0, and there
-    // both give the same reference, so a fragment crossing the camera's own
-    // altitude does not step.
-    float base = min(a0, a1);
-    float h0 = a0 - base;
-    float h1 = a1 - base;
-    float dh = h1 - h0;
-    float e0 = exp(-h0 / H);
-    // The limit of the closed form as dh goes to zero, taken explicitly rather
-    // than divided into: a horizontal ray is the single most common case here,
-    // and it is exactly the one that makes the denominator vanish.
-    float colDepth = abs(dh) < 1.0
-      ? distM * e0
-      : distM * H / dh * (e0 - exp(-h1 / H));
-    float od = uAerosol.x * max(colDepth, 0.0);
-    float tr = exp(-od);
+  ${ATMOSPHERE_LAYER}
 
-    float mu = dot(rd, uSunDir);
-    float gg = uAeroG * uAeroG;
-    float den = max(1.0 + gg - 2.0 * uAeroG * mu, 1e-4);
-    float hg = 0.0795775 * (1.0 - gg) / (den * sqrt(den));
-    float ph = mix(hg, 0.0795775, uAerosol.z);
-    // sunT is the transmittance along the SUN ray at the shaded fragment, handed
-    // in by the caller rather than recomputed. It costs nothing, it is the right
-    // order of magnitude for the whole path at these ranges, and it means the
-    // haze reddens through the terminator and goes out at night with the sun
-    // instead of hanging in the frame as a grey sheet after sunset.
-    vec3 haze = uSunColor * uAeroTint * ph * sunT;
-    return col * tr + haze * (1.0 - tr);
-  }
 `;
 
 /** Air density fraction at an altitude, for CPU-side masking heuristics. */

@@ -431,6 +431,12 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // restores the 3.15-degree LDR sun sprite. Registered in the same commit that
   // introduces them, which is what this list's own guard asks for.
   'shadowbias', 'sundisc',
+  // RN-2175 (fidelity lane A4, the sky system). Each restores the state
+  // immediately before the term it names: `aerobase=0` the per-ray aerosol
+  // reference, `sunarc=0` the three-step sun-path march (any other number is a
+  // scattering-curvature multiple), `skyirr=0` the zenith-only sky ambient,
+  // `clouds=0` the cloud layer, `sunglare=0` the disc aureole.
+  'aerobase', 'aerosol', 'skyaero', 'sunarc', 'skyirr', 'clouds', 'cloudamp', 'sunglare',
   // Like `sandbox` above, not an isolation switch: it selects WHICH BODY the
   // client boots on. `body=cinder` (or `moon`, or `1`) boots the moon; absent
   // or anything else is Forge, which is every existing probe unchanged.

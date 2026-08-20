@@ -13,6 +13,8 @@ import { createSkyAtmosphere, type SkyAtmosphere } from './materials/SkyAtmosphe
 import { createStarfield, type Starfield } from './materials/StarfieldMaterial.js';
 import type { QualityTier } from '../app/Config.js';
 import { IBL_DISC_GAIN } from './IblDiag.js';
+import { skyIrradiance } from './materials/SkyProbe.js';
+import { terrainSkyFloor } from './materials/TerrainAmbient.js';
 
 // ===========================================================================
 // RN-1572. THE SUN DISC: ITS REAL ANGULAR SIZE, AT THE RADIANCE THAT KEEPS ITS
@@ -187,9 +189,24 @@ export class SkyPass {
         return this.atmos.uAtmosOn.value;
       },
       atmosOn: (): number => this.atmos.uAtmosOn.value,
+      // RN-2175. The two records this lane added, published rather than
+      // inferred: a probe that has to deduce the layer's base from pixels
+      // cannot tell "the base moved and the frame did not" from "the base never
+      // moved", and those are different findings.
+      aeroRef: (): number[] => [
+        this.atmos.uAeroRef.value.x, this.atmos.uAeroRef.value.y,
+      ],
+      sunArc: (): number[] => [
+        this.atmos.uSunArc.value.x, this.atmos.uSunArc.value.y,
+      ],
+      aeroTint: (): number[] => [
+        this.atmos.uAeroTint.value.x, this.atmos.uAeroTint.value.y,
+        this.atmos.uAeroTint.value.z,
+      ],
     };
 
-    this.sky = o.atmosphere ? createSkyAtmosphere(this.atmos, o.tier) : null;
+    this.sky = o.atmosphere
+      ? createSkyAtmosphere(this.atmos, o.tier, o.seedLo) : null;
     if (this.sky !== null) this.group.add(this.sky.mesh);
 
     // THE GROUND HALF OF THE ENVIRONMENT (RN-64) IS THE SKY BOX ITSELF, in a
@@ -265,9 +282,34 @@ export class SkyPass {
    * the local radial there; both come straight from the observer, so the sky,
    * the aerial perspective and the star fade are all driven by one position.
    */
-  update(camBody: { x: number; y: number; z: number }, up: THREE.Vector3, altM: number): void {
+  update(camBody: { x: number; y: number; z: number }, up: THREE.Vector3,
+         altM: number, simSecs = 0): void {
     this.sky?.setCameraPos(camBody.x, camBody.y, camBody.z);
+    // The cloud drift rides the SIM clock, beside the terrain's uTime and the
+    // foliage wind's, for the same reason those two do: pausing the sim stops
+    // the weather exactly as it stops the ripples and the breeze.
+    this.sky?.setTime(simSecs);
     const elev = this.sunDirection.dot(up);
+    // RN-2175. THE BOUNDARY LAYER'S BASE, written once per frame so it is a
+    // property of the world rather than of each ray (Atmosphere.glsl's
+    // `ofAtmoAerial`). `altM` is height above the TERRAIN, so subtracting it
+    // from the eye's altitude above the datum leaves the ground the observer is
+    // standing over, which is the altitude the layer sits on.
+    const eyeR = Math.hypot(camBody.x, camBody.y, camBody.z);
+    const eyeAlt = eyeR - this.params.planetRadiusM;
+    this.atmos.uAeroRef.value.x = eyeAlt - altM;
+    // RN-2175. THE SKY'S OWN HEMISPHERE, nine directions on the CPU, written
+    // into the shared record so the terrain, the carpet, the water and the
+    // ground shell all read one number, and into TerrainAmbient's floor so the
+    // props read it too. Here rather than in Systems because this is the one
+    // place that already holds the params, the eye and the sun direction, and a
+    // second holder of any of the three is a second authority on the hour.
+    if (this.atmos.uSkyIrr.value.w > 0.5) {
+      const c = skyIrradiance(this.params, up, this.sunDirection, eyeAlt,
+        this.atmos.uAeroRef.value.x, this.atmos.uAerosol.value.x);
+      this.atmos.uSkyIrr.value.set(c.r, c.g, c.b, 1);
+      terrainSkyFloor(c);
+    }
     this.daylight = daylightFactor(this.params, altM, elev);
     this.stars?.setDaylight(this.daylight);
     // Below the horizon the disc must not hang in the sky: the terminator is the
