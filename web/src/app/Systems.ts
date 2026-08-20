@@ -8,6 +8,7 @@ import type { Loop } from './Loop.js';
 import { windUpdate } from '../render/instancing/PropWind.js';
 import { dayAdvance } from '../sim/DayCycle.js';
 import { terrainNightAmbient } from '../render/materials/TerrainAmbient.js';
+import { updateToneDrive } from '../render/post/ToneDrive.js';
 import { bootCelestialBodies } from '../render/CelestialBoot.js';
 import { MILESTONE, grantMilestone } from '../game/Research.js';
 
@@ -320,6 +321,11 @@ export function registerSystems(s: Services, loop: Loop): void {
     // and the sun lights read, written into the shared TERRAIN_AMBIENT object
     // both terrain materials and the sky ground shell hold by reference.
     terrainNightAmbient(elev);
+    // RN-2130 (fidelity lane A1). The image's exposure, highlight shoulder,
+    // dawn warmth and occlusion tint ride the SAME elevation, for the same
+    // reason the line above does: one hour, read once, so the tone response,
+    // the ambient fill and the grade cannot disagree about what time it is.
+    updateToneDrive(elev);
     const k = THREE.MathUtils.smoothstep(elev, NIGHT_DOT, DAY_DOT);
     sunColor.copy(HORIZON).lerp(NOON, THREE.MathUtils.smoothstep(elev, 0.0, 0.35));
     // W5. How much sky the EYE can see, measured before the lights are set so

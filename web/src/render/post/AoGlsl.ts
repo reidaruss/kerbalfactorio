@@ -226,16 +226,41 @@ void main() {
  * Background is handled with no depth test at all: the AO pass writes exactly
  * 1.0 where there is no geometry, and the strength and power curves both fix
  * 1.0, so a sky pixel is multiplied by 1.0 and is bit-identical.
+ *
+ * RN-2130 (FIDELITY LANE A1). THE STRENGTH IS A VEC3 NOW, AND THAT IS WHAT
+ * TURNS A BLACK BLOB INTO A COLOURED OCCLUSION.
+ *
+ * The complaint this closes is difference 3 of the fidelity charter: "their
+ * shadow side has colour and air; our shadow side goes toward black". The
+ * mechanism was measurable rather than mysterious. This pass multiplies TOTAL
+ * radiance -- there is no ambient-only channel to reach into, because the
+ * terrain program computes its own light from `uSunDir` -- so at the shipped
+ * strength of 0.9 a fully occluded pixel kept a TENTH of everything it had,
+ * including the sky's own contribution. A hollow under a tuft therefore went to
+ * black no matter what colour the light in it was, and the meadow frame's near
+ * ground read loFrac 0.318: nearly a third of it below display luma 24.
+ *
+ * A multiply blend cannot ADD a sky colour back. What it can do is occlude the
+ * three channels by DIFFERENT amounts, which is the same thing seen from the
+ * other side: occluded light is sky light, the sky is blue, so red is taken
+ * hardest and blue is barely taken at all. `uStrength` is therefore a per-
+ * channel weight (ToneDrive.ts drives it from the sun's elevation, day
+ * 1.00/0.86/0.62), and the pixel under the tuft loses its warmth before it
+ * loses its brightness and lands blue-green instead of landing black.
+ *
+ * The grey behaviour is still exactly reachable: `?occtint=0` sets all three
+ * weights to the same number and this pass is then algebraically the pre-A1
+ * expression, which is the control the change owes.
  */
 export const AO_APPLY_FS = /* glsl */`
 precision highp float;
 varying vec2 vUv;
 uniform sampler2D tAo;
-uniform float uStrength;
+uniform vec3 uStrength;
 uniform float uPower;
 
 void main() {
   float ao = clamp(textureLod(tAo, vUv, 0.0).x, 0.0, 1.0);
-  gl_FragColor = vec4(vec3(mix(1.0, pow(ao, uPower), uStrength)), 1.0);
+  gl_FragColor = vec4(mix(vec3(1.0), vec3(pow(ao, uPower)), uStrength), 1.0);
 }
 `;
