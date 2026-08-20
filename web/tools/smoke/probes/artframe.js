@@ -502,6 +502,41 @@
       },
       why: 'the same vista at a 5.7 degree sun: the low-sun half of the arc',
     },
+    // RN-2175 (fidelity lane A4). THE SUN, IN FRAME, and it closes world-audit
+    // gap 16: "no canonical frame contains the sun disc ... should be closed by
+    // whichever lane touches the sky, since it costs one manifest row".
+    //
+    // A COMMITTED ROW AND NOT AN --evalargs OVERRIDE, which is RN-2169's rule
+    // paid forward: that lane published a ratio from a pose the command line
+    // carried and the record did not, and a verifier reproduced the ratio at a
+    // different absolute level because there was nothing to reproduce FROM.
+    //
+    // The pose is `vistadawn`'s site turned to FACE the sun. `vistadawn` reports
+    // sunYawOffDeg -52.70 at yaw 120, so yaw 67.3 puts the sun on the frame's
+    // vertical centre line, and pitch +6 against a 5.85 degree sun puts it
+    // within a degree of the frame centre. The horizon therefore sits 6 degrees
+    // below centre, which at a 60 degree vertical field over 900 px is y = 0.60,
+    // and every rectangle below is placed off that number rather than guessed.
+    dawnsun: {
+      scenario: 'walk', needsSandbox: false,
+      lat: 2.036, lon: 144.056, yaw: 67.3, pitch: 6,
+      sunDot: 0.10, sunTol: 0.03,
+      box: [0.2500, 0.2000, 0.7500, 0.5000],
+      extra: {
+        // The disc is 0.53 degrees, i.e. 8 px of the 900. This rectangle is 48
+        // px and is therefore mostly AUREOLE with the disc inside it, which is
+        // stated because a reader would otherwise take `sunCore` for the disc's
+        // own radiance. The disc cannot be measured by a rectangle at this
+        // resolution and this lane does not claim to have measured it.
+        sunCore: [0.4850, 0.4700, 0.5150, 0.5300],
+        glareIn: [0.4400, 0.4200, 0.5600, 0.5800],
+        glareOut: [0.3200, 0.3400, 0.6800, 0.6600],
+        skyUp: [0.4000, 0.0300, 0.6000, 0.1000],
+        skyOff: [0.0300, 0.0300, 0.1500, 0.1200],
+        hzBand: [0.0500, 0.6200, 0.3500, 0.6800],
+      },
+      why: 'the SUN IN FRAME at a 5.7 degree sun: the disc, its glare falloff and the warm sky around it (audit gap 16)',
+    },
     vistanoon: {
       scenario: 'walk', needsSandbox: false,
       lat: 2.036, lon: 144.056, yaw: 120, pitch: -2,
@@ -1464,7 +1499,7 @@
   // and the only reason it was caught is that a lane happened to know what the
   // right numbers looked like. ADDING A SHOT MEANS ADDING IT HERE TOO.
   if (name === 'vista' || name === 'vistadawn' || name === 'vistanoon'
-      || name === 'meadow' || name === 'mtnslope') {
+      || name === 'meadow' || name === 'mtnslope' || name === 'dawnsun') {
     const w0 = of.world();
     of.teleport(A.lat ?? S.lat, A.lon ?? S.lon, 2.0);
     await sleep(2.0);

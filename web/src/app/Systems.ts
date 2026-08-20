@@ -303,7 +303,8 @@ export function registerSystems(s: Services, loop: Loop): void {
     // water shares the terrain's uTime: one sim clock, so pausing the sim
     // stops the breeze exactly as it stops the ripples.
     windUpdate(loop.simSecs);
-    s.sky.update(s.observer.position, s.observer.up, s.observer.altM);
+    s.sky.update(s.observer.position, s.observer.up, s.observer.altM,
+      loop.simSecs);
 
     // Stock materials (PlanetProxy, Avatar) are lit by these; TerrainMaterial is
     // not. Driving them from the SAME sun elevation the sky uses is what stops
