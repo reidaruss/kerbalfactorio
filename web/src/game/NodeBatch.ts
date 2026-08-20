@@ -38,8 +38,8 @@ import { ladder } from './NodeLadder.js';
 // The barrel keeps every symbol this file used to publish, so no import site
 // outside it changes (BT-276 rule 1). NodeField.ts takes the three distances and
 // NodePart; RuinSites.ts takes the hysteresis.
-export { LODS, NODE_LOD1_M, NODE_LOD2_M, NODE_LOD_HYST, VARIANTS }
-  from './NodeBatchTypes.js';
+export { LODS, NODE_LOD1_M, NODE_LOD2_M, NODE_LOD3_M, NODE_LOD_HYST,
+  NODE_LOD_M, VARIANTS } from './NodeBatchTypes.js';
 export type { NodePart } from './NodeBatchTypes.js';
 
 export class NodeBatch {

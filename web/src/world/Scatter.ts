@@ -349,8 +349,14 @@ export class Scatter {
       this.s.set(pl.scale[o * 3], pl.scale[o * 3 + 1], pl.scale[o * 3 + 2]);
       this.m4.compose(this.p, this.q, this.s);
       const part = pl.parts[i];
-      const far = this.p.distanceTo(this.eye) > part.lod2M;
-      this.lib.place(part.material, part.slot, far ? part.lod2 : part.lod0, this.m4);
+      // RN-2202: three bands, coarsest first, so the impostor rung wins where
+      // both thresholds are past. `lod3M === lod2M` for every part that
+      // authored no impostor, and then `lod3` IS `lod2`'s id, so this reads
+      // exactly as the two-band version did for them.
+      const d = this.p.distanceTo(this.eye);
+      const geom = d > part.lod3M ? part.lod3
+        : d > part.lod2M ? part.lod2 : part.lod0;
+      this.lib.place(part.material, part.slot, geom, this.m4);
     }
   }
 

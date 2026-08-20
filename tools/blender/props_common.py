@@ -510,6 +510,14 @@ class Prop:
     lod2      float  -> COLLAPSE decimate at that ratio (organic props)
               callable -> a second Parts pile, fitted to the same box
               None   -> no LOD2 (already at the floor: a 4-triangle card)
+    lod3      RN-2202, THE IMPOSTOR RUNG. callable -> a third Parts pile,
+              fitted to the SAME box, exported as <name>_LOD3; None (the
+              default) -> the prop has no impostor and the client's ladder
+              walks back down to its LOD2, which is exactly what every atlas
+              did before this rung existed. Only a callable is accepted: a
+              decimate ratio cannot produce a card, and the whole point of
+              this rung is that it is a hand-authored silhouette rather than
+              a smaller version of the same mesh.
     collide   author a col_<name> box proxy. False means walk-through, which
               is the default for everything soft or ankle-height.
     base_z    0.0 is the ground-contact pivot every scatter prop wants.
@@ -517,13 +525,15 @@ class Prop:
               panel needs.
     """
 
-    def __init__(self, name, size, make, roles, lod2=0.15, collide=False,
-                 col_size=None, col_role=None, base_z=0.0, note=""):
+    def __init__(self, name, size, make, roles, lod2=0.15, lod3=None,
+                 collide=False, col_size=None, col_role=None, base_z=0.0,
+                 note=""):
         self.name = name
         self.size = tuple(size)
         self.make = make
         self.roles = list(roles)
         self.lod2 = lod2
+        self.lod3 = lod3
         self.collide = collide
         self.col_size = tuple(col_size) if col_size else tuple(size)
         self.col_role = col_role or roles[0]
@@ -567,6 +577,19 @@ def build_atlas(root_name, out_path, props, verbose=True):
             reported.append((prop.name + "_LOD2", lmb))
         elif prop.lod2:
             of.add_lod_decimate(obj, 2, prop.lod2, root)
+
+        # RN-2202. The impostor rung, emitted by exactly the same three lines
+        # LOD2 takes and fitted to the SAME box, so a rung cannot drift off the
+        # footprint its neighbours share. Absent by default: an atlas that
+        # names no lod3 exports no _LOD3 node and its bytes do not move.
+        if callable(prop.lod3):
+            ip = prop.lod3()
+            _check_roles(prop, ip)
+            ip.fit(prop.size, base_z=prop.base_z)
+            imb = of.MeshBuilder()
+            ip.into(imb, prop.roles)
+            imb.build(prop.name + "_LOD3", root)
+            reported.append((prop.name + "_LOD3", imb))
 
         if prop.collide:
             of.add_collision_box("col_" + prop.name, prop.col_size,

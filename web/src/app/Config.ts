@@ -201,6 +201,7 @@ export function parseConfig(search: string): Config {
     propGrow: p.get('propgrow') !== '0',
     detailCards: p.get('detail') !== '0',
     propCull: p.get('propcull') !== '0',
+    propCullBiome: p.get('propcullbiome') !== '0',
     grassShort: p.get('grassshort') !== '0',
     scatterWet: p.get('scatterwet') === '1',
     // Clamped at 1,600 m rather than left open: past that the cell the far

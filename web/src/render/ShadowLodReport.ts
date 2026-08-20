@@ -6,7 +6,8 @@
 
 import { budgetFor, budgetState, kFor, pxPerTexel, setBudget } from './ShadowLodK.js';
 import { measureStats } from './ShadowLodMeasure.js';
-import { cascadesPublished, laddersPublished, swapStats, frameSaving, tierFor,
+import { cascadesPublished, farSkipStats, laddersPublished, swapStats,
+  frameSaving, tierFor,
   SHADOW_LOD_ON, SHADOW_LOD_RAW } from './ShadowLod.js';
 
 export interface ShadowLodReport {
@@ -18,7 +19,13 @@ export interface ShadowLodReport {
     refHeightPx: number; nearestCasterM: number; rawK: string | null;
     rawPx: string | null; policy: string };
   cascades: { name: string; texelM: number; texelMM: number; nearM: number;
-    pxPerTexel: number; k: number; budgetMM: number }[];
+    farM: number; pxPerTexel: number; k: number; budgetMM: number }[];
+  /** RN-2203. `batches` is how many carry the impostor skip, `registered` the
+   *  same count from the other side, `passes` the cascade passes it ran in and
+   *  `skipped` the casters it actually removed. Zero `skipped` with nonzero
+   *  `batches` is a live skip with nothing at the impostor rung to remove. */
+  farSkip: { batches: number; passes: number; skipped: number;
+    registered: number; on: string[]; noImpostor: string[] };
   swaps: number;
   instances: number;
   /** Cumulative triangles the swap removed, and the cascade passes it ran in.
@@ -46,11 +53,17 @@ export function shadowLodReport(): ShadowLodReport {
     cascades: cascadesPublished().map((p) => ({
       name: p.name, texelM: p.texelM,
       texelMM: Math.round(p.texelM * 1e5) / 100,
-      nearM: p.nearM,
+      nearM: p.nearM, farM: p.farM,
       pxPerTexel: Math.round(pxPerTexel(p.texelM, p.nearM) * 1000) / 1000,
       k: Math.round(kFor(p.texelM, p.nearM) * 1000) / 1000,
       budgetMM: Math.round(budgetFor(p.texelM, p.nearM) * 1e5) / 100,
     })),
+    // RN-2203. The far-shadow skip, published with BOTH halves: how many
+    // batches registered one and how many casters it has actually removed. A
+    // registered skip that never fires is the vacuous green this project keeps
+    // catching, and `skipped: 0` beside `batches: 21` says which of the two
+    // failures it is (no impostor instances yet, versus no skip installed).
+    farSkip: farSkipStats(),
     swaps: swapStats().swaps,
     instances: swapStats().instances,
     savedTriangles: swapStats().saved,

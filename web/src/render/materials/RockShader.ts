@@ -84,6 +84,7 @@
 
 import type * as THREE from 'three';
 import { injectPartMat } from './PartMaterial.js';
+import { injectPropSkyAmbient } from './PropSkyAmbient.js';
 
 const raw = new URLSearchParams(self.location.search).get('rockmat');
 /** Whether the parameter was present AT ALL, so the shipped boot default is
@@ -103,8 +104,15 @@ const hooked: string[] = [];
  * own would be a second authority on mineral response, which is exactly the
  * shape the merge already got wrong once.
  */
-function hook(shader: { vertexShader: string; fragmentShader: string }): void {
+function hook(shader: { uniforms: Record<string, THREE.IUniform>;
+                       vertexShader: string; fragmentShader: string }): void {
   injectPartMat(shader);
+  // RN-2201. The same chain PropWind takes, for the same one-slot reason: the
+  // mineral node batches spend their single hook here, so the sky ambient
+  // reaches a boulder only if this call is in it. Both splices anchor on
+  // `#include <common>` and both put the include back, so the order is free
+  // (FurShader.ts states this and measured it).
+  injectPropSkyAmbient(shader);
 }
 
 /** Whether the hook will be installed at all. The BAKE GATE reads this too:

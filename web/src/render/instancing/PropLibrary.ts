@@ -16,19 +16,21 @@ import * as THREE from 'three';
 import { loadGlb } from '../../assets/Loaders.js';
 import { SHARED_ATLAS } from '../../assets/Registry.js';
 import { LAYER_PROPS } from '../Scenes.js';
+import { attachFarShadowSkip } from '../ShadowLod.js';
 import { isFoliageMaterial } from '../ScatterLook.js';
 import { normalize, setBaseShade, setLeafVar, type BaseBake }
   from './PropGeometry.js';
+import { applyPropSkyAmbient } from '../materials/PropSkyAmbient.js';
 import { applyWind } from './PropWind.js';
 import { attachSurface, familyForRole, roleOfMaterialName, surfacesReady }
   from './Surfaces.js';
+import { emptyLods, groupTiers, meshAtTier, PROP_LODS,
+  type PropPart } from './PropLods.js';
 
-/** One primitive of one prop: which batch it lives in, and its two LOD ids. */
-export interface PropPart {
-  readonly material: string;
-  readonly lod0: number;
-  readonly lod2: number;
-}
+// The barrel: `ScatterEmit` and `Scatter` name `PropPart` through this module
+// and did before the ladder existed, so the type moves and no import site does.
+export { geomAtTier, PROP_LODS } from './PropLods.js';
+export type { PropPart } from './PropLods.js';
 
 /**
  * Batch-key suffix for the ground-detail understorey, and THE reason this class
@@ -76,6 +78,11 @@ interface Batch {
    *  `savedTint` is `setLeafVar`'s lazy copy, zero cost until toggled off. */
   foliage: boolean;
   savedTint: Uint8Array | null;
+  /** RN-2203. Geometry ids in THIS batch that are the `_LOD3` impostor rung.
+   *  Collected during registration because that is the only place the rung's
+   *  identity is known; consumed once, after every atlas is in, to install the
+   *  far-shadow skip. */
+  far: Set<number>;
 }
 
 /**
@@ -122,16 +129,21 @@ export class PropLibrary {
   private growable = true;
   /** Per-instance frustum culling on the understorey batches (?propcull=0). */
   private cullDetail = true;
+  /** RN-2204. The same, WIDENED to the biome batches; `?propcullbiome=0` is
+   *  the pre-widening state and therefore the control. */
+  private cullBiome = true;
   /** False registers LOD0 as the far geometry too (?proplod2=0). */
   private lod2Enabled = true;
 
   static async load(
     urls: readonly string[], scene: THREE.Scene, growable = true,
-    cullDetail = true, lod2Enabled = true,
+    cullDetail = true, lod2Enabled = true, farShadowFromM = 0,
+    cullBiome = true,
   ): Promise<PropLibrary> {
     const lib = new PropLibrary();
     lib.growable = growable;
     lib.cullDetail = cullDetail;
+    lib.cullBiome = cullBiome;
     lib.lod2Enabled = lod2Enabled;
     // Deduped by Loaders, so props_moon.glb is fetched once for its three biomes.
     // The manifest is awaited alongside, not after: this is the ONE batch path
@@ -152,6 +164,18 @@ export class PropLibrary {
       lib.register(gltfs[i].scene, detail.has(unique[i]) ? DETAIL_SUFFIX : '');
     }
     for (const b of lib.batches.values()) scene.add(b.mesh);
+    // RN-2203. THE IMPOSTOR RUNG DOES NOT CAST. Installed here rather than in
+    // `batchFor`, because a batch collects impostor ids from every atlas that
+    // shares its material and the set is only complete once all of them are
+    // registered. `farShadowFromM` is the range at which the rung is CHOSEN
+    // (`ScatterTuning.CANOPY_LOD3_M`), passed in rather than imported so this
+    // render-layer class does not reach into the world layer for a number.
+    // See ShadowLod.attachFarShadowSkip for the measurement and the gate.
+    if (farShadowFromM > 0) {
+      for (const b of lib.batches.values()) {
+        attachFarShadowSkip(b.mesh, b.far, farShadowFromM);
+      }
+    }
     // The probe surface, on the `Surfaces.ts` precedent and for its reason:
     // this is a measurement hook, not gameplay, so it is not routed through
     // `window.__of`. It is also the only route this lane has to a one-binary
@@ -166,28 +190,39 @@ export class PropLibrary {
 
   private register(root: THREE.Object3D, suffix: string): void {
     root.updateWorldMatrix(true, true);
-    const byStem = new Map<string, Map<string, { lod0: THREE.Mesh | null; lod2: THREE.Mesh | null }>>();
+    // Grouped by `PropLods.groupTiers`, which keys the rung by its PARSED tier
+    // index instead of by "is it zero". See that file's header: the else-branch
+    // this replaces put every non-zero tier into one slot, so the far geometry
+    // was whichever mesh `traverse` reached last and a `_LOD3` would silently
+    // become the LOD2.
+    const prims: { name: string; materialName: string; mesh: THREE.Mesh }[] = [];
     root.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh !== true || m.name.startsWith('col_')) return;
-      const hit = /^(.*)_LOD(\d)(?:_\d+)?$/.exec(m.name);
-      if (hit === null) return;
-      const stem = hit[1];
-      const mat = (m.material as THREE.Material).name || 'OF_Default';
-      const perMat = byStem.get(stem) ?? new Map();
-      byStem.set(stem, perMat);
-      const slot = perMat.get(mat) ?? { lod0: null, lod2: null };
-      if (hit[2] === '0') slot.lod0 = m; else slot.lod2 = m;
-      perMat.set(mat, slot);
+      prims.push({
+        name: m.name,
+        materialName: (m.material as THREE.Material).name || 'OF_Default',
+        mesh: m,
+      });
     });
-    for (const [stem, perMat] of byStem) {
+    for (const [stem, perMat] of groupTiers(prims)) {
       const list: PropPart[] = [];
-      for (const [mat, pair] of perMat) {
-        const near = pair.lod0 ?? pair.lod2;
-        if (near === null) continue;
+      for (const [mat, rungs] of perMat) {
+        // The NEAREST rung this asset ships, which is LOD0 for everything in
+        // the project and is still derived rather than assumed: a prop that
+        // shipped only a far rung used to draw it near, and still does.
+        const near = meshAtTier(rungs, PROP_LODS - 1) === null
+          ? null : (rungs[0] ?? meshAtTier(rungs, PROP_LODS - 1));
+        if (near === null || near === undefined) continue;
         const key = mat + suffix;
-        const batch = this.batchFor(key, mat, near.material as THREE.Material,
-          suffix === '', suffix !== '' && this.cullDetail);
+        // RN-2204: `cull` is now the SAME answer for both layers, and the
+        // widening is the point. See `batchFor`'s note: per-instance culling
+        // was measured OFF for the biome props at 9,340 instances in the NEAR
+        // pass, and that measurement never looked at the three shadow cascades,
+        // where the same batch is swept again with a box a fraction the size.
+        const batch = this.batchFor(key, mat, near.mesh.material as THREE.Material,
+          suffix === '',
+          this.cullDetail && (suffix !== '' || this.cullBiome));
         // RN-62: EVERY prop takes a base-contact gradient, and the only
         // question is which profile (it used to be plants or nothing, which
         // left boulders meeting the terrain along a hard silhouette). The
@@ -195,19 +230,31 @@ export class PropLibrary {
         // because two copies of "which materials are plants" drift.
         const bake: BaseBake = isFoliageMaterial(mat) ? 'foliage' : 'mineral';
         batch.shaded = true;
-        const lod0 = batch.mesh.addGeometry(normalize(near.geometry, near.matrixWorld, bake));
-        // `?proplod2=0` registers LOD0 in the far slot too: the state the
-        // understorey shipped in before RN-45 authored the detail cards' LOD2.
-        // Standing rule 7, and it matters more than usual because the saving is
-        // an ASSET change, so the only other before/after would be a pair of
-        // BUILDS, which cannot hold the streamed chunk set equal. SCOPED to the
-        // understorey: over every batch it read 2,303,735 against 972,049, but
-        // most of that is the BIOME props' LOD2, shipping since W4 and not this
-        // pass's to claim. Scoped it reads 1,087,719 against 972,049.
-        const far = (this.lod2Enabled || suffix === '')
-          ? (pair.lod2 ?? near) : near;
-        const lod2 = batch.mesh.addGeometry(normalize(far.geometry, far.matrixWorld, bake));
-        list.push({ material: key, lod0, lod2 });
+        const lods = emptyLods();
+        // `?proplod2=0` gives the UNDERSTOREY nothing but its LOD0, so every
+        // tier resolves back down to it: the state the understorey shipped in
+        // before RN-45 authored the detail cards' LOD2. Standing rule 7, and it
+        // matters more than usual because the saving is an ASSET change, so the
+        // only other before/after would be a pair of BUILDS, which cannot hold
+        // the streamed chunk set equal. SCOPED to the understorey: over every
+        // batch it read 2,303,735 against 972,049, but most of that is the
+        // BIOME props' LOD2, shipping since W4 and not that pass's to claim.
+        // Scoped it reads 1,087,719 against 972,049.
+        //
+        // ONE DELIBERATE DIFFERENCE FROM THE OLD CONTROL: it used to add the
+        // LOD0 geometry to the batch TWICE (once per named slot) and hand the
+        // far slot the duplicate. The ladder maps the far tiers back to rung 0
+        // instead, so the pixels are the same and the vertex pool holds one
+        // copy rather than two.
+        const flat = suffix !== '' && !this.lod2Enabled;
+        for (let t = 0; t < PROP_LODS; ++t) {
+          const m = flat ? (t === 0 ? near : null) : rungs[t];
+          if (m === null || m === undefined) continue;
+          lods[t] = batch.mesh.addGeometry(
+            normalize(m.mesh.geometry, m.mesh.matrixWorld, bake));
+          if (t === PROP_LODS - 1) batch.far.add(lods[t]);
+        }
+        list.push({ material: key, lods });
       }
       if (list.length > 0 && !this.parts.has(stem)) this.parts.set(stem, list);
     }
@@ -244,6 +291,14 @@ export class PropLibrary {
     if (isFoliageMaterial(role)) {
       applyWind(material as THREE.MeshStandardMaterial, `props:${key}`);
     }
+    // RN-2201. THE SKY AMBIENT (PropSkyAmbient.ts). Foliage batches already
+    // spent their one `onBeforeCompile` on the wind and take the term by that
+    // hook chaining to it; the mineral and bark batches have no hook at all, so
+    // this installs the standalone one for them. Ordered AFTER the wind because
+    // it reads the material's current hook to decide which case it is in, and
+    // it is a no-op with `?wind=0` on a foliage batch only in the sense that
+    // the standalone hook is then the one that carries the term.
+    applyPropSkyAmbient(material, `props:${key}`, isFoliageMaterial(role));
     const cap0 = this.growable ? START_CAPACITY : LEGACY_CAPACITY;
     const mesh = new THREE.BatchedMesh(cap0, MAX_VERTS, MAX_VERTS * 3, material);
     mesh.name = `props:${key}`;
@@ -275,7 +330,7 @@ export class PropLibrary {
     const batch: Batch = {
       mesh, free: [], live: 0, cap: cap0, grows: 0, refused: 0, warned: false,
       shaded: false, savedColour: null,
-      foliage: isFoliageMaterial(role), savedTint: null,
+      foliage: isFoliageMaterial(role), savedTint: null, far: new Set<number>(),
     };
     this.batches.set(key, batch);
     return batch;

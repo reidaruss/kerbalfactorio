@@ -401,6 +401,27 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // for the blade-normal shading bend (GrassGlsl's `ns`, the second,
   // independent blend toward up spent only on ndl/skyView).
   'grassbend',
+  // RN-2201, standing rule 7, and the FIRST arm is the one that matters. A1
+  // measured that the sky-ambient weight which lights the terrain reaches no
+  // scatter prop at all ("two counts of fourteen"); PropSkyAmbient splices the
+  // terrain's own `ofAtmoScatter(...) * uSkyAmbient` into the stock prop and
+  // node programs from the SAME shared uniform objects. `propsky=0` computes
+  // the term and multiplies it by zero, so the PROGRAM is identical across the
+  // pair and only the value differs -- which is what makes the before/after a
+  // measurement of the term rather than of two different shaders. A number
+  // sweeps it.
+  'propsky',
+  // RN-2205, standing rule 7. The foliage translucency approximation, the
+  // charter's difference 5 ("no translucency approximation"), using A2's own
+  // wrap-plus-forward-lobe model and A2's own two constants so the carpet and
+  // the props glow into a low sun by the same amount. `foliagetrans=0` zeroes
+  // the gain with the program unchanged, so the pair is a value control.
+  'foliagetrans',
+  // RN-2204, standing rule 7. `propcullbiome=0` narrows per-instance frustum
+  // culling back to the understorey batches, which is the pre-widening build
+  // exactly, so it is the control for the 344,118-triangle drop. `propcull=0`
+  // still removes it from both layers and is the older, wider control.
+  'propcullbiome',
   // RN-102, standing rule 7. `leafvar=0` bakes the flat greyscale vertex
   // colour, i.e. the pre-RN-102 bytes exactly; the runtime pair lives on
   // `__ofProps.setLeafVar` because a reload cannot hold the frame equal.

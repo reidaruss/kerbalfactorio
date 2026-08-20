@@ -391,6 +391,35 @@ def _impostor(width, height, z0, trunk_r, trunk_h):
     return p
 
 
+
+def _card(width, height, z0, key):
+    """LOD3, THE IMPOSTOR RUNG (RN-2202): two crossed foliage quads and NOTHING
+    ELSE. Four triangles.
+
+    It is LOD2 minus the trunk stub, and dropping the trunk is the whole of the
+    saving: LOD2 is 12 triangles, of which 8 are a `seg=4` taper drawn for a
+    stem that, at the range this rung serves, is thinner than one pixel. The
+    canopy is not: a crown's silhouette against the sky is what says "forest"
+    from the air, and that is what these four triangles keep.
+
+    IT IS A REAL RUNG AND NOT A FALLBACK, so it is fitted by the SAME single
+    transform every other mesh in this file is fitted by (`main` computes it
+    once from Full_LOD0 and replays it), which is what makes the card land on
+    the crown the finer rungs actually occupy rather than on a box somebody
+    typed. The distance ladder is the client's (`NODE_LOD3_M`); this file only
+    guarantees the silhouette.
+
+    OF_Leaf, `quad_card_uvs`, both already in this asset's role order and its
+    `double_sided_ok` list -- so no texgen family, no `ROLE_FAMILY` row and no
+    material-count change, which is why the rung costs nothing but its own four
+    triangles.
+    """
+    p = hc.Parts()
+    v, f, sm = hc.crossed_quads(width, height, z0=z0)
+    p.add(v, f, sm, "Leaf", uvs=pc.quad_card_uvs(2, key))
+    return p
+
+
 def half_lod0():
     """Half depletion: the lower skirt is stripped, what is left is a shorter
     band of blades with a dead crown above it. The two LeafDry tapers stay
@@ -476,13 +505,20 @@ def stump_lod1():
 
 VARIANTS = (
     ("Full", (full_lod0, full_lod1,
-              lambda: _impostor(2.30, 4.70, 1.85, 0.20, 2.20))),
+              lambda: _impostor(2.30, 4.70, 1.85, 0.20, 2.20),
+              lambda: _card(2.30, 4.70, 1.85, 23001))),
     ("Half", (half_lod0, half_lod1,
-              lambda: _impostor(1.70, 4.20, 2.20, 0.20, 2.50))),
+              lambda: _impostor(1.70, 4.20, 2.20, 0.20, 2.50),
+              lambda: _card(1.70, 4.20, 2.20, 23002))),
     ("Low", (low_lod0, low_lod1,
-             lambda: _impostor(0.80, 1.40, 5.00, 0.20, 5.20))),
+             lambda: _impostor(0.80, 1.40, 5.00, 0.20, 5.20),
+             lambda: _card(0.80, 1.40, 5.00, 23003))),
+    # The stump has no canopy to impostor and is 0.62 m tall, so its far rungs
+    # are its LOD1 unchanged. The client's ladder would have walked down to it
+    # anyway; naming it keeps `lod_nodes` a complete grid rather than a grid
+    # with one hole nobody can tell from an omission.
     ("Stump", (stump_lod0, stump_lod1,
-               lambda: stump_lod1())),
+               lambda: stump_lod1(), lambda: stump_lod1())),
 )
 
 

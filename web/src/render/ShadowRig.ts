@@ -318,7 +318,12 @@ export class ShadowRig {
       // AND ITS NEAR WORKING DISTANCE, which is the other half of the screen
       // footprint (RN-696). Cascade 0 has no split below it, so the nearest a
       // caster can actually be stands in for one.
-      publishCascade(light.name, cam, texel, i === 0 ? NEAREST_CASTER_M : this.splits[i - 1]);
+      // ...AND ITS FAR WORKING DISTANCE (RN-2203), which is the split this
+      // cascade ends at. It is the only thing that can answer "can this cascade
+      // reach a caster at 420 m", and the far-shadow skip refuses to act
+      // without it rather than assuming a split table.
+      publishCascade(light.name, cam, texel,
+        i === 0 ? NEAREST_CASTER_M : this.splits[i - 1], this.splits[i]);
       // Bias in WORLD units has to scale with the cascade, or cascade 0 at
       // 11 mm per texel is offset by the same amount as cascade 2 at 200 mm and
       // the contact shadow detaches from the caster.
