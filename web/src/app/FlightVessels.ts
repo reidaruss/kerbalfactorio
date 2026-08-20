@@ -15,24 +15,34 @@
 // asked for: `fireStage` is a pure function of the tree (PH-17), so replaying k
 // presses reproduces exactly the hardware k presses produced, and a setter would
 // have let a save claim a stage index the tree does not agree with.
+//
+// BT-295 line-cap batch 3: this file crossed 400 lines and was split two ways.
+// FlightVesselHelpers.ts holds the six functions that touch none of this file's
+// own mutable state (baseOffsetOf, makeRecord, modeOf, whereOf, designIndex,
+// primeParkedTelemetry); FlightVesselHandoff.ts holds the three outward-facing
+// verbs whose only dependency on this file is calling its already-exported
+// demoteVessel/promoteVessel/syncPromoted (leaveVessel, resumeControl,
+// promoteOnBoot), imported one way with no cycle. This file keeps every module
+// `let` (designSource, lastHandle, refusedSnapshots, snapshots, lastTick,
+// handBacks) together with EVERY ONE of its writers, per the split rule: a
+// `let` cannot move away from the code that reassigns it, and here that turned
+// out to be almost every verb (watchVessels, snapshotDesign, releaseControl,
+// demoteVessel, promoteVessel, resetVesselWatch all write at least one of the
+// six), which is why the state stayed in one file rather than being carved
+// further.
 import { flightParts } from '../sim/FlightAbi.js';
-import { RAILS_DT, fitConic, poseFrom, registry, v3 } from '../sim/VesselRegistry.js';
-import type { VesselRecord, VesselWhere } from '../sim/VesselRegistry.js';
+import { poseFrom, registry, v3 } from '../sim/VesselRegistry.js';
 import { VesselDesign } from '../game/VesselDesign.js';
 import type { DesignJson } from '../game/VesselDesign.js';
 import type { FlightMode } from './FlightMode.js';
-// PH-76. The handoff's guard, imported from where it is PUBLISHED rather than
-// re-stated here. ResumeBoot.ts imports this file back, so the two form an ES
-// module cycle; it is safe and it is checked: both names are function
-// DECLARATIONS, so they are hoisted into the partial namespace, and neither
-// module calls the other at top level. Copying the predicate to break the cycle
-// would have made §5's contract have two authors, which is the failure the
-// contract exists to prevent.
-import { mayLeave, whyNotLeave } from './ResumeBoot.js';
 // PH-380. See `promoteVessel`: the station's un-flyability used to be a side
 // effect of `SpaceStation.emptyDesign()` and is a stated rule now that the
 // station carries a real design.
 import { isStation, stateOfDocked } from '../game/SpaceStation.js';
+import { baseOffsetOf, makeRecord, modeOf, whereOf, designIndex,
+  primeParkedTelemetry } from './FlightVesselHelpers.js';
+
+export { leaveVessel, resumeControl, promoteOnBoot } from './FlightVesselHandoff.js';
 
 /** The scratch designs promoted vessels are flying, one per promoted record.
  *  Held here because `FlightSession.refreshParts` reads the per-stage table off
@@ -57,12 +67,6 @@ let snapshots = 0;
 let lastTick = 0;
 let handBacks = 0;
 export function currentVesselTick(): number { return lastTick; }
-
-function baseOffsetOf(m: FlightMode): number {
-  let minY = 0;
-  for (const q of m.session.partRows) minY = Math.min(minY, q.originM[1]);
-  return -minY;
-}
 
 /**
  * THE DESIGN SNAPSHOT, AND WHY IT IS VERIFIED RATHER THAN TIMED.
@@ -137,33 +141,6 @@ export function watchVessels(m: FlightMode, tick: number): void {
   registry.promotedId = id;
 }
 
-function makeRecord(m: FlightMode, id: number, design: DesignJson,
-                    tick: number): VesselRecord {
-  const s = m.session;
-  return {
-    id, name: design.name || `vessel ${id}`, mode: 'parked', design,
-    // GP-650. THE BODY IT WAS ROLLED OUT ON, off the surface oracle, which is
-    // the client's live-body authority ("the thing that answers about the
-    // current body", SurfaceOracle.ts) and is RE-SEATED by `WorldSession.reboot`
-    // rather than copied at boot. A rocket rolled out on the moon is the moon's
-    // and the map must not draw it around Forge.
-    bodyId: m.d.oracle.body.bodyId,
-    fired: 0, fuel: [],
-    // `of_fl_create` deep-copies the design's tree, so at THIS instant the live
-    // handles ARE the design's, in the same order. Capturing them here is the
-    // only moment that equality is guaranteed, because the first staging
-    // removes parts and the correspondence stops being positional.
-    handles: m.session.partRows.map((q) => q.handle),
-    where: { kind: 'fixed', pos: v3(s.state.pos), vel: v3(s.state.vel) },
-    pose: poseFrom(s.state.forward, s.state.right, s.state.angVel,
-                   s.throttleValue, s.sasMode, s.commandDir),
-    clockS: 0, stampedTick: tick, status: s.status, metS: s.metS,
-    liftedOff: s.liftedOff, releases: s.releases, stagings: s.stagings,
-    maxQPa: s.maxQPa, onPad: s.onPad, padRadiusM: s.padRadiusM,
-    padUp: v3(s.padUp),
-  };
-}
-
 function disposeDesign(id: number): void {
   const d = designs.get(id);
   if (d !== undefined) { d.dispose(); designs.delete(id); }
@@ -202,47 +179,6 @@ export function syncPromoted(m: FlightMode | null, tick: number): void {
   rec.onPad = s.onPad; rec.padRadiusM = s.padRadiusM; rec.padUp = v3(s.padUp);
   rec.mode = modeOf(m);
   rec.where = whereOf(m, rec);
-}
-
-/**
- * WHICH OF THE THREE MODES THIS VESSEL IS IN, decided by `/core`'s own predicate
- * and never by a threshold held here (PH-65).
- *
- * `on_rails_eligible` is true exactly when no air and no thrust are acting, i.e.
- * exactly when flight.h and orbital.h agree bit for bit (PH-16). Asking it means
- * the boundary at which a vessel becomes propagatable is the same boundary at
- * which the two integrators become the same arithmetic, which is the strongest
- * form this decision can take. A client-side altitude test would have been a
- * second copy of the atmosphere ceiling.
- */
-function modeOf(m: FlightMode): VesselRecord['mode'] {
-  const s = m.session;
-  if (s.status === 'CLAMPED' || s.status === 'DOWN') return 'parked';
-  return s.onRails() ? 'rails' : 'frozen';
-}
-
-function whereOf(m: FlightMode, rec: VesselRecord): VesselWhere {
-  const s = m.session;
-  const pos = v3(s.state.pos), vel = v3(s.state.vel);
-  if (rec.mode !== 'rails') return { kind: 'fixed', pos, vel };
-  const mu = m.d.M._of_body_mu(m.d.bodyHandle);
-  const el = fitConic(m.d.M, pos, vel, mu, rec.clockS);
-  // A conic that would not fit is not a reason to lose the vessel. Falling back
-  // to the state vector holds it exactly where it is, which is FROZEN's answer,
-  // and the mode is corrected to say so rather than claiming rails it does not
-  // have. Silence here would be a vessel that reports on rails and never moves.
-  if (el === null) { rec.mode = 'frozen'; return { kind: 'fixed', pos, vel }; }
-  return { kind: 'conic', el };
-}
-
-/** live part handle -> design part index, off the record's own `handles` table.
- *  The design's part ORDER is what `fromJson` rebuilds in and is therefore what
- *  survives a save; a `/core` handle is not, so the table is the bridge between
- *  them and is refreshed whenever the design is rebuilt. */
-function designIndex(rec: VesselRecord): Map<number, number> {
-  const out = new Map<number, number>();
-  rec.handles.forEach((h, i) => out.set(h, i));
-  return out;
 }
 
 /**
@@ -394,133 +330,6 @@ export function promoteVessel(m: FlightMode, id: number, tick: number): boolean 
   m.rebuild();
   m.observer.syncToVessel();
   return true;
-}
-
-/**
- * PH-76. THE HANDOFF, OUTWARD. `leaveVessel` is `demoteVessel` WITH THE PUBLISHED
- * GUARD IN FRONT OF IT, and the guard is the whole difference between the two.
- *
- * `demoteVessel` is the mechanism and it refuses nothing, deliberately: a reload
- * must be able to park a vessel in ANY state, including frozen, because closing a
- * browser tab is not a choice the game gets to refuse (ResumeBoot.ts §5). This is
- * the VOLUNTARY handoff, and a voluntary one may not leave a vessel that no
- * arithmetic can advance. Leaving a frozen one gives you a rocket hanging
- * motionless mid-ascent for as long as you are away.
- *
- * THE SYNC BEFORE THE GUARD IS LOAD-BEARING AND IS NOT A TIDY-UP. `rec.mode` is
- * written by `syncPromoted` and by `makeRecord`, and `makeRecord` stamps
- * `'parked'` at roll-out. So a record carried by a vessel that has since launched
- * still SAYS parked until something syncs it, and `mayLeave` reading that stale
- * word would cheerfully wave a rocket under full thrust at 12 km out of the
- * world. Sync first, then ask. `demoteVessel` syncs again and that second call is
- * free: it is the same read of the same live sim one statement later.
- */
-export function leaveVessel(m: FlightMode, tick: number): boolean {
-  const rec = registry.promoted;
-  if (rec === null || !m.session.live) {
-    m.flash('no vessel to leave');
-    return false;
-  }
-  syncPromoted(m, tick);
-  if (!mayLeave(rec)) {
-    // NOTHING CHANGES on a refusal. Not the session, not `aboard`, not the
-    // record. A guard that half-applies is worse than no guard, because the
-    // player is then in a state neither branch was written for.
-    m.flash(whyNotLeave(rec));
-    return false;
-  }
-  return demoteVessel(m, tick) === rec.id;
-}
-
-/**
- * PH-76. THE HANDOFF, INWARD, and the inverse of `releaseControl`.
- *
- * TWO STEPS AND THEY ARE ORDERED. First the record becomes a live FlightSim
- * (`promoteVessel` restores the design, the stagings, the fuel, the state vector
- * and the pose), and ONLY THEN is the player seated in it. If the promote fails
- * the player is not seated at all: a half-seat, somebody strapped into a vessel
- * that does not exist, is the precise failure `releaseControl` was written to
- * close and that `reload.mjs` carries a standing assertion against. There is no
- * branch here where `aboard` becomes true without a live session behind it.
- *
- * IT SEATS THROUGH `takeControlRemote` AND NOT THROUGH `board`. The vessel being
- * resumed is typically a few hundred kilometres up, so the board key's range gate
- * can only refuse, and past its abandon range that same key rolls out a SECOND
- * rocket. FlightMode.ts explains why the gate stays and why this is a separate
- * verb rather than a widened one.
- *
- * IDEMPOTENT on a vessel that is already promoted AND already aboard: both halves
- * return true unchanged, so a double click costs one no-op rather than a demote
- * and a rebuild.
- */
-export function resumeControl(m: FlightMode, id: number, tick: number): boolean {
-  if (!promoteVessel(m, id, tick)) return false;
-  return m.takeControlRemote();
-}
-
-/**
- * PH-71. GIVE A RESTORED PARKED VESSEL REAL TELEMETRY, BECAUSE OTHERWISE IT IS
- * PH-20's LAUNCH-CLAMP BUG BACK, WITH A NEW CAUSE AND THE SAME SYMPTOM.
- *
- * `FlightSim::telemetry` is written by `step` and by nothing else, and a
- * promoted vessel with nobody aboard is NEVER STEPPED: `FlightSession.step` is
- * reached only through `VesselObserver.step`, which `ViewRouter` drives only
- * while the player is strapped in. So a rocket restored onto its pad publishes
- * `massKg` 0, therefore `currentTwr()` 0, therefore a clamp that can never
- * release, and every number on the HUD reads healthy. That is exactly the wall
- * Reid spent a day behind before GP-73 to GP-76, and handing it back with a
- * different cause would be worse than never having restored the vessel.
- *
- * The obvious repair was a zero-length step and it does not work: `of_fl_step`
- * guards `!(dt > 0.0)` and returns 0, so the call is silently a no-op. That
- * guard is correct and is not worth an ABI bump to relax.
- *
- * What DOES work is the clamp's own mechanism, which was built for this exact
- * problem: `stepClamped` takes a real step, then writes the pad pose back and
- * zeroes the velocity. With the throttle shut it is free, because a step with no
- * thrust and no motion burns no propellant. It is applied to PARKED vessels only
- * (CLAMPED and DOWN), and only because they are genuinely stationary, so zeroing
- * the velocity is a no-op rather than a lie. A vessel promoted in flight is NOT
- * primed: zeroing 2.3 km/s to make an instrument read would be destroying the
- * orbit to fix the gauge, and it needs no priming anyway, because promoting one
- * is something a player does in order to fly it and the first tick aboard steps
- * it for real.
- *
- * Once, at promote, and NOT every tick. An unattended parked vessel has nothing
- * to advance, so stepping it repeatedly would be simulating a thing that cannot
- * change and would run `clampTicks` up for ticks nobody was there for.
- */
-function primeParkedTelemetry(s: FlightMode['session'], throttle: number): void {
-  if (s.status !== 'CLAMPED' && s.status !== 'DOWN') return;
-  const was = s.status;
-  // DOWN borrows the clamped path deliberately: `step` on a DOWN vessel only
-  // re-samples and would leave the telemetry at zero, and an arrested vessel is
-  // as stationary as a clamped one, so the restore is equally honest there.
-  s.status = 'CLAMPED';
-  s.setThrottle(0);
-  s.step(RAILS_DT);
-  s.setThrottle(throttle);
-  s.status = was;
-}
-
-/**
- * BOOT: adopt the saved records, and promote AT MOST the parked one.
- *
- * A parked vessel is standing in the same world the player is standing in, so it
- * has to be drawn and boardable, and promoting it costs one FlightSim that does
- * almost nothing (a CLAMPED or DOWN session steps trivially). A vessel on rails
- * is not in the near scene at all, so promoting it would be paying for a
- * simulation nobody is looking at, which is the exact cost on-rails exists to
- * avoid. NOTHING PUTS THE PLAYER BACK INSIDE A VESSEL on a reload: that is the
- * control handoff and it is a later lane's (§5 of the seam).
- */
-export function promoteOnBoot(m: FlightMode | null, tick: number): number {
-  if (m === null) return 0;
-  for (const rec of registry.list()) {
-    if (rec.mode !== 'parked') continue;
-    return promoteVessel(m, rec.id, tick) ? rec.id : 0;
-  }
-  return 0;
 }
 
 export function vesselEngineReport(): Record<string, unknown> {
