@@ -10,7 +10,7 @@
 // materials are built, exactly as it did before the split, because the handle
 // is about the state and not about either material.
 
-import { ART_DEFAULT, fineAmpFromQuery, specAmpFromQuery } from './TerrainAmpQuery.js';
+import { ART_DEFAULT, fineAmpFromQuery, specAmpFromQuery} from './TerrainAmpQuery.js';
 import { horizonOccFromQuery, reliefCellFromQuery, reliefCellNoiseFromQuery,
   reliefGradFromQuery, reliefGradUvFromQuery, reliefSwingFromQuery }
   from './TerrainReliefQuery.js';
@@ -19,6 +19,7 @@ import { ART_COARSE_M, ART_FINE_M, ART_FINE_M_PRE1855, FINE_ALB, FINE_BUMP,
   REL_CELL_NOISE, RELIEF_FINE_M, RELIEF_FINE_M_PRE1855, RELIEF_GRAD_UV,
   REL_SWING_DEFAULT } from './TerrainArt.glsl.js';
 import type { TerrainUniformState } from './TerrainUniformState.js';
+import { terrainSplatHandle } from './TerrainSplatHandle.js';
 
 export function installTerrainArtHandle(s: TerrainUniformState): void {
   const { artAmp, wetBand, groundTex, groundAmp, reliefTex, reliefAmp,
@@ -353,5 +354,6 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
       const img = groundTex.value.image as { width?: number; height?: number } | null;
       return { w: img?.width ?? 0, h: img?.height ?? 0 };
     },
+    ...terrainSplatHandle(s),
   };
 }

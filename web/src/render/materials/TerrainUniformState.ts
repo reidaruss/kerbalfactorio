@@ -20,12 +20,15 @@ import { GROUND_RELIEF_MAP, GROUND_VALUE_MAP, groundTexture } from './GroundText
 import { ART_COARSE_M, ART_FINE_M, FINE_A, FINE_B, FINE_R, FINE_W,
   MID_A_M, MID_B_M, RELIEF_FINE_M } from './TerrainArt.glsl.js';
 import { artAmpFromQuery, fineAmpFromQuery, groundReliefAmpFromQuery,
+  splatAmpFromQuery,
   groundTexAmpFromQuery, midAmpFromQuery, specAmpFromQuery, wetBandFromQuery }
   from './TerrainAmpQuery.js';
 import { fineMFromQuery, horizonOccFromQuery, reliefCellFromQuery,
   reliefCellNoiseFromQuery, reliefGradFromQuery, reliefGradUvFromQuery,
   reliefSwingFromQuery } from './TerrainReliefQuery.js';
 import type { TerrainMaterialOptions } from './TerrainMaterialTypes.js';
+import { SPLAT_FADE_ALBEDO, SPLAT_FADE_NORMAL, SPLAT_MAPS }
+  from './TerrainSplat.js';
 
 /** Everything the program factory and the runtime handle share, by reference. */
 export type TerrainUniformState = ReturnType<typeof buildTerrainUniformState>;
@@ -170,6 +173,33 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
   const bounceLit: THREE.IUniform<number> = {
     value: new URLSearchParams(self.location.search).get('bouncelit') === '0' ? 0 : 1,
   };
+  // RN-2160. THE SPLAT. Three amplitudes (value, chroma, normal-and-
+  // roughness) on uFineAmp's precedent: they fail differently, so they have to
+  // be isolable separately and `?splat=0` is the one flag that kills all three
+  // at once for the before/after pair.
+  const splatAmp = splatAmpFromQuery();
+  // The two fade bands as one vec4, (albedoStart, albedoEnd, nrmStart, nrmEnd).
+  // NEITHER PAIR IS THIS LANE'S NUMBER: 35/75 is texW's own band and 30/60 is
+  // the relief bump's, each lifted with the argument that chose it (see
+  // TerrainSplat.ts clause C4). They are a uniform anyway, because the whole
+  // convergence claim is about where these reach zero and a claim nobody can
+  // sweep is a claim nobody can falsify.
+  const splatFade = ((): THREE.Vector4 => {
+    const v = new URLSearchParams(self.location.search).get('splatfade');
+    const n = (v ?? '').split(',').map(Number);
+    return (n.length === 4 && n.every((x) => Number.isFinite(x) && x > 0))
+      ? new THREE.Vector4(n[0], n[1], n[2], n[3])
+      : new THREE.Vector4(SPLAT_FADE_ALBEDO[0], SPLAT_FADE_ALBEDO[1],
+                          SPLAT_FADE_NORMAL[0], SPLAT_FADE_NORMAL[1]);
+  })();
+  // Six maps, ONE shared IUniform each out of GroundTextures' cache, and it
+  // must be the holder rather than a fresh { value } wrapper for that file's
+  // own stated reason: the texture arrives asynchronously and the loader
+  // reassigns `.value`, so a copy would leave one material holding the 1x1
+  // placeholder forever. Destructured into six NAMED locals rather than kept
+  // as an array, so TerrainProgram's destructure can name-check each one.
+  const [splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow] =
+    SPLAT_MAPS.map((f) => groundTexture(f));
   const wetBand = wetBandFromQuery(o.water);
   const wetDir = new THREE.Vector3(
     o.water?.dirX ?? 0, o.water?.dirY ?? 1, o.water?.dirZ ?? 0);
@@ -184,5 +214,7 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     fineLum, reliefGrad, reliefGradUv, artFineM, reliefFineM, artCoarseM,
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
+    splatAmp, splatFade,
+    splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,
   };
 }

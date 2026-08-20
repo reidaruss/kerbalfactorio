@@ -12,6 +12,8 @@
 import * as THREE from 'three';
 import { FINE_ALB, FINE_BUMP, MID_ALB } from './TerrainArt.glsl.js';
 import type { TerrainWaterBand } from './TerrainMaterialTypes.js';
+import { SPLAT_A_VALUE, SPLAT_A_CHROMA, SPLAT_A_NORMAL }
+  from './TerrainSplat.js';
 
 /**
  * SURFACE ART amplitudes (RN-45): macro colour variation, detail bump, rock
@@ -121,6 +123,28 @@ function ampParam(p: URLSearchParams, key: string, fallback: number): number {
   const v = p.get(key);
   const f = v === null ? NaN : Number(v);
   return Number.isFinite(f) ? f : fallback;
+}
+
+/**
+ * RN-2160. The SPLAT's three amplitudes, on `fineAmpFromQuery`'s pattern
+ * exactly, including RN-150's dead-default guard (`ampParam`, not
+ * `Number(p.get(...))`, because `Number(null)` is 0 and 0 is finite, which is
+ * how the RN-78 ground texture once shipped switched off).
+ *
+ * THREE knobs and not one, because they fail differently and a single switch
+ * could not tell the failures apart: too much VALUE is noise, too much CHROMA
+ * is a restyle of a twice-corrected palette, and too much NORMAL is a surface
+ * lit like something it is not. `?splat=0` kills all three, which is the one
+ * flag every before/after in this lane is taken one apart on.
+ */
+export function splatAmpFromQuery(): THREE.Vector3 {
+  const p = new URLSearchParams(self.location.search);
+  const all = p.get('splat') === '0' ? 0 : 1;
+  return new THREE.Vector3(
+    all * ampParam(p, 'splatval', SPLAT_A_VALUE),
+    all * ampParam(p, 'splatchroma', SPLAT_A_CHROMA),
+    all * ampParam(p, 'splatnrm', SPLAT_A_NORMAL),
+  );
 }
 
 export function groundTexAmpFromQuery(): number {

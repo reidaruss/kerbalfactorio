@@ -219,6 +219,18 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // Registered in the same commit that introduces them, per this list's own
   // rule and RN-152's scar.
   'groundmid', 'groundmidamp', 'groundmidm', 'groundmidlum', 'artcoarsem',
+  // RN-2160, the near-field SPLAT: six PBR material layers blended by slope,
+  // altitude and biome. `splat=0` removes all three of its halves at once and
+  // is the ONE FLAG every before/after in that lane is taken one apart on;
+  // `splatval=`, `splatchroma=` and `splatnrm=` sweep them separately, because
+  // an albedo that is too strong, a hue that is a restyle and a normal that
+  // lights the ground like something it is not are three different failures
+  // and one switch could not tell them apart. `splatfade=a,b,c,d` moves the
+  // two fade bands, which is what makes the convergence claim (the layers
+  // reach the palette exactly by 75 m) falsifiable rather than asserted.
+  // Registered in the same commit that introduces them, per this list's own
+  // rule and RN-152's scar.
+  'splat', 'splatval', 'splatchroma', 'splatnrm', 'splatfade',
   // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
   // night exactly); `starlightamp=` sweeps it.
   // RN-952, the DAYLIGHT floor underneath it, which had no control at all and

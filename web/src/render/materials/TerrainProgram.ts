@@ -36,7 +36,9 @@ export function makeTerrainMaterial(
     reliefAmp, biomeRelief, biomeGrainW, biomeTintW, specAmp, fineAmp,
     fineFreq, fineW, fineLum, reliefGrad, reliefGradUv, artFineM, reliefFineM,
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
-    horizonOcc, bounceLit, wetBand, wetDir, cascades, splits } = s;
+    horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
+    splatAmp, splatFade, splatGrass, splatDirt, splatRock, splatCliff,
+    splatScree, splatSnow } = s;
   // UniformsLib.lights is MANDATORY for a lights:true ShaderMaterial: three
   // writes ambientLightColor / directionalLights / directionalShadowMap
   // straight into material.uniforms and throws if the slots are missing.
@@ -87,6 +89,24 @@ export function makeTerrainMaterial(
     uReliefCellNoise: reliefCellNoise,
     uHorizonOcc: horizonOcc,
     uBounceLit: bounceLit,
+    // RN-2160. The splat. The two vectors are wrapped; the six samplers are
+    // passed THROUGH as the shared holders, exactly as uGroundTex is, so a map
+    // that finishes loading after the material is built reaches the near
+    // material and the far one in one assignment.
+    //
+    // The samplers are declared and bound for BOTH materials even though every
+    // consumer of them is inside `#ifndef OF_SCALED`. That is the established
+    // pattern in this file (uGroundRelief does the same) and it is free: three
+    // drops an unused uniform at link time, so the scaled program does not
+    // spend a texture unit on a layer it cannot reach.
+    uSplatAmp: { value: splatAmp },
+    uSplatFade: { value: splatFade },
+    uSplatGrass: splatGrass,
+    uSplatDirt: splatDirt,
+    uSplatRock: splatRock,
+    uSplatCliff: splatCliff,
+    uSplatScree: splatScree,
+    uSplatSnow: splatSnow,
   });
   const m = new THREE.ShaderMaterial({
     uniforms,

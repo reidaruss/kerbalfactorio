@@ -34,10 +34,23 @@
 //   vista        the horizon vista at eye level from a 4.7 km ridge.
 //   vistadawn    the same pose at a 5.7 degree sun.
 //   vistanoon    the same pose at the top of the day arc.
+// AND A SIXTH AT THAT SITE, RN-2160, which is one of RN-2065's own rejects
+// promoted because a later lane needed exactly the frame it was rejected for:
+//   mtnslope     the eye on a slope facing UPHILL, i.e. the steep substrate
+//                filling the frame. RN-2160's terrain splat is judged here,
+//                and it is a shot rather than an `--evalargs` override
+//                because an override is a pose that exists in one shell
+//                history: a verifier reproduced RN-2160's ratio at a guessed
+//                pose and a different absolute level.
 //   flyover      1,200 m over the spawn, the first-launch view.
 //   limb         120 km up, the orbit-to-surface frame.
 // The last two need a FLY view source and therefore their own `--scenario=`,
 // because the walking capsule discards `of.teleport`'s altitude argument:
+//
+// The splat lane's own pair, one flag apart on one build, fresh process each
+// (`--splat=0` is the before arm):
+//
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=walk --width=1600 --height=900 --evalfile=tools/smoke/probes/artframe.js --evalargs='{"shot":"mtnslope"}' | node tools/smoke/writeshot.mjs docs/screenshots/RN2160_mtnslope_after.png
 //
 //   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=surface \
 //     --width=1600 --height=900 \
@@ -468,6 +481,52 @@
       },
       why: 'the PLAINS MEADOW at a standing eye: hero frame 1 of the fidelity '
         + 'charter, the ground carpet and the shade inside it',
+    },
+    // AND A SIXTH AT THIS SITE, RN-2160, WHICH IS A REJECT PROMOTED.
+    //
+    // RN-2065 swept six framings to pick the vista and recorded `mtn at yaw
+    // 300` as one of five REJECTS: "both stand the eye on a slope facing
+    // uphill", which is the wrong frame for a horizon vista and was kept only
+    // as a note about picking a viewpoint by elevation. It is exactly the
+    // RIGHT frame for a question that had not been asked yet, which is what a
+    // STEEP SUBSTRATE is made of, and RN-2160's splat is the first term whose
+    // subject is that surface. So the reject is promoted to a shot rather than
+    // re-derived, and the reason it is a shot at all is a process one: RN-2160
+    // took this frame by overriding `vista` on the command line
+    // (`--evalargs='{"shot":"vista","yaw":300,"pitch":-8}'`), which photographs
+    // fine and RECORDS NOTHING. A fresh-context verifier reproduced that lane's
+    // published RATIO at a guessed pose and a different absolute LEVEL, which
+    // is the whole failure: an ad-hoc override is a pose that exists in one
+    // shell history. THE FILE'S OWN HEADER RULE IS "reproducible to the pose",
+    // and an `--evalargs` override is not a pose, it is a rumour about one.
+    //
+    // THE RECTANGLES ARE `vista`'s FRACTIONS TO THE DIGIT, deliberately, so the
+    // RN2160_mtnslope frames already committed remain readable against this row
+    // rather than being orphaned by it. THREE OF THEM ARE RENAMED AND NOT
+    // MOVED, because at yaw 300 the slope fills the frame and the boxes
+    // `vista` calls `skyL`, `skyR` and `skyHz` land on GROUND here. A rectangle
+    // whose name asserts a subject it does not contain is the shape of defect
+    // section 2.1's own notes keep finding, and renaming costs nothing while
+    // leaving them would have published three "sky" luminances measured off a
+    // mountainside. `hzBand`, `mid`, `nearG` and `box` keep their names because
+    // at this pose they still mean what they say: `hzBand` is the far ridge
+    // over the shoulder of the slope, `mid` the middle distance, `nearG` the
+    // ground at the feet, and it is `nearG` that RN-2163's pair is quoted on.
+    mtnslope: {
+      scenario: 'walk', needsSandbox: false,
+      lat: 2.036, lon: 144.056, yaw: 300, pitch: -8,
+      sunDot: 0.70, sunTol: 0.06,
+      box: [0.2500, 0.4600, 0.7500, 0.6000],
+      extra: {
+        upL: [0.0500, 0.1000, 0.2000, 0.2000],
+        upR: [0.8000, 0.1000, 0.9500, 0.2000],
+        upC: [0.4000, 0.3300, 0.6000, 0.3800],
+        hzBand: [0.0500, 0.4600, 0.2500, 0.5600],
+        mid: [0.4000, 0.5400, 0.7000, 0.6000],
+        nearG: [0.2000, 0.7100, 0.8000, 0.7600],
+      },
+      why: 'the eye on a MOUNTAIN SLOPE facing uphill: the steep-substrate '
+        + 'frame, where the terrain material has to carry the whole picture',
     },
     // THE TWO FLY POSES, AND THEY NEED A DIFFERENT SCENARIO, WHICH IS THE
     // WHOLE REASON THIS FILE HAD NONE.
@@ -1294,8 +1353,24 @@
   // old spawn drifted 1,704.789 m and changed biome without anything noticing.
   // If this ridge ever moves, `setup.eyeAltM` says so in the report instead of
   // the pose quietly becoming a different pose.
+  // RN-2160. `mtnslope` JOINS THIS BRANCH RATHER THAN GETTING ITS OWN, because
+  // it is the same site, the same teleport, the same convergence gate and the
+  // same sun pin, differing only in the two manifest fields that name a
+  // framing. Splitting it out would be a second copy of the one setup that
+  // publishes `eyeAltM`, and this ridge is exactly the site whose drift that
+  // field exists to catch.
+  //
+  // AND THIS LINE IS A TRAP, WHICH IS WHY IT IS COMMENTED. The pose dispatch
+  // below is a flat chain of `if (name === ...)` blocks with NO final else, so
+  // a shot that is in `SHOTS` and in none of these blocks IS NEVER POSED: it
+  // photographs wherever the walk scenario spawned, and every field in the
+  // report -- `valid`, the rectangles, the sun solve, the render stats --
+  // reads perfectly correct about the wrong place. `mtnslope` did exactly that
+  // on its first run (`setup: {}`, `vramMB` 82.4 against the site's own 104.2)
+  // and the only reason it was caught is that a lane happened to know what the
+  // right numbers looked like. ADDING A SHOT MEANS ADDING IT HERE TOO.
   if (name === 'vista' || name === 'vistadawn' || name === 'vistanoon'
-      || name === 'meadow') {
+      || name === 'meadow' || name === 'mtnslope') {
     const w0 = of.world();
     of.teleport(A.lat ?? S.lat, A.lon ?? S.lon, 2.0);
     await sleep(2.0);
