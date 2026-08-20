@@ -61,6 +61,18 @@
 // Past 75 m the ground is bit-for-bit what it is today. That is the whole
 // harmony claim and it is checkable with one flag (`?splat=0`).
 //
+// C4 IS A BACKSTOP AND NOT THE MECHANISM, and that is worth stating plainly
+// because the first version of this comment implied otherwise. A one-variable
+// control (`?splatfade=300,600,300,600`, one flag apart on one build) moved the
+// 35 m strip's contrast by 0.00 and the 27 m strip's by 0.07 counts, i.e. the
+// bands were doing nothing at all: C1 gets there first, because a fully
+// minified sample IS the identity and the mip chain reaches that around 30 m
+// where the pixel footprint passes a metre. The bands still ship, because a
+// backstop that is never reached costs one smoothstep and is the thing that
+// holds if a future tile scale or a coarser rung changes where minification
+// lands. SPLAT_COARSE_RATIO below is the answer to the range that control
+// exposed.
+//
 // ---------------------------------------------------------------------------
 // THE UV SCHEME, AND THE SEAM PHASE 2 EXTENDS ALONG
 // ---------------------------------------------------------------------------
@@ -93,8 +105,12 @@ export interface SplatLayer {
   readonly tileM: number;
   /** Repeats per max-depth quad. INTEGER, for RN-78's chunk-edge seam. */
   readonly repeats: number;
+  /** The COARSE rung's repeats. Also integer, also for the seam. */
+  readonly coarseRepeats: number;
   /** What `repeats` actually lands the tile at, after the rounding. */
   readonly actualTileM: number;
+  /** What `coarseRepeats` lands the coarse tile at. */
+  readonly coarseTileM: number;
   /** Rec.709-unit-luminance hue multiplier. See C3. */
   readonly hue: THREE.Vector3;
   /** Roughness the layer converges to when its detail channel minifies. */
@@ -178,17 +194,72 @@ function build(): SplatLayer[] {
     // round, because a tile larger than the quad would round to zero repeats
     // and a zero repeat is a constant-colour chunk, which is a silent failure.
     const repeats = Math.max(1, Math.round(FINE_CHUNK_M / a.tileM));
+    const coarseRepeats = Math.max(1, Math.round(repeats / SPLAT_COARSE_RATIO));
     return {
       name: a.name,
       file: `of_terrain_${a.name}.png`,
       tileM: a.tileM,
       repeats,
+      coarseRepeats,
       actualTileM: FINE_CHUNK_M / repeats,
+      coarseTileM: FINE_CHUNK_M / coarseRepeats,
       hue: new THREE.Vector3(a.hueRaw[0] / y, a.hueRaw[1] / y, a.hueRaw[2] / y),
       roughBase: a.roughBase,
     };
   });
 }
+
+/**
+ * THE COARSE RUNG, and it exists because a one-variable control said the fade
+ * bands were not doing the job anyone thought they were doing.
+ *
+ * WHAT WAS MEASURED (RN-2160, the `midfield` pose at the plains site, three
+ * arms one flag apart on one build). With the splat off, the 27 m strip reads
+ * iqr 12.34; with it on, 18.06, a +46 per cent recovery of mid-field contrast.
+ * At 35 m the same term reads 17.92 off and 17.84 on: NOTHING. Pushing the
+ * fade band out to `?splatfade=300,600,300,600` moved that 17.84 to 17.84 and
+ * the 27 m figure to 17.99, i.e. inside the noise of the arm it was taken
+ * against. So the fade is not what retires this term at range. THE MIP CHAIN
+ * IS, and it gets there first: at 35 m the pixel footprint is 0.957 m against
+ * a 2 mm texel, which is mip 8, and clause C1 guarantees that a fully minified
+ * sample IS the identity. The convergence rule was doing its job about forty
+ * metres earlier than the fade band was written for.
+ *
+ * That is the right behaviour and the wrong range. The fix is the standard one
+ * and it is also exactly what phase 2 extends: a SECOND, COARSER TAP of the
+ * same six textures, cross-faded in on the pixel footprint as the fine tap
+ * minifies. A ratio of 4 puts the coarse rung's tile at 7.2 to 14.5 m, whose
+ * content survives to the far end of the near field, and it costs six more
+ * fetches inside the same draw call rather than any new state.
+ *
+ * WHY A SECOND TAP AND NOT A BIGGER TILE. A single 8 m tile would read at
+ * range and be visibly soft underfoot: 1024 px over 8 m is 128 texels/m
+ * against the 512 texels/m ASSET-SPECS 2.8 asks for at first-person range, and
+ * the near field is where a player's face is. Two rungs keep both ends.
+ *
+ * WHY NOT A THIRD RUNG NOW. That IS phase 2 (the audit's 75 to 600 m hole),
+ * and it wants a different coordinate as well as a different scale: past the
+ * max-depth ring the chunk UV's world size doubles per LOD step, so the far
+ * rung needs world-gen's per-chunk float64 phase attribute. Adding a third
+ * rung on the chunk UV would put a scale step in the exact band phase 2 has to
+ * make seamless.
+ */
+export const SPLAT_COARSE_RATIO = 4;
+
+/**
+ * The footprint band, in METRES of pixel footprint, over which the coarse rung
+ * takes over from the fine one.
+ *
+ * KEYED ON footM AND NOT ON dist, which is the rule the whole material already
+ * follows and for the reason TerrainFragSetup states: at a grazing pose the
+ * dFdy arm binds and grows as the SQUARE of the range, so a distance-keyed
+ * handover would swap rungs at one range looking down and a completely
+ * different one looking along the ground. The measured footprints at the
+ * `midfield` pose are 0.257 m at 18 m, 0.572 m at 27 m and 0.957 m at 35 m, so
+ * 0.15 to 0.60 puts the crossover through the band where the fine rung's own
+ * contrast was measured collapsing.
+ */
+export const SPLAT_COARSE_FOOT: readonly [number, number] = [0.15, 0.60];
 
 /** The six layers, in of_terrain.json's `order`. */
 export const SPLAT_LAYERS: ReadonlyArray<SplatLayer> = build();

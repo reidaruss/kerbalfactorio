@@ -233,12 +233,28 @@ export const TERRAIN_FRAG_ALBEDO = /* glsl */`
           // reorder float ops inside a shipped term to suit a new one.
           ofSplatW(coverSel, flat_, vRelief / max(1.0, uMaxRelief), 0.0,
                    splatVeg, splatPatch, splatWA, splatWB);
-          vec4 sG = texture2D(uSplatGrass, wuv * OF_SPLAT_REP0);
-          vec4 sD = texture2D(uSplatDirt,  wuv * OF_SPLAT_REP1);
-          vec4 sR = texture2D(uSplatRock,  wuv * OF_SPLAT_REP2);
-          vec4 sC = texture2D(uSplatCliff, wuv * OF_SPLAT_REP3);
-          vec4 sS = texture2D(uSplatScree, wuv * OF_SPLAT_REP4);
-          vec4 sW = texture2D(uSplatSnow,  wuv * OF_SPLAT_REP5);
+          // TWO RUNGS PER LAYER, blended on the PIXEL FOOTPRINT, and the
+          // second rung is here because a one-variable control proved the fade
+          // bands were not what retires this term. See TerrainSplat.ts's
+          // SPLAT_COARSE_RATIO for the three measured arms; the short version
+          // is that the fine rung's 2 mm texel is fully minified by about 30 m
+          // and clause C1 then guarantees it contributes exactly nothing, so
+          // without a coarser rung the material would stop at a third of the
+          // near field. The blend factor is computed ONCE here rather than six
+          // times, because it depends on nothing per-layer.
+          float ct = smoothstep(OF_SPLAT_CFOOT0, OF_SPLAT_CFOOT1, footM);
+          vec4 sG = ofSplatTap(texture2D(uSplatGrass, wuv * OF_SPLAT_REP0),
+                               texture2D(uSplatGrass, wuv * OF_SPLAT_CREP0), ct);
+          vec4 sD = ofSplatTap(texture2D(uSplatDirt,  wuv * OF_SPLAT_REP1),
+                               texture2D(uSplatDirt,  wuv * OF_SPLAT_CREP1), ct);
+          vec4 sR = ofSplatTap(texture2D(uSplatRock,  wuv * OF_SPLAT_REP2),
+                               texture2D(uSplatRock,  wuv * OF_SPLAT_CREP2), ct);
+          vec4 sC = ofSplatTap(texture2D(uSplatCliff, wuv * OF_SPLAT_REP3),
+                               texture2D(uSplatCliff, wuv * OF_SPLAT_CREP3), ct);
+          vec4 sS = ofSplatTap(texture2D(uSplatScree, wuv * OF_SPLAT_REP4),
+                               texture2D(uSplatScree, wuv * OF_SPLAT_CREP4), ct);
+          vec4 sW = ofSplatTap(texture2D(uSplatSnow,  wuv * OF_SPLAT_REP5),
+                               texture2D(uSplatSnow,  wuv * OF_SPLAT_CREP5), ct);
           float sval = ofSplatVal(sG, sD, sR, sC, sS, sW, splatWA, splatWB);
           splatNxy = ofSplatNrm(sG, sD, sR, sC, sS, sW, splatWA, splatWB);
           splatRough = ofSplatRough(sG, sD, sR, sC, sS, sW, splatWA, splatWB);
@@ -327,12 +343,19 @@ export const TERRAIN_FRAG_ALBEDO = /* glsl */`
           vec2 swuv = vChunkUv + ofSplatWarp(vChunkUv);
           ofSplatW(coverSel, flat_, band, snow, sVeg, sPatch,
                    splatWA, splatWB);
-          vec4 tG = texture2D(uSplatGrass, swuv * OF_SPLAT_REP0);
-          vec4 tD = texture2D(uSplatDirt,  swuv * OF_SPLAT_REP1);
-          vec4 tR = texture2D(uSplatRock,  swuv * OF_SPLAT_REP2);
-          vec4 tC = texture2D(uSplatCliff, swuv * OF_SPLAT_REP3);
-          vec4 tS = texture2D(uSplatScree, swuv * OF_SPLAT_REP4);
-          vec4 tW = texture2D(uSplatSnow,  swuv * OF_SPLAT_REP5);
+          float sct = smoothstep(OF_SPLAT_CFOOT0, OF_SPLAT_CFOOT1, footM);
+          vec4 tG = ofSplatTap(texture2D(uSplatGrass, swuv * OF_SPLAT_REP0),
+                               texture2D(uSplatGrass, swuv * OF_SPLAT_CREP0), sct);
+          vec4 tD = ofSplatTap(texture2D(uSplatDirt,  swuv * OF_SPLAT_REP1),
+                               texture2D(uSplatDirt,  swuv * OF_SPLAT_CREP1), sct);
+          vec4 tR = ofSplatTap(texture2D(uSplatRock,  swuv * OF_SPLAT_REP2),
+                               texture2D(uSplatRock,  swuv * OF_SPLAT_CREP2), sct);
+          vec4 tC = ofSplatTap(texture2D(uSplatCliff, swuv * OF_SPLAT_REP3),
+                               texture2D(uSplatCliff, swuv * OF_SPLAT_CREP3), sct);
+          vec4 tS = ofSplatTap(texture2D(uSplatScree, swuv * OF_SPLAT_REP4),
+                               texture2D(uSplatScree, swuv * OF_SPLAT_CREP4), sct);
+          vec4 tW = ofSplatTap(texture2D(uSplatSnow,  swuv * OF_SPLAT_REP5),
+                               texture2D(uSplatSnow,  swuv * OF_SPLAT_CREP5), sct);
           splatNxy = ofSplatNrm(tG, tD, tR, tC, tS, tW, splatWA, splatWB);
           splatRough = ofSplatRough(tG, tD, tR, tC, tS, tW, splatWA, splatWB);
         }

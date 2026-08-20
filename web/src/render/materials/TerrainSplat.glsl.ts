@@ -69,8 +69,8 @@
 // C3 needs: a convex combination of unit-luminance hue vectors has unit
 // luminance, so the chroma term cannot move value.
 
-import { SPLAT_LAYERS, SPLAT_WARP_UV, SPLAT_WARP_REPEATS, SPLAT_PATCH_REPEATS }
-  from './TerrainSplat.js';
+import { SPLAT_COARSE_FOOT, SPLAT_LAYERS, SPLAT_PATCH_REPEATS,
+  SPLAT_WARP_REPEATS, SPLAT_WARP_UV } from './TerrainSplat.js';
 
 const f = (n: number): string => n.toFixed(5);
 const v3 = (v: { x: number; y: number; z: number }): string =>
@@ -83,7 +83,10 @@ const v3 = (v: { x: number; y: number; z: number }): string =>
  * on a number whose whole property is an exact identity (standing rule 11).
  */
 export const TERRAIN_SPLAT_PARS = SPLAT_LAYERS
-  .map((l, i) => `#define OF_SPLAT_REP${i} ${l.repeats.toFixed(1)}\n`).join('')
+  .map((l, i) => `#define OF_SPLAT_REP${i} ${l.repeats.toFixed(1)}\n`
+    + `#define OF_SPLAT_CREP${i} ${l.coarseRepeats.toFixed(1)}\n`).join('')
+  + `#define OF_SPLAT_CFOOT0 ${f(SPLAT_COARSE_FOOT[0])}\n`
+  + `#define OF_SPLAT_CFOOT1 ${f(SPLAT_COARSE_FOOT[1])}\n`
   + `#define OF_SPLAT_HUE_A mat3(${v3(SPLAT_LAYERS[0].hue)}, `
   + `${v3(SPLAT_LAYERS[1].hue)}, ${v3(SPLAT_LAYERS[2].hue)})\n`
   + `#define OF_SPLAT_HUE_B mat3(${v3(SPLAT_LAYERS[3].hue)}, `
@@ -113,6 +116,20 @@ export const TERRAIN_SPLAT = /* glsl */`
     float wy = ofArtVnoise2P(uv * OF_SPLAT_WARPP + vec2(0.37, 0.71),
                              OF_SPLAT_WARPP) - 0.5;
     return vec2(wx, wy) * OF_SPLAT_WARP;
+  }
+
+  // THE TWO-RUNG SAMPLE. One layer, two taps of the SAME texture at two repeat
+  // counts, blended on the pixel footprint. Every channel is linear and centred
+  // on 0.5, so mixing the raw vec4s before any of the combiners run is
+  // arithmetically identical to running the combiners twice and mixing their
+  // outputs, and it is six mixes instead of eighteen.
+  //
+  // The blend factor is computed ONCE by the caller and passed in, rather than
+  // recomputed per layer: it depends on nothing per-layer, and computing it six
+  // times would be six copies of one expression, which is the shape of bug
+  // TerrainFragSetup's hoisted footM note describes.
+  vec4 ofSplatTap(vec4 fineTap, vec4 coarseTap, float t) {
+    return mix(fineTap, coarseTap, t);
   }
 
   // THE WEIGHTS. Two vec3 out-parameters rather than a struct or six floats,

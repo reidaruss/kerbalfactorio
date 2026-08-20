@@ -198,11 +198,12 @@ MANIFEST_VERSION = 1
 # in the game combined.
 #
 # 2048 was considered and refused with a number rather than a feeling. RGBA8
-# with its mip chain is 1.333 * 4 * px^2 bytes, so a 2k layer is 22.4 MB and
-# six of them are 134 MB. The ceiling study measured 104 MB of a 260 MB budget
-# already spent, and 104 + 134 = 238 MB leaves 22 MB for every other texture
-# this project will ever add. At 1024 the six cost 33.6 MB, the total is 138 MB
-# of 260, and the density still clears the published target.
+# with its mip chain is 1.333 * 4 * px^2 bytes, so a 2k layer is 21.3 MiB and
+# six of them are 128 MiB. The ceiling study measured 104 MB of a 260 MB budget
+# already spent, and 104 + 128 = 232 leaves 28 MB for every other texture this
+# project will ever add. At 1024 the six cost 32.0 MiB (the manifest publishes
+# the exact byte count rather than this arithmetic), the total is 136 of 260,
+# and the density still clears the published target.
 SIZE = 1024
 
 # Percentile window the value and roughness remaps stretch to, per channel.
