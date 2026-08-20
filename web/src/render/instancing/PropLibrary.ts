@@ -14,7 +14,7 @@
 
 import * as THREE from 'three';
 import { loadGlb } from '../../assets/Loaders.js';
-import { SHARED_ATLAS } from '../../assets/Registry.js';
+import { CANOPY_ATLAS, SHARED_ATLAS } from '../../assets/Registry.js';
 import { LAYER_PROPS } from '../Scenes.js';
 import { attachFarShadowSkip } from '../ShadowLod.js';
 import { isFoliageMaterial } from '../ScatterLook.js';
@@ -58,6 +58,40 @@ export type { PropPart } from './PropLods.js';
  * layers separately, so a shortfall in one can no longer hide inside the other.
  */
 const DETAIL_SUFFIX = ':detail';
+
+/**
+ * RN-2233. THE FAR CANOPY'S OWN BATCH KEY, and it is `DETAIL_SUFFIX`'s argument
+ * word for word with one number changed.
+ *
+ * A canopy tree never enters a shadow cascade, and that is now a THEOREM rather
+ * than a hope: `ScatterTuning.CANOPY_NEAR_M` is 550 m, the tier is exactly zero
+ * inside it, and `ShadowRig`'s furthest cascade split is 300 m. So every canopy
+ * instance in the world is beyond every cascade, always, and the whole shadow
+ * pass over them is arithmetic with no image attached. The invariant is
+ * ASSERTED at boot (`BootBodyScope`) rather than trusted, because it is two
+ * numbers in two files and either could move.
+ *
+ * WHY A SUFFIX AND NOT `attachFarShadowSkip`. That function already existed for
+ * this and it is the right tool at the scale it was built for: it hides the
+ * impostor rung per instance inside `onBeforeShadow`. Per INSTANCE, per
+ * CASCADE, per FRAME -- a `getGeometryIdAt` and a `setVisibleAt` each, then a
+ * `_visibilityChanged` that re-forms the batch's draw list. At RN-2202's
+ * few-thousand canopy that is invisible. At the 4.2 km reach it is 22,945 trees
+ * on four material parts, so 91,780 instances walked three times a frame, and
+ * the measured flyover was 21.4 ms of near pass for 322,312 triangles -- a
+ * frame whose GPU work is a tenth of the forestfloor's and which cost seven
+ * times the frame. `castShadow = false` on the mesh means the cascade never
+ * calls the hook at all, so the walk does not happen rather than happening
+ * cheaply.
+ *
+ * Same two consequences the detail suffix gets for free and both are wanted:
+ * the canopy gets its OWN pool ceiling instead of sharing `OF_Bark` and the
+ * three leaf materials with the near biome props, and `stats().perMaterial`
+ * reports the far tier separately, so a shortfall in one layer can no longer
+ * hide inside the other. `?canopy=0` omits the atlas url entirely, so these
+ * batches are never created and the suffix never appears.
+ */
+const CANOPY_SUFFIX = ':canopy';
 
 interface Batch {
   mesh: THREE.BatchedMesh;
@@ -160,8 +194,14 @@ export class PropLibrary {
     // and costs the caller nothing. `?detail=0` simply omits the url, so the
     // detail batches are never created and the suffix never appears.
     const detail = new Set<string>(SHARED_ATLAS);
+    // RN-2233. The canopy atlas reads its identity from `CANOPY_ATLAS` on the
+    // identical terms, and it is the same one-place answer: `BootObserver`
+    // already composes the url list out of that constant.
+    const canopy = new Set<string>(CANOPY_ATLAS);
     for (let i = 0; i < gltfs.length; ++i) {
-      lib.register(gltfs[i].scene, detail.has(unique[i]) ? DETAIL_SUFFIX : '');
+      const suffix = detail.has(unique[i]) ? DETAIL_SUFFIX
+        : canopy.has(unique[i]) ? CANOPY_SUFFIX : '';
+      lib.register(gltfs[i].scene, suffix);
     }
     for (const b of lib.batches.values()) scene.add(b.mesh);
     // RN-2203. THE IMPOSTOR RUNG DOES NOT CAST. Installed here rather than in
@@ -220,6 +260,13 @@ export class PropLibrary {
         // was measured OFF for the biome props at 9,340 instances in the NEAR
         // pass, and that measurement never looked at the three shadow cascades,
         // where the same batch is swept again with a box a fraction the size.
+        // RN-2233. `suffix === ''` is now TWO refusals rather than one: the
+        // understorey does not cast because a 0.36 m card's shadow is a few
+        // pixels under a tuft already casting one, and the far canopy does not
+        // cast because `CANOPY_NEAR_M` (550 m) puts every one of its instances
+        // outside `ShadowRig`'s furthest cascade (300 m). Two different
+        // arguments, one predicate; see `CANOPY_SUFFIX` for the second and for
+        // the boot assertion that keeps it true.
         const batch = this.batchFor(key, mat, near.mesh.material as THREE.Material,
           suffix === '',
           this.cullDetail && (suffix !== '' || this.cullBiome));

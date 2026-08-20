@@ -218,6 +218,38 @@ export const DETAIL_FAR_GROW = 0.32;
  * mechanism anywhere in `web/src/render`). That is a rendering-lane ask and it
  * is recorded as one rather than half-built here.
  */
+/**
+ * How far trees exist around the player, metres, and the number this pass is
+ * judged on. Swept from a URL (`?trees=`) because cost goes as its SQUARE and
+ * the shipping value has to be the largest ring the frame budget holds.
+ *
+ * THE RING HAS A HARD EDGE AND THAT IS DELIBERATE. The retired canopy tier
+ * thinned its density from 300 m outward (`canopyDistanceWeight`), which made
+ * the boundary invisible at the cost of making a tree's EXISTENCE a function of
+ * how far away the player was standing when its chunk was built. A harvest node
+ * cannot pay that: it is a thing you can chop, so it must be there before you
+ * decide to walk to it. Uniform density to the edge is the only honest choice,
+ * and the edge is softened by TREE_EDGE_WANDER_M below rather than by a fade.
+ */
+export const TREE_RADIUS_M = 620;
+
+/**
+ * The ring's radius is displaced by a smooth world-space field by up to this
+ * many metres, so the boundary is a ragged margin rather than a circle centred
+ * on the player. Same argument as `TREELINE_WANDER_M` one tier up: without it
+ * the eye finds the shape immediately, and a circle that follows you is worse
+ * than a contour line because it is obviously about you.
+ *
+ * It cannot remove the pop, only the geometry of it. A true horizon treeline
+ * needs the far-field impostor layer WG-63 already asked rendering for.
+ */
+export const TREE_EDGE_WANDER_M = 70;
+
+/**
+ * Lattice cell size, metres of ground per side. Larger than the rocks' 24 m
+ * because the ring is thirteen times the area and the scan is per cell: at 28 m
+ * a 620 m ring is about 1,540 cells against the rock ring's 154.
+ */
 export const CANOPY_RADIUS_M = 620;
 /**
  * Inside this the canopy is at full density; from here to `CANOPY_RADIUS_M` it
@@ -401,14 +433,204 @@ export const CANOPY_FLOOR_W = 0.10;
 export const CANOPY_SHADE = 0.45;
 
 /**
- * Canopy weight from a cell's distance to the eye, the outer-edge gradient.
- * A pure function of distance so it reads next to `detailWeight`, which is the
- * same shape one tier down and for the same reason.
+ * RN-2228. WHERE THE CANOPY TIER BEGINS, and it is the harvest ring's own
+ * outer margin rather than a number of its own.
+ *
+ * Reid's ruling is that every tree a player can reach is minable, and
+ * `TreeField` delivers exactly that out to `TREE_RADIUS_M` with a ragged edge
+ * `TREE_EDGE_WANDER_M` wide. What it cannot deliver is the horizon: a harvest
+ * tree is a /core node with a `Placed` record and a per-frame matrix compose,
+ * so the ring is bounded by a per-frame cost that grows as its AREA, and
+ * `TREE_RADIUS_M`'s own docstring says the shipping value is the largest ring
+ * the frame budget holds. `CANOPY_RADIUS_M`'s docstring says the same thing
+ * from the other side and names the answer: "a horizon treeline needs a
+ * far-field impostor layer, and this client has none". RN-2202 built one.
+ *
+ * So the two tiers are ONE forest cut at one radius. Inside `CANOPY_NEAR_M`
+ * the canopy is exactly zero and every tree is minable; above
+ * `CANOPY_NEAR_FULL_M` it is at full density and no harvest node can reach;
+ * between them each fades through the other. The band IS the wander band, so
+ * the crossfade is the statistical complement of the harvest ring's own ragged
+ * edge: `TreeField`'s membership test displaces its radius by a smooth field
+ * over +/-`TREE_EDGE_WANDER_M`, so the expected harvest coverage falls from 1
+ * at `TREE_RADIUS_M - wander` to 0 at `TREE_RADIUS_M + wander`, which is the
+ * ramp below read backwards. Total tree density across the seam is therefore
+ * about constant, which is what stops the seam being the thing the eye finds.
+ *
+ * It is NOT conditional on a harvest ring existing. Above
+ * `VEG_ORIGIN_MAX_ALT_M` there is no harvest ring to complement and the 690 m
+ * hole under the eye stays empty; from 12 km that is 3.3 degrees of the frame
+ * and it is accepted rather than special-cased, because a canopy whose
+ * existence depended on the observer is the one thing `canopyWeight`'s own
+ * comment says a forest must never be.
  */
-export function canopyDistanceWeight(d: number): number {
-  if (d <= CANOPY_FULL_M) return 1;
-  if (d >= CANOPY_RADIUS_M) return 0;
-  const t = (d - CANOPY_FULL_M) / (CANOPY_RADIUS_M - CANOPY_FULL_M);
+export const CANOPY_NEAR_M = TREE_RADIUS_M - TREE_EDGE_WANDER_M;
+export const CANOPY_NEAR_FULL_M = TREE_RADIUS_M + TREE_EDGE_WANDER_M;
+
+/**
+ * RN-2229. HOW FAR THE IMPOSTOR TIER REACHES, in metres of GROUND, and the
+ * number the aerial view lives or dies on.
+ *
+ * MEASURED AGAINST THE FLYOVER FRAME, not chosen. At 1,200 m with the shipped
+ * 60 degree vertical fov and pitch -14, the frame spans depression angles -16
+ * to +44 degrees, so the visible ground runs from 1,200/tan(44) = 1,243 m out
+ * to a 37,966 m horizon, and the frame CENTRE is 1,200/tan(14) = 4,813 m. The
+ * old 620 m ring is entirely BELOW the bottom edge of that frame, which is why
+ * RN-2225's tick fix alone left the flyover at 188,081 triangles to the digit
+ * with 683 harvest trees standing in the world: they were placed, and they
+ * were off screen.
+ *
+ * THE CEILING IS THE CHUNK LOD AND NOT THE TRIANGLE BUDGET. A cell only
+ * scatters if its chunk's vertex spacing is fine enough (`MAX_CELL_M`, and
+ * `CANOPY_MAX_CELL_M` below), and the streamer coarsens with distance, so
+ * there is a distance past which no chunk under the eye is admissible at any
+ * price. 4,200 m sits inside that limit at `CANOPY_MAX_CELL_M` and covers the
+ * frame from its bottom edge through its centre; beyond it the forest is the
+ * terrain material's own far tier (RN-2195), which is the right instrument out
+ * there because a 12 m tree at 4,200 m is 3.1 pixels tall and an instance
+ * carrying three pixels is a colour, not a silhouette.
+ */
+export const CANOPY_FAR_RADIUS_M = 4200;
+
+/**
+ * RN-2234. THE REACH IS BOUNDED BY THE EYE'S HEIGHT, and this is the term that
+ * lets one radius serve a 1,200 m flyover and a 1.6 m walk without the second
+ * paying for the first.
+ *
+ * MEASURED, one flag apart, fresh process each, on this build:
+ *
+ *                    canopy trees   triangles   p50      budget (16.6 ms)
+ *   forestfloor  0          0       1,272,522   7.3 ms
+ *   forestfloor  3000  12,867       1,290,288   9.4 ms   inside
+ *   forestfloor  4200  55,297       1,591,457  20.7 ms   OVER
+ *   flyover      0          0         188,081   2.0 ms
+ *   flyover      3000   4,691         192,958   3.1 ms
+ *   flyover      4200  22,945         312,977   7.4 ms   inside
+ *
+ * The SAME 4,200 m radius is 7.4 ms from the air and 20.7 ms from the ground,
+ * and it buys almost nothing on the ground: the forestfloor `box` moved 22.82
+ * to 23.05, a quarter of a count, for 13.4 ms. That asymmetry is geometry and
+ * not tuning. From an eye at height h, ground at distance g is foreshortened by
+ * h/g, so the ground's screen area falls as h/g^3 while a tree standing on it
+ * falls as 1/g^2: the number of trees crowded into one pixel of ground grows as
+ * g/h. From 1.6 m, the 4 km ring is a sliver at the horizon holding forty
+ * thousand trees; from 1,200 m it is most of the frame.
+ *
+ * So the reach is proportional to the eye's height, which is the same shape and
+ * the same justification as `canopyDistanceWeight` -- a property of the VIEW,
+ * kept deliberately separate from `canopyWeight`, which is the property of the
+ * PLANET. No tree stops existing: what moves is how far the client bothers to
+ * materialise instances of one, exactly as `TREE_RADIUS_M` already is for the
+ * harvest ring.
+ *
+ * `CANOPY_REACH_PER_ALT` is 3.5 because 3.5 x 1,200 m is 4,200 m, i.e. it is
+ * `CANOPY_FAR_RADIUS_M` AT THE FLYOVER POSE and the ceiling therefore binds
+ * exactly where it was derived, rather than the two constants disagreeing about
+ * which one is in charge there.
+ *
+ * `CANOPY_GROUND_REACH_M` is the floor -- how far the tier reaches for an eye
+ * at ground level, where the altitude term gives essentially nothing -- and it
+ * is set by the SAME 16.6 ms budget, measured at the densest biome this world
+ * has. Forestfloor is Forest at 3,840 trees per km2, three times Hills, and it
+ * is the hero ground frame:
+ *
+ *   floor      canopy trees   triangles   p50
+ *   (off)               0     1,272,522   7.3 ms
+ *   2,000          12,778     1,294,255   9.2 ms   +1.9 ms
+ *   3,000          28,420     1,405,023  14.1 ms   +6.8 ms
+ *
+ * 2,000 is +26 per cent of the frame it is added to and 3,000 is +93 per cent,
+ * for a `box` that reads 23.05 in BOTH arms against the tier-off 22.82. From a
+ * 1.6 m eye the extra kilometre is a sliver at the horizon and it is not worth
+ * five milliseconds, which is the whole content of the altitude rule above,
+ * arriving from the cheap end.
+ */
+export const CANOPY_REACH_PER_ALT = 3.5;
+export const CANOPY_GROUND_REACH_M = 2000;
+
+/** The canopy's realised ground reach at eye height `altM`, metres. */
+export function canopyReachM(radiusM: number, altM: number): number {
+  if (radiusM <= 0) return 0;
+  const byAlt = Math.max(CANOPY_GROUND_REACH_M, CANOPY_REACH_PER_ALT * altM);
+  return Math.min(radiusM, byAlt);
+}
+
+/**
+ * RN-2230. THE COARSEST CHUNK THE CANOPY TIER WILL STAND ON, and why it is a
+ * SECOND constant rather than a bigger `MAX_CELL_M`.
+ *
+ * `MAX_CELL_M` (64) is the ground tiers' limit and it is right for them: it is
+ * derived from a depth-11 chunk under a WALKING player, and the ground cover,
+ * the understorey and the carpet (`GrassSample`) all read it. Raising it would
+ * admit 115 m chunks to three layers that have never been measured on one, for
+ * the benefit of a tier that is 3 km away. This constant is read by the canopy
+ * branch alone; `MAX_CELL_M` is untouched and every ground tier still refuses
+ * exactly the chunks it refused before.
+ *
+ * 128 admits the depth band one coarser (a depth-8 chunk on Forge is 3,681 m
+ * across, so 115.0 m per cell) and nothing beyond it. That band is resident
+ * from about 2.3 km of ground out, which is where 64 stops, and it is what
+ * takes the reach from roughly 2.3 km to past 4,200 m. The tier BELOW it is
+ * 230 m per cell, and it is refused for a reason rather than for tidiness: a
+ * prop is placed by bilinear interpolation inside one mesh cell, so the cell
+ * size IS the tree's positional quantisation, and 230 m of it puts a stand on
+ * the wrong side of a valley.
+ */
+export const CANOPY_MAX_CELL_M = 128;
+
+/**
+ * RN-2230. The hard clamp on `?canopy=`, derived from `CANOPY_MAX_CELL_M`
+ * rather than picked. On Forge (R = 6e5 m) a face root quad is pi*R/2 =
+ * 942,478 m, a depth-k quad is that over 2^k and its cell is a thirty-second
+ * of the quad, so a 128 m cell is depth 8 (3,681 m quad, 115.0 m cell). The
+ * streamer splits while `quadEdge / observerDist > splitRatio` (1.4), so
+ * depth 8 is the finest band resident out to 3,681 / 1.4 = 2,630 m of eye
+ * distance and depth 7 (230 m cells, refused) takes over past 5,259 m. A ring
+ * asked for more than that grows nothing beyond it and reports success, which
+ * is exactly the ceiling-that-passes failure the clamp exists to refuse.
+ */
+export const CANOPY_MAX_RADIUS_M = 5200;
+
+/** RN-2229. How many rebuild steps the canopy gradient is quantised into.
+ *  See `Scatter.canopyStepOf` for the trade this number is. */
+export const CANOPY_BANDS = 8;
+
+/**
+ * Canopy weight from a cell's GROUND distance to the eye: the near ramp that
+ * hands over from the harvest ring, and the outer gradient that hides the far
+ * edge. A pure function of distance so it reads next to `detailWeight`, which
+ * is the same shape one tier down and for the same reason.
+ *
+ * RN-2228. GROUND DISTANCE AND NOT THE DISTANCE TO THE EYE, which is the whole
+ * of the aerial defect. The caller used to pass the 3-D eye distance, so a
+ * radius R at altitude h covered a ground disc of only sqrt(R^2 - h^2): at the
+ * 1,200 m flyover the old 620 m radius covered a disc of sqrt(620^2 - 1200^2),
+ * which is not a real number -- the tier was switched off entirely by the
+ * altitude, everywhere, silently, and no counter said so because every cell it
+ * would have reported on failed the gate before it was counted.
+ *
+ * The fade now spans `CANOPY_NEAR_FULL_M` to `CANOPY_FAR_RADIUS_M`, which is
+ * 3,510 m and five times the old one. It has to be: the old 320 m fade was
+ * sized to hide a 620 m edge from a standing eye, and an edge seen from the
+ * air is seen along the ground rather than against the sky, so it needs a fade
+ * measured in the same units the eye reads it in. `CANOPY_EDGE_W` is unchanged
+ * and still 0.16 rather than 0, for its own stated reason: a linear fall to
+ * exactly zero puts the last tree AT the boundary and re-creates a fainter
+ * copy of the line.
+ */
+export function canopyDistanceWeight(g: number, reachM: number): number {
+  if (g <= CANOPY_NEAR_M) return 0;
+  if (g < CANOPY_NEAR_FULL_M) {
+    return (g - CANOPY_NEAR_M) / (CANOPY_NEAR_FULL_M - CANOPY_NEAR_M);
+  }
+  if (g >= reachM) return 0;
+  // RN-2234. The fade ends at the REALISED reach, not at the configured
+  // radius. Ending it at the radius while the reach is shorter would put the
+  // last tree at full weight against the cut, which is the hard ring this
+  // whole gradient exists to prevent -- and the reach is the shorter of the
+  // two at every eye height below the flyover's.
+  const span = Math.max(1, reachM - CANOPY_NEAR_FULL_M);
+  const t = Math.min(1, (g - CANOPY_NEAR_FULL_M) / span);
   return 1 + (CANOPY_EDGE_W - 1) * t;
 }
 

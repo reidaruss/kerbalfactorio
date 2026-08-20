@@ -406,7 +406,12 @@ export function registerSystems(s: Services, loop: Loop): void {
     // Scatter follows the EYE, not the origin: the floating origin is only
     // rebased every 4 km, so a radius measured from it would put the foliage
     // ring kilometres away from the player.
-    s.scatter.update(s.terrain.residentViews.values(), eye);
+    // RN-2228. The third argument is the eye's height above the designed
+    // surface, and it is the observer's own `altM` rather than a value derived
+    // here: it is the identical number the regime band and the sky are driven
+    // by, so the canopy's ground-distance conversion cannot disagree with them
+    // about how high the eye is. See `Scatter.groundDistM`.
+    s.scatter.update(s.terrain.residentViews.values(), eye, s.observer.altM);
     // RN-2145. The carpet, same views, same eye. The third argument is pixels
     // per radian (`domElement.height` IS the drawing buffer, so the device
     // ratio is already in it); the carpet's fade is in apparent size and is
@@ -441,5 +446,23 @@ export function registerSystems(s: Services, loop: Loop): void {
   // A capture is only allowed once the streamer has converged, the inbox is
   // empty and nothing is still dissolving in, which is what makes screenshots
   // reproducible instead of flaky.
-  loop.settleGate = () => s.terrain.report().converged;
+  //
+  // RN-2229. AND ONCE THE SCATTER'S OWN QUEUE IS EMPTY, which it was not, and
+  // this was an INSTRUMENT DEFECT for as long as the scatter's reach was small
+  // enough to hide it. `BUILDS_PER_UPDATE` is 1, so a resident chunk waits its
+  // turn to be sampled; converged terrain says every chunk has ARRIVED and
+  // says nothing about whether anything has been grown on it. Inside a 170 m
+  // ring that is two or three chunks and the queue drains inside the settle's
+  // own frames; over the canopy's 4,200 m disc it is eighteen, and the first
+  // flyover measured with the far tier on was captured with FIVE chunks
+  // scattered and THIRTEEN still queued, i.e. 28 per cent of a forest,
+  // reported as a converged frame. `scatterBacklog` was on the same page and
+  // nothing read it.
+  //
+  // The rebuild bands make this a real settle rather than a one-off fill: a
+  // chunk crossing a canopy step re-enters the queue, so the gate holds until
+  // the density every resident chunk carries is the density its CURRENT
+  // distance asks for.
+  loop.settleGate = () => s.terrain.report().converged
+    && s.scatter.stats().scatterBacklog === 0;
 }

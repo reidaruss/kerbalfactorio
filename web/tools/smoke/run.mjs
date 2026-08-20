@@ -417,6 +417,12 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // the props glow into a low sun by the same amount. `foliagetrans=0` zeroes
   // the gain with the program unchanged, so the pair is a value control.
   'foliagetrans',
+  // RN-2232. Aerial perspective on the props, the terrain's own two calls
+  // spliced onto the final colour at `<fog_fragment>`. `prophaze=0` is the
+  // value control (same program, term multiplied by zero) and it is the arm
+  // that shows why a distant instanced forest without it reads as pepper.
+  'prophaze',
+
   // RN-2204, standing rule 7. `propcullbiome=0` narrows per-instance frustum
   // culling back to the understorey batches, which is the pre-widening build
   // exactly, so it is the control for the 344,118-triangle drop. `propcull=0`

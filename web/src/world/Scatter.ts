@@ -32,7 +32,7 @@ import type { WaterOracle } from './WaterOracle.js';
 import {
   CELLS, MAX_CELL_M, BUILDS_PER_UPDATE, MAX_PER_CHUNK,
   RADIUS_M, DETAIL_RADIUS_M, DETAIL_FULL_M, tierOf, type Tier,
-  CANOPY_FULL_M,
+  CANOPY_FULL_M, CANOPY_MAX_CELL_M, CANOPY_BANDS, canopyReachM,
 } from './ScatterTuning.js';
 import { CONTACT_CARDS } from '../render/ScatterLook.js';
 import { PropEmitter } from './ScatterEmit.js';
@@ -43,17 +43,49 @@ import { sampleChunk, type ScatterSampleDeps } from './ScatterSample.js';
 
 export class Scatter {
   private readonly placed = new Map<string, Placed>();
+  /**
+   * RN-2229. Resident chunks `build` REFUSED, so they are never offered again
+   * while they stay resident.
+   *
+   * `build` has two early returns that record nothing -- a biome with no prop
+   * table, and a mesh cell coarser than this chunk's limit -- so a refused
+   * chunk was re-offered every single frame, took the whole
+   * `BUILDS_PER_UPDATE` budget of one, and left every chunk behind it in the
+   * backlog for ever. It is the identical defect the `placed.set` at the foot
+   * of `build` carries a paragraph about ("it used to return early, so the
+   * chunk was retried every single frame forever, which with a per-update
+   * budget starves every chunk behind it"), in the two paths that comment did
+   * not cover.
+   *
+   * It was INVISIBLE while the reach was 170 m, because a 170 m ring holds two
+   * or three chunks and the starved queue drained anyway. At the canopy's
+   * 4,200 m it holds eighteen and the queue never emptied at all, which is
+   * what the new settle gate turned from a slow fill into a hang. Neither the
+   * cell size nor the biome of a given chunk KEY can change, so a refusal is
+   * final for as long as the key is resident and this is a cache and not a
+   * guess. Counted (`chunksRefused`), because a silent refusal is how the
+   * first version of this file scattered nothing and reported success.
+   */
+  private readonly barren = new Set<string>();
   private readonly m4 = new THREE.Matrix4();
   private readonly q = new THREE.Quaternion();
   private readonly p = new THREE.Vector3();
   private readonly s = new THREE.Vector3();
   private readonly eye = new THREE.Vector3();
+  /** RN-2228. The eye's height above the designed surface, metres. Read live
+   *  from the observer each frame; see `groundDistM` for what it is for. */
+  private eyeAltM = 0;
   /** Places ONE prop. See ScatterEmit for why the two are separate objects. */
   private readonly em: PropEmitter;
   /** Every reported number, shared by reference with the sampler. */
   private readonly c = new ScatterCounters();
   /** The sampler's read-only half, assembled once. See ScatterSample. */
   private readonly deps: ScatterSampleDeps;
+  /** A BOX and not a number, for `eye`'s reason: `deps` is assembled once in
+   *  the constructor and the sampler reads the live value through it. */
+  private readonly alt = { m: 0 };
+  /** RN-2234. The realised canopy reach this frame. See `deps.reach`. */
+  private readonly reach = { m: 0 };
 
   constructor(
     private readonly lib: PropLibrary,
@@ -99,14 +131,55 @@ export class Scatter {
     this.deps = {
       pool: this.pool, water: this.water, editsHandle: this.editsHandle,
       densityScale: this.densityScale, eye: this.eye,
-      bodyRadiusM: this.bodyRadiusM, canopyRadiusM: this.canopyRadiusM,
-      canopyShade: this.canopyShade, em: this.em,
+      bodyRadiusM: this.bodyRadiusM,
+      canopyShade: this.canopyShade, em: this.em, alt: this.alt,
+      // RN-2234. A BOX holding the REALISED reach for this frame, refreshed in
+      // `update`. The sampler gates and fades on this rather than on the
+      // configured radius, so the ring it builds and the ring `reachM` admits
+      // chunks for are the same ring.
+      reach: this.reach,
     };
   }
 
-  /** The furthest any tier reaches. Residency and rebuild bands ride on it. */
+  /**
+   * The furthest any tier reaches. Residency and rebuild bands ride on it.
+   *
+   * RN-2234. The canopy's half is now bounded by the eye's height
+   * (`canopyReachM`), so the same configured radius serves the flyover and the
+   * walk without the walk paying for the flyover. See ScatterTuning for the
+   * measured table this is derived from.
+   */
   private get reachM(): number {
-    return this.canopyRadiusM > RADIUS_M ? this.canopyRadiusM : RADIUS_M;
+    const c = canopyReachM(this.canopyRadiusM, this.eyeAltM);
+    return c > RADIUS_M ? c : RADIUS_M;
+  }
+
+  /** True when the canopy, not the 170 m ground ring, is what `reachM` is. */
+  private get canopyGoverns(): boolean {
+    return canopyReachM(this.canopyRadiusM, this.eyeAltM) > RADIUS_M;
+  }
+
+  /**
+   * RN-2228. GROUND distance from the eye to a point on the surface.
+   *
+   * The eye is `eyeAltM` above the ground and every tier here is a disc ON the
+   * ground, so the 3-D distance the reach tests used to compare is the
+   * hypotenuse and the radius they compare it against is the base. A radius R
+   * at altitude h therefore covered a ground disc of only sqrt(R^2 - h^2), and
+   * at the 1,200 m flyover with the shipped 620 m canopy that is not a real
+   * number: the tier was OFF, everywhere, from the air, silently.
+   *
+   * APPLIED TO THE CANOPY GATES ONLY, and that is deliberate rather than
+   * partial. The ground tiers live inside 170 m of a standing eye where h is
+   * 2 m and the correction is 12 mm at the ring's edge -- big enough to flip a
+   * cell that sits exactly on the boundary, and worth nothing. Correcting them
+   * too would spend the whole standing-eye bit-identity claim on a
+   * millimetre. `?canopy=0` therefore takes the identical arithmetic it took
+   * before this method existed (standing rule 7).
+   */
+  private groundDistM(d: number): number {
+    const h = this.eyeAltM;
+    return d > h ? Math.sqrt(d * d - h * h) : 0;
   }
 
   /**
@@ -114,10 +187,13 @@ export class Scatter {
    * left. Only the DELTA is touched, so a stationary player costs one pass over
    * the resident map and no instance writes at all.
    */
-  update(views: Iterable<ChunkView>, eye: THREE.Vector3): void {
+  update(views: Iterable<ChunkView>, eye: THREE.Vector3, eyeAltM = 0): void {
     if (!this.enabled) return;
     const t0 = performance.now();
     this.eye.copy(eye);
+    this.eyeAltM = eyeAltM;
+    this.alt.m = eyeAltM;
+    this.reach.m = canopyReachM(this.canopyRadiusM, eyeAltM);
     const seen = new Set<string>();
     let budget = BUILDS_PER_UPDATE;
     let backlog = 0;
@@ -136,8 +212,16 @@ export class Scatter {
     let staleChunks = 0;
     for (const v of views) {
       if (!v.isNear || !v.visible) continue;
-      if (v.pos.distanceTo(eye) > this.reachM + v.maxOffsetM) continue;
+      // RN-2228. GROUND distance once the canopy is what `reachM` means, and
+      // the shipped 3-D distance when it is not, so `?canopy=0` runs the
+      // identical comparison it always did (standing rule 7). Without this the
+      // per-cell fix below has nothing to work on: the chunk never becomes
+      // resident to be sampled.
+      const dEye = v.pos.distanceTo(eye);
+      const dReach = this.canopyGoverns ? this.groundDistM(dEye) : dEye;
+      if (dReach > this.reachM + v.maxOffsetM) continue;
       seen.add(v.key);
+      if (this.barren.has(v.key)) continue;
       const pl = this.placed.get(v.key);
       if (pl === undefined) {
         if (budget <= 0) { backlog++; continue; }
@@ -170,6 +254,8 @@ export class Scatter {
     for (const key of [...this.placed.keys()]) {
       if (!seen.has(key)) this.drop(key);
     }
+    for (const key of [...this.barren]) if (!seen.has(key)) this.barren.delete(key);
+    this.c.chunksRefused = this.barren.size;
     this.c.chunksScattered = this.placed.size;
     this.c.lastBuildMs = performance.now() - t0;
   }
@@ -193,19 +279,51 @@ export class Scatter {
    */
   private detailBandOf(v: ChunkView): number {
     const d = v.pos.distanceTo(this.eye) - v.maxOffsetM;
+    // RN-2229. TWO INDEPENDENT BANDS IN ONE INTEGER: the near band in the low
+    // three bits, the canopy's fade step above them. They have to be separate
+    // numbers now and could be one before, because the canopy's gradient used
+    // to end at 620 m -- inside the near band's own last boundary -- and now
+    // spans 550 m to 4,200 m of ground, which is most of the world.
+    //
+    // A chunk is rebuilt when EITHER changes, which is the whole reason a band
+    // exists: `sampleChunk` fixes a cell's density at build time, so without a
+    // step here a chunk first sampled at 4 km would carry its 16-per-cent
+    // edge density all the way in and the ground ahead of a moving observer
+    // would be permanently sparser than the ground behind. That is the defect
+    // `CANOPY_FULL_M`'s own band was added for, at five times the range.
+    return this.nearBandOf(d) | (this.canopyStepOf(d) << 3);
+  }
+
+  /** The three near boundaries, exactly as shipped. */
+  private nearBandOf(d: number): number {
     if (d <= DETAIL_FULL_M) return 3;
     if (d <= DETAIL_RADIUS_M) return 2;
-    // The canopy's OWN density boundary, and it earns a band for exactly the
-    // reason the understorey's second band exists: the outer canopy is thinned
-    // by `canopyDistanceWeight`, and without a rebuild here a chunk first
-    // sampled at 500 m would keep its thinned density all the way in, so the
-    // ground ahead of a walking player would be permanently sparser than the
-    // ground behind. One extra rebuild per chunk, on a per-update budget of
-    // one, reported by `scatterBacklog`.
     return d <= CANOPY_FULL_M ? 1 : 0;
   }
-  /** Bands 2 and 3 carry the understorey; 3 carries it at full density. */
-  private static detailOn(band: number): boolean { return band >= 2; }
+
+  /**
+   * Which step of the canopy gradient a chunk sits in. Zero whenever the tier
+   * is off, so `?canopy=0` composes the identical band integer it always did.
+   *
+   * `CANOPY_BANDS` steps over a fade `CANOPY_FAR_RADIUS_M` long, so the
+   * density a chunk carries is never more than one step stale: at 8 steps over
+   * 4,200 m that is 525 m of travel, against a ring the observer crosses in
+   * tens of seconds on foot and in about five at flying speed. Eight rather
+   * than more because each step is a REBUILD of every chunk crossing it, on a
+   * budget of one chunk per update (`BUILDS_PER_UPDATE`), and `scatterBacklog`
+   * is the counter that says whether the queue is keeping up.
+   */
+  private canopyStepOf(d: number): number {
+    if (!this.canopyGoverns) return 0;
+    const reach = this.reachM;
+    const g = this.groundDistM(d);
+    if (g >= reach) return CANOPY_BANDS;
+    return Math.floor((g / reach) * CANOPY_BANDS);
+  }
+
+  /** Bands 2 and 3 carry the understorey; 3 carries it at full density. The
+   *  mask is `detailBandOf`'s low three bits, see there. */
+  private static detailOn(band: number): boolean { return (band & 7) >= 2; }
 
   /** Re-derive every instance matrix from its chunk's anchor. THE rebase path. */
   replace(views: Map<string, ChunkView>): void {
@@ -245,6 +363,8 @@ export class Scatter {
    */
   clearPlaced(): void {
     for (const key of [...this.placed.keys()]) this.drop(key);
+    this.barren.clear();
+    this.c.chunksRefused = 0;
     this.c.chunksScattered = 0;
   }
 
@@ -265,11 +385,22 @@ export class Scatter {
 
   private build(v: ChunkView): void {
     const specs = BIOME_PROPS[v.biome];
-    if (specs === undefined || specs.length === 0) return;
+    if (specs === undefined || specs.length === 0) { this.barren.add(v.key); return; }
     const pos = this.pool.positions(v.pooled);
     // Cell size straight off the mesh: vertex 0 to vertex 1 of the first row.
     const cell = Math.hypot(pos[3] - pos[0], pos[4] - pos[1], pos[5] - pos[2]);
-    if (!(cell > 0) || cell > MAX_CELL_M) return;
+    // RN-2230. TWO LIMITS. `MAX_CELL_M` is the GROUND tiers' and is untouched
+    // (see `groundOk` below); this outer refusal is the canopy's, which stands
+    // on chunks one depth band coarser so the impostor tier can reach past
+    // 2.3 km. When the canopy is off the two are the same test and this file
+    // refuses exactly the chunks it refused before.
+    const maxCell = this.canopyGoverns ? CANOPY_MAX_CELL_M : MAX_CELL_M;
+    if (!(cell > 0) || cell > maxCell) { this.barren.add(v.key); return; }
+    // Whether THIS chunk is fine enough for the ground tiers. A depth-8 chunk
+    // admitted for its canopy still places no biome prop, no understorey and
+    // no contact skirt: those are measured on a walking player's mesh and have
+    // never been measured on a 115 m cell, and at 2 km they carry no pixels.
+    const groundOk = cell <= MAX_CELL_M;
     const areaKm2 = (cell * CELLS) ** 2 / 1e6;
     // TWO tiers. The ground-detail cards are 0.36 to 0.58 m tall and stop being
     // legible within a few tens of metres, so paying an instance for one at
@@ -281,8 +412,10 @@ export class Scatter {
     // graded by distance; and `card` is the understorey again, used on its own
     // as the pool the contact skirt draws from.
     const full: Tier = tierOf(specs);
-    const base: Tier = tierOf(specs.filter((s) => !s.detail && !s.canopy));
-    const card: Tier = tierOf(specs.filter((s) => s.detail === true));
+    const base: Tier = groundOk
+      ? tierOf(specs.filter((s) => !s.detail && !s.canopy)) : EMPTY_TIER;
+    const card: Tier = groundOk
+      ? tierOf(specs.filter((s) => s.detail === true)) : EMPTY_TIER;
     // The canopy is empty on seven of the ten biomes and empty everywhere when
     // `?canopy=0`, and an empty tier costs one `total > 0` test per cell.
     const canopy: Tier = this.canopyRadiusM > 0

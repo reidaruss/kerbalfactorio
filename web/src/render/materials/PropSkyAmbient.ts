@@ -185,6 +185,11 @@ const BUNDLE: Record<string, THREE.IUniform> = {
   uSkyAmbient: { value: TERRAIN_SKY_AMBIENT },
   uPropSky,
   uFolTrans,
+  // RN-2232's haze scale is NOT listed here: it is declared below the BUNDLE
+  // (beside its own GLSL, where every other term's knob lives) and `publish`
+  // installs it. The inert default is the same shape as the rest -- an absent
+  // key leaves `ofAtmoScatter` returning vec3(0) on `uAtmosOn = 0` -- so the
+  // race this block's comment is about is closed for it too.
 };
 
 let published = false;
@@ -207,6 +212,7 @@ export function publishPropSkyAmbient(
     if (terrain[k] !== undefined) BUNDLE[k] = terrain[k];
   }
   BUNDLE.uPropSky = uPropSky;
+  BUNDLE.uPropHaze = uPropHaze;   // RN-2232, see the BUNDLE note above.
   published = true;
 }
 
@@ -218,6 +224,7 @@ const DECL = /* glsl */`
   uniform float uSkyAmbient;
   uniform float uPropSky;
   uniform vec2  uFolTrans;
+  uniform float uPropHaze;
 `;
 
 /**
@@ -278,6 +285,78 @@ const TERM = /* glsl */`
  * have been visible in exactly the hero frame this lane is judged on.
  * `?foliagetrans=` sweeps it if a later lane gets the real shadow.
  */
+/**
+ * RN-2232. AERIAL PERSPECTIVE ON THE PROPS, and it is the term that decides
+ * whether a distant forest is a forest or is pepper.
+ *
+ * THE PICTURE FOUND THIS AND NO COUNTER COULD HAVE (DW-7).
+ * `docs/screenshots/RN2225_flyover_nohaze.png` is the far canopy switched on
+ * with the terrain's haze under it and none on the trees: 22,945 canopy trees
+ * over a 4.2 km disc, and the frame reads as dirt on the lens. The ground
+ * behind them is washed to a flat pale green by three kilometres of air, and
+ * the trees standing ON that ground are drawn at full contrast, so every one
+ * of them is a hard dark speck against a surface that has lost its own
+ * contrast entirely. The `under` rectangle moved 108.99 -> 108.63, four tenths
+ * of a count, and would have signed the change off.
+ *
+ * `TerrainFragLight.glsl.ts:198-210` is the model and this is the SAME TWO
+ * CALLS in the same order with the same arguments, so a tree and the ground it
+ * stands on are hazed by one function rather than by two that can disagree:
+ *
+ *     apIn = ofAtmoScatter(camM, rd, dist, 4, 2, apTrans)
+ *     lit  = lit * apTrans + apIn
+ *     lit  = ofAtmoAerial(lit, camM, rd, dist, sunT)
+ *
+ * `OF_AP_VIEW` / `OF_AP_LIGHT` are `TerrainProgram`'s own defines and a stock
+ * program has neither, so the two step counts are written as the literals
+ * `TerrainProgram.ts:29-30` sets them to (4 and 2). They are loop bounds and
+ * therefore have to be compile-time constants either way; the transcription is
+ * named here rather than hidden.
+ *
+ * ON THE FINAL COLOUR AND NOT ON `irradiance`, which is why this splice takes a
+ * THIRD anchor rather than joining the two above. Aerial perspective is a
+ * transmittance times the outgoing radiance plus an in-scattered term: it acts
+ * on what LEAVES the surface, after albedo and after every light. Folding it
+ * into `irradiance` would haze the incoming light instead, which reddens a tree
+ * rather than fading it, and the two are not the same picture.
+ * `<fog_fragment>` is the anchor because it is the one point three publishes
+ * that is already defined as "modify the final colour by distance", it exists
+ * in every stock fragment program, and its own body is `#ifdef USE_FOG`
+ * guarded so this neither reads nor collides with three's fog (which this
+ * project does not use, and must not: a second haze authority is the DW-26
+ * failure over the exact term A4 spent a whole lane calibrating).
+ *
+ * `?prophaze=0` is the value control -- the program is unchanged and the term
+ * is multiplied by zero, so the pair is one uniform apart. There is no
+ * `=off`, because the whole splice already lives behind `?propsky=off`.
+ */
+const HAZE_RAW = Q.get('prophaze');
+const uPropHaze: THREE.IUniform<number> = {
+  value: ((): number => {
+    if (HAZE_RAW === '0') return 0;
+    const f = HAZE_RAW === null ? NaN : Number(HAZE_RAW);
+    return Number.isFinite(f) ? f : 1;
+  })(),
+};
+
+const F_FOG = '#include <fog_fragment>';
+
+const AERIAL = /* glsl */`
+  {
+    vec3 ofApPm = cameraPosition - uBodyCenter;
+    vec3 ofApRd =
+      -normalize((vec4(normalize(vViewPosition), 0.0) * viewMatrix).xyz);
+    float ofApD = length(vViewPosition);
+    vec3 ofApSunT = uAtmosOn > 0.5
+      ? ofAtmoSunTransmittance(ofApPm, normalize(uSunDir), 3) : vec3(1.0);
+    vec3 ofApTrans;
+    vec3 ofApIn = ofAtmoScatter(ofApPm, ofApRd, ofApD, 4, 2, ofApTrans);
+    vec3 ofApLit = gl_FragColor.rgb * ofApTrans + ofApIn;
+    ofApLit = ofAtmoAerial(ofApLit, ofApPm, ofApRd, ofApD, ofApSunT);
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, ofApLit, uPropHaze);
+  }
+`;
+
 const OF_TRANS_SHADOW = '0.35';
 const TRANS = /* glsl */`
   {
@@ -318,14 +397,24 @@ export function injectPropSkyAmbient(shader: Splicable,
                                     foliage = false): void {
   if (!PROP_SKY_INSTALLED) return;
   for (const k of Object.keys(BUNDLE)) shader.uniforms[k] = BUNDLE[k];
+  // RN-2232. UNCONDITIONAL, not through `BUNDLE`. This one is declared below
+  // the bundle beside its own GLSL, so a program compiled before `publish`
+  // would otherwise get no `uPropHaze` at all and three would leave it at 0 --
+  // which is a silently absent haze rather than a loud one, exactly the
+  // failure the bundle's inert-defaults comment exists to prevent.
+  shader.uniforms.uPropHaze = uPropHaze;
   const before = shader.fragmentShader;
   if (foliage) spliceTrans++;
   shader.fragmentShader = shader.fragmentShader
     .replace(F_COMMON, `${F_COMMON}\n${ATMOSPHERE_PARS}\n${DECL}`)
-    .replace(F_LIGHTS, `${F_LIGHTS}\n${TERM}${foliage ? TRANS : ''}`);
+    .replace(F_LIGHTS, `${F_LIGHTS}\n${TERM}${foliage ? TRANS : ''}`)
+    .replace(F_FOG, `${AERIAL}\n${F_FOG}`);
   if (shader.fragmentShader === before) { misses.push('both anchors'); return; }
   if (!shader.fragmentShader.includes('ofSkyAmb')) misses.push(F_LIGHTS);
   if (!shader.fragmentShader.includes('ofAtmoScatter')) misses.push(F_COMMON);
+  // RN-2232. The third anchor gets its own miss row, so a three upgrade that
+  // renames the fog chunk reports a lost haze rather than silently dropping it.
+  if (!shader.fragmentShader.includes('ofApLit')) misses.push(F_FOG);
   spliced++;
 }
 

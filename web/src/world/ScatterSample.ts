@@ -38,9 +38,13 @@ export interface ScatterSampleDeps {
   /** The live eye vector `update` copies into, not a snapshot of it. */
   readonly eye: THREE.Vector3;
   readonly bodyRadiusM: number;
-  readonly canopyRadiusM: number;
   readonly canopyShade: boolean;
   readonly em: PropEmitter;
+  /** RN-2228. The eye's height above the surface, live. A BOX for `eye`'s
+   *  reason: these deps are assembled once and read every build. */
+  readonly alt: { m: number };
+  /** RN-2234. The realised canopy reach this frame, metres of ground. */
+  readonly reach: { m: number };
 }
 
 export function sampleChunk(
@@ -106,8 +110,14 @@ export function sampleChunk(
   // The OUTER gate. Equal to `r2` whenever the canopy is off or does not
   // reach further, which is what makes `?canopy=0` take the identical path
   // through this loop that existed before the tier did.
-  const treeR = canopy.total > 0 ? d.canopyRadiusM : 0;
-  const maxR2 = treeR > RADIUS_M ? treeR * treeR : r2;
+  const treeR = canopy.total > 0 ? d.reach.m : 0;
+  const canopyOn = treeR > RADIUS_M;
+  const maxR2 = canopyOn ? treeR * treeR : r2;
+  // RN-2228. THE EYE HEIGHT, squared, for the ground-distance conversion. Zero
+  // whenever the canopy is off, so the branch below is then `d2 > maxR2`
+  // exactly as it was. See `Scatter.groundDistM` for the whole argument and
+  // for why the GROUND tiers deliberately keep the 3-D distance.
+  const h2 = canopyOn ? d.alt.m * d.alt.m : 0;
   // One reusable emit context. Rebuilt per chunk rather than per cell: a
   // chunk is up to fourteen thousand props and allocating a record per prop
   // is the difference between a scatter build that amortises and one that
@@ -123,7 +133,11 @@ export function sampleChunk(
       const dy = v.pos.y + pos[i00 + 1] - d.eye.y;
       const dz = v.pos.z + pos[i00 + 2] - d.eye.z;
       const d2 = dx * dx + dy * dy + dz * dz;
-      if (d2 > maxR2) continue;
+      // GROUND distance for the canopy's gates, the 3-D eye distance for the
+      // ground tiers' (`near`, `detailWeight`). Identical numbers at a
+      // standing eye and the whole difference from the air.
+      const g2 = d2 > h2 ? d2 - h2 : 0;
+      if (g2 > maxR2) continue;
       const near = d2 <= r2;
       // Slope from /core's own stored vertex normal, decoded from int8.
       const nx = nrm[i00] / 127, ny = nrm[i00 + 1] / 127, nz = nrm[i00 + 2] / 127;
@@ -189,7 +203,7 @@ export function sampleChunk(
           // Keeping them apart is what lets the first be a determinism claim
           // and the second an art-direction one.
           shadeW = canopyWeight(altM, stand);
-          treeW = shadeW * canopyDistanceWeight(Math.sqrt(d2));
+          treeW = shadeW * canopyDistanceWeight(Math.sqrt(g2), treeR);
           if (treeW <= 0) c.canopyBareCells++;
           else {
             canopyCells++;

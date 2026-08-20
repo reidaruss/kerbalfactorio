@@ -14,6 +14,7 @@ import { bootTerrain } from '../world/TerrainBoot.js';
 import { GrassCover } from '../render/grass/GrassCover.js';
 import { surfacesReady } from '../render/instancing/Surfaces.js';
 import { Scatter } from '../world/Scatter.js';
+import { CANOPY_NEAR_M } from '../world/ScatterTuning.js';
 import { Lifetime } from './Lifetime.js';
 import { WorldSession, type BuildBodyScope } from '../world/WorldSession.js';
 import { arriveOnBody } from '../game/WorldScope.js';
@@ -255,6 +256,32 @@ export async function phaseBodyScope(
     (window as unknown as { __ofGrass: unknown }).__ofGrass = {
       report: () => gc.report(),
     };
+    // RN-2233. THE THEOREM THE CANOPY'S `castShadow = false` RESTS ON, checked
+    // rather than trusted, and checked HERE because this is the one place that
+    // holds the shadow rig and can reach the world-layer constant.
+    //
+    // `PropLibrary` gives the far canopy its own batches and takes them out of
+    // the shadow pass entirely, worth a measured 13.8 ms of the flyover's
+    // 21.4 ms near pass for pixels that were identical to the digit. That is
+    // only correct while EVERY canopy instance is outside EVERY cascade, which
+    // is `CANOPY_NEAR_M` (the radius inside which the tier is exactly zero)
+    // being greater than the furthest split. Two numbers in two files; either
+    // could move, and if the near cut-off ever came inside a cascade the
+    // failure would be a missing tree shadow, which is invisible in every
+    // aggregate and exactly the class this project keeps paying for. It shouts
+    // rather than throws, because a wrong shadow is worse than a wrong frame
+    // and neither is worth refusing to boot over.
+    {
+      const far = shadows.splits.length > 0
+        ? shadows.splits[shadows.splits.length - 1] : 0;
+      if (cfg.canopyRadiusM > 0 && far >= CANOPY_NEAR_M) {
+        console.error('[of] RN-2233 BROKEN: the furthest shadow cascade reaches'
+          + ` ${far} m and the canopy starts at ${CANOPY_NEAR_M} m, so canopy`
+          + ' trees are inside a cascade and their batches do not cast.'
+          + ' Re-enable castShadow on the :canopy batches or move CANOPY_NEAR_M.');
+      }
+    }
+
     // RN-2225. THE WILD VEGETATION SOURCE FOR A WORLD WITH NO CHARACTER.
     //
     // The gate is the EXACT COMPLEMENT of `BootGameplay`'s (`player !== null &&
