@@ -2168,7 +2168,6 @@ Two consequences.
 1. **A gap in the instrument reads exactly like a green.** A domain nothing can photograph accumulates no findings, and a queue ranked by findings will rank it last forever. Before trusting that an area is finished, check that some instrument could have said otherwise.
 2. **Five new poses cost one afternoon and produced the whole queue.** Two of them needed a different scenario than any existing shot, which is how the blindness had persisted: `Controller.teleport` DISCARDS its altitude argument, so no shot run under `--scenario=walk` can ever leave the ground, and every shot in the file was a walk shot. An API that silently ignores an argument will keep a whole class of measurement from ever being attempted, because the attempt appears to work.
 
-<<<<<<< HEAD
 ### A FILL RAISED IN THE MATERIAL THAT PAYS FOR THE FRAME'S LIGHT NEVER REACHES THE OBJECTS THAT FILL IT
 
 Found by RN-2130, 2026-08-19, on the fidelity lane's own largest number, by running its one-flag control instead of shipping its arithmetic.
@@ -2182,7 +2181,7 @@ Three things generalise.
 1. **"Consistent by construction" is a claim about the materials that hold the shared object, not about everything in the frame.** `TerrainAmbient.ts` exists precisely so the props' idea of the ground and the ground's idea of the ground cannot drift, and it delivers that for the FLOOR and says so. It was read, by this lane, as if it delivered it for the whole ambient model. Read which of a file's exports each consumer actually imports before believing a consistency argument covers your case.
 2. **Pick the control's SUBJECT to be the thing the change is supposed to move.** The fill's real subject is a shadowed terrain facet: a cut bank, a crater rim, a pit wall. Had the control been run on `voxelface` first it would have shown the term working, and the meadow result would then have been read correctly as "the props are on a different lamp" rather than as "the term does nothing".
 3. **The control is what converts a sound argument into a measured share.** Nothing about the three-per-cent reasoning was wrong, and the change is kept. What would have been wrong is the report: without this flag the lane would have attributed fourteen counts of ground lift to a sky-ambient raise that produced two, and the next lane would have tuned the wrong constant looking for the rest.
-=======
+
 ### A TERM THAT RETIRES ITSELF CORRECTLY AND TOO EARLY IS INDISTINGUISHABLE FROM A TERM THAT IS WORKING
 
 Found by RN-2160 (the terrain splat), 2026-08-19.
@@ -2231,4 +2230,3 @@ The lane initially read it as a probe bug and went looking in the probe. Redirec
 
 **The rule.** Do not pipe a multi-megabyte report between processes on this box: write it to a file in your own scratch directory and read the file. And when a harness message describes a *content* failure ("not the JSON report"), rule out *transport* before believing it, because a truncated stream and an empty one produce the same sentence.
 
->>>>>>> origin/lane/a3-splat
