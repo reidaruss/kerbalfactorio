@@ -1468,6 +1468,15 @@
   // section below (`the capture`): the station's own orbital clock target, so
   // it can be re-applied there with nothing left to drift it before `grab()`.
   let stationClockTarget;
+  // BT-315 to BT-319. THE DISPATCH GUARD. Set to `true` by the FIRST statement
+  // inside every pose-dispatch branch below, never inferred from `setup` or
+  // any other side effect: those are shot-specific shapes and a guard built
+  // out of one of them is a guard that only some shots can trip. Checked once,
+  // right after the last dispatch branch and before `the capture` section, so
+  // a shot present in `SHOTS` and in no branch refuses loudly instead of
+  // photographing wherever the scenario happened to spawn the walker (see the
+  // trap comment above the vista branch, and `mtnslope`'s own history there).
+  let posed = false;
 
   // RN-1900. `midfield` takes `forestfloor`'s setup verbatim (teleport, spin to
   // convergence, pin the sun AFTER the teleport because the solve is against
@@ -1480,6 +1489,7 @@
   // copy of this sequence would be a second chance to pin the sun before the
   // teleport.
   if (name === 'forestfloor' || name === 'midfield' || name === 'meadowfield') {
+    posed = true;
     const w0 = of.world();
     of.teleport(S.lat, S.lon, 2.0);
     await sleep(2.0);
@@ -1535,6 +1545,7 @@
   // right numbers looked like. ADDING A SHOT MEANS ADDING IT HERE TOO.
   if (name === 'vista' || name === 'vistadawn' || name === 'vistanoon'
       || name === 'meadow' || name === 'mtnslope' || name === 'dawnsun') {
+    posed = true;
     const w0 = of.world();
     of.teleport(A.lat ?? S.lat, A.lon ?? S.lon, 2.0);
     await sleep(2.0);
@@ -1607,6 +1618,7 @@
   // this block's own comment says a shot missing from it "IS NEVER POSED" and
   // reports perfectly correct numbers about the wrong place.
   if (name === 'flyover' || name === 'forestair' || name === 'limb') {
+    posed = true;
     const o0 = of.world().observer;
     if (o0.mode !== 'FLY') {
       return { valid: false, shot: name, observerMode: o0.mode,
@@ -1649,6 +1661,7 @@
   }
 
   if (name === 'voxelface') {
+    posed = true;
     const w0 = of.world();
     of.teleport(S.lat, S.lon, 2.0);
     await sleep(2.0);
@@ -1707,6 +1720,7 @@
   }
 
   if (name === 'machine' || name === 'smelterhero') {
+    posed = true;
     // machinemat.js's scene, and deliberately the same one: a smelter for the
     // Steel and Accent roles and a belt for Rubber, so one frame contains roles
     // whose roughness must move in DIFFERENT directions. A frame with only
@@ -1817,6 +1831,7 @@
   }
 
   if (name === 'ruinwall') {
+    posed = true;
     if (typeof of.ruins !== 'function') return { valid: false, why: 'no of.ruins' };
     await of.run(0.5, 60);
     const R0 = of.ruins();
@@ -1879,6 +1894,7 @@
   }
 
   if (name === 'ruin') {
+    posed = true;
     if (typeof of.ruins !== 'function') return { valid: false, why: 'no of.ruins' };
     await of.run(0.5, 60);           // one real frame, so distM and the LOD rung
     const R = of.ruins();            // are real and not their placeholders
@@ -1917,6 +1933,7 @@
   }
 
   if (name === 'basedusk') {
+    posed = true;
     // sandboxshot.js's builder: foundations, walls and two machines, all free,
     // all through the real ghost-and-press path a player uses.
     const yaw0 = of.world().observer.yawDeg;
@@ -2000,6 +2017,7 @@
   }
 
   if (name === 'station') {
+    posed = true;
     // ======================================================================
     // BOARDING IS THROUGH THE PAUSE MENU'S OWN ROW, NOT THROUGH `standAt`,
     // AND THAT WAS FOUND THE EXPENSIVE WAY.
@@ -2137,6 +2155,27 @@
         aimDir: aim ? aim.dir.map(r3) : null, postSun: postSun ? postSun.map(r3) : null,
         sunBearingDeg: r2(sunBearingDeg),
       } };
+  }
+
+  // BT-315 to BT-319. THE DISPATCH GUARD. This is the general form of the trap
+  // the comment above the vista branch names: the dispatch above is a flat
+  // chain of `if (name === ...)` blocks with no final else, and every one of
+  // them sets `posed = true` as its own first statement (never inferred from
+  // `setup` or any other side effect, because those are shot-specific shapes
+  // and a guard built from one of them only catches some shots). A shot that
+  // is in `SHOTS` and matched none of them reaches here having done nothing to
+  // the camera -- still standing wherever `--scenario=` spawned the walker --
+  // and every field the capture section below would go on to fill in (`valid`,
+  // the rectangles, the sun solve, the render stats) would read as a correct
+  // measurement of the wrong place, exactly what happened to `mtnslope` on its
+  // first run and was only caught because a lane happened to know the right
+  // numbers. Refuse loudly here instead, before any of that work runs.
+  if (posed !== true) {
+    return { valid: false, shot: name,
+      why: `THE DISPATCH GUARD: '${name}' is in SHOTS but no pose-dispatch `
+        + 'branch above ran for it, so this would have photographed wherever '
+        + 'the scenario spawned the walker. Add a branch for it, or join it to '
+        + 'an existing one, before this shot can be trusted.' };
   }
 
   // ------------------------------------------------------------- the capture

@@ -21,10 +21,40 @@
 // own cross-platform shell selection, not a bash-specific script.
 
 import { spawnSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+// BT-310 to BT-314. check:roles failed once, transiently, on the first
+// check-all invocation right after a merge commit, then passed standalone
+// seconds later and on a full rerun -- twice, unreproduced on demand after a
+// real effort (see check-roles.mjs's own header). check-roles.mjs now prints
+// a DIAG_JSON line (file hashes, models-dir listing digest, git HEAD) on
+// every failure path, but that only helps if it survives past the console
+// scrollback. So check:roles alone runs captured instead of inherited, and
+// on a nonzero exit its full output (which already carries the diagnostic,
+// since check-roles.mjs is the thing that printed it) is written to a
+// timestamped file under CHECK_ROLES_DIAG_DIR, gitignored, so a third
+// sighting leaves a trail instead of another "did not reproduce."
+const CHECK_ROLES_DIAG_DIR = join(webRoot, 'scripts', 'check-roles-diag');
+
+function persistCheckRolesFailure(stdout, stderr, code) {
+  try {
+    mkdirSync(CHECK_ROLES_DIAG_DIR, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = join(CHECK_ROLES_DIAG_DIR, `check-roles-fail-${stamp}.log`);
+    const body = `exit ${code} at ${new Date().toISOString()}\n\n`
+      + `----- stdout -----\n${stdout}\n----- stderr -----\n${stderr}\n`;
+    writeFileSync(file, body, 'utf8');
+    console.error(`check-all: check:roles failed; full output (with its DIAG_JSON `
+      + `line) persisted to ${file}`);
+  } catch (e) {
+    // Never let the diagnostic itself take down the run; say so and move on.
+    console.error(`check-all: could not persist the check:roles failure diagnostic: ${e.message}`);
+  }
+}
 
 // Same order as the old && chain in package.json. Kept as data so a
 // subset can be selected with --only for local debugging; the default
@@ -63,15 +93,28 @@ const results = [];
 for (const name of checks) {
   console.log(`\n----- ${name} -----`);
   const start = Date.now();
+  // check:roles is captured rather than inherited so a red run's output (and
+  // the DIAG_JSON line it now always prints on failure, BT-310) can be
+  // persisted below instead of only ever existing as console scrollback.
+  // Every other link is unchanged: live 'inherit' passthrough.
+  const captureForDiag = name === 'check:roles';
   const res = spawnSync('npm', ['run', name], {
     cwd: webRoot,
-    stdio: 'inherit',
+    stdio: captureForDiag ? ['inherit', 'pipe', 'pipe'] : 'inherit',
     shell: true,
+    encoding: captureForDiag ? 'utf8' : undefined,
   });
   const ms = Date.now() - start;
   // spawnSync itself can fail to launch (res.error), which counts as a
   // failure of that link rather than crashing the whole runner.
   const code = res.error ? 1 : res.status ?? 1;
+  if (captureForDiag) {
+    // Echo what 'inherit' would have streamed live, so console output for a
+    // developer watching check-all run is otherwise unchanged.
+    if (res.stdout) process.stdout.write(res.stdout);
+    if (res.stderr) process.stderr.write(res.stderr);
+    if (code !== 0) persistCheckRolesFailure(res.stdout ?? '', res.stderr ?? '', code);
+  }
   results.push({ name, ok: code === 0, code, ms });
 }
 
