@@ -57,6 +57,17 @@ export const FOLIAGE_TONE: Readonly<Partial<Record<Family, FoliageTone>>> = {
   // against sky is where a pure green reads most like plastic, and RN-102's
   // leaf-tip variation is a VALUE term that a saturated hue was swamping.
   leaf: { sat: 0.62, val: 0.86 },
+  // RN-2245: the far-tier crown card, and it takes `leaf`'s numbers TO THE
+  // DIGIT rather than numbers of its own. This is the same argument the palette
+  // hex is copied under: `CANOPY_NEAR_M` is 550 m, a harvest tree's own `_LOD3`
+  // card sits just inside it wearing `leaf`, and a canopy crown sits just
+  // outside it wearing this. Two tone curves across that line would put a
+  // visible chroma step at a fixed radius around the player, which is the one
+  // artefact a distance fade exists to prevent. Omitting the row entirely would
+  // have been worse than a wrong number and silent with it: the card would
+  // render at the uncorrected palette saturation while every leaf beside it is
+  // pulled to 0.62/0.86.
+  canopy: { sat: 0.62, val: 0.86 },
   // Ground cover. Less cut, because a meadow legitimately keeps more chroma than
   // a canopy and because `tintFor`'s dry drift is already acting on this layer.
   grass: { sat: 0.70, val: 0.94 },

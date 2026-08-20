@@ -29,7 +29,7 @@ import type * as THREE from 'three';
 // and rust did above.
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
   | 'paintchip' | 'rust' | 'masonry' | 'concrete' | 'ember' | 'timber'
-  | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'flat';
+  | 'leaf' | 'grass' | 'canopy' | 'suitfab' | 'suitplate' | 'flat';
 
 /**
  * Role -> family. This is a COPY of `surfaces.json`'s two tables and it is
@@ -177,6 +177,14 @@ export const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   // table (RN-100's rule: verifyAgainstManifest fails the run otherwise).
   Grass: 'grass',
   Leaf: 'leaf', LeafDeep: 'leaf', LeafDry: 'leaf', LeafLight: 'leaf',
+  // RN-2245: a THIRD card family, worn by exactly one thing -- the `_LOD3`
+  // crown impostor in `props_canopy.glb`. A separate family and not a fifth
+  // `leaf` role because the two textures are pictures of different objects:
+  // `leaf` is one conifer frond (and every `OF_Leaf*` consumer maps it as one,
+  // down to the bough cards on the tree the player is standing next to),
+  // `canopy` is one whole tree crown. Moves in the same commit as texgen's
+  // table (RN-100's rule).
+  Canopy: 'canopy',
   // RN-455, retargeted RN-461: the first CREATURE family, and the first
   // tiling family that also carries an albedo. The ROLE names stay chitin
   // because a tarantula cuticle is chitin; the FAMILY is `fur` because the
@@ -262,8 +270,8 @@ export function familyForMaterial(m: THREE.Material): Family {
 }
 
 /**
- * The two CARD families, named here so a METRE-UV consumer can refuse them
- * (RN-1478).
+ * The three CARD families, named here so a METRE-UV consumer can refuse them
+ * (RN-1478; `canopy` joined at RN-2245).
  *
  * A card family carries an albedo in UNIT card space whose ALPHA is the shape,
  * cut at `alpha_test`. Every batch path that box-projects its UVs in metres
@@ -280,7 +288,8 @@ export function familyForMaterial(m: THREE.Material): Family {
  * manifest's own `uv_space`, so a family that becomes a card (or stops being
  * one) is a mismatch on the next boot rather than a silent hole.
  */
-export const CARD_FAMILIES: ReadonlySet<string> = new Set<string>(['grass', 'leaf']);
+export const CARD_FAMILIES: ReadonlySet<string> = new Set<string>(
+  ['grass', 'leaf', 'canopy']);
 
 /**
  * Whether `f` is a family a metre-UV batch path can actually wear: it tiles,

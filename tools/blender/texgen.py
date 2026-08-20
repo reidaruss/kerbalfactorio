@@ -404,6 +404,15 @@ ROLE_FAMILY = {
     "Leaf": "leaf", "LeafDeep": "leaf", "LeafLight": "leaf",
     "LeafDry": "leaf",
     "Grass": "grass",
+    # RN-2245: `Canopy` is a THIRD card family and not a fourth `leaf` role,
+    # and the reason is what each family's picture is OF. `leaf` is one conifer
+    # FROND and every OF_Leaf* consumer maps it as one: the harvest trees' bough
+    # cards, the broadleaf's crown cards, the canopy props' own LOD0/LOD2 crowns.
+    # Re-authoring `leaf` as a crown would put a whole crown on every bough of
+    # every tree the player walks up to. `canopy` is one CROWN, and it is worn by
+    # exactly one thing in the project: `props_canopy.glb`'s `_LOD3` impostor,
+    # which is the only card in the game that stands for a whole tree.
+    "Canopy": "canopy",
     # --- masonry: architecture-scale stone (RN-1780, look audit R3) ---
     # `Rock`/`RockDark` cover 0.14 m to 35.2 m of consumer, measured off the
     # shipped bytes: item chunks and boulders at one end, the ruin at the
@@ -5806,6 +5815,178 @@ def _leaf_strips():
     return strips
 
 
+# ---------------------------------------------------------------------------
+# THE CROWN CARD (`canopy`), RN-2245.
+#
+# WHY A THIRD CARD FAMILY EXISTS. The far tier (rendering.md 2.14) draws every
+# tree past `CANOPY_NEAR_M` as a four-triangle crossed-quad impostor wearing
+# `leaf`, and `leaf` is a picture of ONE CONIFER FROND. A frond minified to the
+# three-to-nine pixels an aerial tree actually gets is a featureless green chip,
+# so a wood photographed from 1,200 m reads as scrub however many stems
+# world-gen puts in it (world-gen.md 6.9.11 item 2 routed exactly this: "the
+# crown asset, not the count, is what limits the read now"). This family is a
+# picture of one CROWN instead, and it is a separate family rather than a
+# re-authored `leaf` because `leaf` is worn by the bough cards of every tree the
+# player walks up to; putting a crown on a bough is a worse defect than the one
+# being fixed.
+#
+# THE CARD IS JUDGED AT NINE PIXELS, WHICH IS WHAT SETS EVERY SHAPE DECISION
+# BELOW. Three things survive a mip chain down to a 3x3 read and nothing else
+# does: the alpha coverage (whether the silhouette holds together at all), the
+# LOW-frequency value field (whether the blob has a top and a bottom), and how
+# ragged the outline is (whether the corner texels fall under `alpha_test` and
+# round the chip off). So the card is built from a handful of LARGE crown masses
+# with a strong lit-top / shaded-underside ramp, not from leaf detail: leaf
+# detail is gone by the second mip and the ramp is still there at the last one.
+# Measured on the shipped 1024 field, box-filtered to 3x3 and cut at
+# `alpha_test`, the read is a rounded blob with both top corners cut and a
+# green ramp of 116 / 92 / 59 counts down its three rows. The old `leaf` card at
+# the same 3x3 is flat.
+#
+# EVERY DETERMINISM RULE THIS MODULE HOLDS APPLIES UNCHANGED: no RNG (`_hash01`
+# only), no transcendental past `sqrt` (which is why the crown profile and the
+# rim are parametrised by DEPTH down the card rather than by an angle), and the
+# compositor is `_render_card` untouched, so `leaf` and `grass` rebuild
+# bit-identical.
+
+CANOPY_Y_TOP = 0.075    # crown apex, in PNG-row fraction (row 0 is the TIP end)
+CANOPY_Y_BOT = 0.945    # crown underside; the last rows are left clear so the
+                        # card's bottom edge is a lobed underside rather than a
+                        # straight cut repeated 22,940 times in one frame
+CANOPY_W = 0.425        # half-width in u at the crown's widest
+CANOPY_TIP_KEEP = 0.050  # nothing may reach above this: `_tip_rows_clear`
+
+
+def _canopy_profile(q):
+    """Crown half-width, as a fraction of `CANOPY_W`, at depth `q` down the
+    card (0 = apex, 1 = underside).
+
+    An OVOID rather than an ellipse: widest 60 per cent of the way down,
+    tapering to a rounded apex and to a BROAD underside rather than a second
+    point. One card serves all three canopy species because `pc.build_atlas`
+    fits it to each prop's own box, so this same outline is stretched into the
+    pine's 3.85 x 2.55 and the broadleaf's 8.40 x 10.50; an ovoid survives both
+    stretches as a plausible crown where a circle survives neither.
+    """
+    s = (q - 0.60) / (0.60 if q <= 0.60 else 0.55)
+    t = 1.0 - s * s
+    return 0.0 if t <= 0.0 else math.sqrt(t)
+
+
+def _canopy_y(q):
+    return CANOPY_Y_TOP + (CANOPY_Y_BOT - CANOPY_Y_TOP) * q
+
+
+def _canopy_strips():
+    """One tree crown: five tiers of crown mass, a finer clump tier over them,
+    a rim of round tufts and a scatter of detached outliers.
+
+    A "mass" here is a STRIP whose two endpoints are a short vertical segment
+    apart and whose half-width does not taper, i.e. a capsule, i.e. a blob.
+    `_render_card` resolves overlap by DEEPEST CLEARANCE rather than by list
+    order, so a mass owns the texels it is genuinely most inside of and two
+    masses meet along the locus where their clearances tie. That locus is the
+    internal shadow line, and it is why the crown reads as clustered rather
+    than as one balloon: each mass ramps bright at its own top to dark at its
+    own bottom, so every meeting is a dark edge under a lit one.
+
+    The tiers also darken downward as a whole (base 1.00 at the apex to 0.55 at
+    the underside), which is the only part of this card that survives to the
+    3x3 read and is therefore the part that does the work.
+    """
+    strips = []
+    seed = 7717
+    # (depth, count, radius, base value) -- the crown masses.
+    tiers = [
+        (0.15, 2, 0.098, 1.00),
+        (0.33, 3, 0.118, 0.88),
+        (0.53, 4, 0.132, 0.77),
+        (0.72, 4, 0.126, 0.66),
+        (0.89, 3, 0.108, 0.55),
+    ]
+    k = 0
+    for (q0, n, r0, base) in tiers:
+        hw = CANOPY_W * _canopy_profile(q0)
+        for i in range(n):
+            k += 1
+            f = -1.0 + 2.0 * ((i + 0.5) / n)
+            f += (_hash01(k, 3, seed) - 0.5) * (1.2 / n)
+            q = q0 + (_hash01(k, 5, seed) - 0.5) * 0.10
+            r = r0 * (0.68 + 0.70 * _hash01(k, 7, seed))
+            # the outer masses BULGE past the profile (0.22 of a radius inside
+            # it, so 0.78 of one outside), which is what lobes the silhouette;
+            # holding them inside it gave a smooth oval that read as a bush.
+            cu = 0.5 + f * (hw - r * 0.22)
+            b = base * (0.90 + 0.20 * _hash01(k, 11, seed))
+            half = 0.5 * r
+            cy = _canopy_y(q)
+            # KEEP THE TOP TIER OUT OF THE TIP ROWS. A capsule reaches
+            # `half + r` above its own centre and the jitter can put that above
+            # row 0, which fails `_tip_rows_clear` -- and worse than failing a
+            # check, an opaque top row on a v-CLAMPED card smears upward
+            # forever on a stretched sample.
+            if cy - half - r < CANOPY_TIP_KEEP:
+                cy += CANOPY_TIP_KEEP - (cy - half - r)
+            strips.append((cu, cy - half, cu, cy + half,
+                           r, r, min(1.0, b * 1.18), b * 0.60, 0.0))
+    # CLUMPS: a finer tier laid over the masses so the mass boundaries are not
+    # the smallest feature on the card. Roughly half are LIT and half are
+    # SHADOW, so the fine tier adds occlusion as well as highlight; a clump that
+    # only ever brightened would wash the crown out toward its own top value.
+    for i in range(22):
+        q = 0.10 + 0.84 * _hash01(i, 31, seed)
+        hw = CANOPY_W * _canopy_profile(q)
+        f = -1.0 + 2.0 * _hash01(i, 37, seed)
+        r = 0.036 + 0.026 * _hash01(i, 41, seed)
+        cu = 0.5 + f * max(0.0, hw - r * 0.7)
+        lit = _hash01(i, 43, seed) < 0.45
+        b = (1.02 - 0.46 * q) * (0.94 + 0.16 * _hash01(i, 47, seed))
+        v0, v1 = (min(1.0, b * 1.16), b * 0.86) if lit else (b * 0.62, b * 0.44)
+        strips.append((cu, _canopy_y(q) - 0.5 * r, cu, _canopy_y(q) + 0.5 * r,
+                       r, r, v0, v1, 0.0))
+    # THE RAGGED RIM, AND IT IS ROUND TUFTS RATHER THAN SPIKES ON PURPOSE. A
+    # radial spike reads as a needle and a ring of them reads as a cactus: the
+    # first draft of this card had 26 and looked like one. What breaks a real
+    # canopy outline is small leaf CLUMPS straddling it, so the rim is round
+    # tufts centred ON the profile at jittered depths -- bulging the outline
+    # where one lands and leaving a notch where none does.
+    n_rim = 11
+    for i in range(n_rim):
+        for side in (-1.0, 1.0):
+            j = i * 2 + (0 if side < 0 else 1)
+            q = 0.07 + 0.88 * ((i + 0.55 * _hash01(j, 53, seed))
+                               / (n_rim - 0.45))
+            hw = CANOPY_W * _canopy_profile(q)
+            if hw < 0.05:
+                continue
+            r = 0.020 + 0.030 * _hash01(j, 17, seed)
+            out = -0.006 + 0.026 * _hash01(j, 19, seed)
+            cu = 0.5 + side * (hw + out)
+            b = (1.00 - 0.44 * q) * (0.84 + 0.26 * _hash01(j, 23, seed))
+            strips.append((cu, _canopy_y(q) - 0.4 * r, cu, _canopy_y(q) + 0.4 * r,
+                           r, r, min(1.0, b * 1.10), b * 0.66, 0.0))
+    # OUTLIERS: tufts standing CLEAR of the rim with real sky between them and
+    # the crown. They are the one feature here that is MEANT to disappear under
+    # minification -- an edge that dissolves is what a canopy edge does -- and
+    # they are under one per cent of the card's coverage, far too little to move
+    # the mip alpha that the crown's own body sets.
+    for i in range(9):
+        q = 0.16 + 0.66 * _hash01(i, 67, seed)
+        hw = CANOPY_W * _canopy_profile(q)
+        side = -1.0 if i % 2 == 0 else 1.0
+        r = 0.013 + 0.011 * _hash01(i, 71, seed)
+        cu = 0.5 + side * (hw + r + 0.016 + 0.020 * _hash01(i, 73, seed))
+        b = (1.00 - 0.40 * q) * (0.80 + 0.24 * _hash01(i, 79, seed))
+        strips.append((cu, _canopy_y(q) - 0.5 * r, cu, _canopy_y(q) + 0.5 * r,
+                       r, r, min(1.0, b), b * 0.74, 0.0))
+    # NO APICAL SPIKE, AND IT WAS TRIED. A leader shoot read as a horn at full
+    # size and is one texel at the ranges this tier draws at. The conifer read
+    # comes from `build_atlas` stretching this card into the pine's and fir's
+    # own narrow boxes, which is where a species difference belongs when one
+    # card serves three crowns.
+    return strips
+
+
 def _render_card(s, strips, noise_seed):
     """Compose tapered strips into (rgb, alpha) byte buffers, PRE-dilation.
 
@@ -6040,6 +6221,29 @@ ALBEDO_FAMILIES = {
     "grass": dict(strips=_grass_strips, size=1024, alpha_test=0.35,
                   wrap=("repeat", "clamp"), coverage=(0.35, 0.45),
                   noise_seed=15101),
+    # RN-2245. THE WRAP DECLARATION IS "clamp" IN BOTH AXES AND THAT IS THE ONE
+    # LINE HERE THAT DIFFERS FROM ITS TWO SIBLINGS ON PURPOSE. `leaf` and
+    # `grass` are periodic FIELDS: a frond crossing u = 1 continues at u = 0, so
+    # a bent card or a double-wide quad still reads, and they say `repeat`.
+    # `canopy` is one OBJECT. It is authored with a transparent margin on all
+    # four sides and nothing crosses the seam, so `repeat` and `clamp` are
+    # indistinguishable in the frame today; `clamp` is declared because it
+    # states the truth about the picture, and because it is what stops a future
+    # widened crown from silently wrapping its own rim onto the far side.
+    # Selftest 11's "alpha tiles in u" check still runs and still passes (a
+    # transparent margin has no seam step at all), and it is worth keeping for
+    # exactly that reason: it is now a guard that the crown never grows INTO
+    # the seam.
+    #
+    # `coverage` is measured, not chosen: the shipped 1024 field is 0.7217, and
+    # the band brackets it at +-0.06. The FLOOR is the load-bearing edge (see
+    # the block comment above): mip alpha converges toward the card's own
+    # coverage, so a card under `alpha_test` 0.35 dissolves at exactly the
+    # distance this family exists to be looked at from. 0.66 is nearly twice
+    # that, which is deliberate for a family whose whole job is the far mip.
+    "canopy": dict(strips=_canopy_strips, size=1024, alpha_test=0.35,
+                   wrap=("clamp", "clamp"), coverage=(0.66, 0.78),
+                   noise_seed=15207),
 }
 
 

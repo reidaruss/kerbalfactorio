@@ -71,11 +71,16 @@ import harvest_common as hc    # noqa: E402
 # their v through the same constant so the flip is global.
 FOLIAGE_TIP_V = 1.0
 
-# The five palette roles that wear a card texture, and which family each one
+# The six palette roles that wear a card texture, and which family each one
 # samples: OF_Grass wears "grass" (a bundle of ~11 blades, so one geometric
 # blade maps a NARROW vertical band of it); every OF_Leaf* wears "leaf" (ONE
-# full frond, so a strip spans the full card width).
-FOLIAGE_ROLES = {"Grass", "Leaf", "LeafDeep", "LeafLight", "LeafDry"}
+# full frond, so a strip spans the full card width); OF_Canopy wears "canopy"
+# (ONE whole tree crown, RN-2245, and it is mapped by exactly one thing in the
+# project -- `build_props_canopy.py`'s `_impostor`, which passes its UVs
+# explicitly through `quad_card_uvs`, so nothing in the canopy path actually
+# consults this set. It is listed anyway because the set's docstring is a claim
+# about which roles wear a card, and an incomplete claim is a lie in waiting.)
+FOLIAGE_ROLES = {"Grass", "Leaf", "LeafDeep", "LeafLight", "LeafDry", "Canopy"}
 
 # Half-width in u of the band one grass blade samples from the grass bundle
 # texture. 0.045 is about one blade of the ~11 in the card.

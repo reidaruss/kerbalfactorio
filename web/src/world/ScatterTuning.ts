@@ -640,10 +640,10 @@ export const CANOPY_FAR_RADIUS_M = 3500;
  *
  * 1.6, i.e. 1.0x at 690 m rising to 2.6x at 3,500 m. Area-weighted over the
  * density fade that multiplies realised crown area by **3.39** (the integral is
- * in world-gen.md section 6.6), and the outer card is then a 31 m tree at
+ * in world-gen.md section 6.9.5), and the outer card is then a 31 m tree at
  * 3,500 m: **6.9 pixels tall** at the shipped 1600x900 / 60 degree frame, a
  * blob of canopy standing for roughly nine trees. Both coverage figures are
- * published with and without this term (world-gen.md 6.6) so the density claim
+ * published with and without this term (world-gen.md 6.9.5) so the density claim
  * stands on its own arithmetic and cannot be flattered by this one.
  */
 export const CANOPY_FAR_GROW = 1.6;
@@ -905,7 +905,8 @@ export function groveWeight(grove: number): number {
  * of the table's ask while the closed-grove-closed-stand ground gets the ask in
  * full. That is the number `Registry`'s canopy tables are now written against:
  * **the density inside a closed stand of a closed wood**, not the average over
- * a biome. Both figures are published in world-gen.md section 6.6.
+ * a biome. Both figures are published in world-gen.md section 6.9.1, and 6.9.2
+ * is why the product is what makes the row mean a closed stand at all.
  */
 export function canopyWeight(altM: number, stand: number, grove: number): number {
   const wander = (stand * 2 - 1) * TREELINE_WANDER_M;

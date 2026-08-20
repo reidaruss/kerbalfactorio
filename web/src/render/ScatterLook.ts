@@ -48,9 +48,25 @@ export type Look = 'foliage' | 'mineral';
  *
  * Note it matches on the material role and therefore covers `OF_Grass:detail`
  * and every `OF_Leaf*` variant without enumerating them.
+ *
+ * RN-2245 adds `OF_Canopy`, and it is the one edit in this lane that a reader
+ * would not predict from "the far card gets its own texture". The prefix test
+ * above is the ONLY authority on plant-ness, and four separate behaviours hang
+ * off it: `PropLibrary.register` picks the foliage base-contact bake instead of
+ * the mineral one, `PropGeometry` bends the normals outward, `PropLibrary`
+ * attaches wind and the foliage sky-ambient term, and `setLeafVar` skips a
+ * batch that is not marked foliage. Move the far card onto a role that does not
+ * start with `OF_Leaf` and all four silently stop, with no error anywhere and
+ * nothing in a counter to show it. That is the shape of defect this lane is
+ * fixing, so it is not one to introduce.
+ *
+ * `lookOf` below is unaffected either way: a canopy STEM's part list still
+ * contains its `OF_Leaf*` LOD0/LOD2 crowns, so the instance tint's dry drift
+ * (`tintFor`) reaches every canopy tree exactly as it did before.
  */
 export function isFoliageMaterial(name: string): boolean {
-  return name.startsWith('OF_Grass') || name.startsWith('OF_Leaf');
+  return name.startsWith('OF_Grass') || name.startsWith('OF_Leaf')
+    || name.startsWith('OF_Canopy');
 }
 
 export function lookOf(materials: readonly string[]): Look {
