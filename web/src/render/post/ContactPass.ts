@@ -37,6 +37,8 @@ export class ContactPass {
       uSunView: { value: new THREE.Vector3(0, 1, 0) },
       uLengthM: { value: tune.csLengthM }, uThickM: { value: tune.csThickM },
       uMaxScreen: { value: tune.csMaxScreen }, uBiasM: { value: tune.csBiasM },
+      uThinEdgeInv: { value: 1 / tune.csThinEdgeM }, uThinAmount: { value: tune.csThinAmount },
+      uThinNearM: { value: tune.csThinNearM }, uThinFarM: { value: tune.csThinFarM },
     }, { defines: { ...dd, OF_CS_STEPS: tune.csSteps } }));
 
     this.apply = new Blit(postMaterial('of.contact.apply', CONTACT_APPLY_FS, {
@@ -77,6 +79,10 @@ export class ContactPass {
     c.uThickM.value = this.tune.csThickM;
     c.uMaxScreen.value = this.tune.csMaxScreen;
     c.uBiasM.value = this.tune.csBiasM;
+    c.uThinEdgeInv.value = 1 / this.tune.csThinEdgeM;
+    c.uThinAmount.value = this.tune.csThinAmount;
+    c.uThinNearM.value = this.tune.csThinNearM;
+    c.uThinFarM.value = this.tune.csThinFarM;
     host.setTarget(t.contact);
     host.drawFullScreen(this.march.mesh);
 

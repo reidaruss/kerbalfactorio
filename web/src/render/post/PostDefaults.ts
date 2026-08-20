@@ -133,6 +133,36 @@ export const POST_DEFAULTS: PostTuning = {
   // back is the honest correction for occluding light that was never occludable.
   csStrength: 0.72,
   csMaxScreen: 0.05,
+  // RN-2220. THE CONTACT-SHADOW SHARE, MEASURED BEFORE ANY OF THIS WAS TOUCHED
+  // (`?contact=0` pairs, real capture): forestfloor's own box reads 22.3% darker
+  // with contact shadows on than off, against a 12.6% BARE control at the same
+  // pose -- a 9.8-point excess, comparable in size to the AO share RN-2190
+  // measured and never separately isolated before this lane. meadowfield's own
+  // rangeRects found the SAME shape RN-2190 found for AO: the excess lives at
+  // the near rung (r4, 4 m: 16.8% carpet against 12.6% bare, a 4.2-point gap)
+  // and is already GONE by r10 (10 m: carpet already reads UNDER its own bare
+  // share there, 8.0% against 14.2%), so a fix aimed at r4 that is not distance-
+  // gated makes r10's own pre-existing deficit worse, not better -- confirmed by
+  // measurement, not assumed from the AO precedent alone.
+  csThinEdgeM: 0.05,
+  // RN-2220. THE GATE IS TIGHT BECAUSE THE CONFLICT IS TIGHT. meadowfield's own
+  // `box` inverts to about 5.7 m (RN-2190's own note on this shot), almost on
+  // top of `r4`'s 4 m, which is the identical "two rectangles, nearly the same
+  // range, disagreeing" shape AO's own aoThinNearM/FarM exists for -- so the
+  // gate here is NARROWER than AO's (8/22) rather than copied from it: at
+  // csThinNearM/FarM = 5/9 (AO's own proportions scaled down), r4's excess
+  // closes (16.8% -> 13.65%, 1.0 point over bare) but `box`'s pre-existing
+  // deficit gets WORSE (2.4 points under bare -> 5.0 points under, a bigger new
+  // error than the one being fixed, failing AO's own selection rule). Narrowed
+  // to 4/5 -- so close to `box`'s own 5.7 m that most of `box` sits outside the
+  // gate entirely -- r4 still closes to 1.2 points over bare (closing 71% of
+  // its excess) and `box`'s new deficit (2.5 points) no longer exceeds its old
+  // one (2.4), the same criterion AO's own aoThinAmount was chosen by. Verified
+  // NOT to touch forestfloor's own box, whose eye-to-ground range never reaches
+  // 4 m: identical (21.85) at 5/9 and at 4/5.
+  csThinAmount: 0.35,
+  csThinNearM: 4,
+  csThinFarM: 5,
   // WHERE THESE COME FROM. The shape is the Smith and Baker (1981) absorption
   // spectrum of pure water, which is the standard tabulation and is brutally
   // asymmetric: about 0.24 /m at 600 nm (red), 0.055 /m at 550 nm (green) and

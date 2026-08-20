@@ -70,6 +70,25 @@ uniform float uThickM;
 uniform float uMaxScreen;
 /** Depth-slope bias in metres, to stop a lit surface shadowing itself. */
 uniform float uBiasM;
+/** RN-2220. 1 / the edge magnitude (metres) at which thin-geometry damping
+ *  saturates. AoGlsl's own pattern (RN-2190), reused rather than shared: this
+ *  pass has its own march scale and its own tunable, not AoGlsl's retuned. */
+uniform float uThinEdgeInv;
+/** RN-2220. How far the OCCLUSION is pulled toward 0 (no contact shadow) at
+ *  full thin-geometry saturation. 0.0 is the exact pre-RN-2220 expression
+ *  (csthin=0's target). */
+uniform float uThinAmount;
+/** RN-2220. View-space metres: full strength inside uThinNearM, zero beyond
+ *  uThinFarM. MEASURED, not assumed, on meadowfield's rangeRects: an UNGATED
+ *  damp closes r4's excess (carpet contact share 16.80% against a 12.63% bare
+ *  control) but ALSO pulls r10/r25/r55 -- which already ran UNDER their own
+ *  bare share before this term touched anything -- further under it by MORE
+ *  than their pre-existing gap (r10's own deficit widens from 6.2 points to
+ *  8.7), the identical shape of conflict AoGlsl's own near/far gate exists to
+ *  solve. Set tight because the excess itself is tight: gone by r10 (10 m).
+ */
+uniform float uThinNearM;
+uniform float uThinFarM;
 
 ${DEPTH_GLSL}
 
@@ -84,13 +103,25 @@ float dither(vec2 p) {
 
 /**
  * The geometric normal, from two depth taps per axis, picking the neighbour on
- * the CONTINUOUS side of any silhouette. Same construction as AoGlsl, and it is
- * here for one specific job: refusing to shade a surface that already faces
- * away from the sun. That surface is dark because the LIGHTING made it dark, and
- * multiplying a second darkness into it is the double-darkening failure that
- * PostConfig's occlusion note is about.
+ * the CONTINUOUS side of any silhouette, PLUS (in .w) the mean absolute view-
+ * space depth deviation of those same four neighbours -- AoGlsl's
+ * normalAndEdgeFromDepth (RN-2190), reused here rather than shared, because the
+ * two passes have no common module to hold it and each already owns its own
+ * DEPTH_GLSL-based reconstruction.
+ *
+ * The normal is here for one specific job: refusing to shade a surface that
+ * already faces away from the sun. That surface is dark because the LIGHTING
+ * made it dark, and multiplying a second darkness into it is the double-
+ * darkening failure that PostConfig's occlusion note is about. The edge term is
+ * here for RN-2220: a grass-blade silhouette a texel wide puts one or two of the
+ * four taps past the blade onto the ground metres behind it, which is exactly
+ * the thin-geometry signal AoGlsl measured overcounts occlusion, and the same
+ * shape of overcount applies to a hard-edged screen-space march walking through
+ * a field of them -- the carpet's own translucency term (GrassGlsl's trans)
+ * already stands for a blade's soft self-shadowing, so a hard contact-shadow
+ * multiply on top double-darkens it the same way thin AO did.
  */
-vec3 normalFromDepth(vec2 uv, vec3 P) {
+vec4 normalAndEdgeFromDepth(vec2 uv, vec3 P) {
   vec2 ul = uv - vec2(uTexel.x, 0.0);
   vec2 ur = uv + vec2(uTexel.x, 0.0);
   vec2 ud = uv - vec2(0.0, uTexel.y);
@@ -103,7 +134,9 @@ vec3 normalFromDepth(vec2 uv, vec3 P) {
   vec3 dy = abs(Pd.z - P.z) < abs(Pu.z - P.z) ? (P - Pd) : (Pu - P);
   vec3 n = cross(dx, dy);
   float l = length(n);
-  return l < 1e-12 ? vec3(0.0, 0.0, 1.0) : n / l;
+  vec3 normal = l < 1e-12 ? vec3(0.0, 0.0, 1.0) : n / l;
+  float edge = 0.25 * (abs(Pl.z - P.z) + abs(Pr.z - P.z) + abs(Pd.z - P.z) + abs(Pu.z - P.z));
+  return vec4(normal, edge);
 }
 
 void main() {
@@ -111,10 +144,20 @@ void main() {
   if (isBackground(d)) { gl_FragColor = vec4(1.0); return; }
 
   vec3 P = viewFromDepth(vUv, d);
-  vec3 N = normalFromDepth(vUv, P);
+  vec4 ne = normalAndEdgeFromDepth(vUv, P);
+  vec3 N = ne.xyz;
   float ndl = dot(N, uSunView);
   // Already facing away from the sun: the shading model has handled it.
   if (ndl <= 0.02) { gl_FragColor = vec4(1.0); return; }
+  // RN-2220. Saturates on the same high-frequency depth-edge density AoGlsl's
+  // thin term reads, applied to the RESULT (occl, below) rather than to the
+  // march, for the identical reason AoGlsl's own header gives: the march's step
+  // count does not couple to this signal the way a search radius would, so
+  // there is no "measured backwards" trap here, but damping the result is still
+  // the minimal, march-independent change.
+  float thin = clamp(ne.w * uThinEdgeInv, 0.0, 1.0);
+  // RN-2220. DISTANCE-GATED, AoGlsl's own construction: see uThinNearM's note.
+  thin *= 1.0 - smoothstep(uThinNearM, uThinFarM, -P.z);
 
   // Clamp the march so a surface right against the camera cannot walk the whole
   // framebuffer. uProj[0][0] survives both the reversed-Z flip and the log-depth
@@ -152,6 +195,12 @@ void main() {
     }
     t += step;
   }
+
+  // RN-2220. Pull the occlusion toward 0 (no contact shadow) for high-frequency
+  // depth, by uThinAmount at full saturation. contactthin=0 sets uThinAmount to
+  // 0.0 at the call site, the algebraic identity, making this line exactly the
+  // pre-RN-2220 one.
+  occl *= 1.0 - thin * uThinAmount;
 
   // Fade out as the surface turns away from the sun, so the term joins the
   // shading model's own terminator instead of ending on a line across it.
