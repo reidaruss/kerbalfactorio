@@ -157,6 +157,15 @@ export interface Config {
    */
   readonly propCull: boolean;
   /**
+   * RN-2204. `?propcullbiome=0` narrows per-instance frustum culling back to
+   * the UNDERSTOREY batches alone, which is exactly what the prop layer shipped
+   * with before this lane, so the pair `default` / `propcullbiome=0` is the
+   * one-flag control for the widening and `propcull=0` still removes it from
+   * both layers. Three states because there are three real configurations and a
+   * single boolean would have made the new default un-measurable.
+   */
+  readonly propCullBiome: boolean;
+  /**
    * `?grassshort=0` restores the RN-15 understorey height band (0.55 to 1.30 of
    * the authored blade height) AND the height-compounding distance upscale, so
    * the whole "the understorey reads as a crop field" change can be isolated in

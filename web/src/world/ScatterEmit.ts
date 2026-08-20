@@ -13,7 +13,7 @@ import { geomAtTier } from '../render/instancing/PropLods.js';
 import type { PropLibrary, PropPart } from '../render/instancing/PropLibrary.js';
 import type { PropSpec } from '../assets/Registry.js';
 import {
-  MAX_PER_CELL, LOD2_M, CANOPY_LOD2_M, hash32, frac, type Tier,
+  MAX_PER_CELL, LOD2_M, CANOPY_LOD2_M, CANOPY_LOD3_M, hash32, frac, type Tier,
 } from './ScatterTuning.js';
 import {
   CLUSTER_BIAS, CONTACT_CARDS, CONTACT_SPREAD, lookOf, scaleFor, tintFor,
@@ -33,7 +33,9 @@ export interface Build {
   quat: Float32Array;
   scale: Float32Array;
   parts: {
-    material: string; slot: number; lod0: number; lod2: number; lod2M: number;
+    material: string; slot: number;
+    lod0: number; lod2: number; lod3: number;
+    lod2M: number; lod3M: number;
   }[];
   owner: number[];
   n: number;
@@ -183,6 +185,11 @@ export class PropEmitter {
     // on every part, because `Scatter.write` sees only parts and a lookup back
     // to the spec on every rebase of every instance is the wrong shape.
     const lod2M = spec.canopy === true ? CANOPY_LOD2_M : LOD2_M;
+    // RN-2202. A third band ONLY where a third rung was authored. Everything
+    // else gets `lod3M === lod2M`, so its far pick lands on the same geometry
+    // id at the same range and the ladder is inert for it by arithmetic rather
+    // than by a branch.
+    const lod3M = spec.canopy === true ? CANOPY_LOD3_M : lod2M;
     for (const part of list) {
       const slot = this.lib.acquire(part.material);
       if (slot < 0) continue;
@@ -195,7 +202,8 @@ export class PropEmitter {
       // and one that ships a LOD3 no longer overwrites its LOD2 (PropLods).
       b.parts.push({
         material: part.material, slot,
-        lod0: geomAtTier(part, 0), lod2: geomAtTier(part, 2), lod2M,
+        lod0: geomAtTier(part, 0), lod2: geomAtTier(part, 2),
+        lod3: geomAtTier(part, 3), lod2M, lod3M,
       });
       b.owner.push(n);
     }

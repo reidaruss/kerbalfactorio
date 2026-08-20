@@ -393,6 +393,11 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // measurement of the term rather than of two different shaders. A number
   // sweeps it.
   'propsky',
+  // RN-2204, standing rule 7. `propcullbiome=0` narrows per-instance frustum
+  // culling back to the understorey batches, which is the pre-widening build
+  // exactly, so it is the control for the 344,118-triangle drop. `propcull=0`
+  // still removes it from both layers and is the older, wider control.
+  'propcullbiome',
   // RN-102, standing rule 7. `leafvar=0` bakes the flat greyscale vertex
   // colour, i.e. the pre-RN-102 bytes exactly; the runtime pair lives on
   // `__ofProps.setLeafVar` because a reload cannot hold the frame equal.

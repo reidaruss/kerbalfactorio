@@ -669,6 +669,53 @@ def broadleaf_lod2():
     return p
 
 
+# ---------------------------------------------------------------------------
+# RN-2202, THE IMPOSTOR RUNG.
+#
+# WHAT IT IS FOR. The world audit measured 188,081 triangles at 1,200 m and NOT
+# ONE TREE in any aerial frame; the same missing far rung is why 58.8 per cent
+# of the standing frame's triangles exist only to fill shadow maps. Both are the
+# same shape: the cheapest thing this set can draw is a 28-to-58 triangle CONE,
+# so the canopy can only be afforded inside a 620 m ring and only with every
+# instance casting into three cascades.
+#
+# WHY THE OLD FILE SAID NOT TO BUILD ONE, AND WHY THAT REASON IS GONE. The
+# contract's own comment reads: "LOD2 is hand authored as a CONE, never a
+# decimate and never the crossed-quad impostor the harvest trees carry: there is
+# no texture pipeline, so an untextured crossed quad renders as a solid
+# rectangle." That was true and is not now. RN-181 moved the leaf roles into the
+# `leaf` CARD family, so OF_Leaf is an alpha-tested unit-UV leaf texture, and
+# this atlas already declares `uv_authored_materials: [OF_Leaf, OF_LeafDeep,
+# OF_LeafLight]` with `family: leaf, alpha: true`. A crossed quad on OF_Leaf is
+# a leaf mass now, not a rectangle. The rung is unblocked by a change somebody
+# else made, which is worth writing down rather than quietly acting on.
+#
+# THE SHAPE, ten triangles: a three-segment trunk (six) up to the crown base,
+# and two crossed leaf quads over the crown (four). The trunk is kept where the
+# harvest trees' card drops it, and the reason is this set's own geometry: a
+# canopy tree carries its crown high over a long bare stem, so a card spanning
+# the whole box would put foliage on the ground at exactly the ranges this rung
+# serves. Six triangles is what it costs to keep the tree standing on something.
+#
+# NO NEW MATERIAL. Bark and Leaf are both already in ORDER and both already in
+# `double_sided_ok`, so this rung adds no draw call, no texgen family and no
+# ROLE_FAMILY row -- it adds ten triangles and nothing else.
+def _impostor(height, crown_lo, trunk_r, key):
+    """Trunk stub to `crown_lo * height`, crossed leaf quads above it.
+
+    Fitted to the SAME box as LOD0 and LOD2 by `pc.build_atlas`, which is what
+    keeps the plan aspect RN-271 bought: the card is stretched by the same two
+    factors the crown is, so the impostor is elliptical in plan exactly where
+    the tree is and the per-instance yaw still changes its projected width.
+    """
+    p = hc.Parts()
+    z0 = height * crown_lo
+    p.add(*hc.taper(trunk_r, trunk_r * 0.62, 0.0, z0, seg=3), role="Bark")
+    v, f, sm = hc.crossed_quads(2.0, height - z0, z0=z0, yaw_deg=0.0)
+    p.add(v, f, sm, "Leaf", uvs=pc.quad_card_uvs(2, key))
+    return p
+
+
 # THE FOOTPRINTS ARE NO LONGER SQUARE, AND THAT IS THE SINGLE HIGHEST-LEVERAGE
 # NUMBER IN THIS FILE. It was found by measurement and it is worth stating
 # plainly, because it defeats the obvious version of this pass.
@@ -699,15 +746,28 @@ def broadleaf_lod2():
 # 2.90 x 2.20 box is what turns those tiers into ellipses. For a stack of rings
 # that stretch is exact and uniform at every height, which is why it is an
 # acceptable way to buy the aspect there and not a way to buy it anywhere.
+# The LOD3 crown bases are each tree's OWN measured lowest-foliage fraction,
+# printed by `report_foliage_ratio` off the exported bytes every build (pine
+# 0.597, fir 0.623, broadleaf 0.586) and rounded DOWN a little so the card
+# starts at or below the foliage rather than above it. They are read off the
+# asset rather than chosen, which is the only reason they can be trusted to
+# stay right when the crowns move: if a crown drops, the printed number drops
+# with it and the mismatch is visible in the build log.
 PROPS = [
     pc.Prop("Canopy_Pine", (3.85, 2.55, PINE_H), pine, ORDER,
-            lod2=pine_lod2, collide=False,
+            lod2=pine_lod2,
+            lod3=lambda: _impostor(PINE_H, 0.55, 0.16, 22001),
+            collide=False,
             note="crown in the top 45%, bare trunk to 0.55 of height"),
     pc.Prop("Canopy_Fir", (2.90, 2.20, FIR_H), fir, ORDER,
-            lod2=fir_lod2, collide=False,
+            lod2=fir_lod2,
+            lod3=lambda: _impostor(FIR_H, 0.60, 0.14, 22002),
+            collide=False,
             note="the emergent: crown in the top 38%, bare to 0.62"),
     pc.Prop("Canopy_Broadleaf", (8.40, 10.50, BROAD_H), broadleaf, ORDER,
-            lod2=broadleaf_lod2, collide=False,
+            lod2=broadleaf_lod2,
+            lod3=lambda: _impostor(BROAD_H, 0.52, 0.26, 22003),
+            collide=False,
             note="forks at 0.45, crown carried above 0.60"),
 ]
 

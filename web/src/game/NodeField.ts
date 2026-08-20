@@ -19,7 +19,7 @@
 
 import * as THREE from 'three';
 import { loadGlb } from '../assets/Loaders.js';
-import { NODE_LOD1_M, NODE_LOD2_M, NODE_LOD_HYST, NodeBatch,
+import { LODS, NODE_LOD_HYST, NODE_LOD_M, NodeBatch,
   type NodePart } from './NodeBatch.js';
 import { ART, frac, hash32, pickArt, variantFor, type NodeArt } from './NodeArt.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
@@ -335,12 +335,17 @@ export class NodeField {
     const s = pl.scale > 0 ? pl.scale : 1;
     const d = Math.sqrt(d2) / s;
     const up = 1 + NODE_LOD_HYST, down = 1 - NODE_LOD_HYST;
-    if (pl.lod >= 2) return d > NODE_LOD2_M * down ? 2 : (d > NODE_LOD1_M ? 1 : 0);
-    if (pl.lod === 1) {
-      if (d > NODE_LOD2_M * up) return 2;
-      return d < NODE_LOD1_M * down ? 0 : 1;
+    // ONE rule for every rung (RN-2202). A threshold the node is not yet past
+    // has to be cleared by `up`; one it is already past only releases at
+    // `down`. Written as a walk rather than as a branch per tier so the
+    // impostor rung could be added by lengthening a table instead of by
+    // writing a fourth branch with its own chance of inverting the sense.
+    let t = 0;
+    for (let i = 0; i < NODE_LOD_M.length; ++i) {
+      if (d <= NODE_LOD_M[i] * (i >= pl.lod ? up : down)) break;
+      t = i + 1;
     }
-    return d > NODE_LOD2_M * up ? 2 : (d > NODE_LOD1_M * up ? 1 : 0);
+    return t;
   }
 
   /** Build `this.m` for a node: engine position, ground normal, yaw, hit reaction. */
@@ -536,7 +541,8 @@ export class NodeField {
   stats(): { nodes: number; empty: number; felled: number; collapsing: number;
              batches: number; instances: number; free: number;
              capacity: number; slots: number; lod0: number; lod1: number;
-             lod2: number; lodSwitches: number; lodSwitchesLastFrame: number;
+             lod2: number; lod3: number; lodTiers: number;
+             lodSwitches: number; lodSwitchesLastFrame: number;
              ceiling: number; grows: number; refused: number } {
     const b = this.batch.stats();
     let slots = 0;
@@ -555,6 +561,13 @@ export class NodeField {
       lod0: this.placed.filter((p) => p.lod === 0).length,
       lod1: this.placed.filter((p) => p.lod === 1).length,
       lod2: this.placed.filter((p) => p.lod === 2).length,
+      // RN-2202. The impostor rung gets its own bucket for WG-118's reason: a
+      // tier nobody counts is a tier nobody can prove is reaching anything, and
+      // this one only fires past 310 m where a probe cannot see it in a frame.
+      // `lodTiers` is published beside it so a reader can tell "no node is at
+      // tier 3" from "this build has no tier 3".
+      lod3: this.placed.filter((p) => p.lod === 3).length,
+      lodTiers: LODS,
       lodSwitches: this.lodSwitches,
       lodSwitchesLastFrame: this.lodSwitchesLastFrame,
       // DW-28. The pool now DOUBLES instead of returning -1 at a fixed 128, and

@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { loadGlb } from '../../assets/Loaders.js';
 import { SHARED_ATLAS } from '../../assets/Registry.js';
 import { LAYER_PROPS } from '../Scenes.js';
+import { attachFarShadowSkip } from '../ShadowLod.js';
 import { isFoliageMaterial } from '../ScatterLook.js';
 import { normalize, setBaseShade, setLeafVar, type BaseBake }
   from './PropGeometry.js';
@@ -77,6 +78,11 @@ interface Batch {
    *  `savedTint` is `setLeafVar`'s lazy copy, zero cost until toggled off. */
   foliage: boolean;
   savedTint: Uint8Array | null;
+  /** RN-2203. Geometry ids in THIS batch that are the `_LOD3` impostor rung.
+   *  Collected during registration because that is the only place the rung's
+   *  identity is known; consumed once, after every atlas is in, to install the
+   *  far-shadow skip. */
+  far: Set<number>;
 }
 
 /**
@@ -123,16 +129,21 @@ export class PropLibrary {
   private growable = true;
   /** Per-instance frustum culling on the understorey batches (?propcull=0). */
   private cullDetail = true;
+  /** RN-2204. The same, WIDENED to the biome batches; `?propcullbiome=0` is
+   *  the pre-widening state and therefore the control. */
+  private cullBiome = true;
   /** False registers LOD0 as the far geometry too (?proplod2=0). */
   private lod2Enabled = true;
 
   static async load(
     urls: readonly string[], scene: THREE.Scene, growable = true,
-    cullDetail = true, lod2Enabled = true,
+    cullDetail = true, lod2Enabled = true, farShadowFromM = 0,
+    cullBiome = true,
   ): Promise<PropLibrary> {
     const lib = new PropLibrary();
     lib.growable = growable;
     lib.cullDetail = cullDetail;
+    lib.cullBiome = cullBiome;
     lib.lod2Enabled = lod2Enabled;
     // Deduped by Loaders, so props_moon.glb is fetched once for its three biomes.
     // The manifest is awaited alongside, not after: this is the ONE batch path
@@ -153,6 +164,18 @@ export class PropLibrary {
       lib.register(gltfs[i].scene, detail.has(unique[i]) ? DETAIL_SUFFIX : '');
     }
     for (const b of lib.batches.values()) scene.add(b.mesh);
+    // RN-2203. THE IMPOSTOR RUNG DOES NOT CAST. Installed here rather than in
+    // `batchFor`, because a batch collects impostor ids from every atlas that
+    // shares its material and the set is only complete once all of them are
+    // registered. `farShadowFromM` is the range at which the rung is CHOSEN
+    // (`ScatterTuning.CANOPY_LOD3_M`), passed in rather than imported so this
+    // render-layer class does not reach into the world layer for a number.
+    // See ShadowLod.attachFarShadowSkip for the measurement and the gate.
+    if (farShadowFromM > 0) {
+      for (const b of lib.batches.values()) {
+        attachFarShadowSkip(b.mesh, b.far, farShadowFromM);
+      }
+    }
     // The probe surface, on the `Surfaces.ts` precedent and for its reason:
     // this is a measurement hook, not gameplay, so it is not routed through
     // `window.__of`. It is also the only route this lane has to a one-binary
@@ -192,8 +215,14 @@ export class PropLibrary {
           ? null : (rungs[0] ?? meshAtTier(rungs, PROP_LODS - 1));
         if (near === null || near === undefined) continue;
         const key = mat + suffix;
+        // RN-2204: `cull` is now the SAME answer for both layers, and the
+        // widening is the point. See `batchFor`'s note: per-instance culling
+        // was measured OFF for the biome props at 9,340 instances in the NEAR
+        // pass, and that measurement never looked at the three shadow cascades,
+        // where the same batch is swept again with a box a fraction the size.
         const batch = this.batchFor(key, mat, near.mesh.material as THREE.Material,
-          suffix === '', suffix !== '' && this.cullDetail);
+          suffix === '',
+          this.cullDetail && (suffix !== '' || this.cullBiome));
         // RN-62: EVERY prop takes a base-contact gradient, and the only
         // question is which profile (it used to be plants or nothing, which
         // left boulders meeting the terrain along a hard silhouette). The
@@ -223,6 +252,7 @@ export class PropLibrary {
           if (m === null || m === undefined) continue;
           lods[t] = batch.mesh.addGeometry(
             normalize(m.mesh.geometry, m.mesh.matrixWorld, bake));
+          if (t === PROP_LODS - 1) batch.far.add(lods[t]);
         }
         list.push({ material: key, lods });
       }
@@ -300,7 +330,7 @@ export class PropLibrary {
     const batch: Batch = {
       mesh, free: [], live: 0, cap: cap0, grows: 0, refused: 0, warned: false,
       shaded: false, savedColour: null,
-      foliage: isFoliageMaterial(role), savedTint: null,
+      foliage: isFoliageMaterial(role), savedTint: null, far: new Set<number>(),
     };
     this.batches.set(key, batch);
     return batch;

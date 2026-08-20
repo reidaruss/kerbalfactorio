@@ -12,8 +12,19 @@ export interface Placed {
    * `lod2M` is the distance at which THIS part switches to its far geometry,
    * carried per part rather than read from one constant because a 12 m tree and
    * a 0.4 m grass card do not stop being legible at the same range.
+   *
+   * RN-2202 adds the IMPOSTOR rung beside it. `lod3` is resolved through
+   * `PropLods.geomAtTier`, so for the forty-odd props that author no `_LOD3` it
+   * IS `lod2`'s id and `lod3M` is set equal to `lod2M`: the third band exists
+   * for every part and changes nothing for the parts with nothing behind it.
+   * That is deliberate -- a per-part "has an impostor" flag would be a second
+   * authority on a question the geometry ids already answer.
    */
-  parts: { material: string; slot: number; lod0: number; lod2: number; lod2M: number }[];
+  parts: {
+    material: string; slot: number;
+    lod0: number; lod2: number; lod3: number;
+    lod2M: number; lod3M: number;
+  }[];
   local: Float32Array;
   quat: Float32Array;
   /** Three components per prop now: width, HEIGHT, width. See ScatterLook. */

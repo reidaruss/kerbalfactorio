@@ -129,7 +129,7 @@ export function indexRow(ix: LodIndex, row: LodRow): void {
 // tier changed.
 // ---------------------------------------------------------------------------
 
-interface Cascade { name: string; texelM: number; nearM: number }
+interface Cascade { name: string; texelM: number; nearM: number; farM: number }
 
 const byCamera = new WeakMap<THREE.Camera, Cascade>();
 const published: Cascade[] = [];
@@ -138,12 +138,20 @@ const published: Cascade[] = [];
  *  `NEAREST_CASTER_M` for cascade 0, which has no split below it. It is what the
  *  texel's screen footprint is evaluated at. */
 export function publishCascade(name: string, cam: THREE.Camera, texelM: number,
-                               nearM: number): void {
-  const c: Cascade = { name, texelM, nearM };
+                               nearM: number, farM = 0): void {
+  const c: Cascade = { name, texelM, nearM, farM };
   byCamera.set(cam, c);
   const at = published.findIndex((p) => p.name === name);
   if (at < 0) published.push(c);
-  else { published[at].texelM = texelM; published[at].nearM = nearM; }
+  else {
+    published[at].texelM = texelM;
+    published[at].nearM = nearM;
+    // RN-2203. Defaulted to 0 rather than to a split table, and 0 is READ as
+    // "unknown" by the far-shadow skip, which then keeps every caster. A
+    // publisher that has not been taught the far distance therefore loses the
+    // optimisation instead of losing a shadow.
+    published[at].farM = farM;
+  }
 }
 
 /** The cascade a shadow camera belongs to, or null for one nobody published. */
@@ -330,6 +338,121 @@ export function attachShadowLod(mesh: THREE.BatchedMesh, ix: LodIndex): void {
     saved.length = 0;
     m._visibilityChanged = true;
   };
+}
+
+// ---------------------------------------------------------------------------
+// RN-2203: THE FAR RUNG DOES NOT CAST.
+//
+// The rule above coarsens a caster and can never remove one, because it is
+// derived from a DEVIATION and a deviation is always finite. That is right for
+// a machine and wrong for the far half of a forest, and the measurement says
+// which: at `forestfloor`, one build, three interleaved repeats,
+//
+//     base        1,616,640 triangles   74 calls
+//     shadows=0     782,595             46      -> 834,045 are shadow-only
+//     props=0       882,340             50      -> 734,300 of the frame is props
+//
+// so the props are 45 per cent of the frame and, since a prop batch is drawn in
+// the eye pass plus three cascades, about two thirds of the shadow total. The
+// ladder cannot touch any of it: `NodeLadder`'s own note records that the tree
+// crowns deviate 925 mm at LOD1 and 3,126 mm at LOD2 against cascade texels of
+// 15.47, 56.25 and 210.94 mm, so every foliage rung is refused at every cascade
+// and only boulders are ever admitted.
+//
+// WHAT IS TRUE OF AN IMPOSTOR THAT IS NOT TRUE OF AN LOD. A prop drawing its
+// `_LOD3` card is past `CANOPY_LOD3_M` (420 m) or `NODE_LOD3_M` (310 m). The
+// shadow cascades split at 22, 80 and 300 m, so EVERY instance at the impostor
+// rung is already outside the last cascade's box: its shadow does not exist in
+// the image, and the triangles are submitted only for the driver to clip. This
+// is not a quality trade, it is the removal of work with no image attached, in
+// the same sense `ShadowLod`'s header opens with.
+//
+// IT IS STILL GATED ON THE SPLITS RATHER THAN ASSUMED. `NEAREST_CASTER_M` and
+// the cascade the mesh is being drawn for are both published; the skip only
+// fires for a cascade whose own far distance is inside the impostor threshold,
+// so lowering `CANOPY_LOD3_M` under a split, or a quality tier with a longer
+// last cascade, silently turns it off instead of silently eating a shadow.
+
+/** Registered per batch: which geometry ids ARE the impostor rung, and the
+ *  range past which that rung is chosen. */
+interface FarSkip { ids: Set<number>; fromM: number }
+const farSkips: { mesh: THREE.Object3D; skip: FarSkip }[] = [];
+const farStats = { batches: 0, hidden: 0, passes: 0, skipped: 0 };
+/** Batches that TOOK the skip and batches that were OFFERED it and had no
+ *  impostor rung to skip. Both published: "one batch registered" is a number
+ *  nobody can act on, and "which one" is. */
+const farNames: string[] = [];
+const farEmpty: string[] = [];
+
+/**
+ * Make `mesh` leave its impostor-rung instances out of any shadow cascade that
+ * cannot reach them. `ids` are the geometry ids of that rung in THIS batch;
+ * `fromM` is the distance at which the rung is selected.
+ *
+ * Composes with `attachShadowLod` by construction, because the two never touch
+ * the same instance: this one only acts on slots ALREADY at the impostor rung,
+ * and that rung is never a tier `attachShadowLod` can promote to (it walks
+ * DOWN, and an impostor's deviation is refused by every cascade anyway).
+ */
+export function attachFarShadowSkip(mesh: THREE.BatchedMesh, ids: Set<number>,
+                                    fromM: number): void {
+  if (!SHADOW_LOD_ON || ids.size === 0) { farEmpty.push(mesh.name); return; }
+  farStats.batches++;
+  farNames.push(mesh.name);
+  const m = mesh as unknown as Swappable & {
+    getVisibleAt(i: number): boolean;
+    setVisibleAt(i: number, v: boolean): unknown;
+  };
+  const hidden: number[] = [];
+  const prevBefore = mesh.onBeforeShadow;
+  const prevAfter = mesh.onAfterShadow;
+  mesh.onBeforeShadow = function onBeforeShadow(renderer, object, camera,
+                                                shadowCamera, geometry,
+                                                depthMaterial, group): void {
+    // CHAINED FIRST, so a batch that also carries the tier ladder gets its
+    // swap done before this decides which slots are at the impostor rung.
+    // Order matters and this is the safe one: the ladder only ever makes a
+    // slot COARSER, so a slot it moved to the impostor rung is one this should
+    // also skip, and a slot it moved off one cannot exist.
+    prevBefore.call(this, renderer, object, camera, shadowCamera, geometry,
+      depthMaterial, group);
+    hidden.length = 0;
+    const cascade = cascadeOf(shadowCamera);
+    // A cascade nobody published, or one that reaches past the impostor
+    // threshold, keeps every caster: see the gate note above.
+    if (cascade === null || !(cascade.farM > 0) || cascade.farM > fromM) return;
+    farStats.passes++;
+    const n = m.instanceCount;
+    for (let i = 0; i < n; ++i) {
+      if (!ids.has(m.getGeometryIdAt(i)) || !m.getVisibleAt(i)) continue;
+      hidden.push(i);
+      m.setVisibleAt(i, false);
+      farStats.hidden++;
+    }
+    if (hidden.length > 0) { farStats.skipped += hidden.length; m._visibilityChanged = true; }
+  };
+  mesh.onAfterShadow = function onAfterShadow(renderer, object, camera,
+                                              shadowCamera, geometry,
+                                              depthMaterial, group): void {
+    for (let k = hidden.length - 1; k >= 0; --k) m.setVisibleAt(hidden[k], true);
+    if (hidden.length > 0) m._visibilityChanged = true;
+    hidden.length = 0;
+    prevAfter.call(this, renderer, object, camera, shadowCamera, geometry,
+      depthMaterial, group);
+  };
+  farSkips.push({ mesh, skip: { ids, fromM } });
+}
+
+/** For the probe surface: how many batches carry the skip, and whether it has
+ *  ever actually removed a caster. A registered skip that never fires is the
+ *  vacuous green this project keeps catching, so both are published. */
+export function farSkipStats(): {
+  batches: number; passes: number; skipped: number; registered: number;
+  on: string[]; noImpostor: string[];
+} {
+  return { batches: farStats.batches, passes: farStats.passes,
+    skipped: farStats.skipped, registered: farSkips.length,
+    on: [...farNames], noImpostor: [...farEmpty] };
 }
 
 const ladders: { pool: string; rows: LodRow[] }[] = [];

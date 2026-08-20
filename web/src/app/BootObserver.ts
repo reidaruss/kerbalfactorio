@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { SkyPass } from '../render/SkyPass.js';
 import { createViewModelPlaceholder } from '../render/debug/Placeholders.js';
 import { PropLibrary } from '../render/instancing/PropLibrary.js';
+import { CANOPY_LOD3_M } from '../world/ScatterTuning.js';
 import { JitterProbe } from '../render/debug/JitterProbe.js';
 import { ZFightProbe } from '../render/debug/ZFightProbe.js';
 import { BIOME_ATLAS, SHARED_ATLAS, CANOPY_ATLAS, setForestDetail }
@@ -139,8 +140,12 @@ export async function phaseWorldPrep(s: WorldPrepIn): Promise<WorldPrepOut> {
     ? (cfg.detailCards ? [...BIOME_ATLAS, ...canopy, ...SHARED_ATLAS]
       : [...BIOME_ATLAS, ...canopy])
     : [];
+  // RN-2203's last argument: the range at which a canopy prop is drawing its
+  // impostor rung, so `PropLibrary` can install the far-shadow skip without
+  // importing a world-layer constant. It is the same `CANOPY_LOD3_M` the
+  // scatter selects with, taken from the one place it is defined.
   const props = await PropLibrary.load(atlases, scenes.near, cfg.propGrow,
-    cfg.propCull, cfg.propLod2);
+    cfg.propCull, cfg.propLod2, CANOPY_LOD3_M, cfg.propCullBiome);
   // DW-28: the foliage pools report through the SAME registry the machine pools
   // do, so a refusal reaches the HUD as `POOL FULL: n NOT DRAWN` rather than
   // being counted into a field nothing prints.

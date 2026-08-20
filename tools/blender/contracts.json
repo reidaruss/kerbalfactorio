@@ -1046,13 +1046,13 @@
       "lod0_node": "TreeConifer_Full_LOD0",
       "lod_nodes": [
         "TreeConifer_Full_LOD0", "TreeConifer_Full_LOD1",
-        "TreeConifer_Full_LOD2",
+        "TreeConifer_Full_LOD2", "TreeConifer_Full_LOD3",
         "TreeConifer_Half_LOD0", "TreeConifer_Half_LOD1",
-        "TreeConifer_Half_LOD2",
+        "TreeConifer_Half_LOD2", "TreeConifer_Half_LOD3",
         "TreeConifer_Low_LOD0", "TreeConifer_Low_LOD1",
-        "TreeConifer_Low_LOD2",
+        "TreeConifer_Low_LOD2", "TreeConifer_Low_LOD3",
         "TreeConifer_Stump_LOD0", "TreeConifer_Stump_LOD1",
-        "TreeConifer_Stump_LOD2"
+        "TreeConifer_Stump_LOD2", "TreeConifer_Stump_LOD3"
       ],
       "dims_xyz_m": [2.62, 6.50, 2.10],
       "tolerance_m": 0.005,
@@ -1077,13 +1077,13 @@
       "lod0_node": "TreeBroadleaf_Full_LOD0",
       "lod_nodes": [
         "TreeBroadleaf_Full_LOD0", "TreeBroadleaf_Full_LOD1",
-        "TreeBroadleaf_Full_LOD2",
+        "TreeBroadleaf_Full_LOD2", "TreeBroadleaf_Full_LOD3",
         "TreeBroadleaf_Half_LOD0", "TreeBroadleaf_Half_LOD1",
-        "TreeBroadleaf_Half_LOD2",
+        "TreeBroadleaf_Half_LOD2", "TreeBroadleaf_Half_LOD3",
         "TreeBroadleaf_Low_LOD0", "TreeBroadleaf_Low_LOD1",
-        "TreeBroadleaf_Low_LOD2",
+        "TreeBroadleaf_Low_LOD2", "TreeBroadleaf_Low_LOD3",
         "TreeBroadleaf_Stump_LOD0", "TreeBroadleaf_Stump_LOD1",
-        "TreeBroadleaf_Stump_LOD2"
+        "TreeBroadleaf_Stump_LOD2", "TreeBroadleaf_Stump_LOD3"
       ],
       "dims_xyz_m": [4.35, 5.00, 3.55],
       "tolerance_m": 0.005,
@@ -2082,15 +2082,15 @@
       ],
       "lod0_node": "Canopy_Broadleaf_LOD0",
       "lod_nodes": [
-        "Canopy_Pine_LOD0", "Canopy_Pine_LOD2",
-        "Canopy_Fir_LOD0", "Canopy_Fir_LOD2",
-        "Canopy_Broadleaf_LOD0", "Canopy_Broadleaf_LOD2"
+        "Canopy_Pine_LOD0", "Canopy_Pine_LOD2", "Canopy_Pine_LOD3",
+        "Canopy_Fir_LOD0", "Canopy_Fir_LOD2", "Canopy_Fir_LOD3",
+        "Canopy_Broadleaf_LOD0", "Canopy_Broadleaf_LOD2", "Canopy_Broadleaf_LOD3"
       ],
       "pivot_mode": "ground",
       "dims_xyz_m": [8.40, 10.50, 10.50],
       "tolerance_m": 0.005,
       "max_tris_lod0": 784,
-      "max_tris_total": 1996,
+      "max_tris_total": 2032,
       "max_tris_collision": 12,
       "max_materials": 4,
       "sockets": [],
@@ -2100,10 +2100,13 @@
       "parts": [
         {"node": "Canopy_Pine_LOD0", "dims_xyz_m": [3.85, 12.00, 2.55], "max_tris": 742, "pivot": "ground"},
         {"node": "Canopy_Pine_LOD2", "dims_xyz_m": [3.85, 12.00, 2.55], "max_tris": 50, "pivot": "ground"},
+        {"node": "Canopy_Pine_LOD3", "dims_xyz_m": [3.85, 12.00, 2.55], "max_tris": 12, "pivot": "ground"},
         {"node": "Canopy_Fir_LOD0", "dims_xyz_m": [2.90, 16.50, 2.20], "max_tris": 334, "pivot": "ground"},
         {"node": "Canopy_Fir_LOD2", "dims_xyz_m": [2.90, 16.50, 2.20], "max_tris": 28, "pivot": "ground"},
+        {"node": "Canopy_Fir_LOD3", "dims_xyz_m": [2.90, 16.50, 2.20], "max_tris": 12, "pivot": "ground"},
         {"node": "Canopy_Broadleaf_LOD0", "dims_xyz_m": [8.40, 10.50, 10.50], "max_tris": 784, "pivot": "ground"},
-        {"node": "Canopy_Broadleaf_LOD2", "dims_xyz_m": [8.40, 10.50, 10.50], "max_tris": 58, "pivot": "ground"}
+        {"node": "Canopy_Broadleaf_LOD2", "dims_xyz_m": [8.40, 10.50, 10.50], "max_tris": 58, "pivot": "ground"},
+        {"node": "Canopy_Broadleaf_LOD3", "dims_xyz_m": [8.40, 10.50, 10.50], "max_tris": 12, "pivot": "ground"}
       ],
       "uv_authored_materials": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight"],
       "textures": {

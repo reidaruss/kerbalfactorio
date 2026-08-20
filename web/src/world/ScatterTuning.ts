@@ -247,6 +247,38 @@ export const CANOPY_EDGE_W = 0.16;
  */
 export const CANOPY_LOD2_M = DETAIL_RADIUS_M;
 /**
+ * RN-2202. WHERE THE CONE HANDS OVER TO THE IMPOSTOR CARD, and the paragraph
+ * above is the reason this constant exists at all: "what would let it go back
+ * out: a third LOD tier ... `PropPart` carries exactly two geometry ids and
+ * that is rendering's file, so it is an ask and not a change." It carries four
+ * now (`render/instancing/PropLods.ts`), and this is the ask being answered.
+ *
+ * THE RUNGS, from the shipped bytes: LOD0 is 334 to 784 triangles, LOD2 is a
+ * hand-authored cone at 28 to 58, and LOD3 is a trunk stub plus two crossed
+ * leaf quads at 12. So the cone is two-and-a-half to five times the card, and
+ * the whole question is how far out the cone is still buying an image.
+ *
+ * DERIVED, NOT PICKED. What the card gives up is the crown's PLAN shape: a
+ * crossed pair projects its full width at the cardinal bearings and about 71
+ * per cent of it at 45 degrees, against a cone that projects the same width at
+ * every bearing. That is a silhouette wobble of roughly 15 per cent of the
+ * crown, which stops reading as an error and starts reading as variety once the
+ * tree is small on screen. Taking "small" as 20 pixels of height, at the
+ * shipped 1600x900 / 60 degree frame (779.4 px per metre per metre of range,
+ * NODE_LOD3_M's derivation),
+ *
+ *     d = H * 779.4 / 20   ->   broadleaf (10.5 m) 409 m
+ *                               pine      (12.0 m) 468 m
+ *                               fir       (16.5 m) 643 m
+ *
+ * and the threshold takes the SHORTEST of the three, 409 rounded to 420, so no
+ * canopy tree hands over while it is bigger than the bar. One number rather
+ * than three because `PropSpec` would need a per-prop field to carry three and
+ * the spread is 1.6x, well inside the hysteresis a chunk-rebuild boundary
+ * already imposes on this switch.
+ */
+export const CANOPY_LOD3_M = 420;
+/**
  * THE TREELINE, in metres of designed altitude. Full canopy at or below
  * `TREELINE_FULL_M`, nothing at or above `TREELINE_BARE_M`.
  *

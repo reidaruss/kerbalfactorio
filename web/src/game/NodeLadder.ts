@@ -7,10 +7,11 @@
 // finished filling both and stay ignorant of everything else on that class.
 
 import type * as THREE from 'three';
-import { attachShadowLod, emptyIndex, indexRow, publishLadders, type LodRow }
-  from '../render/ShadowLod.js';
+import { attachFarShadowSkip, attachShadowLod, emptyIndex, indexRow,
+  publishLadders, type LodRow } from '../render/ShadowLod.js';
 import { surfaceDeviation, triCount } from '../render/ShadowLodMeasure.js';
-import { VARIANTS, type Batch, type NodePart } from './NodeBatchTypes.js';
+import { LODS, NODE_LOD3_M, VARIANTS, type Batch, type NodePart }
+  from './NodeBatchTypes.js';
 
 /**
  * THE SECOND SAVING ON THE NODES, and it is not the one the tree lane took.
@@ -40,6 +41,9 @@ export function ladder(batches: ReadonlyMap<string, Batch>,
   const rows: LodRow[] = [];
   for (const [family, b] of batches) {
     const ix = emptyIndex();
+    // RN-2203. The impostor rung's ids in THIS batch, collected alongside the
+    // ladder because both walk the same parts and neither wants a second pass.
+    const far = new Set<number>();
     for (const [file, parts] of partsByFile) {
       for (const part of parts) {
         if (part.material !== family) continue;
@@ -62,10 +66,19 @@ export function ladder(batches: ReadonlyMap<string, Batch>,
           };
           rows.push(row);
           indexRow(ix, row);
+          if (ids[LODS - 1] >= 0) far.add(ids[LODS - 1]);
         }
       }
     }
     attachShadowLod(b.mesh, ix);
+    // AND THE RUNG THE LADDER CANNOT REACH. Everything above coarsens a caster
+    // by DEVIATION, and this file's own header records that every foliage rung
+    // is refused by every cascade on that test (925 mm at LOD1, 3,126 mm at
+    // LOD2, against texels of 15.47 / 56.25 / 210.94 mm). The impostor rung is
+    // not refused for being too coarse, it is IRRELEVANT: a node only draws it
+    // past `NODE_LOD3_M` = 310 m and the last cascade ends at 300, so those
+    // triangles are submitted for the driver to clip and for nothing else.
+    attachFarShadowSkip(b.mesh, far, NODE_LOD3_M);
   }
   publishLadders('nodes', rows);
 }
