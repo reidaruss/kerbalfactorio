@@ -356,6 +356,20 @@
       rangeRowsPx: 5,
       extra: {
         sky: [0.3000, 0.1000, 0.7000, 0.2000],
+        // RN-2195. THE KHAKI STRIP ITSELF, added rather than range-mapped like
+        // `r4`..`r55` above (on `sky`'s own plain-fraction precedent, a few
+        // lines up): the geometric range at this band is many hundreds of
+        // metres to the true horizon, far past REACH_M and the prop scatter's
+        // own reach, where `rangeRects`' flat-plane inversion is not the
+        // right tool. Located by looking (RN2195_meadowfield_after.png): the
+        // tan/khaki band sits between the treeline and the sky, roughly
+        // y 0.28 to 0.33 of the frame. This is the band `meadowfield`'s own
+        // r4..r55 cannot reach (they are calibrated for the carpet's OWN 2 to
+        // 60 m domain, which is denser than this band and therefore
+        // insensitive to a term that only acts past it), and it is the one
+        // A2's own file names as the residual ("a khaki band along the
+        // horizon where the green stops").
+        hz: [0.0500, 0.2800, 0.9500, 0.3300],
       },
       why: 'the MEADOW: plains at a standing eye, the frame section 1 '
         + 'difference 1 is about, and the one no shot in this file could take',

@@ -275,6 +275,33 @@ export const TERRAIN_FRAG_ALBEDO = /* glsl */`
           // exactly the palette they read today.
           albedo = mix(albedo, albedo * ofSplatHue(splatWA, splatWB),
                        uSplatAmp.y * splatFadeA);
+          // RN-2195. THE FAR-FIELD COVER CONVERGENCE, fidelity lane A3 phase
+          // 1.5: past THIS SAME BOUNDARY the ground must not revert to the
+          // bare biome palette, or a carpet that fades out around 90 m hands
+          // off to khaki and the meadow goes bald at the horizon (A2's own
+          // "THE FINDING THIS LANE OWES ANOTHER", GrassPalette.ts's header).
+          //
+          // FADED IN BY (1 - splatFadeA): the near hue term's own curve,
+          // inverted, so the two are complementary on ONE boundary and there
+          // is no third fade constant to keep in step with clause C4. THE
+          // ROTATION is GrassPalette.coverAlbedo's own formula, baked as GLSL
+          // constants and PROVEN to agree with it by
+          // TerrainCoverFar.ts's assertFarCoverMatchesGrass at module load
+          // (throws, on assertHueLuminance's precedent, rather than drifting
+          // quietly). THE WEIGHT is splatVeg * coverSel: the SAME
+          // vegetation selector this block's own grass/dirt split already
+          // uses, times the SAME slope selector every term in this material
+          // shares, so a scree slope or a cliff face is never rotated green
+          // regardless of biome (the vista negative control: Mountains' own
+          // veg is already near zero, and coverSel is what would carry the
+          // rest even if it were not).
+          if (uSplatFarAmp > 0.0) {
+            float farK = OF_COVER_GREEN * splatVeg * coverSel;
+            if (farK > 0.0) {
+              albedo = mix(albedo, ofFarCoverRotate(albedo, farK),
+                           uSplatFarAmp * (1.0 - splatFadeA));
+            }
+          }
         }
         // RN-148: the relief sample. UNCONDITIONAL like g1/g2 and for the same
         // measured reason (a fetch inside non-uniform control flow has

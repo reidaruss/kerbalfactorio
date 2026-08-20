@@ -90,6 +90,12 @@ import { TERRAIN_ART_TEX, TERRAIN_ART_SPEC, TEX_SCALE_GAIN, ROUGH_GRAIN,
 // rather than a modulation: see TerrainSplat.glsl.ts for the weight rules and
 // TerrainSplat.ts for the convergence rule the whole thing rests on.
 import { TERRAIN_SPLAT, TERRAIN_SPLAT_PARS } from './TerrainSplat.glsl.js';
+// RN-2195. Phase 1.5, the fade-target seam: the far-field green convergence
+// that hands off from the near splat's own chroma term at the SAME boundary
+// (TerrainCoverFar.ts's header). It reuses `coverSel` and `splatVeg`, both
+// already in scope where it is called, so it needs no defines of its own
+// beyond the three baked rotation constants.
+import { TERRAIN_COVER_FAR, TERRAIN_COVER_FAR_PARS } from './TerrainCoverFar.glsl.js';
 
 /**
  * RN-1855. The two PRE-FIX values, kept as named exports rather than typed into
@@ -130,6 +136,8 @@ export { TERRAIN_ART_TEX, TERRAIN_ART_SPEC, TEX_SCALE_GAIN, ROUGH_GRAIN,
 // RN-2160. Re-exported for the identical reason: an import site asks TerrainArt
 // for a surface-art symbol and does not need to know which leaf file holds it.
 export { TERRAIN_SPLAT, TERRAIN_SPLAT_PARS } from './TerrainSplat.glsl.js';
+// RN-2195. Re-exported for the identical reason.
+export { TERRAIN_COVER_FAR, TERRAIN_COVER_FAR_PARS } from './TerrainCoverFar.glsl.js';
 
 // RN-1855. OF_ART_FINE_M and OF_RELIEF_FINE_M are GONE rather than left behind,
 // on RN-1005's rule exactly: they are uniforms now (uArtFineM, uReliefFineM),
@@ -175,4 +183,11 @@ export const TERRAIN_ART_PARS = `#define OF_ART_OCT_FINE ${ART_OCT_FINE.toFixed(
   // it feeds is what stops someone reading the define block and believing those
   // literals were typed.
   + TERRAIN_SPLAT_PARS
-  + TERRAIN_SPLAT;
+  + TERRAIN_SPLAT
+  // RN-2195. LAST, on the same reasoning: `ofFarCoverRotate` has no callee of
+  // its own (it is a pure dot-product/multiply, unlike ofSplatWarp), so
+  // nothing downstream of it needs it declared earlier, but its defines are
+  // GENERATED from TerrainCoverFar.ts exactly as the splat's are, so they sit
+  // beside their consumer rather than in the define block above.
+  + TERRAIN_COVER_FAR_PARS
+  + TERRAIN_COVER_FAR;
