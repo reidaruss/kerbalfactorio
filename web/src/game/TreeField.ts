@@ -292,7 +292,7 @@ export class TreeField {
     // groves across the 550-690 m crossfade, so a player standing where the
     // grove field says "open" sees the harvest ring's normal density hand over
     // to a thin far tier. RN-2228 built that seam on the two densities being
-    // about equal across it. Routed in world-gen.md section 6.6 rather than
+    // about equal across it. Routed in world-gen.md section 6.9.2 rather than
     // fixed here, because the fix is either a harvest-side mask (which needs a
     // spawn guarantee) or a grove floor raised until the disagreement is under
     // the noise, and both are decisions with consequences outside this lane.
