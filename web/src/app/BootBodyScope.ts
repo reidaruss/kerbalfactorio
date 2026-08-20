@@ -24,6 +24,7 @@ import type { TerrainBootResult } from '../world/TerrainBoot.js';
 import type { TerrainStream } from '../world/TerrainStream.js';
 import type { BodyId } from '../world/PlanetBody.js';
 import type { VoxelWorld } from '../world/VoxelWorld.js';
+import type { VegetationScope } from '../game/VegetationScope.js';
 import { read, type BootCtx, type Holder } from './BootStage.js';
 
 export type BodyScopeIn = Pick<BootCtx,
@@ -254,6 +255,39 @@ export async function phaseBodyScope(
     (window as unknown as { __ofGrass: unknown }).__ofGrass = {
       report: () => gc.report(),
     };
+    // RN-2225. THE WILD VEGETATION SOURCE FOR A WORLD WITH NO CHARACTER.
+    //
+    // The gate is the EXACT COMPLEMENT of `BootGameplay`'s (`player !== null &&
+    // cfg.gameplay`), written as its negation rather than as a fresh condition,
+    // so the two can never both build a tree field or both skip one. With a
+    // character, `Gameplay` owns these objects and ticks them off the feet;
+    // without one -- every `--scenario=surface|ascent|orbit|space` run and
+    // every aerial probe pose -- nothing did, which is the whole of section
+    // 2.12.6. `?gameplay=0` still isolates the slice: it takes the same branch
+    // a fly scenario does but `cfg.gameplay` is false in it, so no node field
+    // is built either way and the control still means what it says.
+    //
+    // Body-scoped for the scatter's reason: it holds instance slots and /core
+    // node indices keyed to THIS body, so it dies with the scope.
+    let wild: VegetationScope | null = null;
+    if (player === null && cfg.gameplay && (cfg.treeRadiusM > 0 || cfg.rocks)) {
+      const { VegetationScope: VS } = await import('../game/VegetationScope.js');
+      wild = await VS.create({
+        core, origin, bodyHandle: oracle.body.handle, seed: cfg.seedLo,
+        // CE-20: `oracle.body.radiusM`, the body THIS scope is for, on the
+        // same line of argument the scatter three constructors up gives.
+        bodyRadiusM: oracle.body.radiusM, water: oracle.water,
+        rocks: { enabled: cfg.rocks, density: cfg.rockDensity },
+        trees: { radiusM: cfg.treeRadiusM, density: cfg.treeDensity },
+        nodeArt: { lod: cfg.nodeLod, cull: cfg.nodeCull },
+        // No voxels without a character (`phaseTools` is player-gated too), so
+        // there is no dug ground for a node to seat into. A thunk anyway, so
+        // the shape matches `composeGround`'s and cannot drift from it.
+        editsHandle: () => 0,
+      }, scenes.near);
+      const w = wild;
+      lt.add('vegetation.wild', () => { w.dispose(); });
+    }
     built.v = t;
     // CE-47. R17. THE STATION COMES BACK WITH THE SCOPE.
     //
@@ -268,7 +302,7 @@ export async function phaseBodyScope(
     stationRebuild.fn?.(bodyId, mounts.lastTick);
     return {
       body: oracle.body, terrain: t.stream, scatter: sc, grass: gc,
-      workerHandles: t.workerHandles,
+      wild, workerHandles: t.workerHandles,
     };
   };
 

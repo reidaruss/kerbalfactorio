@@ -20,6 +20,34 @@ export const CELLS = DIM - 1;
  */
 export const MAX_CELL_M = 64;
 /**
+ * THE VEGETATION ORIGIN'S ALTITUDE CEILING, metres, and why a ring that costs
+ * nothing to look at still needs one.
+ *
+ * The harvest ring is `TREE_RADIUS_M` (620 m) of GROUND, wherever the eye is.
+ * Carry it up with a rocket and it keeps streaming a 620 m disc of trees on the
+ * ground directly below, which is correct all the way up and worth nothing past
+ * the altitude at which a tree is smaller than a pixel. At the shipped
+ * 1600x900 / 60 degree frame that is 1,086 px per radian, so a 12 m median tree
+ * (TreeTuning's own figure) covers one pixel at
+ *
+ *     d = 12 * 1086 / 1  =  13,032 m
+ *
+ * and the ring is switched off above it. 12,000 rather than 13,032 because the
+ * flyover pose is 1,200 m and the `ascent` scenario is 12,000 m: rounding DOWN
+ * to the scenario boundary means the one scenario that straddles the cutoff
+ * sits on the cheap side of it rather than a third of a pixel inside the
+ * expensive one.
+ *
+ * It is a STREAMING radius and not an existence rule, which is the same
+ * distinction `TREE_RADIUS_M` already lives on: no tree stops being an
+ * attribute of the planet up here, the client just stops materialising nodes
+ * nobody can see. What DOES draw at altitude is the canopy scatter's impostor
+ * tier (RN-2231), which is instanced rather than /core-backed and costs no node
+ * array entry.
+ */
+export const VEG_ORIGIN_MAX_ALT_M = 12000;
+
+/**
  * Chunks sampled per update, whether newly resident or crossing the detail
  * boundary. One chunk is about a thousand cells and up to a few thousand props,
  * and letting several land in one frame put a 57.1 ms worst frame on an

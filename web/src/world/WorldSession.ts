@@ -52,6 +52,7 @@ import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { TerrainStream } from './TerrainStream.js';
 import type { Scatter } from './Scatter.js';
 import type { GrassCover } from '../render/grass/GrassCover.js';
+import type { VegetationScope } from '../game/VegetationScope.js';
 import type { Events, EventCensus } from '../app/Events.js';
 import type { HandleCensus } from '../sim/wasm/HandleLedger.js';
 import type { TeardownReport } from '../app/Lifetime.js';
@@ -69,6 +70,10 @@ export interface BodyScope {
    *  holds instance buffers keyed on THIS scope's chunk keys, so it is scope
    *  state and not process state and it dies with the scope. */
   readonly grass: GrassCover;
+  /** RN-2225. The wild rock and tree fields for a world with no character in
+   *  it, or null when `Gameplay` owns them. Scope state on the scatter's own
+   *  terms: /core node indices and instance slots keyed to THIS body. */
+  readonly wild: VegetationScope | null;
   /**
    * CE-19. The terrain worker's OWN handle census at the moment it inited.
    *
@@ -144,6 +149,7 @@ export class WorldSession {
   get terrain(): TerrainStream { return this.scope.terrain; }
   get scatter(): Scatter { return this.scope.scatter; }
   get grass(): GrassCover { return this.scope.grass; }
+  get wild(): VegetationScope | null { return this.scope.wild; }
   get workerHandles(): Readonly<Record<string, number>> { return this.scope.workerHandles; }
   get lifetime(): Lifetime { return this.lt; }
 

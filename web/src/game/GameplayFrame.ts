@@ -25,14 +25,18 @@ import type { GameplayDeps } from './GameplayDeps.js';
 /** Per frame: node transforms, depletion variants, effects, HUD, panels. */
 export function frameOf(g: Gameplay, d: GameplayDeps, dt: number): void {
   g.simSecs += dt;
+  // RN-2225. THE VEGETATION ORIGIN, and on foot it IS `d.player.body.feet`,
+  // the same object read through a name that also has an answer when the eye
+  // is somewhere the capsule is not. See `GameplayDeps.vegOrigin`.
+  const veg = d.vegOrigin();
   // BEFORE field.update, so a rock added this frame is composed and drawn in
   // the same frame rather than flashing in a frame late at the ring's edge.
-  g.rocks.update(d.player.body.feet);
-  g.trees.update(d.player.body.feet);
-  // The feet, not the camera: it is the same body-frame point the streaming
+  g.rocks.update(veg);
+  g.trees.update(veg);
+  // The ORIGIN, not the camera: it is the same body-frame point the streaming
   // rings use, so an LOD boundary and a ring boundary are measured from one
   // origin and cannot disagree by an eye height.
-  g.field.update(dt, d.player.body.feet);
+  g.field.update(dt, veg);
   g.oreField.update(dt, d.ports?.voxels?.handle ?? 0);
   g.machines.update();
   g.machines.updateFx(dt);

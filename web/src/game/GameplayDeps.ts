@@ -48,4 +48,31 @@ export interface GameplayDeps {
   /** WG-118: `?nodelod=0` draws every node at LOD0 as before, `?nodecull=0`
    *  turns per-instance frustum culling off. Two claims, two controls. */
   nodeArt?: { lod?: boolean; cull?: boolean };
+  /**
+   * RN-2225. THE POINT THE WILD VEGETATION STREAMS AROUND, per frame.
+   *
+   * It was `d.player.body.feet`, read at `GameplayFrame:31`, and that is right
+   * for exactly as long as the capsule is what the eye is attached to. Board a
+   * rocket and the capsule is frozen at the pad while `ViewRouter` hands the
+   * eye to the vessel, so the rock and tree rings stay pinned to the launch
+   * site and the world under the climbing rocket is bare ground. The same
+   * defect, in its other costume, is why every fly scenario has no trees at
+   * all (VegetationScope.ts).
+   *
+   * ON FOOT THIS RETURNS `player.body.feet`, THE SAME OBJECT IT ALWAYS DID,
+   * and that identity is the whole regression argument: `ViewRouter.onFoot`
+   * is true whenever the walker holds the eye, so a walk scenario reads the
+   * byte-identical point through a new name. The feet and not the eye for the
+   * reason `GameplayFrame`'s own comment gives: it is the same body-frame
+   * point the streaming rings use, so an LOD boundary and a ring boundary are
+   * measured from one origin and cannot disagree by an eye height.
+   *
+   * ALWAYS A POINT, never null. The altitude at which a ring stops being worth
+   * growing is the RING's rule and lives in `TreeField`/`RockField`
+   * (`VEG_ORIGIN_MAX_ALT_M`), not in whoever supplies the point: `NodeField`
+   * needs this same position to pick LOD rungs whether or not the ring is
+   * still growing, and a null here would silently drop every already-placed
+   * node to LOD0 the moment a rocket crossed the ceiling.
+   */
+  vegOrigin: () => { x: number; y: number; z: number };
 }

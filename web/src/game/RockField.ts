@@ -24,6 +24,7 @@ import { inheritDepletion, type KnownNode } from './NodeMemory.js';
 import type { NodeField } from './NodeField.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { WaterOracle } from '../world/WaterOracle.js';
+import { VEG_ORIGIN_MAX_ALT_M } from '../world/ScatterTuning.js';
 import {
   MAX_PER_CELL, ROCK_CELL_M, ROCK_CLUSTER_C, ROCK_DENSITY_KM2,
   ROCK_MIN_SLOPE_COS, ROCK_RADIUS_M, ROCK_SCALE_MAX, ROCK_SCALE_MIN,
@@ -106,6 +107,13 @@ export class RockField {
    *  cell builds amortised over frames (CELL_BUILDS_PER_UPDATE). */
   update(feet: { x: number; y: number; z: number }): void {
     if (!this.enabled) return;
+    // RN-2225. THE CEILING, and it is TreeField's line for TreeField's reason:
+    // `feet` is the vegetation origin, a rocket carries it up and a fly
+    // scenario starts it up, and a ring of ground rocks is worth streaming
+    // exactly as far as one is bigger than a pixel. Growth stops; nothing
+    // already placed is dropped. See ScatterTuning.VEG_ORIGIN_MAX_ALT_M.
+    if (Math.hypot(feet.x, feet.y, feet.z) - this.bodyRadiusM
+      > VEG_ORIGIN_MAX_ALT_M) return;
     if (this.queue.length > 0) {
       const t0 = performance.now();
       let n = CELL_BUILDS_PER_UPDATE;

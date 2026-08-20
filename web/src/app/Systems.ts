@@ -298,6 +298,20 @@ export function registerSystems(s: Services, loop: Loop): void {
     // at the scaled origin, which TerrainMaterials.update handles itself.
     bodyCenterEngine.set(-s.origin.origin.x, -s.origin.origin.y, -s.origin.origin.z);
     s.gameplay?.frame(loop.fixedDt);
+    // RN-2225. THE WILD VEGETATION, on the LINE AFTER the gameplay frame that
+    // would otherwise own it and with the same `dt`, because it is the same
+    // work: `Gameplay.frame` ticks the rock and tree rings and the node field
+    // when there is a character, and this ticks the identical three objects
+    // when there is not. Exactly one of the two is ever non-null
+    // (BootBodyScope's gate is BootGameplay's negation), so this is a
+    // one-or-the-other and never a second tick of the same fields.
+    //
+    // `s.observer.position` and NOT the near camera's engine-space eye: these
+    // are BODY-FRAME f64 lattices -- a tree's cell is a function of lat/lon --
+    // and it is the identical value the terrain streamer is requested with at
+    // `s.terrain.request` above, which is the point. What is resident and what
+    // has trees on it are now measured from one origin.
+    s.wild?.update(loop.fixedDt, s.observer.position);
     s.materials.update(bodyCenterEngine, loop.simSecs);
     // The foliage wind clock, beside the terrain's for the same reason the
     // water shares the terrain's uTime: one sim clock, so pausing the sim

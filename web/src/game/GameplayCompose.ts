@@ -23,10 +23,7 @@
 // already taken it) and for the inline-initialised ones (`modals`, `hotbar`,
 // `goals`, `sfx`), which are live before the constructor body runs at all.
 // Closures capturing `g` are deferred by definition and were deferred before.
-import { GameCore } from './GameCore.js';
-import { NodeField } from './NodeField.js';
-import { RockField } from './RockField.js';
-import { TreeField } from './TreeField.js';
+import { makeVegetationFields } from './VegetationFields.js';
 import { OreField } from './OreField.js';
 import { Interact } from '../player/Interact.js';
 import { GameHud } from '../ui/GameHud.js';
@@ -59,22 +56,23 @@ import type { GameplayDeps } from './GameplayDeps.js';
  *  it. The only phase that never touches the instance: everything in it is a
  *  pure function of the deps, which is why it takes no `g`. */
 export function composeGround(d: GameplayDeps) {
-  const game = new GameCore(d.core);
-  const field = new NodeField(game, d.origin, d.nodeArt);
+  // RN-2225. THE FOUR OBJECTS COME FROM `VegetationFields` NOW, because there
+  // are two callers of them and there must be one authority (DW-26). The other
+  // is `VegetationScope`, which builds the identical four for a world that has
+  // an eye and no character; before it existed, `--scenario=surface` built no
+  // `Gameplay` and therefore no `TreeField`, and every aerial frame this
+  // project judges its art on had no tree in it to draw. WG-67's rock lattice,
+  // WG-116's tree lattice and their shared edits thunk all moved verbatim; the
+  // thunk stays a thunk for the reason the scatter's is, that voxels are
+  // created after this and a tree streaming in over a dug pit must seat on the
+  // EDITED surface.
+  const { game, field, rocks, trees } = makeVegetationFields({
+    core: d.core, origin: d.origin, bodyHandle: d.bodyHandle, seed: d.seed,
+    bodyRadiusM: d.bodyRadiusM, water: d.water,
+    rocks: d.rocks, trees: d.trees, nodeArt: d.nodeArt,
+    editsHandle: () => d.ports?.voxels?.handle ?? 0,
+  });
   const oreField = new OreField(d.core, d.bodyHandle, field, d.origin);
-  // WG-67: the rocks of the world, streamed as REAL harvest nodes. The edits
-  // handle is a thunk for the same reason the scatter's is: voxels are
-  // created after this and a rock streaming in over a dug pit must seat on
-  // the edited surface.
-  const rocks = new RockField(d.core, game, field, d.bodyHandle,
-    d.seed, d.rocks?.enabled ?? true, d.rocks?.density ?? 1,
-    d.bodyRadiusM, d.water,
-    () => d.ports?.voxels?.handle ?? 0);
-  // WG-116: the trees, on the rocks' lattice contract and their edits thunk.
-  const trees = new TreeField(d.core, game, field, d.bodyHandle,
-    d.seed, d.trees?.radiusM ?? 0, d.trees?.density ?? 1,
-    d.bodyRadiusM, d.water,
-    () => d.ports?.voxels?.handle ?? 0);
   const interact = new Interact(game, field, d.player, d.avatar);
   return { game, field, oreField, rocks, trees, interact };
 }
