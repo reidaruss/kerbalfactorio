@@ -95,6 +95,9 @@ export class PostStack {
       uProjInv: { value: new THREE.Matrix4() }, uLogFC: { value: 1 },
       uDepthClear: { value: 0 }, uRadius: { value: tune.aoRadiusM },
       uMaxScreen: { value: tune.aoMaxScreen }, uFalloffInv: { value: 1 },
+      uThinEdgeInv: { value: 1 / Math.max(1e-4, tune.aoThinEdgeM) },
+      uThinAmount: { value: tune.aoThinAmount },
+      uThinNearM: { value: tune.aoThinNearM }, uThinFarM: { value: tune.aoThinFarM },
     }, { defines: { ...dd, OF_AO_SLICES: tune.aoSlices, OF_AO_STEPS: tune.aoSteps } }));
 
     this.aoBlur = new Blit(postMaterial('of.ao.blur', AO_BLUR_FS, {
@@ -273,6 +276,10 @@ export class PostStack {
     u.uRadius.value = this.tune.aoRadiusM;
     u.uMaxScreen.value = this.tune.aoMaxScreen;
     u.uFalloffInv.value = 1 / Math.max(1e-3, this.tune.aoRadiusM * this.tune.aoFalloff);
+    u.uThinEdgeInv.value = 1 / Math.max(1e-4, this.tune.aoThinEdgeM);
+    u.uThinAmount.value = this.tune.aoThinAmount;
+    u.uThinNearM.value = this.tune.aoThinNearM;
+    u.uThinFarM.value = this.tune.aoThinFarM;
     this.host.setTarget(t.ao);
     this.host.drawFullScreen(this.ao.mesh);
 
