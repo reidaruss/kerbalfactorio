@@ -372,6 +372,29 @@ TEST(mesh_triangles_face_out_of_the_rock) {
   // uses this unit and the mis-wound bound above uses the other one. Both are
   // properties of a 1 m lattice; neither was measured.
   const double kFeatureAreaM2 = (2.0 * kVoxelSizeM) * (2.0 * kVoxelSizeM);
+  // DERIVED FLOOR, and it exists because a fresh-context verifier showed this
+  // fixture was VACUOUS WITHOUT ONE. Dropping one quad in four from the mesher
+  // left every assertion here GREEN while 54 per cent of the drawn surface
+  // vanished (37,559 -> 17,320 m2) and every AREA CEILING above read
+  // artificially BETTER, because there was less surface left to be wrong on.
+  // Only `bricks_tile_without_a_seam_or_a_doubled_triangle` caught it. An area
+  // ceiling with no area floor under it is a gate you can pass by looking away.
+  //
+  // THE FLOOR IS THE MESHED REGION'S OWN MINIMAL CROSS-SECTION, not a reading.
+  // `surfaceNetsAround` scans an axis-aligned box of half-extent regionR about a
+  // site that sits ON the surface, so the box's rock end and its air end are
+  // both inside it, and ANY surface separating them has area at least the box's
+  // smallest cross-section, `(2 * regionR)^2`. The same argument in lattice
+  // units gives the quad floor: that cross-section spans `(2 * regionR / s)^2`
+  // lattice columns and a spanning surface crosses at least one edge per column,
+  // and the mesher emits one quad per crossed edge.
+  //
+  // The derivation assumes the ground spans the box rather than leaving through
+  // its top or bottom, which needs a tilt under 45 degrees across the region.
+  // AUDIT, so the assumption is checkable rather than asserted: over 480 grounds
+  // (10 height fields x 48) the worst per-shape reading is 1.0909x the area
+  // floor and 1.4028x the quad floor, and the run total is 1.28x and 1.98x. The
+  // floor is a bound, so a thin margin is the bound being tight, not slack.
   // The classification step clears the field's own interpolation error over one
   // cell (measured 0.087 m) and stays inside one cell so a neighbouring feature
   // cannot answer instead. Unchanged from WG-28.
@@ -382,6 +405,8 @@ TEST(mesh_triangles_face_out_of_the_rock) {
   double grandOutArea = 0.0, grandDotArea = 0.0, grandArea = 0.0;
   double worstShapeInArea = 0.0, worstShapeRevArea = 0.0, worstShapeTriInArea = 0.0;
   long long grandTriIn = 0;
+  double grandAreaFloor = 0.0, thinnestAreaRatio = 1e300, thinnestQuadRatio = 1e300;
+  double grandQuadFloor = 0.0;
 
   for (int gi = 0; gi < kGrounds; ++gi) {
     // Ground 0 is the spawn clearing. The rest are a Fibonacci spread over the
@@ -515,7 +540,18 @@ TEST(mesh_triangles_face_out_of_the_rock) {
       // (4) CEILING-FREE. The majority of the surface faces out. The line is
       // half, and the pre-WG-28 mesher scores zero on it.
       CHECK(outArea > 0.5 * decidedArea);
-      CHECK(quads > 20);                        // the shape was actually meshed
+      // (5) THE FLOOR. The fixture must have SEEN the surface it is bounding.
+      // Both numbers are the meshed box's own minimal cross-section, in metres
+      // squared and in lattice columns; see the derivation at the top.
+      const double areaFloor = (2.0 * regionR) * (2.0 * regionR);
+      const double quadFloor = areaFloor / (kVoxelSizeM * kVoxelSizeM);
+      CHECK(area >= areaFloor);
+      CHECK(static_cast<double>(quads) >= quadFloor);
+      grandAreaFloor += areaFloor;
+      grandQuadFloor += quadFloor;
+      thinnestAreaRatio = std::min(thinnestAreaRatio, area / areaFloor);
+      thinnestQuadRatio =
+          std::min(thinnestQuadRatio, static_cast<double>(quads) / quadFloor);
 
       if (inArea > worstShapeInArea) worstShapeInArea = inArea;
       if (revArea > worstShapeRevArea) worstShapeRevArea = revArea;
@@ -546,7 +582,16 @@ TEST(mesh_triangles_face_out_of_the_rock) {
   // fixture exists for reads -1.
   CHECK(grandDotArea / grandArea > 0.0);
   CHECK(grandOutArea > 0.5 * grandDecidedArea);
-  CHECK(grandArea > 1000.0);                    // the sweep really meshed a body
+  // (6) THE FLOOR AGAIN, over the whole run. This replaces a
+  // `grandArea > 1000.0` that sat 37x under the real reading and would have let
+  // 97 per cent of the surface disappear without a word.
+  std::printf("    surface actually seen: %.1f m2 against a derived floor of "
+              "%.1f m2 (thinnest shape %.4fx) and %lld quads against %.0f "
+              "(thinnest shape %.4fx)\n",
+              grandArea, grandAreaFloor, thinnestAreaRatio, grandQuads,
+              grandQuadFloor, thinnestQuadRatio);
+  CHECK(grandArea >= grandAreaFloor);
+  CHECK(static_cast<double>(grandQuads) >= grandQuadFloor);
 }
 
 // -----------------------------------------------------------------------------
