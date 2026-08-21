@@ -20,6 +20,7 @@ import * as THREE from 'three';
 import type { ChunkBlobLayout, ChunkBlobViews } from '../../world/ChunkFormat.js';
 import type { Vec3d } from '../../world/PlanetBody.js';
 import { fillCanopyIndex } from './ChunkCanopy.js';
+import { reduceAnchorPhase } from '../../world/ChunkPhase.js';
 import type { SharedIndex } from './SharedIndex.js';
 
 /** three's per-geometry record inside BatchedMesh. Private there, used here. */
@@ -40,7 +41,7 @@ interface BatchedPrivate {
 }
 
 const ATTRS = ['position', 'normal', 'uv', 'aBiome', 'aHeight', 'aFadeT0',
-  'aCanopy'] as const;
+  'aCanopy', 'aPhase'] as const;
 
 /** The pooled attribute set, allocated once as the template every slot copies. */
 function templateGeometry(verts: number, index: SharedIndex): THREE.BufferGeometry {
@@ -56,6 +57,14 @@ function templateGeometry(verts: number, index: SharedIndex): THREE.BufferGeomet
   // client is where world-gen's TypeScript lives, so nothing crosses the wasm
   // boundary and the chunk wire format (ChunkFormat.ts) is untouched.
   g.setAttribute('aCanopy', new THREE.BufferAttribute(new Float32Array(verts), 1));
+  // WG-230. THE WORLD-LOCKED PHASE, an eighth section and the second one the
+  // CLIENT writes rather than /core. It is `frac(anchor / PHASE_PERIOD_M)`,
+  // a PER-CHUNK CONSTANT replicated across the slot's vertices exactly as
+  // aFadeT0 is, so the wire format is untouched for the same reason RN-2265's
+  // is: the quantity is a pure float64 function of a number the chunk already
+  // carries. It is three floats and not six because a tiling TEXTURE fetch
+  // consumes only the fractional part; see ChunkPhase.ts's WG-230 note.
+  g.setAttribute('aPhase', new THREE.BufferAttribute(new Float32Array(verts * 3), 3));
   // Passing the REAL index means addGeometry's own copy loop writes the correct
   // vertexStart-offset triangles for every slot, so a chunk that does not need
   // the mirrored winding never touches the index buffer again.
@@ -108,14 +117,23 @@ export class ChunkBatch extends THREE.BatchedMesh {
   /**
    * Bytes this batch holds on the GPU: vertex sections plus its index buffer.
    *
-   * 32 and not 28 since RN-2265: position 12 + normal 3 + uv 4 + aBiome 4 +
-   * aHeight 4 + aFadeT0 4 is 31, padded to 32 by the aCanopy float, which is
-   * therefore free in practice on any driver that aligns a vertex to four
-   * bytes. Counted honestly at 4 anyway: 1,217 verts x 4 B x 128 slots x two
-   * batches is 1.25 MB, against the pool's own 12.6 MB of retained blobs.
+   * 48 and not 32 since WG-230: position 12 + normal 3-padded-to-4 + uv 4 +
+   * aBiome 4 + aHeight 4 + aFadeT0 4 + aCanopy 4 is 36, plus aPhase's three
+   * floats. THE 12 BYTES ARE NOT FREE and are not reported as if they were:
+   * 1,217 verts x 12 B x 128 slots x two batches is 3.74 MB against the pool's
+   * own 12.6 MB of retained blobs, a 30 per cent rise in pooled vertex memory
+   * for one attribute.
+   *
+   * OWED, AND NAMED HERE BECAUSE THIS IS WHERE IT IS VISIBLE: aFadeT0 (4 B),
+   * aCanopy (4 B) and aPhase (12 B) are all PER-CHUNK CONSTANTS replicated
+   * across 1,217 vertices. Twenty bytes a vertex is carrying 2.5 KB of real
+   * information in 3.1 MB of buffer. The consolidation is one slot-indexed
+   * data texture read with three's own `getIndirectIndex(gl_DrawID)`; it was
+   * refused here because it would rewrite two other lanes' shipped attributes
+   * to land one new one.
    */
   get bytes(): number {
-    return this.capacity * (this.verts * 32 + this.index.indexCount * 4);
+    return this.capacity * (this.verts * 48 + this.index.indexCount * 4);
   }
 
   /**
@@ -139,6 +157,7 @@ export class ChunkBatch extends THREE.BatchedMesh {
     this.anchors[slot * 3 + 1] = anchor.y;
     this.anchors[slot * 3 + 2] = anchor.z;
     this.fillCanopy(slot, src.position, src.height, src.biome);
+    this.fillPhase(slot, anchor);
     const flip = this.index.needsFlip(src.position, src.normal) ? 1 : 0;
     if (flip !== this.flipped[slot]) { this.flipped[slot] = flip; this.writeIndex(slot, flip === 1); }
     const info = this.info[slot];
@@ -220,6 +239,32 @@ export class ChunkBatch extends THREE.BatchedMesh {
     const a = this.geometry.getAttribute('aBiome') as THREE.BufferAttribute;
     const s = this.info[slot].vertexStart * 4;
     return (a.array as Uint8Array).subarray(s, s + this.verts * 4);
+  }
+
+  /**
+   * WG-230. Stamp the chunk's reduced world phase across the slot.
+   *
+   * IT IS DELIBERATELY ABSENT FROM `stitched()`, which is the one interesting
+   * thing about it and the opposite of aCanopy's rule three methods up. The
+   * canopy index is a function of each vertex's own position and therefore has
+   * to be re-derived when EdgeStitch moves one. The phase is a function of the
+   * CHUNK, and the per-vertex half of the coordinate is `position` itself,
+   * which the stitch has already rewritten: `aPhase + position / P` follows a
+   * snapped vertex for free. Re-filling here would be a no-op that read as a
+   * safeguard.
+   */
+  private fillPhase(slot: number, anchor: Vec3d): void {
+    const a = this.geometry.getAttribute('aPhase') as THREE.BufferAttribute;
+    const p = reduceAnchorPhase(anchor);
+    const arr = a.array as Float32Array;
+    const off = this.info[slot].vertexStart * 3;
+    for (let i = 0; i < this.verts; ++i) {
+      arr[off + i * 3] = p[0];
+      arr[off + i * 3 + 1] = p[1];
+      arr[off + i * 3 + 2] = p[2];
+    }
+    a.needsUpdate = true;
+    a.addUpdateRange(off, this.verts * 3);
   }
 
   private fillCanopy(slot: number, position: Float32Array, height: Float32Array,

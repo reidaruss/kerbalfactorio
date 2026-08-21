@@ -116,5 +116,22 @@ export function terrainFragSetup(depth: DepthPolicy): string {
         albedo *= mix(vec3(1.0), tint, macroW);
         albedo *= 1.0 + macroW * 0.40 * hArt;
       }
+
+      // WG-230. THE WORLD-LOCKED PHASE PROBE, and the reason a coordinate-only
+      // lane paints anything at all.
+      //
+      // uPhaseProbe.x ships at 0, so this multiplies albedo by exactly 1.0 (0.0
+      // times a bounded finite value is 0.0 in IEEE-754, and ofPhaseProbe is
+      // bounded by construction), i.e. the committed frame is bit-identical.
+      // What it buys is that the attribute is READ, so aPhase is bound rather
+      // than link-stripped, and ?phaseamp=1 photographs the whole wire --
+      // float64 reduction, per-chunk stamp, attribute, varying -- in one frame.
+      // A declaration nothing reads proves none of that, and RN-2268's scar is
+      // exactly the failure where the publish never fires and every counter
+      // still reads correct.
+      //
+      // It sits here rather than in the albedo or splat block because those are
+      // the far-ground lane's to edit and this is a seam, not a term.
+      albedo *= 1.0 + uPhaseProbe.x * ofPhaseProbe();
 `;
 }

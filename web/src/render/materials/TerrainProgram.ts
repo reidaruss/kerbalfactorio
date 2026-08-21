@@ -38,6 +38,7 @@ export function makeTerrainMaterial(
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
     horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
+    phaseProbe,
     splatGrass, splatDirt, splatRock, splatCliff,
     splatScree, splatSnow } = s;
   // UniformsLib.lights is MANDATORY for a lights:true ShaderMaterial: three
@@ -114,6 +115,9 @@ export function makeTerrainMaterial(
     // reference like every other holder here, and holding the SAME three
     // numbers the canopy card's per-frame colour update reads.
     uCrownShade: crownShade,
+    // WG-230. The world-locked phase probe, (amplitude, checker repeats),
+    // already an IUniform holder, so passed through rather than re-wrapped.
+    uPhaseProbe: phaseProbe,
     uSplatGrass: splatGrass,
     uSplatDirt: splatDirt,
     uSplatRock: splatRock,
