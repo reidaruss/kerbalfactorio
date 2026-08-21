@@ -8,6 +8,7 @@ import type { Loop } from './Loop.js';
 import { windUpdate } from '../render/instancing/PropWind.js';
 import { dayAdvance } from '../sim/DayCycle.js';
 import { terrainNightAmbient } from '../render/materials/TerrainAmbient.js';
+import { updateCanopyCardShade } from '../render/materials/CanopySelfShadow.js';
 import { updateToneDrive } from '../render/post/ToneDrive.js';
 import { bootCelestialBodies } from '../render/CelestialBoot.js';
 import { MILESTONE, grantMilestone } from '../game/Research.js';
@@ -331,7 +332,17 @@ export function registerSystems(s: Services, loop: Loop): void {
     // when it is actually rebuilding, so this is one WASM call per frame and no
     // colour work at all in between.
     const up = s.observer.up;
-    s.ibl.update(s.scenes.sky, elev, s.oracle.biomeAt(up.x, up.y, up.z));
+    const biomeHere = s.oracle.biomeAt(up.x, up.y, up.z);
+    s.ibl.update(s.scenes.sky, elev, biomeHere);
+    // RN-2275. INTER-CROWN SELF-SHADOWING, the near half. The far treeline
+    // computes this per fragment from its own per-vertex canopy index; the
+    // canopy CARDS are one shared batch material, so their half is one scalar
+    // written here, from the SAME law and the SAME (amp, K, floor) triple the
+    // terrain uniform holds. Both inputs are reads that this line already had
+    // to make: `biomeHere` is the /core classifier call SkyIbl makes one line
+    // up, now named instead of made twice, and `elev` is dot(sunDir, up), the
+    // one hour the starlight floor, the tone drive and the IBL all ride.
+    updateCanopyCardShade(biomeHere, elev);
     // RN-152: the starlight floor rides the SAME elevation the sky, the IBL
     // and the sun lights read, written into the shared TERRAIN_AMBIENT object
     // both terrain materials and the sky ground shell hold by reference.

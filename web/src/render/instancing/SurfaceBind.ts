@@ -14,6 +14,7 @@ import * as THREE from 'three';
 
 import { applyFoliageTone } from './FoliageTone.js';
 import { publishCanopyTone } from '../materials/TerrainTreeline.js';
+import { publishCanopyCardBase } from '../materials/CanopySelfShadow.js';
 import type { Family } from './SurfaceRoles.js';
 
 export interface Surface {
@@ -94,7 +95,21 @@ export function apply(r: Reg): void {
     // `Leaf`'s hex to the digit). What the terrain wants is the card's MEAN
     // RENDERED albedo, so the mean the divide above took out is multiplied
     // back in: a terrain fragment has no card texture to supply it.
-    if (r.family === 'canopy') publishCanopyTone(r.mat.color, on ? (s.albedoMean as number) : 1);
+    if (r.family === 'canopy') {
+      publishCanopyTone(r.mat.color, on ? (s.albedoMean as number) : 1);
+      // RN-2275. THE SECOND HALF OF THE SAME SEAM, and it is registered in the
+      // same statement pair for the same reason. The line above hands the far
+      // ground the card's colour; this one hands the card's own material to
+      // the inter-crown self-shadow term, which scales it per frame so the
+      // near stand darkens by the same law and the same numbers the far paint
+      // darkens by. It is registered HERE, and not from PropLibrary, because
+      // this is the one place the colour is FINALISED: after the
+      // `albedo_mean_linear` divide and after `applyFoliageTone`. Registering
+      // earlier would capture a base that is not the shipped green, and the
+      // per-frame write is `base * S` rather than a multiply, so a re-run of
+      // this function on a late texture load re-captures rather than compounds.
+      publishCanopyCardBase(r.mat.color);
+    }
     r.mat.needsUpdate = true;
     // NO early return (RN-455). A tiling body family carries an albedo AND a
     // normal AND an orm, and the `return` that used to sit here is why the

@@ -246,6 +246,11 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // against; `treelineamp=` scales the coverage, `treelinemottle=` the
   // 34 m crown-scale value break-up inside it.
   'treeline', 'treelineamp', 'treelinemottle',
+  // RN-2275. Inter-crown self-shadowing: the exact off control, and the two
+  // numbers the law is chosen on. Registered in the commit that introduces
+  // them (RN-152's scar).
+  'crownshade', 'crownshadeamp', 'crownshadek', 'crownshadefloor',
+  'crownshadefar', 'crownshadecard',
   // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
   // night exactly); `starlightamp=` sweeps it.
   // RN-952, the DAYLIGHT floor underneath it, which had no control at all and

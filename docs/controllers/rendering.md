@@ -1,6 +1,6 @@
 # Rendering & Graphics: Master Controller Context
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-20 (RN-2265 to RN-2269, `lane/far-ground`: the far aerial ground is a LANDSCAPE again. The canopy impostor tier reaches 3,500 m from a 1,200 m eye and the horizon is 37,947 m, so 91 per cent of an aerial frame was past every tree in the world and read as bare biome palette. The terrain material now carries the canopy itself, driven by a per-vertex attribute holding world-gen's OWN `canopyWeight` -- CPU-side because that field's integer-lattice hash cannot be written in GLSL ES 1.00 -- through Beer-Lambert on the viewing angle, which is simultaneously the handover: the material paints exactly the density the instances are missing, so there is no second fade constant and no boundary. Zero triangles, zero instances, zero draw calls. Full record in section 2.18. THIS LINE IS A POINTER: replace it, never append to it.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2275 to RN-2279, `lane/crown-shadow`: INTER-CROWN SELF-SHADOWING, and it closes the aerial arc. Two verifiers independently named the same defect -- the woods read LIGHTER than the ground between them, the inversion of every real aerial photograph -- because the far treeline painted the crown card's MEAN albedo with no layer transmittance and the card itself only carries a ramp for ONE crown. Both halves now take the same Beer-Lambert transmittance on the SUN ray, `floor + (1-floor) exp(-K mu / sin sunElev)`, out of one shared (amp, K, floor) triple: the terrain per fragment off its own per-vertex index, the card per frame off the canopy-area-weighted mean of that same field. Woods now read DARKER than their clearings at BOTH ends of the arc on BOTH aerial poses, and the handover's second difference at the boundary is -0.13 counts against -0.02 on a frame with no vegetation in it. Full record in section 2.19. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
 
@@ -5568,14 +5568,18 @@ scatter, and a change to their cost or their signature is a rendering break.
 
 ### 2.18.10 Owed
 
-1. **INTER-CROWN SELF-SHADOWING, and it is the largest remaining lever**
-   (2.18.8). A canopy's low albedo is mostly crowns shadowing each other, and
-   nothing in this game models it: the card carries a lit-top/shaded-underside
-   ramp for ONE crown and the far material carries the card's mean. The
-   principled form is a sun-transmittance through the layer,
-   `exp(-k mu / sin(sunElev))`, which needs the sun direction in the albedo
-   block where it is not currently in scope. It would darken closed Forest and
-   leave open Hills alone, which is exactly the axis 2.18.8 is short of.
+1. ~~**INTER-CROWN SELF-SHADOWING, and it is the largest remaining lever**
+   (2.18.8).~~ **CLOSED by RN-2275 to RN-2279, section 2.19.** The shape
+   predicted here was right and one clause of it was WRONG, which is worth
+   keeping rather than quietly correcting: *"needs the sun direction in the
+   albedo block where it is not currently in scope"* is false. `ATMOSPHERE_PARS`
+   declares `uniform vec3 uSunDir` at Atmosphere.glsl:351 and `TerrainFragPars`
+   splices it in before `main`, so A4's shared sun vector was ALREADY in scope
+   at the treeline block and the plumbing this item budgeted for did not exist.
+   The prediction that it "would darken closed Forest and leave open Hills
+   alone" was right in direction and wrong in size: at Hills' own local noon the
+   term moves `box` nine counts, because `dot 0.897` is a short sun path but
+   0.32 is still a third of a canopy.
 2. **The mottle retires at about 2.5 km** (2.18.5), so the 5 to 20 km band
    carries the stand field and nothing else. A second, coarser break-up octave
    is the obvious answer and was NOT added here, because the grove field is
@@ -5591,3 +5595,395 @@ scatter, and a change to their cost or their signature is a rendering break.
    design, so the pre-RN-2225 frame is `?canopy=0` and the pre-RN-2265 frame is
    `?treeline=0`. Two flags, two states, named here so nobody looks for one flag
    that gives both.
+
+---
+
+## 2.19 INTER-CROWN SELF-SHADOWING (RN-2275 to RN-2279, 2026-08-21, `lane/crown-shadow`)
+
+Base `origin/main` at `0a057f4a`. One owned `vite preview` on 5771, a sentinel
+written into that dist and fetched back over the wire before every probe round
+(`RN2275-CROWNSHADE-1787287970` on the arm every published number comes from),
+killed by the PID `Get-NetTCPConnection` named. Routed as owed item 1 of
+2.18.10, which two separate verifiers had reached independently.
+
+### 2.19.1 The defect, as arithmetic rather than as taste
+
+A canopy's low albedo is mostly **crowns shadowing each other**, and nothing in
+this game modelled it. The crown card carries a lit-top / shaded-underside ramp
+for **one** crown (2.17.1's measured 223 / 178 / 113) and the far treeline
+paints that card's **mean**. So:
+
+| | Rec.709 luma, linear |
+|---|---|
+| the canopy tone the terrain paints (2.18.5, read off the live card) | **0.13537** |
+| the Forest substrate under it, `0x41392b` (RN-347's leaf litter and humus) | **0.04222** |
+
+**The wood is 3.21x its own clearing**, and every real aerial photograph is the
+other way round. Measured in the frame rather than inferred: at the Forest site
+at its own local noon, adding the canopy moves `box` luma from 103.22 to
+**117.16**, i.e. **+13.94 counts UP**. "Box luma RISES when canopy is added" is
+that inversion, and it is what both verifiers saw.
+
+### 2.19.2 The law, and the two properties that make it compose
+
+Beer-Lambert on the **sun** ray, exactly as `ofTreeCover` is Beer-Lambert on the
+**view** ray:
+
+```
+S = FLOOR + (1 - FLOOR) * exp(-K * mu / max(sin(sunElev), CROWN_SUN_MIN))
+```
+
+and the canopy is painted at `tone * S`. Low sun is a long path through the
+crowns and a dark wood; high sun is the shortest path and the least darkening;
+below the horizon the exponential has saturated and `S` is the floor, so night
+needs no branch and no time-of-day table. Two properties are not tuned and are
+the whole reason this composes:
+
+1. **IT TAKES THE FULL `mu`, NOT THE `(1 - w)` COMPLEMENT the view term takes**,
+   and that difference is physical rather than convenient. `ofTreeCover` paints
+   the canopy the instances are MISSING, so it takes the density they are
+   missing. A crown's SHADOW is cast by every crown above it whether a card or
+   the paint drew it -- the sun does not know which tier was responsible. Both
+   halves therefore take the same local index and reach the same factor, which
+   is the near/far agreement in one line.
+2. **IT IS A COMMON MULTIPLIER ON BOTH ARMS OF AN ALREADY-MATCHED HANDOVER, so
+   it cannot open a seam.** 2.18.4 proved the card cover and the painted cover
+   are exactly complementary at every radius; multiplying both by the same `S`
+   leaves that identity untouched. **There is no second fade constant in this
+   lane and this time there is not even an identity to derive**, because the
+   term introduces no boundary at all -- the only boundary is the one 2.18
+   already owns.
+
+**THE SUN PLUMBING WAS ALREADY DONE AND 2.18.10 WAS WRONG ABOUT IT.**
+`ATMOSPHERE_PARS` declares `uniform vec3 uSunDir` (Atmosphere.glsl:351) and
+`terrainFragPars` splices it in before `main`, so the sky's own sun vector --
+the same OBJECT, by the reference `TerrainProgram` takes deliberately so the sky
+and the ground cannot disagree about the hour -- was already in scope in the
+albedo block. The only new line is resolving it against the LOCAL up the setup
+chunk already computed: `dot(normalize(uSunDir), up)`. Not the geometric normal,
+for `ofTreeCover`'s own reason: this asks how long the sun's path through a
+canopy layer standing on the datum is, not how the facet under it is tilted, and
+a wood on a south slope is not a differently self-shadowed wood.
+
+### 2.19.3 `K`, and the first value was below the physical range
+
+`K` converts the crown **plan-area** index this game can compute into the
+**leaf-area** optical depth Beer-Lambert actually runs on.
+
+The first draft was **1.5**, reasoned up from 1 by two geometric corrections (a
+crown is a spheroid, so its silhouette exceeds its plan area at a slant; the
+density table lists one tier and has no understorey in it). Both are real and
+**neither is the main term**. The main term is that `mu` counts a crown's shadow
+ONCE and a crown is full of leaves. Canopy radiative transfer runs on leaf area:
+the sun-path optical depth at the zenith is `G * LAI`, with `G` = 0.5 for the
+spherical leaf-angle distribution that is the standard assumption for a mixed
+stand, and a closed temperate forest carries LAI 5 to 7. With Forest's
+`mu` = 1.013983,
+
+```
+K = G * LAI / mu   ->   2.47 at LAI 5,  2.96 at LAI 6,  3.45 at LAI 7
+```
+
+**so K is between about 2.5 and 3.5 on the physics alone, and 1.5 was not merely
+under-argued, it was below the range.** 3.2 (LAI 6.5) is chosen inside that band
+by eye against the pass condition, and this is the sweep that picked it
+(`forestairnoon`, `box` luma; the clearing is the same rectangle in the
+`?canopy=0` arm at **103.22**):
+
+| K | LAI | box | wood - clearing |
+|---|---|---|---|
+| off | -- | 117.16 | **+13.94** the inversion |
+| 1.5 | 3.04 | 107.32 | +4.10 (below the band) |
+| 2.5 | 5.07 | 104.28 | +1.06 |
+| 2.7 | 5.47 | 103.85 | +0.63 |
+| 3.0 | 6.08 | 103.27 | +0.05 dead flat |
+| **3.2** | **6.49** | **102.92** | **-0.30** the photo-correct sign |
+| 4.0 | 8.11 | 101.80 | -1.42 (past the band) |
+
+**THE HIGH-SUN MARGIN IS THIN AND IS REPORTED AS THIN.** It is -0.30 counts, not
+-5, and the reason matters: past about K = 3 the closed-stand paint has already
+reached `CROWN_SELF_FLOOR` (the exponential is 0.016 at K = 3.2), so raising K
+stops darkening a closed wood at all and only reaches into thin margins. **The
+high-sun end of this term is FLOOR-limited, not K-limited**, and the floor is
+not a knob this lane will drive below its own derivation to buy margin. The
+low-sun end has no such problem: everything there is saturated.
+
+`CROWN_SELF_FLOOR` = **0.08** is what a fully self-shadowed crown keeps, and it
+is authored against the engine's own light model rather than picked:
+`AMBIENT_NOON` luma 0.0577 plus `TERRAIN_SKY_AMBIENT` 0.88 on an A4 sky
+irradiance of luma 0.140, against a direct term of `SUN_IRR` 1.45 x ndl x sunT
+= about 1.23, is an ambient share of **0.137**; times a canopy interior's
+reduced sky view of about 0.55 gives 0.075. It is an authored constant BECAUSE
+of the apply-point (see 2.19.7) and it has a sweep, `?crownshadefloor=`.
+
+### 2.19.4 THE PASS CONDITION, and the instrument needs no hand-placed rectangle
+
+`?canopy=0` is the clearing: the same rectangle, the same pose, the same range,
+haze, sun and lighting, with no vegetation of any kind. So "wood minus clearing"
+is a **sign** read off one rectangle with everything else common-mode by
+construction, and nothing is placed by eye. Two sun angles per pose, and the
+high one is **each site's own local noon**, measured rather than assumed (2.19.8).
+
+| pose | sun dot | clearing | BEFORE `?crownshade=0` | AFTER (shipped) |
+|---|---|---|---|---|
+| `forestairnoon` (Forest) | 0.736 | 103.22 | 117.16 -> **+13.94** | 102.92 -> **-0.30** |
+| `forestairlow` (Forest) | 0.198 | 81.03 | 87.80 -> **+6.77** | 79.60 -> **-1.43** |
+| `flyovernoon` (Hills) | 0.897 | 147.36 | 149.29 -> **+1.93** | 140.31 -> **-7.05** |
+| `flyoverlow` (Hills) | 0.203 | 105.67 | 110.46 -> **+4.79** | 103.92 -> **-1.75** |
+
+**Every before is positive and every after is negative: inverted in all four
+arms, photo-correct in all four.** Hills moves furthest at its own noon (-7.05)
+and that is not a surprise once measured -- a `dot 0.897` sun is a short path,
+but 0.32 is still a third of a canopy, and Hills' substrate (`0x6b6650`, luma
+0.1322) is three times Forest's, so its wood had further to fall before it hit
+the ground it stands on.
+
+A second result worth having: at `flyovernoon` `box` iqr goes **38.70 -> 64.40**
+with the bare arm at **59.62**, i.e. the shipped frame now carries MORE spread
+than bare ground does. The woods have become a dark feature ON a light field
+rather than a tonal wash across it, which is what an aerial photograph of open
+woodland is.
+
+### 2.19.5 THE HANDOVER, and 2.18.6's instrument is invalid for this term
+
+The raw pair says the boundary got worse: the `treeIn` / `treeOut` step is
+**7.42** bare, **7.00** before, **11.96** shipped. **That reading is an
+instrument artefact and the arithmetic says why.** Across a range boundary a
+surface reads `L0 * T + Lin`, so the step between two bands is
+`L0_out*T_out - L0_in*T_in + (Lin_out - Lin_in)`. As `L0` falls the first two
+terms shrink and the step tends to the pure in-scatter difference, which is
+POSITIVE. **A darker surface therefore has a larger step across the same two
+bands with no seam anywhere**, and subtracting the BRIGHT bare arm's step
+charges that to the handover. 2.18.6's control is valid for a term that ADDS
+canopy at a fixed brightness and invalid for one that changes how bright it is.
+
+So each band was **halved** and the test became a **second difference inside one
+frame**, which needs no control arm, no bare reference and no assumption about
+how haze behaves. Far to near: `treeOutB`, `treeOutA`, the 3,500 m boundary,
+`treeInA`, `treeInB`, at four equal steps in vertical NDC. A range gradient is
+smooth across all four; a seam is a jump concentrated in the ONE difference that
+crosses the boundary.
+
+| arm | outB | outA | inA | inB | d1 | **d2 (crosses it)** | d3 | **2nd diff** |
+|---|---|---|---|---|---|---|---|---|
+| `?canopy=0` (bare) | 111.49 | 107.42 | 103.72 | 100.35 | 4.07 | 3.70 | 3.37 | **-0.02** |
+| `?crownshade=0` (pre-lane) | 124.31 | 119.04 | 116.64 | 112.71 | 5.27 | 2.40 | 3.93 | **-2.20** |
+| `?crownshadecard=0` (far half only) | 117.61 | 113.49 | 107.95 | 101.76 | 4.12 | 5.54 | 6.19 | **+0.38** |
+| **shipped** | 117.61 | 113.49 | 107.57 | 99.60 | 4.12 | 5.92 | 7.97 | **-0.13** |
+
+**The shipped boundary's second difference is -0.13 counts, against -0.02 on a
+frame with no vegetation in it at all** -- and against **-2.20** on the PRE-LANE
+arm. The handover is not merely still invisible, it is measurably FLATTER after
+this lane than before it. The bare row is the instrument validating itself: a
+frame that cannot have a handover in it reads -0.02.
+
+**The card half's negative control is exact.** `treeOutB` and `treeOutA` are
+**bit-identical** (117.61 / 113.49) between `?crownshadecard=0` and shipped:
+past the reach there are no cards, so the card half provably cannot reach that
+ground, and the flag pair proves it to the digit rather than by argument.
+
+**Attribution, from the two isolators** (taken at the first K, while the halves
+were still separable rather than both saturated): the far half alone moves
+`treeInA`'s band by **-6.32**, the card half alone by **-1.14**, both by
+**-7.32** against -7.46 predicted if they were independent. Additive to 0.14
+counts, and the small deficit is the occlusion ordering -- a card in front of
+paint is darkened once, not twice.
+
+### 2.19.6 The card half, and the `mu` that had to be measured rather than reasoned
+
+The canopy impostor is ONE shared `MeshStandardMaterial` and `OF_Canopy` is
+authored at `_LOD3` ALONE (RN-2247), so scaling that one material's `color` per
+frame reaches every far card and **cannot** reach a near tree. That is the
+near-forest guard arriving structurally rather than as a distance test somebody
+has to keep in step with the terrain's: the forest interior a player stands in
+is `OF_Leaf` geometry lit by the real sun and the real cascades, and this term
+cannot see it. The base colour is captured by `SurfaceBind.apply` in the same
+statement pair that publishes the terrain's tone -- after the
+`albedo_mean_linear` divide and after `applyFoliageTone` -- so the per-frame
+write is `base * S` and a re-run on a late texture load re-captures rather than
+compounds.
+
+**THE FIRST `mu` WAS THE BIOME'S CLOSED-STAND INDEX AND THE HANDOVER CAUGHT IT.**
+The argument was that a card is by definition inside a stand. It is -- but the
+PAINT behind that card at the same pixel uses `mu_biome * canopyWeight` at that
+point, and a Forest frame's `canopyWeight` averages well below 1, so the cards
+came out about 40 per cent darker than the ground they hand over to. The
+replacement is `ChunkCanopy.residentCanopyMu()`: **the canopy-area-weighted
+mean, `sum(mu^2)/sum(mu)`, of the very field the paint reads, accumulated in the
+very loop that uploads it.** The weighting is the point rather than a fudge -- a
+plain mean answers "how much canopy is there per unit GROUND", which is the
+wrong question, because a card is never in a clearing; weighting each sample by
+its own canopy area answers "what is the density AT a place that has crowns in
+it", which is the neighbourhood a card actually stands in. Measured at
+`forestair`: plain mean **0.3016** (RN-2265's own digest), area-weighted
+**0.690**, closed stand **1.014**.
+
+**Stated limits, both real and both measured rather than asserted:** it is ONE
+number for the whole frame, so a card in an unusually dense pocket is lit by the
+neighbourhood's average; and the 0.98-per-fill decay lags by a few chunk uploads
+when the camera crosses a biome edge at speed. The exact fix for both is a
+per-instance channel, and the only one a `BatchedMesh` card has is its tint,
+which `tintFor` already owns. Routed as owed.
+
+### 2.19.7 One law, one triple, and why the better physics was refused
+
+`CanopySelfShadow.SHADE` is `(amp, K, floor)` and it is uploaded to the terrain
+as `uCrownShade` AND passed to the card updater, so the shader and the CPU read
+the same three floats out of the same object. **That is stronger than
+`assertTreelineMatchesScatter`'s mirror-and-throw**, which exists only because
+`canopyDistanceWeight` genuinely could not be shared; these can be, so they are,
+and the part that cannot drift needs no assertion. What CAN still drift is the
+FORMULA -- three lines in GLSL, three in TypeScript -- so
+`__ofTerrainArt.treeline().self` publishes the card's inputs (`cardMu`,
+`sinSun`), its output (`cardShade`), the terrain's live `uniform` triple and a
+`live` flag, and every captured frame carries them. `live: false` means the
+canopy batch never registered and the NEAR half is silently absent, which is
+2.18.5's failure mode one term over and invisible in a frame for the same
+reason: an un-darkened card is still a card.
+
+**THE BETTER PHYSICS WAS DESIGNED, PRICED AND REFUSED.** Applying the factor to
+the terrain's `shadow` instead of its albedo is strictly better -- the
+material's own ambient would supply the floor for free, at the right colour, at
+every hour, and `CROWN_SELF_FLOOR` would not need to exist at all. It is refused
+because it **cannot be mirrored on the card**: a stock `MeshStandardMaterial`
+exposes no shadow factor to a splice, which is the same wall `PropSkyAmbient`'s
+`TRANS` term hit and why that term still carries a hard-coded 0.35. One law
+applied at one place on both sides beats better physics applied at two different
+places, because the one thing this lane must not do is let the near stand and
+the far treeline disagree. **What it costs, named:** a self-shadowed crown keeps
+its own hue instead of drifting toward the sky's, and the floor is a constant.
+
+### 2.19.8 Rails, controls and the numbers
+
+**THE HIGH SUN IS EACH SITE'S OWN LOCAL NOON AND IT HAD TO BE MEASURED.** The
+first draft asked both sites for `dot 0.90` off the latitude arithmetic
+(`forestair` is at -19.85 and `cos 19.85` = 0.941) and **the pin REFUSED at
+0.736**, because Forge's sun is not overhead at the latitude that arithmetic
+assumes. Measured on the shipped build: `forestair` tops out at **0.736**,
+`flyover` at **0.897**. A hardcoded maximum is a constant copied from the thing
+it watches, and `sunTol` 0.02 is what makes it safe -- tighter than the miss an
+ephemeris change would cause, so the row goes `valid:false` with the achieved
+dot printed instead of silently photographing a different hour. It has already
+fired once, in this lane.
+
+**THE DISPATCH GUARD FIRED TOO, and it is BT-315's rule paying for itself.** The
+four new rows were in `SHOTS` and had no pose-dispatch branch, so they would
+have photographed wherever the walker spawned and reported perfectly correct
+numbers about the wrong place. The branch now matches by PREFIX rather than by a
+hand-written list, because the rows themselves are built by a loop over the same
+two names and a list here would go stale on the fifth angle.
+
+**NEGATIVE CONTROLS, and all three are stronger than "the term was off": the
+term is LIVE on every one of them and the rectangles still do not move.**
+
+| control | S live | result |
+|---|---|---|
+| `vista` (Mountains, a 4.7 km ridge) | 0.2083 | `box` 176.67, iqr 18.71, p05 158.99, p95 186.41, `hzBand` 183.96 -- **bit-identical both arms** |
+| `forestfloor` (walk, standing eye) | 0.0939 | `box` 22.82 / iqr 18.78 / p05 4.64 / p95 54.93 **bit-identical**; `propsPlaced` **41,300**, `cellsScattered` **25,655**, triangles 1,280,910, calls 75 identical |
+| `meadow` (walk) | 0.5187 | `box` 85.59 / iqr 55.05 / p05 25.44 / p95 155.50 / `hzBand` 207.71 **bit-identical**; `propsPlaced` **52,139**, `cellsScattered` **26,124** |
+
+The two walk counters match WG-220's own 6.9.7 table and RN-2265's reproduction
+exactly, so 2.16.4 and 2.18.7 still hold on this base. The standing-eye forest
+floor is untouched BY CONSTRUCTION (the far paint is identically zero inside
+690 m and `OF_Canopy` exists only at `_LOD3`) and measured to be untouched.
+
+**DETERMINISM.** Three fresh Chrome processes per arm at both aerial poses:
+every committed rectangle **bit-identical to two decimals** in every repeat
+(`forestairnoon` 117.16 / 102.92 with the four-band profile identical to the
+digit; `flyovernoon` 149.29 / 140.31). The FIELD is untouched by this lane --
+`fillCanopyIndex`'s per-vertex output is unchanged and only a running aggregate
+was added beside it -- so RN-2265's `2a9c637e` digest is not in play, and no
+texgen tile, no Blender file and no `assets/textures/dist` byte moved.
+
+**COST, WG-189 interleaved, 3 pairs a pose, same build one flag apart.**
+`forestairnoon` p50 median **6.3 -> 6.2 ms**; `flyovernoon` **4.8 -> 4.8 ms**.
+There is no separable cost and none was expected: the term is one `exp` and one
+`normalize` inside a branch only canopy fragments enter, plus one scalar written
+per frame on the CPU. Triangles (227,297), calls (27), programs (53) and
+`vramMB` (106.3) are identical to the digit in every `forestair` pair -- no new
+permutation, because the isolators are uniforms and not defines. At `flyover`,
+triangles jitter across **216,437 / 216,449 / 216,457** and programs across
+41 / 42 **within BOTH arms**, so that spread is the pose's own and is named here
+rather than charged to this term.
+
+**GATES: `npx tsc --noEmit`, `npx vite build` and `cd web && npm run check` run
+as SEPARATE steps with each exit status read on its own; 0, 0 and 8 of 8.**
+`web/wasm/dist/*` and `test/expected.json` untouched; no density table, no
+`Registry.ts`, no `ScatterTuning.ts` edit, no `assets/textures/dist` byte. New
+page params `crownshade`, `crownshadeamp`, `crownshadek`, `crownshadefloor`,
+`crownshadefar`, `crownshadecard`, all six registered in `run.mjs`'s
+`PAGE_PARAMS` in the same commit that introduces them (RN-152's scar).
+
+**THE TWO HALVES EACH GET THEIR OWN EXACT CONTROL, which is standing rule 7
+taken one step further and it earned itself within an hour.** This is the first
+term in the project applied to two different subsystems by two different
+mechanisms, so "did the far paint move the number or did the near cards" is a
+question `?crownshade=0` cannot answer -- and that was exactly the question the
+handover residual raised. `?crownshadefar=0` and `?crownshadecard=0` multiply
+the SAME amp, so neither can disagree with the shared flag about what off means.
+
+**ONE FILE OUTSIDE `render/`, flagged for Admin rather than assumed:**
+`app/Systems.ts` gains one line beside the existing
+`s.materials.setTreelineReach`, plus a refactor of
+`s.oracle.biomeAt(up.x, up.y, up.z)` into a named local so the /core classifier
+is called ONCE and shared with `SkyIbl` instead of twice. Both of the updater's
+inputs are reads that line already made; nothing new is computed per frame.
+
+### 2.19.9 The two judgements, against "a forest from the air is dark texture on light ground"
+
+**`forestairnoon` (Forest, its own local noon): MET, and this is the hero.**
+(`RN2275_forestairnoon_{crownshade0,base}.png`.) The before frame is the defect
+exactly as both verifiers described it: the woods are PALE mottling laid over a
+darker grey-green plate, so a stand reads as a bright smear and the eye cannot
+tell a wood from a haze artefact. The instanced stand in the near-left corner is
+a pale speckle sitting on ground darker than itself, which is backwards at every
+scale at once. The after frame is an aerial photograph: dark closed masses with
+pale open ground bitten into them, a chain of clearings running across the
+mid-field, and the near instanced stand now at the same value as the painted
+canopy above it, so the eye reads one continuous wood across the handover rather
+than two tiers of different things. **Honest limits, three.** The far half past
+about 2.5 km is still flat -- that is 2.18.10 item 2's retired mottle and this
+lane did not touch it. Second, a dark wood at noon and a cloud shadow are now
+similar in value and the frame contains both; they separate on edge quality (a
+wood has a ragged margin, a cloud shadow a soft one) but it is closer than it
+was. Third, the -0.30 margin means a slightly darker substrate or a slightly
+brighter card would put this pose back over the line, so it is passing rather
+than comfortable, and 2.19.10 item 3 says where the real headroom is.
+
+**`flyovernoon` (Hills, `dot 0.897`): MET, and more visibly than expected.**
+(`RN2275_flyovernoon_{crownshade0,base}.png`.) Before: the stems are mid-green
+blobs at almost exactly the turf's value, so the whole field reads as one washed
+tonal texture and the trees are texture rather than objects. After: they are
+distinctly darker than the turf, scattered as individual crowns across pale open
+grass, and the stand structure -- which was always there in the placement -- is
+legible for the first time. That is the iqr 38.70 -> 64.40 in the picture.
+**Honest limits, two.** The cards read close to charcoal rather than dark green
+at this range: the value is right and the chroma is thin, which is precisely the
+hue cost 2.19.7 names for the albedo apply-point. And the pre-existing
+cascade-jagged dark band across the mid-field (2.18.8 already named it) is MORE
+visible now, because the ground around it got relatively lighter -- this lane
+did not create it and did not fix it.
+
+### 2.19.10 Owed
+
+1. **THE HUE OF A SELF-SHADOWED CROWN.** The factor is applied to albedo on both
+   sides, so a shadowed canopy keeps its own hue instead of drifting toward the
+   sky's, and `CROWN_SELF_FLOOR` has to be an authored constant. The fix is the
+   `shadow`-side apply refused in 2.19.7, and it is blocked on the card half
+   having no shadow hook at all -- the same wall `TRANS`'s hard-coded 0.35 sits
+   behind. Worth doing together with that, as one lane.
+2. **THE CARD'S `mu` IS ONE NUMBER PER FRAME** (2.19.6). Per-instance is the
+   exact answer and the only channel a `BatchedMesh` card has is its tint. Note
+   for whoever takes it: `S` IS separable as `pow(exp(-K*mu), 1/sinSun)`, so the
+   sun-independent half could be baked per instance and the sun applied live --
+   the blocker is the channel, not the algebra.
+3. **THE HIGH-SUN MARGIN IS FLOOR-LIMITED AT -0.30 COUNTS** (2.19.3), so the
+   real lever left is NOT K. It is that the canopy card's mean albedo (luma
+   0.13537) is 3.21x the Forest substrate (0.04222), and RN-347 made that
+   substrate dark ON PURPOSE as under-canopy litter. Using an under-canopy
+   colour as the CLEARING colour is arguably the deeper defect, and it belongs
+   to whoever owns the palette rather than to this term.
+4. **A DARK WOOD AND A CLOUD SHADOW ARE NOW SIMILAR IN VALUE AT NOON** (2.19.9).
+   Not a defect this lane introduced -- a real aerial photograph does it too --
+   but it is new in this project and worth a look before anyone tunes the cloud
+   shadow.

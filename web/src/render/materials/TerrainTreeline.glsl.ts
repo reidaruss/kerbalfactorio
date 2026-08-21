@@ -7,8 +7,12 @@
 import {
   TREE_CROWN_M, TREE_EDGE_W, TREE_MOTTLE, TREE_NEAR_M, TREE_SIN_MIN,
 } from './TerrainTreeline.js';
+// RN-2275. The self-shadow law travels WITH the term that consumes it, on this
+// file's own precedent: one authority, in TypeScript, emitting its own GLSL.
+import { CROWN_SELF_GLSL } from './CanopySelfShadow.js';
 
 export const TERRAIN_TREELINE_PARS = /* glsl */`
+  ${CROWN_SELF_GLSL}
   #define OF_TREE_NEAR_M ${TREE_NEAR_M.toFixed(1)}
   #define OF_TREE_EDGE_W ${TREE_EDGE_W.toFixed(5)}
   #define OF_TREE_CROWN_M ${TREE_CROWN_M.toFixed(2)}
@@ -120,8 +124,39 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
                                            OF_TREE_CROWN_M * 0.333, footM);
             float treeM = treeF > 0.0
               ? (ofArtVnoise(pM / OF_TREE_CROWN_M + 91.3) - 0.5) * treeF : 0.0;
+            // RN-2275. INTER-CROWN SELF-SHADOWING, and the sun direction it
+            // needs was ALREADY IN SCOPE HERE: 2.18.10 recorded it as needing
+            // plumbing, and that was wrong. ATMOSPHERE_PARS declares
+            // uSunDir at the top of this fragment shader (Atmosphere.glsl:351)
+            // and TerrainFragPars splices it in before main, so A4's shared
+            // sun vector -- the same OBJECT the sky material holds, by the
+            // reference TerrainProgram takes deliberately -- reaches the albedo
+            // block with nothing added. The only thing this block has to do is
+            // resolve it against the LOCAL up, which the setup chunk already
+            // computed for the fragment's own position.
+            //
+            // NOT the geometric normal, and for ofTreeCover's own reason one line up: this asks
+            // how long the sun's path through a canopy layer standing on the
+            // datum is, not how the facet under it is tilted. A wood on a
+            // south slope is not a differently self-shadowed wood, and using
+            // the geometric normal here would have made it one.
+            //
+            // normalize(uSunDir) is recomputed rather than hoisted from
+            // TERRAIN_FRAG_LIGHT's own sd, which is one chunk further down.
+            // Moving that declaration up would edit a shipped chunk whose whole
+            // split contract is "GLSL unchanged to the character" to save one
+            // normalize inside a branch only canopy fragments enter.
+            float treeSun = dot(normalize(uSunDir), up);
+            // THE FULL vCanopy, not treeW's complement. The view term paints
+            // the density the instances are missing; a crown's SHADOW is cast
+            // by every crown above it whatever tier drew it, so both halves
+            // take the same local index and reach the same factor. That is the
+            // near/far agreement, and it is why the card half can be one
+            // scalar rather than a second curve.
+            vec3 treeTone = uTreelineTone
+              * ofCrownSelfShade(vCanopy, treeSun, uCrownShade);
             albedo = mix(albedo,
-                         uTreelineTone * (1.0 + uTreeline.y * treeM), treeK);
+                         treeTone * (1.0 + uTreeline.y * treeM), treeK);
           }
         }
       #endif

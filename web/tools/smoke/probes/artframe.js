@@ -749,6 +749,38 @@
         // the same; if it does not, the boundary is a step between them.
         treeIn: [0.2000, 0.5746, 0.8000, 0.6100],
         treeOut: [0.2000, 0.5392, 0.8000, 0.5746],
+        // RN-2275. THE SAME BOUNDARY, SPLIT IN HALF, BECAUSE THE PAIR ABOVE
+        // CANNOT TELL A GRADIENT FROM A SEAM AND THIS LANE NEEDED IT TO.
+        //
+        // 2.18.6 subtracted a `?canopy=0` arm from the raw step on the
+        // argument that the bare frame carries the pose's own haze gradient
+        // anyway. That control is valid for a term that ADDS canopy at a fixed
+        // brightness and INVALID for one that changes how bright the canopy
+        // is, and the arithmetic says why: across a range boundary a surface
+        // reads `L0 * T + Lin`, so the step between two bands is
+        // `L0_out*T_out - L0_in*T_in + (Lin_out - Lin_in)`. As `L0` falls the
+        // first two terms shrink and the step tends to the pure in-scatter
+        // difference, which is POSITIVE. A darker surface therefore has a
+        // LARGER step across the same two bands with no seam anywhere, and
+        // subtracting the BRIGHT bare arm's step charges that to the handover.
+        // Measured, and this is what forced the new rectangles: the shipped
+        // term's raw step is 11.96 against the bare arm's 7.42, which the old
+        // instrument reports as a 4.54-count handover failure.
+        //
+        // THE FOUR BANDS ARE THE FIX AND THEY NEED NO CONTROL ARM AT ALL. Each
+        // existing band is halved, so the profile from far to near is
+        // `treeOutB`, `treeOutA`, the 3,500 m boundary, `treeInA`, `treeInB`,
+        // at four equal steps in vertical NDC. A range gradient is SMOOTH
+        // across all four; a seam is a jump concentrated in the ONE difference
+        // that crosses the boundary, `treeOutA - treeInA`. The test is
+        // therefore a SECOND difference within one frame -- that middle step
+        // against the mean of its two neighbours -- and it needs no second arm,
+        // no bare reference and no assumption about how haze behaves, which is
+        // the whole reason to place them.
+        treeInB: [0.2000, 0.5923, 0.8000, 0.6100],
+        treeInA: [0.2000, 0.5746, 0.8000, 0.5923],
+        treeOutA: [0.2000, 0.5569, 0.8000, 0.5746],
+        treeOutB: [0.2000, 0.5392, 0.8000, 0.5569],
       },
       why: 'the MID-ALTITUDE FLIGHT VIEW at 1,200 m over FOREST, not the spawn',
     },
@@ -1331,6 +1363,50 @@
     },
   };
 
+  // RN-2275. THE SAME TWO AERIAL POSES AT TWO MORE SUN ANGLES, because
+  // inter-crown self-shadowing is a function of solar elevation and a term
+  // measured at ONE hour has not been measured. `vista` / `vistadawn` /
+  // `vistanoon` are the in-repo precedent for exactly this: three rows that
+  // differ in one field, `sunDot`, rather than an `--evalargs` override, which
+  // `mtnslope`'s row calls "not a pose, a rumour about one".
+  //
+  // DERIVED FROM THE PARENT ROW BY SPREAD rather than transcribed. The pose,
+  // the site and all five (or seven) rectangles must be the parent's TO THE
+  // DIGIT or the arms are not comparable, and a copied rectangle block is a
+  // second authority that drifts the first time either is nudged.
+  //
+  // THE HIGH ROW IS EACH SITE'S OWN LOCAL NOON AND THE TWO SITES DIFFER,
+  // which is `lookdev.js`'s rule (its `noon` rung is "the max reachable
+  // elevation at that site") and it had to be measured rather than derived.
+  // The first draft of this block asked both sites for dot 0.90 on the
+  // latitude arithmetic -- `forestair` sits at -19.85 and cos(19.85) = 0.941 --
+  // and the pin REFUSED at 0.736, because Forge's sun is not overhead at the
+  // equinox latitude that arithmetic assumes. Measured on the shipped build:
+  // `forestair` tops out at 0.736 and `flyover`, twenty degrees nearer the
+  // equator, at 0.897.
+  //
+  // A HARDCODED MAXIMUM IS A CONSTANT COPIED FROM THE THING IT WATCHES, and
+  // the tolerance is what makes that safe rather than a comment promising it
+  // is: 0.02 is tighter than the miss an ephemeris change would produce, so
+  // the row goes `valid:false` with the achieved dot printed instead of
+  // silently photographing a different hour. That is the failure this pair of
+  // fields exists for, and it has already fired once in this lane.
+  //
+  // 0.20 is 11.5 degrees. The sun path through a canopy layer there is five
+  // times the vertical one, which is the whole axis this lane is measuring,
+  // and it is still well above the terminator, where the direct term starts
+  // leaving for reasons that have nothing to do with crowns.
+  for (const [base, tag, dot, tol] of [
+    ['forestair', 'noon', 0.736, 0.02], ['forestair', 'low', 0.20, 0.02],
+    ['flyover', 'noon', 0.897, 0.02], ['flyover', 'low', 0.20, 0.02],
+  ]) {
+    SHOTS[base + tag] = {
+      ...SHOTS[base], sunDot: dot, sunTol: tol,
+      why: `${SHOTS[base].why} -- at ${tag === 'noon' ? "the site's own LOCAL NOON" : 'a LOW sun'}`
+        + ` (dot ${dot}), for the inter-crown self-shadow arc`,
+    };
+  }
+
   const name = A.shot;
   const S = SHOTS[name];
   if (S === undefined) {
@@ -1631,7 +1707,14 @@
   // `flyover`'s branch verbatim. Listed here and not only in `SHOTS`, because
   // this block's own comment says a shot missing from it "IS NEVER POSED" and
   // reports perfectly correct numbers about the wrong place.
-  if (name === 'flyover' || name === 'forestair' || name === 'limb') {
+  // RN-2275. The four sun-angle rows derived from `flyover` and `forestair`
+  // take the same branch, and they are matched by PREFIX rather than listed,
+  // because the rows themselves are built by a loop over the same two names:
+  // a hand-written list here would be the second authority that goes stale the
+  // moment a fifth angle is added, which is the exact shape of the trap the
+  // dispatch guard forty lines down exists to catch. `limb` stays named.
+  if (name.startsWith('flyover') || name.startsWith('forestair')
+      || name === 'limb') {
     posed = true;
     const o0 = of.world().observer;
     if (o0.mode !== 'FLY') {
@@ -3162,6 +3245,22 @@
       scatterBacklog: s.props.scatterBacklog, chunks: s.props.chunks,
       poolRefused, poolCeiling: s.props.ceiling ?? null,
     },
+    // RN-2275. INTER-CROWN SELF-SHADOWING, read back from BOTH of its halves
+    // in one object. `self.uniform` is the (amp, K, floor) the terrain's
+    // fragment shader is holding and `self.amp/k/floor` is what the card
+    // updater read out of the same triple, so a probe can assert they are one
+    // set of numbers rather than two that agree today. `self.live` false means
+    // the canopy batch material was never registered and the NEAR half of the
+    // term is silently absent -- which is invisible in a frame, because an
+    // un-darkened card is still a card (2.18.5's failure mode, one term over).
+    // `cardMu` / `sinSun` / `cardShade` let a verifier recompute the law
+    // independently and check the GLSL and the TypeScript are still the same
+    // three lines.
+    treeline: (() => {
+      const h = window.__ofTerrainArt;
+      return h === undefined || typeof h.treeline !== 'function'
+        ? null : h.treeline();
+    })(),
     render: { triangles: s.draw.triangles, calls: s.draw.calls,
       programs: s.draw.programs, vramMB: s.vramEstimateMB,
       frameMs: { p50: r2(s.frameMs.p50), p95: r2(s.frameMs.p95),

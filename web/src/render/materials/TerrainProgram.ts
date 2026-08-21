@@ -37,7 +37,7 @@ export function makeTerrainMaterial(
     fineFreq, fineW, fineLum, reliefGrad, reliefGradUv, artFineM, reliefFineM,
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
     horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
-    splatAmp, splatFade, splatFarAmp, treeline, treelineTone,
+    splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
     splatGrass, splatDirt, splatRock, splatCliff,
     splatScree, splatSnow } = s;
   // UniformsLib.lights is MANDATORY for a lights:true ShaderMaterial: three
@@ -110,6 +110,10 @@ export function makeTerrainMaterial(
     // canopy card's own mean rendered albedo. Both shared by reference.
     uTreeline: treeline,
     uTreelineTone: treelineTone,
+    // RN-2275. Inter-crown self-shadowing, (amp, K, floor). Shared by
+    // reference like every other holder here, and holding the SAME three
+    // numbers the canopy card's per-frame colour update reads.
+    uCrownShade: crownShade,
     uSplatGrass: splatGrass,
     uSplatDirt: splatDirt,
     uSplatRock: splatRock,

@@ -126,6 +126,8 @@ export function fillCanopyIndex(
   out: Float32Array, position: Float32Array, height: Float32Array,
   biome: Uint8Array, verts: number, ax: number, ay: number, az: number,
 ): void {
+  let s1 = 0;
+  let s2 = 0;
   for (let i = 0; i < verts; ++i) {
     const mu = BIOME_CANOPY_MU[biome[i * 4]] ?? 0;
     const altM = height[i];
@@ -134,6 +136,65 @@ export function fillCanopyIndex(
     const wy = ay + position[i * 3 + 1];
     const wz = az + position[i * 3 + 2];
     const w = canopyWeight(altM, standAt(wx, wy, wz), groveAt(wx, wy, wz));
-    out[i] = w > 0 ? w * mu : 0;
+    const v = w > 0 ? w * mu : 0;
+    out[i] = v;
+    s1 += v;
+    s2 += v * v;
   }
+  if (s1 > 0) accumulateCanopyMu(s1, s2);
+}
+
+/**
+ * RN-2275. THE CANOPY-AREA-WEIGHTED MEAN OF THIS FIELD, and it exists because
+ * the near canopy CARDS need a `mu` and cannot sample the attribute above.
+ *
+ * THE DEFECT IT FIXES WAS MEASURED, NOT ANTICIPATED. The card half of the
+ * inter-crown self-shadow first used the biome's CLOSED-STAND index on the
+ * argument that a card is by definition inside a stand. It is, but the PAINT
+ * behind it at the same pixel uses `mu_biome * canopyWeight` at that point, and
+ * across a Forest frame `canopyWeight` averages well under 1. So the cards came
+ * out about 40 per cent darker than the ground they hand over to, and
+ * `forestair`'s boundary pair caught it: the `treeIn` / `treeOut` step went from
+ * 0.42 BELOW the no-vegetation gradient to 3.67 ABOVE it, i.e. the handover
+ * 2.18.6 proved invisible had been re-opened by the fix for a different defect.
+ *
+ * `sum(mu^2) / sum(mu)` IS THE RIGHT ESTIMATOR AND NOT A FUDGE. A plain mean
+ * over vertices answers "how much canopy is there per unit GROUND", which is
+ * the wrong question, because a card is never in a clearing -- it is placed
+ * with probability proportional to the density. Weighting each sample by its
+ * own canopy area answers "what is the density AT a place that has crowns in
+ * it", which is exactly the neighbourhood a card stands in. It is read off the
+ * very field the paint uses, at the very vertices the paint is evaluated at, so
+ * the two halves cannot be reading different worlds.
+ *
+ * THE DECAY IS WHAT MAKES IT LOCAL. Chunks are re-uploaded as the quadtree
+ * streams, near chunks carry far more vertices than horizon ones, and a plain
+ * running total over a session would slowly become a planetary average. 0.98
+ * per fill keeps the estimator inside the neighbourhood the player is actually
+ * in; it converges well inside a settle, which is why the probe's numbers
+ * reproduce to two decimals across fresh processes.
+ *
+ * STATED LIMITS, both real: it is ONE number for the whole frame, so a card
+ * standing in an unusually dense pocket is still lit by the neighbourhood's
+ * average rather than its own; and it lags by a few fills when the camera
+ * crosses a biome edge at speed. The exact fix for both is a per-instance
+ * channel, and the only one a `BatchedMesh` card has is its tint, which
+ * `tintFor` already owns -- see rendering.md 2.19.6.
+ */
+let muS1 = 0;
+let muS2 = 0;
+const MU_DECAY = 0.98;
+
+function accumulateCanopyMu(s1: number, s2: number): void {
+  muS1 = muS1 * MU_DECAY + s1;
+  muS2 = muS2 * MU_DECAY + s2;
+}
+
+/**
+ * The canopy-area-weighted mean index over the resident field, or 0 before any
+ * chunk with canopy in it has been filled. Read once per frame by
+ * `CanopySelfShadow.updateCanopyCardShade`.
+ */
+export function residentCanopyMu(): number {
+  return muS1 > 0 ? muS2 / muS1 : 0;
 }
