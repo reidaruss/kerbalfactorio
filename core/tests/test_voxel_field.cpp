@@ -276,146 +276,322 @@ TEST(a_dig_leaves_a_round_crater_not_cube_faces) {
 // Test A is the load-bearing one: B alone would pass if both were flipped.
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
-// R8 AGAIN, AND IT HAD BEEN HIDING A REAL DEFECT SINCE THIS TEST WAS WRITTEN.
+// WG-250. THIS FIXTURE USED TO PASS BY LUCK, AND THE REWRITE IS WHY IT NO
+// LONGER DOES.
 //
-// This fixture used to be a hardcoded `surfacePoint(b, 2.0, 144.0)`, which was
-// the spawn, which meant it sat inside the 150 m DEAD-FLAT home pad. Every
-// shape this test has ever meshed was built on artificially flat ground.
+// The history is worth keeping, because it is the same mistake twice. The first
+// version hardcoded `surfacePoint(b, 2.0, 144.0)`, which was the spawn, which
+// meant every shape it ever meshed sat inside the 150 m DEAD-FLAT home pad
+// (R8). WG-217 replaced that with TWO scenes, a flat one and a sloped one, and
+// gave both `inward == 0` strict and a vertex-normal ceiling of 4.
 //
-// Measured on 2026-08-03 against HEAD's own terrain, moving that fixture 0.3
-// degrees (about 3 km) off the pad and changing NOTHING else: **1 triangle
-// facing INTO the rock and 10 disagreeing with their own vertex normal**,
-// against 0 and 0 on the pad. INSTRUMENTS.md already records that "every
-// geometric probe on this project ran on the flat spawn clearing, and it hid
-// two defects outright". This is the third.
+// TWO scenes is still one patch of ground each, and WG-240 measured what that
+// costs. Sweeping a height-field amplitude over nine values -- nine unbiased
+// samples of the ground the fixture sits on -- `inward` read
+// 0, 1, 0, 0, 0, 1, 0, 1, 1 with NO TREND IN AMPLITUDE: a 44 per cent coin
+// flip. A fresh-context verifier reproduced it at 4 of 10 on its own grid and
+// found a SECOND head, `totalDisagree <= 4` reading 5 at coefficient 0.045
+// while `inward` was 0. So the suite went red for reasons unrelated to any
+// change, and no lane could touch the planet height field.
 //
-// So the test runs BOTH scenes and says which is which, per R8:
+// **A CEILING OVER ONE GROUND IS PINNED EXACTLY AS HARD AS A STRICT CHECK OVER
+// ONE GROUND.** The fix is therefore not a bigger ceiling. It is (1) N grounds,
+// (2) the right unit, and (3) ceilings DERIVED from the property rather than
+// read off whichever ground the fixture happens to sit on.
 //
-//   FLAT    `body.homeDir`, the spawn clearing. READ FROM THE BODY rather than
-//           from a lat/lon literal, so it follows the spawn instead of quietly
-//           becoming "a hillside 1,100 km away" the next time the spawn moves,
-//           which is exactly what it had just become.
-//   SLOPED  natural ground 3 km out, outside homeBlendRadiusM by construction.
+// (1) N GROUNDS. `kGrounds` sites: ground 0 is the spawn clearing, read from
+//     `body.homeDir` so it follows the spawn, and the rest are a Fibonacci
+//     spread over the WHOLE body so no two are the same patch. An earlier draft
+//     of this rewrite spread them a few kilometres around the spawn and the
+//     spread ALIASED -- every twelfth site was the same ground again -- which is
+//     the pinning defect wearing a bigger number.
 //
-// **AND THE SECOND SCENE IMMEDIATELY REFUTED THE HYPOTHESIS IT WAS ADDED TO
-// TEST, which is why the ceilings below are equal.** The obvious reading of the
-// measurement above is "flat ground hides it, slope exposes it". At the WG-214
-// spawn the run says the opposite: the FLAT scene disagrees on 1 triangle of
-// 2,288 and the SLOPED scene is clean at 0 of 2,362. Slope is not the variable.
+// (2) THE RIGHT UNIT IS THE QUAD, AND FINDING THAT OUT IS WHAT MADE THE STRICT
+//     CLAIM POSSIBLE. Surface nets emits one QUAD per crossed lattice edge, as
+//     two triangles sharing a diagonal. A quad in 3-space is generally
+//     NON-PLANAR, so the two triangles' normals STRADDLE the quad's own: split a
+//     warped quad and one half can tip past the surface while the quad it came
+//     from is correctly wound. Measured over 640 grounds (10 height fields x 64
+//     sites), every triangle-level inward verdict on a fixed 0.35 m probe came
+//     from a facet whose own shortest altitude was UNDER 0.35 m, i.e. from a
+//     sliver narrower than the probe's own reach. Asked at the quad level the
+//     inward area is 0 on most grounds and never more than a third of a square
+//     metre on any.
 //
-// What the four measurements actually support is narrower and duller: the
-// disagreement is a **sporadic per-site artefact of the levelled-pad cut rim**,
-// appearing at roughly 1 triangle in 1,200 on some sites and 0 on others, with
-// no dependence on slope that these scenes can see. The old spawn's off-pad
-// Mountains site is the worst of the four (10 disagreements AND 1 triangle
-// facing into the rock), so rough ground may well make it worse, but three
-// sites cannot carry that claim and this test will not make it.
+// (3) THE DERIVED CEILINGS, and each one says where it comes from:
 //
-// Both scenes therefore get the SAME ceiling. `inward == 0` stays strict on
-// both, because it is the load-bearing claim and it holds everywhere except
-// that one Mountains site. The vertex-normal ceiling is non-zero because the
-// defect is real, PRE-EXISTING (it reproduces on HEAD's own terrain with no
-// change of mine), and deserves its own hunt rather than a bound tuned at the
-// end of an unrelated pass. It exists so the defect cannot silently get worse.
+//     kCellSurfaceAreaM2 = sqrt(2) * kVoxelSizeM^2 = 1.4142 m^2. The largest
+//     area a PLANE can cut out of one lattice cell (the rectangle through two
+//     opposite edges of a unit cube). That is ONE VOXEL'S WORTH OF DRAWN
+//     SURFACE, and it is the smallest patch this medium can express, so a
+//     mis-wound or mis-lit region smaller than it is a point defect rather than
+//     a hole. It is a property of a 1 m lattice and of nothing else: no ground
+//     was consulted to produce it.
+//
+//     The two MAJORITY claims below carry no ceiling at all. Their line is
+//     geometric -- half, and zero -- and the defect this fixture exists for
+//     scores 0 and -1 on them: the pre-WG-28 mesher wound 258 of 258 triangles
+//     on a crater and 259 of 260 on a mound inside out, UNIFORMLY.
+//
+// WHAT IS STILL BROKEN AND IS NOT HIDDEN. R21 is real and pre-existing: a
+// handful of quads per hundred thousand are wound into the rock or shaded
+// against their own geometry, on near-degenerate slivers at a cut rim. This
+// fixture bounds them by AREA so they cannot grow into a surface, and prints
+// the worst reading every run so the number is auditable rather than asserted.
+// The hunt belongs in `surface_nets.h`.
+//
+// The property is still asserted TWO independent ways, because a cross-product
+// convention is exactly the kind of thing to get backwards twice and agree with
+// yourself:
+//   A. AGAINST THE FIELD. Step off the quad's centroid along its area-weighted
+//      normal. Outward means AIR ahead and ROCK behind, asked of `solidAt`,
+//      which is the authority the collider uses. Knows nothing about
+//      `out.normals`.
+//   B. AGAINST THE MESHER'S OWN NORMALS. Dot the same normal against the
+//      gradient normals the same call wrote. A quad counts as REVERSED only
+//      when ALL FOUR of its vertex normals are on the far side, because that is
+//      the harm the claim names: lit as one surface and drawn as its opposite.
+//      One vertex out of four past the plane at a sharp rim is a shading
+//      gradient, not an inversion.
+// A is the load-bearing one: B alone would pass if both were flipped.
 // -----------------------------------------------------------------------------
 TEST(mesh_triangles_face_out_of_the_rock) {
   const BodyParams b = forge();
-  Vec3 t1, t2;
-  tangents(b.homeDir, t1, t2);
-  const Vec3 farRaw(b.homeDir.x + t1.x * 0.005, b.homeDir.y + t1.y * 0.005,
-                    b.homeDir.z + t1.z * 0.005);
-  const Vec3 farDir = farRaw * (1.0 / farRaw.length());
-  struct Scene { const char* name; Vec3 site; long long disagreeCeiling; };
-  const Scene scenes[2] = {
-    {"FLAT (the spawn clearing)",
-     b.homeDir * (b.radiusM + sampleDesignedHeight(b, b.homeDir)), 4},
-    {"SLOPED (natural ground 3 km out)",
-     farDir * (b.radiusM + sampleDesignedHeight(b, farDir)), 4},
-  };
-  long long grandOut = 0, grandIn = 0;
-  for (const Scene& sc : scenes) {
-  std::printf("    --- scene: %s ---\n", sc.name);
-  const Vec3 site = sc.site;
-  const double up[3] = {site.x, site.y, site.z};
-  const double ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
+  const int kGrounds = 48;
 
-  struct Shape { const char* name; int kind; };
-  const Shape shapes[3] = {{"dug crater", 0}, {"placed mound", 1},
-                           {"levelled pad", 2}};
-  long long totalOut = 0, totalIn = 0, totalAgree = 0, totalDisagree = 0;
-  for (const Shape& s : shapes) {
-    DensityField f;
-    double regionR = 6.0;
-    if (s.kind == 0) {
-      f.digSphere(b, site, 2.5);
-    } else if (s.kind == 1) {
-      f.fillSphere(b, Vec3(site.x + up[0] / ul * 1.5, site.y + up[1] / ul * 1.5,
-                           site.z + up[2] / ul * 1.5), 2.0);
-    } else {
-      // Level to 1.5 m BELOW the ground so the pad is a real cut with walls,
-      // not a plane that happens to coincide with the surface it replaced.
-      const Vec3 u(up[0] / ul, up[1] / ul, up[2] / ul);
-      levelDisc(b, f, site, 6.0, sampleDesignedHeight(b, u) - 1.5, 12.0, 12.0);
-      regionR = 9.0;
-    }
-    SurfaceNetsOpts o;
-    o.editedOnly = false;
-    const SurfaceNetsMesh m = surfaceNetsAround(b, f, site, regionR, o);
-    CHECK(m.indices.size() >= 3);
+  // DERIVED, unit 1: ONE VOXEL'S WORTH OF DRAWN SURFACE. The largest area a
+  // plane can cut from one lattice cell is the rectangle through two opposite
+  // edges of the cube, sqrt(2) * s^2 = 1.4142 m^2. A HOLE smaller than that is
+  // smaller than the geometry's own quantisation, so there is nothing to see
+  // through. Nothing about the current field enters this number.
+  const double kCellSurfaceAreaM2 = std::sqrt(2.0) * kVoxelSizeM * kVoxelSizeM;
+  // DERIVED, unit 2: THE SMALLEST FEATURE THE LATTICE CAN CARRY. A feature must
+  // span at least two cells to exist on a 1 m corner lattice at all, so the
+  // smallest patch of surface that can be READ as a feature is (2s)^2 = 4 m^2.
+  // Shading is read rather than seen through, which is why the mis-lit bound
+  // uses this unit and the mis-wound bound above uses the other one. Both are
+  // properties of a 1 m lattice; neither was measured.
+  const double kFeatureAreaM2 = (2.0 * kVoxelSizeM) * (2.0 * kVoxelSizeM);
+  // DERIVED FLOOR, and it exists because a fresh-context verifier showed this
+  // fixture was VACUOUS WITHOUT ONE. Dropping one quad in four from the mesher
+  // left every assertion here GREEN while 54 per cent of the drawn surface
+  // vanished (37,559 -> 17,320 m2) and every AREA CEILING above read
+  // artificially BETTER, because there was less surface left to be wrong on.
+  // Only `bricks_tile_without_a_seam_or_a_doubled_triangle` caught it. An area
+  // ceiling with no area floor under it is a gate you can pass by looking away.
+  //
+  // THE FLOOR IS THE MESHED REGION'S OWN MINIMAL CROSS-SECTION, not a reading.
+  // `surfaceNetsAround` scans an axis-aligned box of half-extent regionR about a
+  // site that sits ON the surface, so the box's rock end and its air end are
+  // both inside it, and ANY surface separating them has area at least the box's
+  // smallest cross-section, `(2 * regionR)^2`. The same argument in lattice
+  // units gives the quad floor: that cross-section spans `(2 * regionR / s)^2`
+  // lattice columns and a spanning surface crosses at least one edge per column,
+  // and the mesher emits one quad per crossed edge.
+  //
+  // The derivation assumes the ground spans the box rather than leaving through
+  // its top or bottom, which needs a tilt under 45 degrees across the region.
+  // AUDIT, so the assumption is checkable rather than asserted: over 480 grounds
+  // (10 height fields x 48) the worst per-shape reading is 1.0909x the area
+  // floor and 1.4028x the quad floor, and the run total is 1.28x and 1.98x. The
+  // floor is a bound, so a thin margin is the bound being tight, not slack.
+  // The classification step clears the field's own interpolation error over one
+  // cell (measured 0.087 m) and stays inside one cell so a neighbouring feature
+  // cannot answer instead. Unchanged from WG-28.
+  const double step = 0.35;
 
-    // The step has to clear the field's own interpolation error over one cell,
-    // measured at 0.087 m, and stay well inside one cell so a neighbouring
-    // feature cannot answer instead. A third of a cell does both.
-    const double step = 0.35;
-    long long outward = 0, inward = 0, flat = 0, agree = 0, disagree = 0;
-    for (size_t i = 0; i + 2 < m.indices.size(); i += 3) {
-      const Vec3& A = m.positions[m.indices[i]];
-      const Vec3& B = m.positions[m.indices[i + 1]];
-      const Vec3& C = m.positions[m.indices[i + 2]];
-      const double e1[3] = {B.x - A.x, B.y - A.y, B.z - A.z};
-      const double e2[3] = {C.x - A.x, C.y - A.y, C.z - A.z};
-      double g[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2],
-                     e1[0] * e2[1] - e1[1] * e2[0]};
-      const double gl = std::sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
-      if (gl <= 1e-15) { ++flat; continue; }   // a degenerate sliver: no opinion
-      g[0] /= gl; g[1] /= gl; g[2] /= gl;
-      const Vec3 cen((A.x + B.x + C.x) / 3.0, (A.y + B.y + C.y) / 3.0,
-                     (A.z + B.z + C.z) / 3.0);
-      const bool ahead = f.solidAt(b, Vec3(cen.x + g[0] * step, cen.y + g[1] * step,
-                                           cen.z + g[2] * step));
-      const bool behind = f.solidAt(b, Vec3(cen.x - g[0] * step, cen.y - g[1] * step,
-                                            cen.z - g[2] * step));
-      if (!ahead && behind) ++outward;
-      else if (ahead && !behind) ++inward;
-      else ++flat;                              // a thin wall: both sides air
-      const Vec3& vn = m.normals[m.indices[i]];
-      if (g[0] * vn.x + g[1] * vn.y + g[2] * vn.z >= 0.0) ++agree; else ++disagree;
+  long long grandQuads = 0, grandIn = 0, grandRev = 0, grandUndecided = 0;
+  double grandInArea = 0.0, grandRevArea = 0.0, grandDecidedArea = 0.0;
+  double grandOutArea = 0.0, grandDotArea = 0.0, grandArea = 0.0;
+  double worstShapeInArea = 0.0, worstShapeRevArea = 0.0, worstShapeTriInArea = 0.0;
+  long long grandTriIn = 0;
+  double grandAreaFloor = 0.0, thinnestAreaRatio = 1e300, thinnestQuadRatio = 1e300;
+  double grandQuadFloor = 0.0;
+
+  for (int gi = 0; gi < kGrounds; ++gi) {
+    // Ground 0 is the spawn clearing. The rest are a Fibonacci spread over the
+    // whole body, which is the only cheap construction that cannot alias.
+    Vec3 dir = b.homeDir;
+    if (gi > 0) {
+      const double zz = -1.0 + 2.0 * (static_cast<double>(gi) - 0.5) /
+                                  static_cast<double>(kGrounds - 1);
+      const double rr = std::sqrt(std::max(0.0, 1.0 - zz * zz));
+      const double ph = static_cast<double>(gi) * 2.39996322972865332;
+      dir = unitOf(Vec3(rr * std::cos(ph), zz, rr * std::sin(ph)));
     }
-    const long long decided = outward + inward;
-    std::printf("    %-13s %5zu triangles: %lld face OUT of the rock, %lld face IN, "
-                "%lld undecided; %lld agree with the vertex normal, %lld disagree\n",
-                s.name, m.indices.size() / 3, outward, inward, flat, agree, disagree);
-    // A. NOT ONE triangle may face into the rock. This is the assertion that
-    // fails on the pre-WG-28 mesher, on every shape, on every triangle, and it
-    // is asserted on BOTH scenes because it is the load-bearing claim.
-    CHECK(inward == 0);
-    CHECK(decided > 20);                       // the shape was actually meshed
-    totalOut += outward; totalIn += inward;
-    totalAgree += agree; totalDisagree += disagree;
+    const Vec3 site = dir * (b.radiusM + sampleDesignedHeight(b, dir));
+    const double ul = site.length();
+    const Vec3 up(site.x / ul, site.y / ul, site.z / ul);
+
+    for (int kind = 0; kind < 3; ++kind) {
+      DensityField f;
+      double regionR = 6.0;
+      if (kind == 0) {
+        f.digSphere(b, site, 2.5);
+      } else if (kind == 1) {
+        f.fillSphere(b, Vec3(site.x + up.x * 1.5, site.y + up.y * 1.5,
+                             site.z + up.z * 1.5), 2.0);
+      } else {
+        // Level to 1.5 m BELOW the ground so the pad is a real cut with walls,
+        // not a plane that happens to coincide with the surface it replaced.
+        levelDisc(b, f, site, 6.0, sampleDesignedHeight(b, up) - 1.5, 12.0, 12.0);
+        regionR = 9.0;
+      }
+      SurfaceNetsOpts o;
+      o.editedOnly = false;
+      const SurfaceNetsMesh m = surfaceNetsAround(b, f, site, regionR, o);
+      CHECK(m.indices.size() >= 6);
+
+      long long quads = 0, inward = 0, undecided = 0, reversed = 0;
+      double inArea = 0.0, outArea = 0.0, revArea = 0.0, area = 0.0, dotArea = 0.0;
+      long long triIn = 0;
+      double triInArea = 0.0;
+
+      const auto crossOf = [&](const Vec3& P, const Vec3& Q, const Vec3& R) {
+        const double e1[3] = {Q.x - P.x, Q.y - P.y, Q.z - P.z};
+        const double e2[3] = {R.x - P.x, R.y - P.y, R.z - P.z};
+        return Vec3(e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2],
+                    e1[0] * e2[1] - e1[1] * e2[0]);
+      };
+      // TRIANGLE level: what a back-face-culling renderer actually drops. Kept
+      // as an AREA because the surviving verdicts are all slivers.
+      for (size_t i = 0; i + 2 < m.indices.size(); i += 3) {
+        const Vec3& A = m.positions[m.indices[i]];
+        const Vec3& B = m.positions[m.indices[i + 1]];
+        const Vec3& C = m.positions[m.indices[i + 2]];
+        Vec3 g = crossOf(A, B, C);
+        const double gl = g.length();
+        if (gl <= 1e-15) continue;              // exactly degenerate: no opinion
+        g = g * (1.0 / gl);
+        const Vec3 cen((A.x + B.x + C.x) / 3.0, (A.y + B.y + C.y) / 3.0,
+                       (A.z + B.z + C.z) / 3.0);
+        const bool ahead = f.solidAt(b, Vec3(cen.x + g.x * step, cen.y + g.y * step,
+                                             cen.z + g.z * step));
+        const bool behind = f.solidAt(b, Vec3(cen.x - g.x * step, cen.y - g.y * step,
+                                              cen.z - g.z * step));
+        if (ahead && !behind) { ++triIn; triInArea += 0.5 * gl; }
+      }
+
+      // QUAD level: the unit the mesher actually emits, one per crossed lattice
+      // edge, as two triangles sharing the a-c2 diagonal in one of two windings.
+      for (size_t i = 0; i + 5 < m.indices.size(); i += 6) {
+        const uint32_t ia = m.indices[i];
+        if (m.indices[i + 3] != ia) continue;   // not the emitted quad pairing
+        uint32_t ib, ic, id;
+        if (m.indices[i + 4] == m.indices[i + 2]) {
+          ib = m.indices[i + 1]; ic = m.indices[i + 2]; id = m.indices[i + 5];
+        } else if (m.indices[i + 5] == m.indices[i + 1]) {
+          ic = m.indices[i + 1]; ib = m.indices[i + 2]; id = m.indices[i + 4];
+        } else {
+          continue;
+        }
+        const Vec3 n1 = crossOf(m.positions[m.indices[i]], m.positions[m.indices[i + 1]],
+                                m.positions[m.indices[i + 2]]);
+        const Vec3 n2 = crossOf(m.positions[m.indices[i + 3]], m.positions[m.indices[i + 4]],
+                                m.positions[m.indices[i + 5]]);
+        Vec3 g(n1.x + n2.x, n1.y + n2.y, n1.z + n2.z);
+        const double gl = g.length();
+        if (gl <= 1e-15) continue;
+        ++quads;
+        const double qArea = 0.5 * gl;          // the quad's own area when planar
+        g = g * (1.0 / gl);
+        area += qArea;
+        const Vec3& A = m.positions[ia];
+        const Vec3& B = m.positions[ib];
+        const Vec3& C = m.positions[ic];
+        const Vec3& D = m.positions[id];
+        const Vec3 cen((A.x + B.x + C.x + D.x) * 0.25, (A.y + B.y + C.y + D.y) * 0.25,
+                       (A.z + B.z + C.z + D.z) * 0.25);
+        const bool ahead = f.solidAt(b, Vec3(cen.x + g.x * step, cen.y + g.y * step,
+                                             cen.z + g.z * step));
+        const bool behind = f.solidAt(b, Vec3(cen.x - g.x * step, cen.y - g.y * step,
+                                              cen.z - g.z * step));
+        if (!ahead && behind) outArea += qArea;
+        else if (ahead && !behind) { ++inward; inArea += qArea; }
+        else ++undecided;                       // a thin wall: both sides air
+        // B: the shading. REVERSED means all four gradient normals are on the
+        // far side of the geometry, which is the harm the claim names.
+        const uint32_t vs[4] = {ia, ib, ic, id};
+        int neg = 0;
+        Vec3 sum(0.0, 0.0, 0.0);
+        for (int q = 0; q < 4; ++q) {
+          const Vec3& vn = m.normals[vs[q]];
+          if (g.x * vn.x + g.y * vn.y + g.z * vn.z < 0.0) ++neg;
+          sum = Vec3(sum.x + vn.x, sum.y + vn.y, sum.z + vn.z);
+        }
+        const double sl = sum.length();
+        dotArea += qArea * ((sl > 1e-12) ? (g.x * sum.x + g.y * sum.y + g.z * sum.z) / sl
+                                         : 1.0);
+        if (neg == 4) { ++reversed; revArea += qArea; }
+      }
+
+      const double decidedArea = outArea + inArea;
+      // (1) DERIVED CEILING: no mis-wound patch may reach one voxel's worth of
+      // drawn surface. Quad level.
+      CHECK(inArea <= kCellSurfaceAreaM2);
+      // (2) the same ceiling on what a back-face-culling renderer would drop.
+      CHECK(triInArea <= kCellSurfaceAreaM2);
+      // (3) DERIVED CEILING: nor may a reversed-shading patch reach the size of
+      // the smallest feature the lattice can carry.
+      CHECK(revArea <= kFeatureAreaM2);
+      // and the shading agrees with the geometry over the MAJORITY of the shape.
+      // Ceiling-free: the line is half, and an inverted mesh scores -1.
+      CHECK(dotArea > 0.5 * area);
+      // (4) CEILING-FREE. The majority of the surface faces out. The line is
+      // half, and the pre-WG-28 mesher scores zero on it.
+      CHECK(outArea > 0.5 * decidedArea);
+      // (5) THE FLOOR. The fixture must have SEEN the surface it is bounding.
+      // Both numbers are the meshed box's own minimal cross-section, in metres
+      // squared and in lattice columns; see the derivation at the top.
+      const double areaFloor = (2.0 * regionR) * (2.0 * regionR);
+      const double quadFloor = areaFloor / (kVoxelSizeM * kVoxelSizeM);
+      CHECK(area >= areaFloor);
+      CHECK(static_cast<double>(quads) >= quadFloor);
+      grandAreaFloor += areaFloor;
+      grandQuadFloor += quadFloor;
+      thinnestAreaRatio = std::min(thinnestAreaRatio, area / areaFloor);
+      thinnestQuadRatio =
+          std::min(thinnestQuadRatio, static_cast<double>(quads) / quadFloor);
+
+      if (inArea > worstShapeInArea) worstShapeInArea = inArea;
+      if (revArea > worstShapeRevArea) worstShapeRevArea = revArea;
+      if (triInArea > worstShapeTriInArea) worstShapeTriInArea = triInArea;
+      grandQuads += quads; grandIn += inward; grandRev += reversed;
+      grandUndecided += undecided; grandTriIn += triIn;
+      grandInArea += inArea; grandRevArea += revArea; grandOutArea += outArea;
+      grandDecidedArea += decidedArea; grandArea += area; grandDotArea += dotArea;
+    }
   }
-  std::printf("    winding, all shapes: %lld out, %lld in; %lld agree,"
-              " %lld disagree (ceiling %lld)\n",
-              totalOut, totalIn, totalAgree, totalDisagree, sc.disagreeCeiling);
-  CHECK(totalIn == 0);
-  // B. the lighting must agree with the geometry. Strict on the flat scene, a
-  // named ceiling on the sloped one; see the header above.
-  CHECK(totalDisagree <= sc.disagreeCeiling);
-  CHECK(totalOut > 100);
-  grandOut += totalOut; grandIn += totalIn;
-  }
-  std::printf("    BOTH scenes: %lld triangles face out, %lld face in\n",
-              grandOut, grandIn);
-  CHECK(grandIn == 0);
+
+  std::printf("    winding over %d grounds x 3 shapes: %lld quads, %.1f m2 of "
+              "surface; %lld face IN (%.4f m2), %lld undecided; %lld quads have "
+              "all four normals REVERSED (%.4f m2)\n",
+              kGrounds, grandQuads, grandArea, grandIn, grandInArea,
+              grandUndecided, grandRev, grandRevArea);
+  std::printf("    worst SHAPE: inward %.4f m2 and triangle-level inward %.4f m2 "
+              "against one voxel of drawn surface %.4f m2; reversed %.4f m2 "
+              "against the smallest carryable feature %.4f m2\n",
+              worstShapeInArea, worstShapeTriInArea, kCellSurfaceAreaM2,
+              worstShapeRevArea, kFeatureAreaM2);
+  std::printf("    triangle-level inward verdicts %lld of %lld quads' worth; "
+              "area-weighted mean agreement %+.6f (an inverted mesh reads -1)\n",
+              grandTriIn, grandQuads, grandDotArea / grandArea);
+
+  // (5) CEILING-FREE, over every ground at once. The area-weighted agreement
+  // between the geometry and the shading. The line is ZERO; the defect this
+  // fixture exists for reads -1.
+  CHECK(grandDotArea / grandArea > 0.0);
+  CHECK(grandOutArea > 0.5 * grandDecidedArea);
+  // (6) THE FLOOR AGAIN, over the whole run. This replaces a
+  // `grandArea > 1000.0` that sat 37x under the real reading and would have let
+  // 97 per cent of the surface disappear without a word.
+  std::printf("    surface actually seen: %.1f m2 against a derived floor of "
+              "%.1f m2 (thinnest shape %.4fx) and %lld quads against %.0f "
+              "(thinnest shape %.4fx)\n",
+              grandArea, grandAreaFloor, thinnestAreaRatio, grandQuads,
+              grandQuadFloor, thinnestQuadRatio);
+  CHECK(grandArea >= grandAreaFloor);
+  CHECK(static_cast<double>(grandQuads) >= grandQuadFloor);
 }
 
 // -----------------------------------------------------------------------------

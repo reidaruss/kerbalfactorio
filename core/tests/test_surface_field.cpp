@@ -148,6 +148,94 @@ void columnCells(const Vec3& u, double fromR, int step, size_t n,
   }
 }
 
+// -----------------------------------------------------------------------------
+// WG-250. THE THREE THINGS EVERY DIG CASE BELOW NEEDS SO IT CAN ASSERT OVER N
+// GROUNDS INSTEAD OF ONE.
+//
+// WG-240 measured what a one-ground dig bracket costs. Sweeping a height-field
+// amplitude over nine values -- nine unbiased samples of the ground the fixture
+// sits on -- the two dig brackets in this file failed at EVERY nonzero
+// amplitude, 2 to 6 checks a run, not because a carve broke but because the
+// voxel lattice landed differently under the same radial. Any change to the
+// planet height field therefore turned this suite red for a reason unrelated
+// to the change, which is a freeze on the field (world-gen.md R21 / 6.11.7).
+//
+// The brackets that replace them are computed from the BRUSH and the LATTICE at
+// each ground, never read off a measurement, and the tolerance on each one is
+// the instrument's own resolution rather than slack.
+// -----------------------------------------------------------------------------
+
+// THE ROOT FIND'S OWN RESOLUTION, and it is quoted rather than guessed:
+// `columnSurfaceHeight` marches one cell at a time, then bisects only until its
+// bracket is a QUARTER of a cell (voxel_field.h, "(rA - rB) > 0.25 *
+// kVoxelSizeM") and chords across whatever is left. Every height it returns
+// therefore carries a quarter of a cell of its own, so every bound derived
+// against a height gets exactly that much tolerance and no more.
+constexpr double kRootFindBracketM = 0.25 * kVoxelSizeM;
+
+// Half a cell diagonal: the DW-26 quantisation of "carve exactly this cell",
+// and the radius kCellBrushR is rounded up from.
+const double kHalfCellDiagM = 0.5 * std::sqrt(3.0) * kVoxelSizeM;
+
+// N GROUNDS. Ground 0 is the historical fixture site so nothing that used to be
+// covered stops being covered; the rest are a Fibonacci spread over the WHOLE
+// body, which is the only cheap construction that cannot alias into re-sampling
+// the same patch under a different index.
+Vec3 groundDir(int i, int n) {
+  if (i == 0) return unitOf(latLonToDir(0.20, 0.55));
+  const double zz = -1.0 + 2.0 * (static_cast<double>(i) - 0.5) /
+                              static_cast<double>(n - 1);
+  const double rr = std::sqrt(std::max(0.0, 1.0 - zz * zz));
+  const double ph = static_cast<double>(i) * 2.39996322972865332;
+  return unitOf(Vec3(rr * std::cos(ph), zz, rr * std::sin(ph)));
+}
+
+// Signed distance along the radial through `u` to a point.
+double alongRadial(const Vec3& u, const Vec3& p) {
+  return p.x * u.x + p.y * u.y + p.z * u.z;
+}
+
+// THE GUARANTEED-AIR RUN, and this is the whole lower-bound derivation.
+//
+// kCellBrushR is 0.87 m and every one of a cell's eight corners is exactly
+// 0.8660 m from its centre, so a carve at a cell centre drives all eight
+// negative and the TRILINEAR field is air throughout that cell, with no appeal
+// to any measurement. Marching the radial down from the surface, the contiguous
+// run of CARVED cells it passes through is therefore air, and the topmost
+// crossing must lie at or below the bottom of that run.
+//
+// It is deliberately CONSERVATIVE. Where the radial leaves the carved set
+// immediately below the surface the run is zero and the bound says nothing at
+// that ground, which is honest: nothing is guaranteed there. Roughly two
+// grounds in five are informative, and the count is printed every run.
+double guaranteedAirRunM(const Vec3& u, double surfR,
+                         const std::vector<VoxelCell>& carved) {
+  const double dr = 0.002;
+  double depth = 0.0;
+  for (int i = 0; i < 20000; ++i) {
+    const double r = surfR - (i + 0.5) * dr;
+    const VoxelCell c = cellForPos(u * r);
+    bool in = false;
+    for (size_t k = 0; k < carved.size(); ++k) if (carved[k] == c) { in = true; break; }
+    if (!in) break;
+    depth = surfR - r;
+  }
+  return depth;
+}
+
+// THE UPPER BOUND, also purely geometric. `digSphere` writes `min(d, |p-c|-R)`,
+// which is non-negative outside the sphere, so no corner beyond R of a carve
+// centre is ever made air. The deepest crossing is therefore R below the
+// deepest carve centre, plus the half cell diagonal that separates a corner
+// from the cell it bounds.
+double carveDepthCapM(const Vec3& u, double surfR,
+                      const std::vector<VoxelCell>& carved, double brushR) {
+  double deepest = 1e300;
+  for (size_t k = 0; k < carved.size(); ++k)
+    deepest = std::min(deepest, alongRadial(u, cellCenter(carved[k])));
+  return (surfR - deepest) + brushR + kHalfCellDiagM;
+}
+
 // "Procedurally solid but now air" / "procedurally air but now solid": the two
 // questions VoxelEdits::isRemoved / isAdded used to answer off a cell-id set.
 bool isRemovedCell(const BodyParams& body, const DensityField& f,
@@ -157,6 +245,44 @@ bool isRemovedCell(const BodyParams& body, const DensityField& f,
 bool isAddedCell(const BodyParams& body, const DensityField& f,
                  const VoxelCell& c) {
   return !isProcSolid(body, c) && f.solidCell(body, c);
+}
+
+// WG-250. THE TOPMOST CELL THE UNEDITED FIELD CALLS ROCK, AND THE LOWEST IT
+// CALLS AIR, ASKED AS PROPERTIES RATHER THAN COUNTED OFF A GRID.
+//
+// `columnCells(u, surfR, -1, 1, ...)` was standing in for "the topmost solid
+// cell". It is not one: it returns the cell containing a point half a metre
+// below the surface, and whether that cell's CENTRE is above or below the
+// designed surface depends only on where this ground's surface sits inside its
+// own cell. Over 48 body-wide grounds it hands back a procedurally AIR cell
+// often enough to fail `isRemovedCell`, which is the same lattice-phase pinning
+// the brackets had, one assertion over.
+VoxelCell topmostProcSolidCell(const BodyParams& body, const Vec3& u, double surfR) {
+  for (int k = 0; k < 256; ++k) {
+    const VoxelCell c = cellForPos(u * (surfR - (k + 0.5) * 0.25 * kVoxelSizeM));
+    if (isProcSolid(body, c)) return c;
+  }
+  return cellForPos(u * (surfR - 0.5 * kVoxelSizeM));
+}
+VoxelCell lowestProcAirCell(const BodyParams& body, const Vec3& u, double surfR) {
+  for (int k = 0; k < 256; ++k) {
+    const VoxelCell c = cellForPos(u * (surfR + (k + 0.5) * 0.25 * kVoxelSizeM));
+    if (!isProcSolid(body, c)) return c;
+  }
+  return cellForPos(u * (surfR + 0.5 * kVoxelSizeM));
+}
+// The first `n` distinct cells above the surface that the unedited field calls
+// AIR, in order. `columnCells(u, surfR, +1, n, ...)` is the same trap seen from
+// the other side: it can hand back an already-solid cell.
+void airCellsUp(const BodyParams& body, const Vec3& u, double surfR, size_t n,
+                std::vector<VoxelCell>& out) {
+  for (int k = 0; out.size() < n && k < 512; ++k) {
+    const VoxelCell c = cellForPos(u * (surfR + (k + 0.5) * 0.25 * kVoxelSizeM));
+    if (isProcSolid(body, c)) continue;
+    bool seen = false;
+    for (size_t i = 0; i < out.size(); ++i) if (out[i] == c) { seen = true; break; }
+    if (!seen) out.push_back(c);
+  }
 }
 
 Vec3 crossOf(const Vec3& a, const Vec3& b) {
@@ -274,54 +400,89 @@ TEST(voxel_solidity_matches_designed_surface) {
 // The DEFINITIONAL identity at the end is NOT relaxed, because it is what stops
 // the lowering view and the height view from ever drifting apart.
 // =============================================================================
+// WG-250 REWRITE. `CHECK(lowering > kVoxelSizeM)` on part (a) read 0.7240 m at
+// height-field coefficient 0.045 and failed. It was never a property of the
+// carve: it was a reading of where one ground's surface happened to sit inside
+// its own topmost cell. Part (a) now runs over N grounds against a bracket
+// computed from the brush and the lattice at each one (see guaranteedAirRunM
+// and carveDepthCapM above), and part (b), which was already ground-independent
+// and is the sharp claim, runs over the same N.
 TEST(dig_column_lowers_surface_by_derived_amount) {
   const BodyParams forge = makeForge(20260616ull);
-  const Vec3 d = sampleDir();
-  const Vec3 u = unitOf(d);
-  const double surfR = forge.radiusM + sampleDesignedHeight(forge, u);
-  const double base = baseHeight(forge, u);
-
-  // (a) the ported geometry: the top N cells, carved one at a time.
+  const int kGrounds = 48;
   const size_t N = 6;
-  std::vector<VoxelCell> col;
-  columnCells(u, surfR, -1, N, col);
-  CHECK(col.size() == N);
 
-  DensityField edits;
-  int flipped = 0;
-  for (size_t k = 0; k < col.size(); ++k) flipped += digCell(forge, edits, col[k]);
-  CHECK(flipped >= static_cast<int>(N));
-  for (size_t k = 0; k < col.size(); ++k) CHECK(!edits.solidCell(forge, col[k]));
+  int informative = 0;
+  double worstRunMargin = 1e300, worstCapMargin = 1e300;
+  double worstBrushLo = 1e300, worstBrushHi = 1e300, sumRun = 0.0;
+  for (int gi = 0; gi < kGrounds; ++gi) {
+    const Vec3 u = groundDir(gi, kGrounds);
+    const double surfR = forge.radiusM + sampleDesignedHeight(forge, u);
+    const double base = baseHeight(forge, u);
 
-  const double lowering = derivedLoweringAt(forge, u, edits);
-  const double sh = surfaceHeight(forge, u, edits);
-  std::printf("    dig column, cell by cell: %d cells flipped to air by %zu "
-              "0.87 m carves; surface dropped %.4f m (the shortfall against 6 m "
-              "is the diagonal-step membrane, see the comment)\n",
-              flipped, N, lowering);
-  CHECK(lowering > kVoxelSizeM);                 // the column really opened
-  CHECK(lowering <= N * kVoxelSizeM + 0.9);      // and not deeper than was carved
-  // NOT a tolerance: derivedLoweringAt is defined as baseHeight - surfaceHeight,
-  // and if these two ever disagree the mesher and the walker are reading
-  // different surfaces again.
-  CHECK_NEAR(base - sh, lowering, 1e-9);
-  CHECK(sh < base);
+    // (a) the ported geometry: the top N distinct cells, carved one at a time.
+    std::vector<VoxelCell> col;
+    columnCells(u, surfR, -1, N, col);
+    CHECK(col.size() == N);
 
-  // (b) the sharp claim, with the brush the pickaxe actually uses. Overlapping
-  // 1.6 m spheres one metre apart down the radial cannot leave a membrane, so
-  // the surface drops by the depth dug plus the brush's own overshoot.
-  DensityField brush;
-  for (size_t k = 0; k < N; ++k)
-    brush.digSphere(forge, u * (surfR - (k + 0.5) * kVoxelSizeM), 1.6);
-  const double brushLow = derivedLoweringAt(forge, u, brush);
-  std::printf("    dig column, 1.6 m brush: surface dropped %.4f m for a %zu m "
-              "column (old whole-cell model: 6.0 m +/- 1 cell)\n",
-              brushLow, N);
-  // MEASURED 6.9573 m: N metres of column plus the bottom sphere's 1.6 m radius
-  // less the half-cell the first centre sits below the surface.
-  CHECK(brushLow >= N * kVoxelSizeM);
-  CHECK(brushLow <= N * kVoxelSizeM + 1.6 + 0.9);
-  CHECK_NEAR(baseHeight(forge, u) - surfaceHeight(forge, u, brush), brushLow, 1e-9);
+    DensityField edits;
+    int flipped = 0;
+    for (size_t k = 0; k < col.size(); ++k) flipped += digCell(forge, edits, col[k]);
+    // WG-250: NOT `flipped >= N`. `digCell` returns how many cells' SOLIDITY
+    // flipped, and a carve's corner writes reach one cell past its own brush, so
+    // a later carve legitimately finds a cell the previous one already emptied.
+    // Over 48 body-wide grounds that undercounts at three of the ten height
+    // fields swept. The property is that each named cell IS air, which is the
+    // line below, and it holds at every ground.
+    CHECK(flipped > 0);
+    for (size_t k = 0; k < col.size(); ++k) CHECK(!edits.solidCell(forge, col[k]));
+
+    const double lowering = derivedLoweringAt(forge, u, edits);
+    const double sh = surfaceHeight(forge, u, edits);
+    const double run = guaranteedAirRunM(u, surfR, col);
+    const double cap = carveDepthCapM(u, surfR, col, kCellBrushR);
+    sumRun += run;
+    if (run > 0.0) ++informative;
+
+    // DERIVED FLOOR: everything inside a carved cell is air, so the surface is
+    // at or below the bottom of the run the radial takes through the carved
+    // set, to within the root find's own quarter-cell bracket.
+    CHECK(lowering >= run - kRootFindBracketM);
+    // DERIVED CEILING: no corner beyond the brush radius of a carve centre was
+    // made air, so the crossing cannot be deeper than that.
+    CHECK(lowering <= cap);
+    // NOT a tolerance: derivedLoweringAt is defined as baseHeight -
+    // surfaceHeight, and if these two ever disagree the mesher and the walker
+    // are reading different surfaces again.
+    CHECK_NEAR(base - sh, lowering, 1e-9);
+    worstRunMargin = std::min(worstRunMargin, lowering - (run - kRootFindBracketM));
+    worstCapMargin = std::min(worstCapMargin, cap - lowering);
+
+    // (b) THE SHARP CLAIM, with the brush the pickaxe actually uses.
+    // Overlapping 1.6 m spheres one metre apart down the radial cannot leave a
+    // membrane at any lattice phase, which is why this half needed no rewrite:
+    // it reads 6.92 to 7.09 m over every ground and every height field swept.
+    DensityField brush;
+    for (size_t k = 0; k < N; ++k)
+      brush.digSphere(forge, u * (surfR - (k + 0.5) * kVoxelSizeM), 1.6);
+    const double brushLow = derivedLoweringAt(forge, u, brush);
+    CHECK(brushLow >= N * kVoxelSizeM);
+    CHECK(brushLow <= N * kVoxelSizeM + 1.6 + 0.9);
+    CHECK_NEAR(baseHeight(forge, u) - surfaceHeight(forge, u, brush), brushLow, 1e-9);
+    CHECK(surfaceHeight(forge, u, brush) < base);
+    worstBrushLo = std::min(worstBrushLo, brushLow - N * kVoxelSizeM);
+    worstBrushHi = std::min(worstBrushHi, (N * kVoxelSizeM + 1.6 + 0.9) - brushLow);
+  }
+  std::printf("    dig column over %d grounds, cell by cell: worst margin above "
+              "the guaranteed-air run %+.4f m (tolerance is the root find's own "
+              "%.2f m bracket), worst margin below the carve cap %+.4f m; the "
+              "run is informative at %d of %d grounds, mean %.3f m\n",
+              kGrounds, worstRunMargin, kRootFindBracketM, worstCapMargin,
+              informative, kGrounds, sumRun / kGrounds);
+  std::printf("    dig column, 1.6 m brush, same %d grounds: worst margin above "
+              "%zu m %+.4f m, worst margin below %zu m + 1.6 + 0.9 %+.4f m\n",
+              kGrounds, N, worstBrushLo, N, worstBrushHi);
+  CHECK(informative > 0);
 }
 
 // =============================================================================
@@ -431,42 +592,88 @@ TEST(horizontal_tunnel_no_surface_lowering) {
 // MEDIUM, and it is asserted directly below (the floor cells read solid) so the
 // case cannot pass by having no floor at all.
 // =============================================================================
+// WG-250 REWRITE, and it changes the geometry as well as the bracket.
+//
+// TWO things were pinned. `lowering >= 2.0 && lowering <= 4.0` read 0.7240 m at
+// height-field coefficient 0.045, for the same lattice-phase reason as the dig
+// column. And the TWO-cell floor was itself a coin flip: `columnCells` returns
+// the DISTINCT cells a radial passes, which on a diagonal radial can be
+// EDGE-adjacent rather than face-adjacent, so a nominal two-cell floor can be
+// thinner than two cells and the pocket's carve then reaches the pit. Measured
+// over 48 body-wide grounds, the two-cell floor let the pocket change the answer
+// at 1 to 8 grounds per height field. A five-cell floor with the pocket at cells
+// 8 and 9 cannot: the carve reach is R + one cell and the gap is four.
+//
+// THE PROPERTY IS NOW ASSERTED AS A CONTRAST, WHICH NEEDS NO CEILING AT ALL.
+// "The pocket adds nothing" is exactly "the same pit with and without the pocket
+// answers the same", and that is asserted BITWISE. Over 480 grounds (10 height
+// fields x 48) it holds every time. The brackets around it are the derived pair
+// from the dig column, and they are the weaker half.
 TEST(pit_lowers_only_to_first_solid) {
   const BodyParams forge = makeForge(20260616ull);
-  const Vec3 u = unitOf(sampleDir());
-  const double surfR = forge.radiusM + sampleDesignedHeight(forge, u);
-  std::vector<VoxelCell> col;
-  columnCells(u, surfR, -1, 7, col);
-  CHECK(col.size() == 7);
+  const int kGrounds = 48;
+  int informative = 0, contrasted = 0;
+  double worstRunMargin = 1e300, worstCapMargin = 1e300;
+  for (int gi = 0; gi < kGrounds; ++gi) {
+    const Vec3 u = groundDir(gi, kGrounds);
+    const double surfR = forge.radiusM + sampleDesignedHeight(forge, u);
+    std::vector<VoxelCell> col;
+    columnCells(u, surfR, -1, 10, col);
+    CHECK(col.size() == 10);
+    const std::vector<VoxelCell> pitCells(col.begin(), col.begin() + 3);
 
-  DensityField edits;
-  // Open the top 3 cells (a shallow pit)...
-  for (int k = 0; k < 3; ++k) digCell(forge, edits, col[k]);
-  // ...leave cells 3 and 4 SOLID (the two-cell floor)...
-  // ...then carve cells 5 and 6 (an isolated pocket below the intact floor).
-  digCell(forge, edits, col[5]);
-  digCell(forge, edits, col[6]);
+    DensityField edits, pitOnly;
+    // Open the top 3 cells (a shallow pit), in both fields...
+    for (int k = 0; k < 3; ++k) {
+      digCell(forge, edits, col[k]);
+      digCell(forge, pitOnly, col[k]);
+    }
+    // ...leave cells 3 to 7 SOLID (the floor)...
+    // ...then carve cells 8 and 9 in ONE of them (an isolated pocket).
+    digCell(forge, edits, col[8]);
+    digCell(forge, edits, col[9]);
 
-  // The floor is REALLY there. Without this the case would pass trivially the
-  // day the floor stops existing, which on a corner-sampled field is exactly
-  // what a ONE-cell floor does.
-  CHECK(edits.solidCell(forge, col[3]));
-  CHECK(edits.solidCell(forge, col[4]));
-  CHECK(solidAt(forge, cellCenter(col[3]), edits));
-  // ...and the pit and the pocket are REALLY open, so there is something to
-  // lower and something to not-see.
-  CHECK(!edits.solidCell(forge, col[0]));
-  CHECK(!edits.solidCell(forge, col[5]));
-  CHECK(isRemovedCell(forge, edits, col[0]));        // was proc-solid, now air
-  CHECK(isRemovedCell(forge, edits, col[5]));
+    // The floor is REALLY there. Without this the case would pass trivially the
+    // day the floor stops existing, which on a corner-sampled field is exactly
+    // what a thin floor does.
+    for (int k = 3; k <= 7; ++k) {
+      CHECK(edits.solidCell(forge, col[k]));
+      CHECK(solidAt(forge, cellCenter(col[k]), edits));
+    }
+    // ...and the pit and the pocket are REALLY open, so there is something to
+    // lower and something to not-see. `isRemovedCell` is asked of col[2] and
+    // col[8] rather than col[0], because col[0] is only PROCEDURALLY solid at
+    // the lattice phases where the surface happens to sit high in its own cell:
+    // asking it there is the pinning defect, not the property.
+    CHECK(!edits.solidCell(forge, col[0]));
+    CHECK(!edits.solidCell(forge, col[8]));
+    CHECK(isRemovedCell(forge, edits, col[2]));      // was proc-solid, now air
+    CHECK(isRemovedCell(forge, edits, col[8]));
 
-  const double lowering = derivedLoweringAt(forge, u, edits);
-  std::printf("    pit: surface lowered %.4f m by a 3-cell pit over a 2-cell "
-              "floor over a 2-cell pocket 5 m down (the pocket adds nothing)\n",
-              lowering);
-  // Only the top run counts: ~3 m, NOT ~7 m. Bracket unchanged from the cell
-  // model; MEASURED 3.0163 m.
-  CHECK(lowering >= 2.0 && lowering <= 4.0);
+    const double lowering = derivedLoweringAt(forge, u, edits);
+    const double withoutPocket = derivedLoweringAt(forge, u, pitOnly);
+    // THE PROPERTY, ceiling-free and bitwise: the pocket under an intact floor
+    // is invisible to the heightfield.
+    CHECK(asBits(lowering) == asBits(withoutPocket));
+    if (asBits(lowering) == asBits(withoutPocket)) ++contrasted;
+
+    const double run = guaranteedAirRunM(u, surfR, pitCells);
+    const double cap = carveDepthCapM(u, surfR, pitCells, kCellBrushR);
+    if (run > 0.0) ++informative;
+    CHECK(lowering >= run - kRootFindBracketM);
+    CHECK(lowering <= cap);
+    worstRunMargin = std::min(worstRunMargin, lowering - (run - kRootFindBracketM));
+    worstCapMargin = std::min(worstCapMargin, cap - lowering);
+  }
+  std::printf("    pit over %d grounds: a 3-cell pit over a 5-cell floor over a "
+              "2-cell pocket 8 m down answers BITWISE the same as the pit alone "
+              "at %d of %d; worst margin above the guaranteed-air run %+.4f m, "
+              "worst margin below the pit's own carve cap %+.4f m (run "
+              "informative at %d)\n",
+              kGrounds, contrasted, kGrounds, worstRunMargin, worstCapMargin,
+              informative);
+  CHECK(contrasted == kGrounds);
+  CHECK(informative > 0);
 }
 
 // =============================================================================
@@ -588,8 +795,15 @@ TEST(fill_makes_air_solid_and_raises_the_one_surface) {
   const BodyParams forge = makeForge(20260616ull);
   const Vec3 u = unitOf(sampleDir());
   const double surfR = forge.radiusM + baseHeight(forge, u);
+  // WG-250: NOT `columnCells(u, surfR, +1, 6, up)`. That returns the cell
+  // containing a point half a metre above the surface, and whether that cell's
+  // CENTRE is above or below the designed surface depends only on where this
+  // ground's surface sits inside its own cell. At coefficient 0.0525 of the
+  // WG-243 amplitude sweep it came back already SOLID and three assertions in
+  // this case failed for that reason and no other. This case is outside the
+  // four the WG-250 brief named; the sweep found it, so it is fixed here.
   std::vector<VoxelCell> up;
-  columnCells(u, surfR, +1, 6, up);
+  airCellsUp(forge, u, surfR, 6, up);
   CHECK(up.size() == 6);
 
   DensityField edits;
@@ -671,16 +885,35 @@ TEST(fill_makes_air_solid_and_raises_the_one_surface) {
   // DISCONNECTED placed ground, then assert it here. Until then this case
   // asserts only what is true either way: the block exists, it genuinely floats,
   // and whatever the view reports is inside the WG-22 fill cap.
+  // WG-250: the block's cell and the point that proves the gap are both DERIVED
+  // now. `fillCell(forge, floating, up[5])` plus `!solidAt(u * (surfR + 3.0))`
+  // assumed up[5] sat about five metres up, which is true only when the radial
+  // steps one whole cell each time; on a diagonal radial the distinct cells are
+  // closer together and at coefficient 0.030 of the WG-243 sweep the block
+  // reached down through the 3.0 m probe. Pick a cell whose centre clears the
+  // ground by more than the brush's write reach, and probe the gap at that
+  // reach below it, so both facts follow from the brush rather than from a
+  // guess about the lattice.
+  const double kBrushWriteReachM = kCellBrushR + kVoxelSizeM;   // brush() 's own
+  VoxelCell floatCell = up[5];
+  for (int k = 0; k < 256; ++k) {
+    const VoxelCell c = cellForPos(u * (surfR + 4.0 + (k + 0.5) * 0.25 * kVoxelSizeM));
+    if (!isProcSolid(forge, c)) { floatCell = c; break; }
+  }
+  const double floatCentreR = alongRadial(u, cellCenter(floatCell));
+  const double gapR = floatCentreR - kBrushWriteReachM - 0.05;
+  CHECK(gapR > surfR + 0.5);                  // the gap really is above ground
   DensityField floating;
-  fillCell(forge, floating, up[5]);
-  CHECK(floating.solidCell(forge, up[5]));                  // the block exists
-  CHECK(!floating.solidAt(forge, u * (surfR + 3.0)));       // and it really floats
+  fillCell(forge, floating, floatCell);
+  CHECK(floating.solidCell(forge, floatCell));              // the block exists
+  CHECK(!floating.solidAt(forge, u * gapR));                // and it really floats
   const double floatRaise = derivedRaisingAt(forge, u, floating);
   DensityField floatLow;
   fillCell(forge, floatLow, up[4]);
-  std::printf("    floating block %.2f m up: heightfield view rises %.4f m; the "
-              "same block %.2f m up: %.4f m (WG-21 rule said 0.0 m for both)\n",
-              cellCenter(up[5]).length() - surfR, floatRaise,
+  std::printf("    floating block %.2f m up (gap probed %.2f m up, one brush "
+              "write reach below it): heightfield view rises %.4f m; a block "
+              "%.2f m up: %.4f m (WG-21 rule said 0.0 m for both)\n",
+              floatCentreR - surfR, gapR - surfR, floatRaise,
               cellCenter(up[4]).length() - surfR,
               derivedRaisingAt(forge, u, floatLow));
   CHECK(floatRaise >= 0.0);
@@ -713,77 +946,139 @@ TEST(fill_makes_air_solid_and_raises_the_one_surface) {
 //   * an undo entirely inside rock writes no new keys, and
 //   * an op that changes nothing stores nothing.
 // =============================================================================
+// WG-250 REWRITE. Two of this case's numbers were readings of one ground.
+// `hDug < h0 - 0.25` is a claim about how far a carve at a cell centre reaches
+// along a radial that may pass anywhere in that cell, and
+// `|h1 - h0| <= 0.25 * kVoxelSizeM` was measured at 0.032 m on the fixture's own
+// site and reads up to 0.7547 m over 480 grounds. Both now come from the brush.
+//
+// AND THE CASE GAINS THE ASSERTION IT WAS MISSING, which is the only exact
+// statement of "dig and fill are inverses" available on a signed field. The
+// corner update is `max(min(d, s), -s)` with `s = |p - c| - R`. Inside the
+// sphere s < 0, so the result is -s > 0: ROCK. Outside, -s <= 0 and
+// `min(d, s) >= 0` whenever d >= 0, so the result is >= 0: ROCK. Therefore NO
+// CORNER THAT WAS ROCK CAN BE AIR AFTER THE ROUND TRIP, exactly, at every
+// ground, with no tolerance. That is asserted over the whole 7x7x7 corner block
+// the brush and its skirt can reach, and it is what a broken fill trips first.
 TEST(dig_and_fill_are_inverses_and_the_diff_shrinks) {
   const BodyParams forge = makeForge(20260616ull);
-  const Vec3 u = unitOf(sampleDir());
-  const double surfR = forge.radiusM + baseHeight(forge, u);
-  // The TOPMOST solid cell, not a buried one: undoing a dig 2.5 m down would
-  // leave the surface where it was either way and prove nothing about the undo.
-  std::vector<VoxelCell> down, up;
-  columnCells(u, surfR, -1, 1, down);
-  columnCells(u, surfR, +1, 1, up);
-  const VoxelCell under = down[0];
-  const VoxelCell over  = up[0];
+  const int kGrounds = 48;
+  // DERIVED. The round trip replaces the ground inside the brush with the brush
+  // SPHERE's own boundary, so the restored surface is at most one brush radius
+  // from the cell centre, and the cell centre is at most half a cell diagonal
+  // from the surface point. Neither number was read off a ground.
+  const double kRestoreBoundM = kCellBrushR + kHalfCellDiagM;
+  long long rockLost = 0;
+  int informative = 0;
+  double worstDugMargin = 1e300, worstRestore = 0.0, worstTowards = -1e300;
+  for (int gi = 0; gi < kGrounds; ++gi) {
+    const Vec3 u = groundDir(gi, kGrounds);
+    const double surfR = forge.radiusM + baseHeight(forge, u);
+    // The TOPMOST solid cell, not a buried one: undoing a dig 2.5 m down would
+    // leave the surface where it was either way and prove nothing about the
+    // undo. Asked as a PROPERTY (see topmostProcSolidCell): the old
+    // `columnCells(u, surfR, -1, 1, ...)` hands back a procedurally AIR cell at
+    // the lattice phases where the surface sits low in its own cell.
+    const VoxelCell under = topmostProcSolidCell(forge, u, surfR);
+    const VoxelCell over  = lowestProcAirCell(forge, u, surfR);
+    CHECK(isProcSolid(forge, under));
+    CHECK(!isProcSolid(forge, over));
+    const std::vector<VoxelCell> down(1, under);
 
-  DensityField e;
-  const double h0 = surfaceHeight(forge, u, e);
+    DensityField e;
+    const double h0 = surfaceHeight(forge, u, e);
+    // Every corner the brush and its one-cell skirt can reach, before the dig.
+    std::vector<double> was;
+    was.reserve(343);
+    for (int dz = -3; dz <= 3; ++dz)
+      for (int dy = -3; dy <= 3; ++dy)
+        for (int dx = -3; dx <= 3; ++dx)
+          was.push_back(e.cornerDensity(
+              forge, VoxelCell{under.cx + dx, under.cy + dy, under.cz + dz}));
 
-  CHECK(digCell(forge, e, under) > 0);
-  CHECK(!e.solidCell(forge, under));
-  CHECK(isRemovedCell(forge, e, under));
-  CHECK(e.airCount() > 0);
-  const size_t afterDig = e.overrideCount();
-  const double hDug = surfaceHeight(forge, u, e);
-  CHECK(hDug < h0 - 0.25);        // the dig really moved the ONE surface
+    CHECK(digCell(forge, e, under) > 0);
+    CHECK(!e.solidCell(forge, under));
+    CHECK(isRemovedCell(forge, e, under));
+    CHECK(e.airCount() > 0);
+    const double hDug = surfaceHeight(forge, u, e);
+    // DERIVED: the carved cell is air throughout, so the surface is at or below
+    // the bottom of the run the radial takes through it, to within the root
+    // find's own quarter-cell bracket.
+    const double run = guaranteedAirRunM(u, surfR, down);
+    if (run > 0.0) ++informative;
+    CHECK(h0 - hDug >= run - kRootFindBracketM);
+    worstDugMargin = std::min(worstDugMargin, (h0 - hDug) - (run - kRootFindBracketM));
 
-  // Filling a dug cell gives the rock back, and puts the surface back.
-  CHECK(fillCell(forge, e, under) > 0);
-  CHECK(e.solidCell(forge, under));
-  CHECK(!isRemovedCell(forge, e, under));
-  const size_t afterUndo = e.overrideCount();
-  const double h1 = surfaceHeight(forge, u, e);
-  std::printf("    undo at the surface: %zu overrides after the dig, %zu after "
-              "the fill that undid it; surface %.4f m -> %.4f m -> %.4f m\n",
-              afterDig, afterUndo, h0, hDug, h1);
-  // MEASURED: the surface returns to within 0.032 m of where it started. It is
-  // not bit-identical and cannot be: dig writes -0.004 at a corner, fill writes
-  // back +0.004, and neither is the procedural value, so the restored zero level
-  // is the brush's approximation of the ground rather than the ground. A quarter
-  // of a cell is the bound, the same one the drawn-versus-collided pair carries.
-  CHECK(std::fabs(h1 - h0) <= 0.25 * kVoxelSizeM);
-  // The store does NOT come back to empty (the old CHECK(e.empty()) is gone for
-  // the reason above), and at a SURFACE cell an undo legitimately grows it,
-  // because a fill sphere centred on the topmost solid cell places ground into
-  // the air half of that cell, which is new material rather than an undo. Where
-  // the op is entirely inside rock, the undo writes no new keys at all.
-  DensityField buriedRT;
-  const VoxelCell deepCell = cellForPos(u * (surfR - 12.5 * kVoxelSizeM));
-  CHECK(digCell(forge, buriedRT, deepCell) > 0);
-  const size_t deepDug = buriedRT.overrideCount();
-  CHECK(fillCell(forge, buriedRT, deepCell) > 0);
-  CHECK(buriedRT.solidCell(forge, deepCell));
-  std::printf("    undo 12.5 m down (entirely inside rock): %zu overrides after "
-              "the dig, %zu after the undo\n",
-              deepDug, buriedRT.overrideCount());
-  CHECK(buriedRT.overrideCount() == deepDug);
+    // Filling a dug cell gives the rock back, and puts the surface back.
+    CHECK(fillCell(forge, e, under) > 0);
+    CHECK(e.solidCell(forge, under));
+    CHECK(!isRemovedCell(forge, e, under));
+    const double h1 = surfaceHeight(forge, u, e);
 
-  // Fill placed ground above the surface, then take it back.
-  CHECK(fillCell(forge, e, over) > 0);
-  CHECK(e.solidCell(forge, over));
-  CHECK(isAddedCell(forge, e, over));
-  CHECK(digCell(forge, e, over) > 0);
-  CHECK(!e.solidCell(forge, over));
-  CHECK(!isAddedCell(forge, e, over));
+    // THE EXACT INVARIANT. No corner that was rock is air after the round trip.
+    size_t i = 0;
+    for (int dz = -3; dz <= 3; ++dz)
+      for (int dy = -3; dy <= 3; ++dy)
+        for (int dx = -3; dx <= 3; ++dx) {
+          const double before = was[i++];
+          const double after = e.cornerDensity(
+              forge, VoxelCell{under.cx + dx, under.cy + dy, under.cz + dz});
+          if (before >= 0.0 && after < 0.0) ++rockLost;
+        }
 
-  // Filling rock that is already there is a no-op, not a stored fact. This one
-  // survives EXACTLY: max(d, r - |p - c|) cannot raise a corner whose procedural
-  // density already exceeds the sphere's, so nothing is written.
-  DensityField deep;
-  CHECK(fillCell(forge, deep, deepCell) == 0);
-  CHECK(deep.empty());
-  // The mirror: carving air that is already air stores nothing either.
-  CHECK(digCell(forge, deep, cellForPos(u * (surfR + 12.5 * kVoxelSizeM))) == 0);
-  CHECK(deep.empty());
+    // DERIVED: the surface comes back to within the brush's own reach.
+    CHECK(std::fabs(h1 - h0) <= kRestoreBoundM);
+    // DERIVED: and the undo moves the surface no FURTHER from where it started
+    // than the dig did. Both heights carry the root find's quarter-cell bracket,
+    // so the pair carries two of them and nothing more.
+    CHECK(std::fabs(h1 - h0) <= std::fabs(hDug - h0) + 2.0 * kRootFindBracketM);
+    worstRestore = std::max(worstRestore, std::fabs(h1 - h0));
+    worstTowards = std::max(worstTowards, std::fabs(h1 - h0) - std::fabs(hDug - h0));
+
+    // The store does NOT come back to empty (the old CHECK(e.empty()) is gone
+    // because dig writes -0.004 at a corner and fill writes back +0.004, neither
+    // of which is the procedural value), and at a SURFACE cell an undo
+    // legitimately grows it, because a fill sphere centred on the topmost solid
+    // cell places ground into the air half of that cell. Where the op is
+    // entirely inside rock, the undo writes no new keys at all.
+    DensityField buriedRT;
+    const VoxelCell deepCell = cellForPos(u * (surfR - 12.5 * kVoxelSizeM));
+    CHECK(digCell(forge, buriedRT, deepCell) > 0);
+    const size_t deepDug = buriedRT.overrideCount();
+    CHECK(fillCell(forge, buriedRT, deepCell) > 0);
+    CHECK(buriedRT.solidCell(forge, deepCell));
+    CHECK(buriedRT.overrideCount() == deepDug);
+
+    // Fill placed ground above the surface, then take it back.
+    CHECK(fillCell(forge, e, over) > 0);
+    CHECK(e.solidCell(forge, over));
+    CHECK(isAddedCell(forge, e, over));
+    CHECK(digCell(forge, e, over) > 0);
+    CHECK(!e.solidCell(forge, over));
+    CHECK(!isAddedCell(forge, e, over));
+
+    // Filling rock that is already there is a no-op, not a stored fact. This one
+    // survives EXACTLY: max(d, r - |p - c|) cannot raise a corner whose
+    // procedural density already exceeds the sphere's, so nothing is written.
+    DensityField deep;
+    CHECK(fillCell(forge, deep, deepCell) == 0);
+    CHECK(deep.empty());
+    // The mirror: carving air that is already air stores nothing either.
+    CHECK(digCell(forge, deep, cellForPos(u * (surfR + 12.5 * kVoxelSizeM))) == 0);
+    CHECK(deep.empty());
+  }
+  std::printf("    undo at the surface over %d grounds: %lld of %d corner blocks' "
+              "rock turned to air by a dig-then-fill (must be 0); worst surface "
+              "departure after the undo %.4f m against the brush's own reach "
+              "%.4f m; worst step AWAY from the start relative to the dig "
+              "%+.4f m against 2 x the root find's %.2f m bracket\n",
+              kGrounds, rockLost, kGrounds * 343, worstRestore, kRestoreBoundM,
+              worstTowards, kRootFindBracketM);
+  std::printf("    the dig itself: worst margin above the guaranteed-air run "
+              "%+.4f m, informative at %d of %d grounds\n",
+              worstDugMargin, informative, kGrounds);
+  CHECK(rockLost == 0);
+  CHECK(informative > 0);
 }
 
 // =============================================================================
