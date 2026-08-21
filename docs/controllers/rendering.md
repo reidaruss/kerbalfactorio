@@ -1,6 +1,6 @@
 # Rendering & Graphics: Master Controller Context
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2285 to RN-2290, `lane/world-audit-r2`: THE WORLD LOOK AUDIT ROUND 2, which re-judged the whole world against the D-020 bar from scratch through everything landed since R1. **The first hundred metres is now good, the sky is good, and everything from a hundred metres to the horizon is unbuilt.** Five of R1's seven blocking gaps are closed and the haze is at bar; the two that remain are the far terrain's material AND sub-massif relief (the massif silhouettes themselves read; nothing finer than that does) -- proved by an `?aerosol=0` ceiling of 5.49 on `vista.hzBand` and an `under` iqr of 6.07 at 1,200 m with the vegetation off, so the haze is not what is hiding the mountain -- and the aerial texel staircase, which survives `?shadowcast=0`, `?clouds=0`, `?splat=0` and `?canopy=0` and whose own flag turns out to be a broken control that GL-errors at `machine`. Third new blocking item: the world's whole-frame `warm` is NEGATIVE on all four aerial poses and positive on eleven of the twelve ground poses, the stated exception being `pondside` (whole-frame warm -18.04, a ground pose whose frame is mostly water surface), i.e. it reads as a sea from the air apart from that one water frame. Two new poses, each closing a domain nothing could photograph: `pondside` (the only water surface on Forge, 55 m from spawn) and `meadownight` (sky luma 0.07 at iqr 0.00). Twelve committed rectangles from 2.14 to 2.19 reproduce to the digit. Full record in section 2.20; ranked queue and top five lanes in docs/web/WORLD-AUDIT-R2-2026-08-21.md. THIS LINE IS A POINTER: replace it, never append to it.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2330 to RN-2339, `lane/l5-vegassets`: THE NEAR VEGETATION ASSET PASS, world audit R2's rank 5. Grass blade texture narrowed and multiplied (texgen `_grass_strips` 11 -> 15 blades, root half-width 0.026-0.040 -> 0.017-0.026, tip 0.012 -> 0.009, coverage measured 0.375 against the 0.35 floor, `CARD_U_SPAN` 0.27 -> 0.20 to hold the painted-blades-per-card count and areal density unmoved); `Canopy_Broadleaf_LOD2` (the rung nearly every scatter canopy tree in a frame actually renders at) rebuilt from a closed faceted `hc.lobe`/`_dome` shell -- literally "a papercraft ball of flat pentagons" -- into two `_leaf_spray` card clouds (the same technique RN-284 already proved on the harvest broadleaf), 58 -> 180 triangles; forest-floor litter (`FallenLog`, `MushroomCluster`) raised from one-triangle flat paddles to a curled `segs=2` shape with `twist` and wider `droop_var`, +12/+10 triangles, and the fern's own litter (already segs 2) gained the same `twist`/`droop_var` at zero cost. Two full `texgen.py` rebuilds are byte-identical and only `of_grass_a.png` moved against a 52-file corpus hash. `validate_glb`, `check_shadow_lod`, `check:roles`, `check:proplods`, `check:proxies`, `typecheck`, `check:pose`, `check:limits`, `check:boot` all green (8/8 on `npm run check`). Real-GPU before/after frames at `meadow` and `forestfloor` (ANGLE/D3D11, RTX 4060 Ti): the blade change is real but modest at a 1-3 m standing eye, the litter change is real but not the dominant near-band content at the judged pose. Walk counters 41,300 / 52,139 reproduce unmoved. Full record in section 2.21. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
 
@@ -6212,3 +6212,159 @@ scope (narrowed to the band nearest the treeline; range-strip iqr survives
 past 25 m), and rank 1's relief claim (no material and no sub-massif relief,
 not "no relief of any kind"). The lane-sequencing reorder in 2.20.9 (L4 after
 L1, L5 promoted) is the same verifier's recommendation, adopted by Admin.
+
+---
+
+## 2.21 THE NEAR VEGETATION ASSET PASS (RN-2330 to RN-2339, 2026-08-21, `lane/l5-vegassets`)
+
+World audit R2's rank 5 (2.20.9, L5): "brushed-not-bladed blades, chunky near
+trees, paper litter." Base `origin/main` at `e7b8f037`. Owns
+`tools/blender/build_props_*.py`, `texgen.py`'s `grass` and `leaf` families,
+`contracts.json`, and `GrassCard.ts`/`GrassTuning.ts`'s geometry constants
+(partitioned from L4, which keeps `render/grass/*`'s wiring and
+`TerrainCoverFar*`). Did not touch palette hue tables (L3's), `Terrain*`
+materials (L1's), or `ShadowRig` (L2's).
+
+### 2.21.1 THE BLADE, texgen's `_grass_strips`
+
+The audit's own words: "wide flat ribbons... a field of leek or iris leaves,"
+against `RN2285_meadow.png`. `_grass_strips` (`tools/blender/texgen.py`)
+raised from 11 painted blades to 15 (pitch 0.0909 -> 0.0667), root half-width
+narrowed 0.026-0.040 -> 0.017-0.026 and tip half-width 0.012 -> 0.009 (a
+sharper taper: a blade now loses 65 percent of its width root to tip against
+54 percent before). `web/src/render/grass/GrassTuning.ts`'s `CARD_U_SPAN`
+moved 0.27 -> 0.20 (11/15 of the old value) so a card still shows the same
+THREE painted blades the RN-2145 first capture chose (a wider span mip-solidifies,
+that lane's own finding), which means the texture's own blade-count change
+costs the near tuft's areal blade density nothing (still ~192/m2 against the
+brief's 50-150 band, within a blade of the pre-pass 190).
+
+**Coverage, measured rather than guessed.** The corpus rule
+(`ALBEDO_FAMILIES["grass"]`) declares a 0.35..0.45 alpha-coverage band, the
+0.35 floor being the point past which a distant mip DISSOLVES rather than
+converging toward solid (RN-177/178). `texgen.py check` on the rebuilt 1024
+field reads **coverage 0.375**, inside the band with a 0.025 margin, against
+0.412 before. `TUFT_CARD`'s own geometric taper (`GrassCard.ts`'s
+`half = 0.5 * (1 - 0.14 * v)`) and `TUFT_W_M`/`TUFT_H_M` (0.13 x 0.38) are
+UNCHANGED: the physical card footprint that fought shimmer at a 4 px
+alpha-tested floor (RN-2145 second capture) was left alone on purpose rather
+than narrowed further without a dedicated iteration budget to re-fight that
+defect; this is a stated limit, not an oversight (2.21.5).
+
+### 2.21.2 THE BROADLEAF, `Canopy_Broadleaf_LOD2`
+
+Not the harvestable `tree_broadleaf.glb` (already carries RN-284's card-spray
+crown, unchanged and confirmed still in sync with its source at commit
+`86bf91e2`). The audit's "papercraft ball of flat pentagons" is
+`build_props_canopy.py`'s `Canopy_Broadleaf_LOD2`: one closed `hc.lobe` mass
+plus one `_dome`, both faceted and opaque everywhere, at the rung nearly
+every scatter canopy tree in a frame actually renders at (`CANOPY_NEAR_M`
+holds every canopy tree outside the 78 m harvest ring, and LOD0 only covers
+that ring). Replaced with a new local `_leaf_spray(p, centre, radii, count,
+seed)`, the SAME card-cloud technique `build_tree_broadleaf.py`'s `_spray`
+already proved on the harvest tree at RN-284, copied rather than imported
+(`props_common.py`/`tree_common.py` are shared files outside this lane's
+partition; NUMBERS.md's shared-wiring-file rule). Two clusters at the SAME
+centres and radii the closed shell occupied (56 cards main mass, 26 cards
+secondary), so LOD0/LOD2 does not pop. Elevation-biased role law
+(LeafDeep/Leaf/LeafLight thresholds at -0.10/0.42) matches the harvest tree's
+own spray, so both broadleaf assets shade by one law.
+
+**Measured off the rebuilt glb:** 58 -> **180** triangles (82 cards x 2 + the
+unchanged 16-triangle trunk). `contracts.json`'s `max_tris_total` for
+`props_canopy`: 2008 -> **2130** (742+50+4 Pine + 334+28+4 Fir + 784+180+4
+Broadleaf). Pine and Fir LOD2 untouched (plain cones, not named behind by the
+audit). Foliage ratio unaffected (0.586, no bare-pole refusal).
+
+### 2.21.3 THE LITTER, `build_props_forest.py`
+
+Audit: "the forest floor's dead-blade litter is pale cream and hard-edged and
+reads as paper scraps." `Forest_FallenLog` and `Forest_MushroomCluster`'s own
+litter drifts were ONE-TRIANGLE flat paddles (`pc.tuft(..., segs=1, ...)`):
+`kink`'s t^2 sideways curl has no interior row to act on at `segs` 1, so the
+"curl" argument in `props_common.blade`'s own header comment was cosmetic on
+these two. Both raised to `segs=2` (+2 triangles a paddle) and both gained
+`twist` (a per-paddle roll about its own long axis) and a wider `droop_var`
+(a per-paddle resting-angle spread), the latter two at zero triangle cost.
+`Forest_Fern`'s own litter was already `segs=2` (RN-305); it gained the same
+`twist`/`droop_var` at zero cost, so its triangle count does not move.
+
+**Measured off the rebuilt glb:** `Forest_FallenLog_LOD0` 172 -> **184**
+(+12, 6 paddles), `Forest_MushroomCluster_LOD0` 187 -> **197** (+10, 5
+paddles, inside its existing 200 cap), `Forest_Fern_LOD0` **141** (unmoved).
+`contracts.json`'s `Forest_FallenLog_LOD0` cap raised 180 -> **190** (184
+exceeded the old cap).
+
+### 2.21.4 DETERMINISM AND GATES
+
+`texgen.py build` run twice, full corpus (52 PNGs): byte-identical to the
+second run, and against the pre-pass corpus only `of_grass_a.png` moved (sha
+diff over all 52 files). `python tools/blender/validate_glb.py props_canopy
+props_forest -v`: PASS both, every number to the digit against the
+`contracts.json` values above. `check_shadow_lod.py props_canopy
+props_forest tree_broadleaf`: exit 0, no new MARGINAL/BLOCKING rows. `npm run
+check` (after `npm ci`, absent in this worktree at start): **8/8** --
+`check:roles`, `check:probes`, `check:proxies`, `check:proplods`,
+`typecheck`, `check:pose`, `check:limits`, `check:boot` all PASS.
+
+### 2.21.5 THE TWO HERO JUDGEMENTS, against the standing eye
+
+Real D3D11 through ANGLE (RTX 4060 Ti), `vite preview` sentinel-verified,
+ports killed by PID after each capture, git-stash used to produce a true
+same-repo before/after pair (stash reverts both source and the tracked
+`assets/*/dist` binaries to `origin/main`'s own committed bytes, so "before"
+is not a guess). Frames: `docs/screenshots/RN2330_{meadow,forestfloor}_{before,after}.png`
+plus `_zoom` crops of each hero pose's near band (no dedicated close pose
+exists in `artframe.js` for grass).
+
+**`meadow` (Plains, standing eye, sun dot 0.55): the blade narrowing is real
+and measured, and it is NOT transformative at this range.** `box` iqr moved
+55.05 -> 56.43, triangles 2,003,277 -> 2,003,313 (unmoved, a texture-only
+change), `propsPlaced` 52,139 both arms (world-gen's walk counter,
+unmoved). Judged by eye at the near band (the `_zoom` crop, ~1-3 m): the
+individual blade striations are present in both frames and marginally
+crisper in the after arm, but the CARD's own physical silhouette (`TUFT_W_M`
+0.13 m, its taper unchanged on purpose, 2.21.1) still dominates the read at
+this distance, so the "wide flat ribbon" impression is softened rather than
+solved. A further win here needs `TUFT_W_M`/the card's own geometric taper
+narrowed too, which risks reopening the shimmer defect RN-2145's second
+capture fought to close (a blade under ~4 px at FXAA-only aliases) and was
+not attempted without a dedicated capture-and-tune budget: **stated as an
+owed item (2.21.6), not solved.**
+
+**`forestfloor` (Forest, standing eye, sun dot 0.70): the litter fix is real
+and measured, and it is not the dominant near-band content at THIS pose.**
+Triangles 1,280,910 -> 1,286,315 (+5,405, matching the FallenLog/Mushroom/
+canopy deltas above), `box` iqr 18.78 -> 19.57, `propsPlaced` 41,300 both
+arms (unmoved). The litter visible in the judged frame's foreground is
+overwhelmingly the FERN's own litter (already segs 2 before this pass; this
+pass added `twist` there at zero cost, a real but subtle per-blade roll), not
+`FallenLog`/`MushroomCluster`'s newly-curled paddles, which are scattered
+elsewhere in the biome and are not prominent in this specific standing point.
+The fix is verified by the rebuilt glb and `validate_glb`'s pass rather than
+by this frame carrying a dramatic visual delta.
+
+### 2.21.6 Owed
+
+1. **The blade's physical card taper is unchanged.** `TUFT_W_M`/`GrassCard.ts`'s
+   `half = 0.5*(1-0.14*v)` still set the dominant silhouette at 1-3 m; a
+   further narrowing needs its own capture-and-tune pass against the shimmer
+   floor RN-2145 already fought (2.21.5).
+2. **A hero frame with `FallenLog`/`MushroomCluster` litter prominent in the
+   near band is still owed**; `forestfloor`'s judged pose does not carry one.
+3. **Pine and Fir `Canopy_*_LOD2` are still plain cones**, untouched, because
+   the audit named only the broadleaf as "papercraft"; a future lane may find
+   the same defect there once someone looks.
+4. **`npm ci` was absent in this worktree at lane start** (CLAUDE.md's own
+   note after the `D:\karbalfactorio` move); run before trusting any
+   `typecheck`/`check:pose`/`check:boot` result in a fresh worktree.
+
+### 2.21.7 Rails
+
+Sentinel-verified `vite preview` (`of-sentinel-l5*.txt` written into this
+worktree's own `web/dist`, fetched back before the first probe), ports 5901
+(after) and 5902 (before), each killed by the owning PID
+(`Get-NetTCPConnection`) rather than by name. Did not touch `web/wasm/dist/*`
+or `expected.json`. `render/grass/*`'s wiring, `TerrainCoverFar*`, palette hue
+tables, `Terrain*` materials and `ShadowRig` are untouched, per the audit's
+own file-seam partition.
