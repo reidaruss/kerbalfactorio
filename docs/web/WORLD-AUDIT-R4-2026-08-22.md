@@ -72,7 +72,7 @@ reason.) The build was made with `npm run build`, not `npx vite build`, so
 `sync-wasm` and `sync-assets` both ran.
 
 **This is a one-arm audit of current `main`, so most numbers are a LEVEL.**
-Twenty-six cross-arm readings ARE made; every one is a one-flag negative control
+Thirty-one cross-arm readings ARE made; every one is a one-flag negative control
 in a separate process against the same build, except two two-flag arms which say
 so in their own rows. Section 4 lists all of them, including the nulls, the one
 that convicted a defect nobody had named, and the one whose result contradicts a
@@ -434,8 +434,8 @@ anywhere in this audit.**
 
 ## 4. THE CONTROLS
 
-Twenty-six arms, fresh process each, same build, same server, all one flag except
-the two labelled.
+Thirty-one arms, fresh process each, same build, same server, all one flag except
+the four labelled.
 
 ### 4.1 M1, and the attribution is exact
 
@@ -547,6 +547,7 @@ defects and neither is the other's residue.
 | `?lamp=0 ?firelightground=0` | `smelternight` | frame 10.88 -> **10.86**. NOT a null about the term: this pose is a machine filling the viewport and its manifest has no ground rectangle, so the whole-frame figure cannot see M2's routed seam. Published as a shot-set gap (rank 8), not as a result. |
 | `?lamp=0` | `meadownight` | frame 8.86 -> **8.28**, `nearG` 8.29 -> 5.44. The night's true floor with no player light in it, against R3's 2.03. |
 | `?nightsky=0` | `meadownight` | M5 removed: `skyHi` **0.07 at iqr 0.00**, `skyHz` 0.08, `hzBand` 0.11 -- R3's flat black to the digit -- while `nearG` holds at 8.18. Arming proof and reproduction in one arm. |
+| `?lamp=0 ?bloom=0` | `smelternight` | TWO flags, labelled. M3's handed-up bloom diagnosis, re-measured on a build where the fire is now the dominant light in the frame: the whole frame moves **0.01 counts** (10.88 -> 10.87), `strip` 0.94 (78.99 -> 78.05, exactly M3's own +0.94), `peep` 0.48, and `firebox`, `plate` and `band` are **bit-identical**. The bloom reaches nothing beyond the emitter's own pixels. Independent confirmation, by a hand that did not build it, that rank 8 is a grade-constant problem and not a pyramid problem. |
 | `?shadowcast=0` | `smelterhero` | `box` 63.51 / 51.73 -> **83.72 / 61.61**, calls 100 -> 55. L2's repaired isolator, +20.21 counts against R3's +20.82, for a third independent hand. |
 | `?horizon=0` | `vista` | `hzBand` iqr 3.28 -> **2.72**, `mid` 13.96 -> 12.69. In shipped air the horizon rung is worth +0.56 at 4.7 km, a sign flip from R3's -0.57 and still nothing. |
 
@@ -933,7 +934,7 @@ stops in a straight line.
   `horizoncell0`, `horizon0`, `horizonval0`, `splatnrm0`, `terrainbump0`,
   `contact0`; `forestair_canopy0`, `forestair_canopy0_horizoncell0`,
   `flyovernoon_canopy0`, `meadowfield_grass0`, `smelternight_lamp0`,
-  `meadownight_lamp0`, `meadow_contact0`, `midfield_horizon0`). The other ten arms
+  `meadownight_lamp0`, `meadow_contact0`, `midfield_horizon0`). The other fifteen arms
   in section 4 are published as numbers with their one-line invocations, because
   each is a figure rather than a picture. **The pair to look at first is
   `RN2450_vistadawn.png` against `RN2450_vistadawn_contact0.png`**, at (1180, 580)

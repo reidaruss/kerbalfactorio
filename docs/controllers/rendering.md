@@ -8635,7 +8635,7 @@ registrations), plus the new `web/tools/smoke/latmeter.mjs`. Branch
 ## 2.27 THE WORLD LOOK AUDIT, ROUND 4 (RN-2450 to RN-2456, 2026-08-22, `lane/world-audit-r4`)
 
 Full document: [`docs/web/WORLD-AUDIT-R4-2026-08-22.md`](../web/WORLD-AUDIT-R4-2026-08-22.md).
-Base `origin/main` at `4cb0aff4`. Twenty-six poses re-taken, twenty-six control
+Base `origin/main` at `4cb0aff4`. Twenty-six poses re-taken, thirty-one control
 arms, forty-two frames. This section is the domain memory; the audit is the
 argument.
 
@@ -8758,7 +8758,13 @@ RECTANGLES, not a pose.
   and it is still open. Owed items 2 (the rock carrier) and 4 (a night pose with
   a fire over open ground) are ranked in the audit at 13 and 8.
 - **M3.** The bloom is still absent by eye and the two levers are still global
-  grade constants. And the emissive CLIPS under the headlamp: `peep` hiFrac
+  grade constants. **Its handed-up diagnosis is confirmed independently and on a
+  build where the fire is now the dominant light in frame:** `?lamp=0 ?bloom=0`
+  moves the whole `smelternight` frame by **0.01 counts** (10.88 -> 10.87),
+  `strip` by 0.94 (78.99 -> 78.05, exactly M3's own +0.94) and `peep` by 0.48,
+  while `firebox`, `plate` and `band` are **bit-identical**. The bloom reaches
+  nothing beyond the emitter's own pixels, so rank 8 is a grade-constant problem
+  and not a pyramid problem. And the emissive CLIPS under the headlamp: `peep` hiFrac
   **0.220** and `strip` **0.288** with the lamp on, against 0.016 and 0.113
   without, so between a fifth and a third of the fire's pixels read as flat paper
   white. Rank 8.
@@ -8840,6 +8846,6 @@ main**.
    different and possibly worse artefact than the still frame shows.
 3. **Any quality tier but `high`** and **any body but Forge**, fourth audit
    running.
-4. **Ten of the twenty-six arms are published as numbers without a committed
+4. **Fifteen of the thirty-one arms are published as numbers without a committed
    frame**, because each is a figure rather than a picture; each names its own
    one-line invocation in the audit's section 4.
