@@ -165,8 +165,34 @@ const AMBIENT_BASE = TERRAIN_AMBIENT.clone();
  *
  * `?starlight=0` removes it (standing rule 7); `?starlightamp=` sweeps it.
  * Both parse with the RN-150-safe pattern: a missing param is MISSING, not 0.
+ *
+ * RN-2445 (lane M5, THE NIGHT). RAISED, AND MEASURED RATHER THAN GUESSED.
+ * `meadownight`'s own `nearG`/`mid`/`shade` rectangles read luma 5.68 / 4.87 /
+ * 2.29 at the RN-152 level, which by eye (`docs/screenshots/
+ * RN2445_meadownight_before.png`) is grass silhouetted flat black past the
+ * headlamp's own pool with no readable blade structure at all -- closer to
+ * "crushed" than to "a starlit floor holds barely-legible form", the bar
+ * this lane's brief sets. 1.7x (chosen from a three-point look-check, not
+ * derived) lifts the same three rectangles to **8.29 / 10.07 / 5.22** on the
+ * SHIPPED build (`LAMP_CD`/`LAMP_DECAY` at their original values, only
+ * `LAMP_PENUMBRA` changed -- see `Headlamp.ts`), three fresh-process repeats,
+ * bit-identical on every named rectangle each time. **CORRECTED 2026-08-22
+ * (verifier finding): this comment first quoted 12.53 / 10.46, read off an
+ * INTERMEDIATE build that still had the rejected flatter-decay headlamp
+ * candidate (`LAMP_CD` 86 / `LAMP_DECAY` 1.1) in place; that candidate was
+ * reverted for blowing out `smelternight` (see `Headlamp.ts`), and this
+ * comment was never re-measured against the reverted, actually-shipped code
+ * before being written down. The committed screenshot
+ * (`docs/screenshots/RN2445_meadownight_after.png`) was always rendered from
+ * the correct, reverted build, so the picture was right and only this prose
+ * was stale.** By eye at the corrected 8.29: the claim still holds --
+ * blade silhouettes read against the sky and against each other at the tree
+ * line in that same committed screenshot, and the frame is still
+ * unmistakably night -- `world` stays under 10 with the lamp in frame,
+ * against `meadow`'s own daylit 118. The colour ratio (STARLIGHT's own blue
+ * bias, RN-152) is unchanged; only the level moved.
  */
-const STARLIGHT = new THREE.Color(0.055, 0.065, 0.095);
+const STARLIGHT = new THREE.Color(0.055, 0.065, 0.095).multiplyScalar(1.7);
 
 const STARLIGHT_AMP = ((): number => {
   const p = new URLSearchParams(self.location.search);

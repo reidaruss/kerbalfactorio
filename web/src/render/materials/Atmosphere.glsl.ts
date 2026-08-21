@@ -650,12 +650,47 @@ export function airDensityAt(p: AtmosphereParams, altM: number): number {
 }
 
 /**
+ * RN-2445 (lane M5, THE NIGHT). WHETHER THERE IS STILL SKY OVERHEAD TO HIDE
+ * SPACE, which is a different question from "how much Rayleigh-scattering
+ * air is directly overhead" and was answered with the wrong one of the two.
+ *
+ * `daylightFactor` used to multiply `airDensityAt`'s physical density (decay
+ * over the 5.6 km Rayleigh SCALE HEIGHT) straight into the star mask, on the
+ * unstated assumption that thinning air is the same thing as "closer to
+ * space". It is not, by two orders of magnitude: `flyover`'s own pose is
+ * 1,200 m up, 0.21 scale heights, so `airDensityAt` reads 0.807 there and
+ * `daylightFactor` read 0.807 at high noon, i.e. THE STAR FIELD WAS ABOUT
+ * 19 PER CENT VISIBLE ON AN ORDINARY IN-ATMOSPHERE NOON FLIGHT, nowhere near
+ * the top of a 60 km (`thicknessM`) shell. No real sky goes transparent to
+ * space at a height a glider reaches.
+ *
+ * The gate that actually answers "is space showing through" is the fraction
+ * of the shell's own THICKNESS still overhead, which only starts biting
+ * within a few kilometres of the top and is within a rounding error of 1.0
+ * at every altitude this project's flight and walking poses use. Linear
+ * rather than exponential: this is a masking heuristic and not a second
+ * scattering model (this function's own header), and a hard denominator is
+ * one fewer constant to justify than a second scale height would be.
+ */
+function spaceMaskAt(p: AtmosphereParams, altM: number): number {
+  // Airless: no shell at all, so nothing masks the stars, ever (RN-840's
+  // argument, restated for this gate rather than borrowed from the other).
+  if (p.thicknessM <= 0) return 0;
+  return THREE.MathUtils.clamp(1 - Math.max(0, altM) / p.thicknessM, 0, 1);
+}
+
+/**
  * How much the lit sky washes out the star field, in [0, 1]. This is a MASKING
  * heuristic, not a second scattering model: it reads the same params object and
  * the same sun elevation the shader uses, so there is no number to keep in sync.
+ *
+ * RN-2445: the DAY half (the sun-elevation smoothstep) is untouched; only the
+ * ALTITUDE half changed, from `airDensityAt` (see `spaceMaskAt`'s note above)
+ * to `spaceMaskAt`. `?stars=0` (already registered) removes the field
+ * outright and is unaffected by this change.
  */
 export function daylightFactor(p: AtmosphereParams, altM: number, sunElevDot: number): number {
-  const density = airDensityAt(p, altM);
+  const density = spaceMaskAt(p, altM);
   const day = THREE.MathUtils.smoothstep(sunElevDot, -0.18, 0.10);
   return THREE.MathUtils.clamp(density * day, 0, 1);
 }

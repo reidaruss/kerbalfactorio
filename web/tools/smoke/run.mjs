@@ -539,6 +539,10 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // returns `uAeroTint` unconditionally. Registered in the same commit that
   // introduces it, per this list's own rule.
   'aerodepth',
+  // RN-2445 (lane M5, THE NIGHT). `nightsky=0` restores the pre-lane sky
+  // exactly: the scattering integral alone, with no zenith/horizon night term
+  // added on top. Registered in the same commit that introduces it.
+  'nightsky',
   // Like `sandbox` above, not an isolation switch: it selects WHICH BODY the
   // client boots on. `body=cinder` (or `moon`, or `1`) boots the moon; absent
   // or anything else is Forge, which is every existing probe unchanged.

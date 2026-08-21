@@ -70,6 +70,18 @@ export interface SkyAtmosphere {
  * and not a define, so there is one program either way and the DW-10 ledger
  * does not move. SkyIbl raises it around one synchronous capture.
  */
+/**
+ * RN-2445 (lane M5, THE NIGHT). `?nightsky=0` restores the pre-lane sky
+ * exactly: the scattering integral alone, which is correctly near-zero once
+ * the sun goes below the horizon (WORLD AUDIT R3 3.12's own reading: "uniform
+ * black, no horizon gradient, no airglow, no moon in frame"). Standing rule
+ * 7's control, named here rather than only in `ofNightSky` because this is
+ * the one flag that reaches both this file's sky box and nothing else --
+ * there is no terrain or aerosol consumer to keep in step with it.
+ */
+const NIGHT_SKY_ON =
+  new URLSearchParams(self.location.search).get('nightsky') !== '0';
+
 export function createSkyAtmosphere(
   atmos: AtmosphereUniforms, tier: QualityTier, seed = 0,
 ): SkyAtmosphere {
@@ -78,10 +90,12 @@ export function createSkyAtmosphere(
   const uGroundOn = { value: 0 };
   const uGroundAlbedo = { value: new THREE.Color(0.5, 0.5, 0.5) };
   const uGroundGain = { value: 1 };
+  const uNightSkyOn = { value: NIGHT_SKY_ON ? 1 : 0 };
   const clouds: CloudUniforms = createCloudUniforms(seed);
   const material = new THREE.ShaderMaterial({
     uniforms: {
       ...atmos, ...clouds, uCamPosM, uGroundOn, uGroundAlbedo, uGroundGain,
+      uNightSkyOn,
       // SHARED BY REFERENCE with both terrain materials, on the atmosphere
       // record's own precedent (DW-22). These two are the terrain's ambient
       // model, and the ground radiance below is a copy of TerrainShader's
@@ -113,6 +127,7 @@ export function createSkyAtmosphere(
       uniform vec3  uGroundAmbient;
       uniform float uSkyAmbientK;
       uniform float uSunIrradiance;
+      uniform float uNightSkyOn;
       varying vec3 vDir;
 
       void main() {
@@ -179,6 +194,38 @@ export function createSkyAtmosphere(
           vec3 withCloud = uGroundOn > 0.5 ? sky
             : ofSkyClouds(sky, uCamPosM, rd, up, skySunT, uAeroRef.x);
           gl_FragColor = vec4(ofAtmoSkyAero(withCloud, uCamPosM, rd, skySunT), 1.0);
+
+          // RN-2445 (lane M5, THE NIGHT). THE SCATTERING INTEGRAL ABOVE HAS NO
+          // NIGHT TERM AT ALL: once the sun drops below the horizon almost
+          // every light-ray sample above lands inside ofAtmoHit's own
+          // occlusion test (p against uSunDir and uPlanetR) and contributes
+          // zero, so the sky this branch painted was uniform black with no
+          // horizon gradient and no airglow (WORLD AUDIT R3 3.12's own
+          // reading, reproduced on this build before this change). This is a
+          // SEPARATE, ADDITIVE term rather than a rewrite of the integral
+          // above: it changes nothing about the daylight sky (nightK is
+          // exactly zero whenever the sun is above the same -0.05/0.03
+          // elevation band TerrainAmbient's starlight floor already uses, so
+          // the sky and the ground floor cross the terminator on the same
+          // hour and neither seams against the other), and it is gated by
+          // uAtmosOn so an airless body's sky (already handled by RN-840's own
+          // vacuum case) gets no spurious glow it has no air to carry.
+          //
+          // Dark BLUE-BLACK at the zenith, a little brighter and a little
+          // warmer at the horizon (a modest airglow band, real moonless
+          // nights read exactly this way): horizonW peaks where the view ray
+          // is level with the local horizontal and falls off toward both the
+          // zenith and the nadir, on the same "how far off the horizontal"
+          // measure the aerial haze uses elsewhere in this file.
+          float elevSun = dot(normalize(uSunDir), up);
+          float nightK = uAtmosOn * uNightSkyOn
+            * (1.0 - smoothstep(-0.05, 0.03, elevSun));
+          if (nightK > 0.0) {
+            vec3 zenithCol = vec3(0.0035, 0.0060, 0.0135);
+            vec3 horizonCol = vec3(0.0180, 0.0260, 0.0300);
+            float horizonW = 1.0 - clamp(abs(dot(rd, up)) / 0.5, 0.0, 1.0);
+            gl_FragColor.rgb += mix(zenithCol, horizonCol, horizonW) * nightK;
+          }
         }
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
