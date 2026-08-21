@@ -1,6 +1,6 @@
 # Rendering & Graphics: Master Controller Context
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2275 to RN-2279, `lane/crown-shadow`: INTER-CROWN SELF-SHADOWING, and it closes the aerial arc. Two verifiers independently named the same defect -- the woods read LIGHTER than the ground between them, the inversion of every real aerial photograph -- because the far treeline painted the crown card's MEAN albedo with no layer transmittance and the card itself only carries a ramp for ONE crown. Both halves now take the same Beer-Lambert transmittance on the SUN ray, `floor + (1-floor) exp(-K mu / sin sunElev)`, out of one shared (amp, K, floor) triple: the terrain per fragment off its own per-vertex index, the card per frame off the canopy-area-weighted mean of that same field. Woods now read DARKER than their clearings at BOTH ends of the arc on BOTH aerial poses, and the handover's second difference at the boundary is -0.13 counts against -0.02 on a frame with no vegetation in it. Full record in section 2.19. THIS LINE IS A POINTER: replace it, never append to it.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2285 to RN-2290, `lane/world-audit-r2`: THE WORLD LOOK AUDIT ROUND 2, which re-judged the whole world against the D-020 bar from scratch through everything landed since R1. **The first hundred metres is now good, the sky is good, and everything from a hundred metres to the horizon is unbuilt.** Five of R1's seven blocking gaps are closed and the haze is at bar; the two that remain are the far terrain's material AND sub-massif relief (the massif silhouettes themselves read; nothing finer than that does) -- proved by an `?aerosol=0` ceiling of 5.49 on `vista.hzBand` and an `under` iqr of 6.07 at 1,200 m with the vegetation off, so the haze is not what is hiding the mountain -- and the aerial texel staircase, which survives `?shadowcast=0`, `?clouds=0`, `?splat=0` and `?canopy=0` and whose own flag turns out to be a broken control that GL-errors at `machine`. Third new blocking item: the world's whole-frame `warm` is NEGATIVE on all four aerial poses and positive on eleven of the twelve ground poses, the stated exception being `pondside` (whole-frame warm -18.04, a ground pose whose frame is mostly water surface), i.e. it reads as a sea from the air apart from that one water frame. Two new poses, each closing a domain nothing could photograph: `pondside` (the only water surface on Forge, 55 m from spawn) and `meadownight` (sky luma 0.07 at iqr 0.00). Twelve committed rectangles from 2.14 to 2.19 reproduce to the digit. Full record in section 2.20; ranked queue and top five lanes in docs/web/WORLD-AUDIT-R2-2026-08-21.md. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
 
@@ -5987,3 +5987,228 @@ did not create it and did not fix it.
    Not a defect this lane introduced -- a real aerial photograph does it too --
    but it is new in this project and worth a look before anyone tunes the cloud
    shadow.
+
+---
+
+## 2.20 THE WORLD LOOK AUDIT, ROUND 2 (RN-2285 to RN-2290, 2026-08-21, `lane/world-audit-r2`)
+
+Full document with every frame, every rectangle, every control and the ranked
+queue: **[docs/web/WORLD-AUDIT-R2-2026-08-21.md](../web/WORLD-AUDIT-R2-2026-08-21.md)**.
+This section is the pointer plus what a reader of this file needs without
+opening it. Base `origin/main` at `326d285d`. Server `127.0.0.1:5811`,
+`--strictPort`, sentinel `dist/of-sentinel-rn2285.txt` written into this
+worktree's own dist and fetched back over the port before the first probe,
+ownership confirmed by `Get-NetTCPConnection -LocalPort 5811` (PID 2720),
+killed by that PID. The served wasm was `cmp`-identical to
+`HEAD:web/wasm/dist/of-core.wasm` and the bundle's `client expects 26` matches
+HEAD's `OF_ABI_VERSION = 26`. Twenty-five poses, four controls, 29 frames in
+`docs/screenshots/RN2285_*`. **Every shot came back `valid: true` with
+`poolRefused: 0`.**
+
+### 2.20.1 THE ONE-LINE ANSWER
+**The first hundred metres is now good, the sky is good, and everything from a
+hundred metres to the horizon is unbuilt.** R1 found a world finished to forty
+metres; the boundary has moved to about a hundred rather than dissolved.
+
+### 2.20.2 THE RECORD REPRODUCES, WHICH IS WHAT MAKES THE REST OF THIS READABLE
+Twelve committed rectangles from 2.14 through 2.19 re-read blind on a fresh
+build, all to the digit: `forestfloor.box` 22.82 / iqr 18.78, `meadow.box`
+85.59 / 55.05, `vista.box` 176.67 / 18.71, `forestairnoon.box` 102.92,
+`flyovernoon.box` 140.31, `forestairlow.box` 79.60, `flyoverlow.box` 103.92,
+`flyover` 225,589 tris / 26 calls, `forestair` 251,873 / 27, `limb` 52,913 / 21,
+`vista` 633,577 tris. Nothing has drifted.
+
+### 2.20.3 THE DELTA AGAINST R1'S SEVEN BLOCKING ROWS
+**Five closed, one of them now at bar, two still blocking.**
+**CLOSED:** #1 haze (sigma 4.5e-4 -> 1.4e-4, `flyover.box` iqr 31.71 -> 55.35,
+**at bar**) · #2 no vegetation from the air (188,081 tris and no tree ->
+225,589 with 46,575 canopy trees, plus a material treeline; the ABSENCE is
+closed, the PICTURE is rank 3) · #4 frame cost (2,759,465 -> **2,003,313** at
+the plains standing eye, under the 2.7e6 ALERT) · #6 the dawn inversion
+(`skyHz.warm` -86.23 -> +33.03, far-to-near 7.01 -> 4.36) · #7 the 620 m world
+edge (no ring at any altitude).
+**STILL BLOCKING:** #3 the far terrain material, which is now rank 1 · #5 the
+cascade staircase, which is now rank 2 and is MORE visible because the haze
+that hid it is gone.
+
+### 2.20.4 THE TWO NUMBERS THE NEW RANKING RESTS ON
+1. **The far terrain has no material AND no sub-massif relief** (the massif
+   silhouettes themselves read; nothing finer than that does), **and the haze
+   is not what is hiding it.** `?aerosol=0` (sky preserved, A4's honest
+   control, never `?atmos=0`): `vista.hzBand` iqr **2.07 -> 5.49**,
+   `vistanoon.hzBand` **2.00 -> 4.28**, `vistanoon.mid` **4.86 -> 11.36**,
+   against a near ground at 24 to 25 that the control barely moves (24.00 ->
+   25.00, the positive check). From the air with the vegetation off:
+   `flyovernoon.under` iqr **6.07**, and `?splat=0` moves it **0.06**. That
+   answers the vista far-relief question post-splat: it is a material AND a
+   sub-massif geometry gap, class (b) for the normal-only version and (c)
+   only if real displacement is wanted afterwards.
+2. **The world turns blue the moment the eye leaves the ground.** Whole-frame
+   `warm` is NEGATIVE on all four daylight aerial poses (`flyover` -10.55,
+   `flyovernoon` -3.26, `forestair` -18.72, `forestairnoon` -13.44) and POSITIVE
+   on eleven of the twelve ground poses; the stated exception is `pondside`
+   (whole-frame warm **-18.04**), a ground pose whose frame is mostly water
+   surface. `forestair.hzBand` sat is **0.056**. By eye the Forest biome from
+   1,200 m reads as a hazy sea with dark reefs.
+
+### 2.20.5 THE STAIRCASE SURVIVES EVERY ISOLATOR, AND ITS OWN FLAG IS BROKEN
+Four one-flag arms at `flyovernoon`, fresh process each, same build:
+`?shadowcast=0` moves **every rectangle by zero counts** and leaves the region
+untouched; `?clouds=0` moves only `skyBand` (156.11 -> 145.72) and leaves every
+ground rectangle identical; `?splat=0` moves nothing past 0.3 counts;
+`?canopy=0` collapses `under` iqr **74.53 -> 6.07** and leaves the staircase as
+the ONLY feature in a 38 km frame (`RN2285_flyovernoon_canopy0.png`, and it is
+the audit's evidence frame).
+
+**`?shadowcast=0` not moving it is informative, not exculpatory.** RN-1954
+documents that flag as "the light simply stops writing and sampling a depth
+map", so if the region were the map's CONTENTS it would have gone. It is
+therefore painted by a branch that never reads the map -- the cascade-shadow
+function's out-of-range behaviour at a range where no cascade covers the ground
+(furthest split 300 m, nearest pixel 1,243 m) -- and the last cascade's snapped
+ortho box is what makes the teeth.
+
+**AND `?shadowcast=0` IS ITSELF A BROKEN CONTROL.** Run at `machine` it drives
+the build into `GL_INVALID_OPERATION: glDrawElements: Mismatch between texture
+format and sampler type (signed/unsigned/float/shadow)` x256 and `run.mjs`
+correctly fails the probe. A flag that errors on a ground pose and returns a
+byte-identical null on an aerial one cannot be both; **the shadow lane's first
+job is an isolator that works**, because without one it cannot state a
+done-when. NUMBERS.md-class, in a flag that has been in `PAGE_PARAMS` since
+RN-1954.
+
+### 2.20.6 TWO NEW POSES, AND EACH CLOSED A DOMAIN NOTHING COULD PHOTOGRAPH
+Both are in `SHOTS` **and** in the pose-dispatch chain; `check:probes` re-run
+and PASS.
+
+- **`pondside`** (lat -3.4077676, lon 150.277209, yaw 180, pitch -8, sun 0.55).
+  Forge has exactly ONE water surface -- `cubed_sphere.h`'s 22 m home pond, 55 m
+  from the spawn pad -- and no canonical frame had ever contained it, so gap 11
+  had been carried on prose for two audits. Site derived from `pondDir` through
+  `dirToLatLon`; four bearings taken, 180 is the only one with water, far bank,
+  wood and sky in one frame. **It carries a setup assertion that the water was
+  DRAWN**, not that it exists: `WaterSurface` is `frustumCulled` and increments
+  `grabs` inside `onBeforeRender`, so a non-zero `grabs` measures that this
+  camera drew the pond (reads **340**, `grab: true`). Without it a pose two
+  hundred metres off photographs dry ground with every other field correct,
+  which is RN-2169 one layer out. **It is the best-composed frame this project
+  has, and the water is not at the bar:** `box` warm **-50.32** against a `sky`
+  at -17.52 and a `bank` at +23.37 (the pond is bluer than the sky it should
+  reflect), a regularly banded wave field, **no reflection of anything**, no
+  depth cue, and hard-edged polygon foam at the sand bar.
+- **`meadownight`** (`meadow`'s pose and rectangles to the digit at sun dot
+  **-0.25**, pinned to -0.251 with a 0.001 miss). The darkest frame this project
+  had was `basedusk` at 0.20, so the bottom third of the day arc had never been
+  judged. `skyHi` luma **0.07 iqr 0.00**, `skyHz` **0.08 iqr 0.00**, `hzBand`
+  **0.10**, `world` **2.85**, `nearG` 6.40 -- not dark, uniform black with no
+  gradient, no airglow and no moon, under a sparse magnitude-less star field,
+  with the headlamp a hard-edged ellipse.
+
+### 2.20.7 AN INSTRUMENT DEFECT FOUND ON THE WAY (routed, not fixed)
+**At a sub-horizon sun the post stack's published sun vector is STALE.**
+`Systems.ts` computes `lit = sky.elevation(up) > -0.03` and hands `on = false`
+to `ShadowRig.update`, whose loop does `if (!this.active) continue` BEFORE
+`light.position` is written; `Frame.publishSun` then derives `post.sunWorld`
+from that unmoved light. Measured at `meadownight`: the probe's `upCheck` reads
+**0.508** where every other shot in the file reads 0.000, and `sunElevDeg`
+reads **+14.83 degrees** for a sun the same report pins at dot **-0.251**. So
+at night `__ofPost.state().sun` is the last daylight sun, `ContactPass` marches
+along it (its only guard is `sunWorld.lengthSq() < 0.25`, which a stale unit
+vector passes), and any probe reading that vector publishes a mirrored bearing.
+Belongs with the night lane.
+
+### 2.20.8 THE SCORES
+**AT BAR:** the atmosphere's architecture · the limb from orbit (`ring` 92.43 /
+95.87 / 0.607) · aerial perspective and haze.
+**ACCEPTABLE:** the sky and its clouds · ground cover 0-25 m · the terrain
+material 0-75 m · structures, masonry and machines · frame cost.
+**BEHIND:** vegetation from the air (blue confetti) · vegetation assets near
+(brushed-not-bladed blades, papercraft broadleaf, paper litter) · water · the
+night · snow/rock/scree as paint · the sun disc (1.6 counts) · emissive light
+(a white-hot furnace lights nothing) · dawn anti-solar chroma
+(`vistadawn.skyR.warm` +15.86) · clouds round 2 · stars at 1.2 km · the orbital
+terminator ribbons (`seam` iqr 59.39 -> 63.21) · the forest floor has no
+dappled canopy light.
+**BLOCKING:** the far ground's material and sub-massif relief past 75 m · the
+aerial shadow staircase · colour composition at range · the mid field at a
+standing eye (a uniform plate in the band nearest the treeline; range-strip
+iqr 38.78 / 32.27 / 31.28 at r18/r27/r35 shows blade structure surviving well
+past 25 m). And **the station
+is INTERIOR for the fourth audit with an unlit interior** (`world` luma 18.90),
+which is blocking for the spine and out of this domain.
+
+### 2.20.9 THE TOP FIVE LANES, WITH THEIR FILE SEAMS
+**Correction:** the file seams below are stated intra-file partitions, not a
+claim of no collision. Three files are dual-owned and split by a named
+boundary within the file itself: `TerrainFragLight.glsl.ts` (L1 owns the
+non-cascade albedo/bump/light terms, L2 owns the cascade half), `TerrainSplat.ts`
+(L1 owns geometry and weights, L3 owns the layer hue table), and `GrassCard.ts`
+(L4 owns the file, L5 owns its geometry constants). L1's `materials/Terrain*`
+glob explicitly excludes `TerrainCoverFar*`, which stays L4's.
+
+**Sequencing, the verifier's reorder, adopted by Admin:** L4 runs after L1
+rather than concurrently with it, since L1's far-band material addresses part
+of the same 25 m-to-treeline gap; L5 is promoted into the concurrent slot L4
+vacates.
+
+1. **L1 THE FAR GROUND** (rank 1, **opus**). Owns `render/materials/Terrain*`
+   (excluding `TerrainCoverFar*`) and `world/ChunkBatch`'s attribute upload.
+   **Needs world-gen's per-chunk phase attribute in float64**: RN-2160's own
+   phase-2 owed item, already assigned there in `TerrainArt.glsl.ts`'s header.
+   Must not touch `grass/`, `post/`, `Atmosphere*`, `ShadowRig`.
+2. **L2 THE AERIAL SHADOW REGION** (rank 2, **opus**, diagnosis first, and it
+   must ship a working isolator). Owns `ShadowRig.ts`, the cascade half of
+   `TerrainFragLight.glsl.ts`, `post/ContactPass.ts`, the `shadowcast` param.
+3. **L3 THE RANGE PALETTE** (rank 3 plus 8 and 10, **sonnet**). Owns
+   `BiomeMaterial`/`BiomePalette` hue rows, `TerrainSplat.ts`'s layer hue table,
+   `Atmosphere*`'s `aerosolTint`, `CanopySelfShadow`'s apply-point,
+   `post/PostDefaults.ts`. Done when whole-frame `warm` crosses zero at
+   `flyovernoon` and `forestairnoon`.
+4. **L4 THE MID FIELD AT A STANDING EYE** (rank 4, **sonnet**, runs after L1).
+   Owns `render/grass/*` and `TerrainCoverFar*` only.
+5. **L5 THE VEGETATION ASSET PASS** (rank 5, **sonnet**, promoted into L4's
+   freed concurrent slot). Owns `tools/blender/build_props_*.py`, `texgen.py`'s
+   `grass`/`leaf` families, `contracts.json`, `GrassCard.ts` geometry
+   constants. No shader, no palette.
+
+Sixth and behind: the night · water · clouds round 2 · the sun disc · emissive
+light · the orbital ribbons. Admin's rather than a lane's: the station exterior
+and its unlit interior, and the `CANOPY_SHADE` ruling, which now needs only the
+`?canopyshade=1` frame pair WG-223 already owes it (world-gen.md 6.9.9 supplied
+the 34 m crown-scale field 2.14.7b prescribed and **nothing is wired**).
+
+### 2.20.10 ONE CORRECTION TO THIS FILE'S OWN RECORD
+2.18.8 and 2.19.9 both judged `forestair`/`forestairnoon` MET, "an aerial
+photograph: dark closed masses with pale open ground bitten into them". This
+audit re-took that frame on the same build; it reproduces
+`RN2275_forestairnoon_base.png` to the pixel and **the verdict does not survive
+a fresh pair of eyes**: it reads as a hazy shallow sea with dark reefs, the
+crowns are blue rather than green, the near stand has a hard vertical edge where
+the instance tier stops, and the structure in the far half is haze modulation
+rather than woodland. Both lanes measured correctly and both judged against
+their own predecessor frame, which is the anchoring drift FIDELITY-GAP
+section 2 named. **The numbers in 2.18 and 2.19 stand; the verdicts in them do
+not**, and they are corrected here rather than overwritten there, on this
+file's own forward-pointer rule.
+
+### 2.20.11 Rails
+`npx tsc --noEmit`, `npx vite build` and `cd web && npm run check` run as
+SEPARATE steps with each exit status read on its own. `check:probes` re-run
+after the two new rows: PASS. `web/wasm/dist/*` and `test/expected.json`
+untouched; no texgen file, no Blender file, no density table, no
+`assets/textures/dist` byte, and **no `web/src` file changed at all** -- this
+lane edited exactly one source file, `web/tools/smoke/probes/artframe.js`,
+adding two manifest rows, two dispatch names, one setup assertion and the
+header invocations for both. Branch `lane/world-audit-r2`, pushed, **not merged
+to main**.
+
+### 2.20.12 Correction pass (2026-08-21, corrections mini-lane)
+A fresh-context verifier that never touched this lane re-checked its own
+measurements and found five wording issues, applied here and in the audit doc
+and NUMBERS.md: stray em dashes, the five-lane "no collision" claim (now
+stated intra-file partitions, see 2.20.9), the pondside warm exception
+(-18.04, a ground pose whose frame is mostly water), rank 4's uniform-plate
+scope (narrowed to the band nearest the treeline; range-strip iqr survives
+past 25 m), and rank 1's relief claim (no material and no sub-massif relief,
+not "no relief of any kind"). The lane-sequencing reorder in 2.20.9 (L4 after
+L1, L5 promoted) is the same verifier's recommendation, adopted by Admin.
