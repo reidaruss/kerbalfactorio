@@ -151,6 +151,59 @@ export const ATMOSPHERE_LAYER = /* glsl */`
   }
 
   /**
+   * RN-2400 (lane M1, THE DISTANCE GOES BLUE). THE TINT AS A FUNCTION OF
+   * OPTICAL DEPTH, one authority for both entry points exactly the way
+   * ofAeroPhase below is.
+   *
+   * A THRESHOLD RAMP ON od, NOT AN EXPONENT ON tr, and that correction is
+   * inside this lane rather than before it. The first attempt blended by
+   * 1 - tr^K, reusing the transmittance both entry points already compute;
+   * it fails structurally, because tr^K is monotonic in K in the SAME
+   * direction at every tr in (0, 1), so no single exponent can hold the
+   * blend near zero at a near-field od while pushing it large at a far-field
+   * one -- turning K up to protect the near field pushed the far field the
+   * same way it pushed everywhere else, measured rather than assumed (see
+   * Atmosphere.glsl.ts's own note on aerosolTintOd0). A threshold buys the
+   * one thing an exponent cannot: EXACTLY zero below it, whatever the far
+   * end needs.
+   *
+   * uAeroTintOd is (the od the ramp starts at, its span to reach a weight of
+   * 1), so the ramp weight is
+   * clamp((od - uAeroTintOd.x) / uAeroTintOd.y, 0, 1).
+   *
+   * floor IS THE ONE PLACE THIS FUNCTION IS NOT SHARED BLIND BETWEEN THE TWO
+   * ENTRY POINTS, and the asymmetry has the SAME justification ofAeroPhase's
+   * two floors already have two screens down: the ground entry's col is a
+   * lit terrain albedo that dilutes any small tint shift, so it can run at
+   * floor 0, a PURE THRESHOLD with no floor-driven blend BELOW uAeroTintOd.x.
+   * That is NOT "the ground entry is protected at ground ranges": ABOVE the
+   * threshold the ground entry blends exactly as far as the sky entry does,
+   * and any ground ray whose own optical depth clears it moves, not only the
+   * flyover family's. meadow's own horizon band clears od 1.0 too (whole-
+   * frame warm 20.22 -> 17.40, hzBand 32.13 -> 25.48) and so does mtnslope
+   * (24.08 -> 22.62, GLSL ground entry, by eye the SAME improvement: the
+   * cream treeline bar recedes and goes cool). Floor 0 only says the ground
+   * entry has no SEPARATE low-od exception the way the sky entry does. The
+   * sky entry's col is ITSELF scattered light of the same order as the haze,
+   * so even a ray whose own boundary-layer optical depth is nearly zero (an
+   * elevated dawn sky ray well off the horizon, RN-2400's own dawnsun.skyUp
+   * and vistadawn.skyR) still shows a real hue shift from a small tint
+   * blend, which the K = 2.4 first attempt (a smooth exponent, never exactly
+   * zero) reproduced and a hard threshold cannot, by construction, at od
+   * this small. Measured rather than reasoned: see rendering.md 2.25 for the
+   * floor this lane shipped.
+   *
+   * uAeroTintOn < 0.5 restores the flat RN-2320 blend exactly: uAeroTint
+   * whatever od is. ?aerodepth=0.
+   */
+  vec3 ofAeroTintAt(float od, float floor) {
+    if (uAeroTintOn < 0.5) return uAeroTint;
+    float ramp = clamp((od - uAeroTintOd.x) / max(uAeroTintOd.y, 1e-3), 0.0, 1.0);
+    float k = max(ramp, floor);
+    return mix(uAeroTint, uAeroTintFar, k);
+  }
+
+  /**
    * The aerosol's phase. One authority for both entry points, with the
    * isotropic floor passed IN rather than read from the uniform, because the
    * two entries want different floors for a reason that is not tuning.
@@ -235,7 +288,9 @@ export const ATMOSPHERE_LAYER = /* glsl */`
     float od = uAerosol.x
       * ofChapman(h0, max(sinZ, 0.0), cosZ, uPlanetR, uAerosol.y);
     float tr = exp(-od);
-    vec3 haze = uSunColor * uAeroTint * ofAeroPhase(dot(rd, uSunDir), 0.15) * sunT;
+    // RN-2400. Floored at 0.3, NOT 0: see ofAeroTintAt's own note for why the
+    // sky entry cannot run at a pure threshold the way the ground entry does.
+    vec3 haze = uSunColor * ofAeroTintAt(od, 0.3) * ofAeroPhase(dot(rd, uSunDir), 0.15) * sunT;
     return col * tr + haze * (1.0 - tr);
   }
 
@@ -293,7 +348,15 @@ export const ATMOSPHERE_LAYER = /* glsl */`
     // order of magnitude for the whole path at these ranges, and it means the
     // haze reddens through the terminator and goes out at night with the sun
     // instead of hanging in the frame as a grey sheet after sunset.
-    vec3 haze = uSunColor * uAeroTint * ph * sunT;
+    //
+    // RN-2400. THE TINT ITSELF now depends on this SAME od: near ground
+    // (below uAeroTintOd.x) keeps uAeroTint's warmth EXACTLY, far ground
+    // (past the ramp) converges toward uAeroTintFar's cool, which is what
+    // closes the horizon seam against the sky ray above it. Floored at 0,
+    // NOT the sky entry's 0.3: the flyover family's own nearer ground is
+    // what a pure threshold protects (Atmosphere.glsl.ts's own sweep note),
+    // and this is the entry that protection has to run through.
+    vec3 haze = uSunColor * ofAeroTintAt(od, 0.0) * ph * sunT;
     return col * tr + haze * (1.0 - tr);
   }
 `;

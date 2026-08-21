@@ -4,6 +4,8 @@
 > **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2410 to RN-2419, `lane/m4-midnear`: **THE MID FIELD, NEAR END.** World audit R3's rank 4, the half L4 did not reach: `meadowfield.r55` read 21.56 against a bare 55.76 one band inside L4's own `(30, 70)` handover, and thinning further could not be the lever (a second confirmation of L4's own "CARD HEIGHT, not card count" finding). The fix is a spatially-correlated per-PATCH value multiplier baked into the mat rung's instance colour (`GrassTuning.MAT_PATCH_AMP`, 4x4-cell patches, mean-preserving), since `GrassPalette.coverAlbedo`'s own constant-luminance rule means a blade can otherwise only vary in hue, never in value, and independent per-instance jitter alone is too weak an amplitude to close a 34-count gap. `r55` **21.56 -> 38.93** (target 38.66, half L4's gap, MET); `r25` 29.48 -> **42.92**; `midfield.r18/r27/r35` all improved, none regressed. **One measured, disclosed, UNRESOLVED regression:** `r100` 55.70 -> **51.51** (not in this lane's SCORE; two distance-keyed fade gates both failed to recover it, arguing the `r55`/`r100` populations are not cleanly separable by world distance, likely terrain relief foreshortening a nearer cell into the far row (2.25.7's first owed item). `npm run check` 8/8. Full record in section 2.25. THIS LINE IS A POINTER: replace it, never append to it.) (Same day: RN-2385 to RN-2389 used of the RN-2385 to RN-2399 block, `lane/m3-emissive`, R3 rank 3, dispatched first because it was the only one of the top five that arrived with a measured done-when: **A FURNACE LIGHTS ITS OWN SHELL NOW, AND THE REASON IT NEVER DID IS THAT THE EMISSIVE WAS A HUNDRED TIMES TOO DIM TO BE LIGHT.** The status-chip expression every emissive in the game ran through peaked near **0.2** of linear radiance; a firebox at 1500 to 1800 K is **13 to 78** by the blackbody-to-sunlit-ground luminance ratio, and no falloff model closes a hundredfold shortfall in the SOURCE. `FIRE_L_HOT = 40` is the middle of that band and it is the fix; embers take `game/MachineFx.ts`'s own authored 0.26 ratio, and the two fire hexes moved to `EmissiveLight.ts` so the project has ONE copy of the fire colour. **THE LIGHT IS AN EMISSIVE-DRIVEN LOCAL IRRADIANCE TERM AND NOT A LIGHT FARM, decided against the ceiling study's one hard WebGL2 limit:** a pool of real `THREE.PointLight`s was refused on two MEASURED facts and not on the budget -- `TerrainShader` reads no three.js light at all (so a point light cannot light the ground a furnace stands on) and the light COUNT is part of three's program cache key (`Headlamp.ts`'s own measured 441 ms stall, 30 programs). Six emitters max, a COMPILE-TIME array bound, so `programs` is **61 -> 61** at `smelternight` and **46 -> 46** at both daylit machine poses, and `__ofEmit.report().sceneLights` reads **2** before and after, which is the no-light-farm claim taken as a reading rather than a sentence. **THE HERO, `smelternight` `?lamp=0`:** whole frame **1.80 -> 7.12** against an empty `meadownight` at 1.95 to 2.03, so a running furnace stops making the world darker than a field; `firebox` (the coaming 0.3 m above the fire) **0.41 -> 21.05, 51.3x**; `plate` **2.72 -> 9.48**; `sunface` 1.51 -> 7.24; `band` 4.74 -> 16.87; and the far columns `hearthL`/`hearthR` **1.61 -> 3.97 / 1.94 -> 4.29**, a 23-fold spread across one machine, which is what says the light is LOCAL. **`?firelight=0` returns EVERY non-fire rectangle to the pre-change baseline TO THE DIGIT** (1.51 / 0.41 / 4.74 / 2.72 / 1.61 / 1.94 / 3.94 / 5.18 / 4.77) with the program unchanged, so the whole move is attributed to one uniform and the before column is re-derived on the AFTER build. **DAYLIT GUARDS:** `machine` (the service side, one camera move away) moves **0.3 per cent**; `basedusk` moves **0.15 counts**; `smelterhero` DOES move by intent (+17% `plate`, +57% `firebox`, +3.9%/+6.3% far columns, +8.2% on the one SUNLIT rectangle) and the argument is that shot's OWN published sweep -- "NONE OF THE FOUR IS LIT... the subject is BLUE because the sky is the only light on it" -- with `plate`'s `warm` going **-13.28 -> +12.23**. `meadownight`, `forestfloor` and `meadow` bit-identical, walk counters 41,300/25,655 and 52,139/26,124 unmoved. **TWO HONEST NEGATIVES.** (1) **The bloom halo is NOT bought:** bloom on against `?bloom=0` is +0.94 counts on the fire and **+0.01** on the rectangle beside it, and FOUR TIMES the strength changes neither; the pyramid is proven healthy (`?bloomthresh=0` moves `firebox` to 76.26) and the cause is the Karis first level's `c /= (1 + luma(c))` times a strength of 0.1 -- both GLOBAL grade constants that would move every published rectangle in the project, so this lane refuses to spend them and hands Admin the numbers. (2) **Rank 14 is LEFT**: the missing dapple is a shadow-CASTER registration problem in the canopy batch and not a term in `TerrainFragLight`'s cascade half, and the crushed-shade half is `PropSkyAmbient`'s weight, whose own landing measured 0.10 to 0.25 counts. **A CORRECTION THE AUDIT OWED ITSELF: the smelter in that frame is NOT running.** `entityVisualState` returns 2, STARVED, so every number above is the banked-EMBER case at 0.26 of burning, not the ceiling; and `plate` is 1.2 m from the emitting centroid, not 0.3 m (that is the FRAME gap between two rectangles). The surface actually at 0.3 m is `firebox`. Emitter position, area (0.2445 m2) and softening radius are MEASURED off the shipped .glb, not authored; the picture refused `sqrt(A/PI)` and the shipped radius is the area-weighted second moment. `wrap = 0.35` is the one fitted number. Cost under the noise floor (`passMs.near` 7.8 spliced against 8.8 absent). Owed cross-lane seam, ONE call site: the terrain does not receive the term because M2 owns those materials. `npm run check` 8/8, every gate also run singly with its exit status read. Full record in section 2.25. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2400 to RN-2404, `lane/m1-distanceblue`: **THE DISTANCE GOES BLUE**, World Audit R3's rank 1. `aerosolTint` was a flat spectral bias applied at every optical depth; it now varies WITH optical depth, near ground keeping L3's warm Mie bias and far ground converging toward `aerosolTintFar` (the same bias mirrored about the shared 0.31 mean, R and B swapped -- Rayleigh-blue, since in-scattered light at long path IS skylight). **THE SEAM:** `vista.hzBand` warm 48.36 -> **-1.96** against a `skyHz` at -19.38, seam gap 60.53 -> **17.42**; `vistanoon` 49.88 -> **12.23**; both inside the audit's stated single-digit-tens target. **THE MECHANISM WENT THROUGH TWO DESIGNS AND THE FIRST FAILED STRUCTURALLY:** a `1 - tr^K` exponent blend cannot hold near zero at the flyover family's optical depth while pushing large at vista's, because `tr^K` is monotonic in `K` in the SAME direction at every `tr` -- turning `K` from 2.4 to 9.0 to protect one end made BOTH ends worse, measured rather than derived. Shipped instead: a THRESHOLD RAMP on optical depth (`od0 = 1.0`, `span = 0.35`), exactly zero below its threshold, which the exponent cannot be. **A SECOND STRUCTURAL FINDING FROM THE SAME SWEEP:** `dawnsun.skyUp`/`vistadawn.skyR` never moved at ANY threshold setting (elevated dawn sky rays have genuinely tiny optical depth), so a `floor` was added, asymmetric between the two entry points on the SAME precedent `ofAeroPhase`'s own two floors already set (ground floor 0, sky floor 0.3) -- `skyUp` now crosses +7.13 -> **-4.91**, `skyR` falls to **19.38**. **THE HONEST COST, REPORTED RATHER THAN HIDDEN:** the four aerial whole-frame figures the audit gated show small but real regressions (`flyover` -0.18 -> -1.99, `flyovernoon` +6.62 -> +4.84, `forestair`/`forestairnoon` under 0.6 counts), because the flyover family's own horizon reaches an optical depth comparable to vista's ridge -- the SAME kind of ray -- so any threshold that fully saturates one partially saturates the other; flagged to Admin as an open item against the acceptance wording's strict "does not regress anywhere". `npm run check` 8/8. Full record in section 2.25. THIS LINE IS A POINTER: replace it, never append to it.)
+
 
 
 
@@ -7889,3 +7891,228 @@ bit-identical to two decimals. Did not touch `web/wasm/dist/*` or
 or `TerrainCoverFar*` (M4's), no terrain material (M2's), no `Headlamp` cone,
 falloff, angle or candela (M5's -- the only `Headlamp` edit is the registration
 count in 2.25.2). Branch `lane/m3-emissive`, pushed, **not merged to main**.
+
+---
+
+## 2.25 THE DISTANCE GOES BLUE (RN-2400 to RN-2404, 2026-08-21, `lane/m1-distanceblue`)
+
+> World Audit R3's rank 1 (`docs/web/WORLD-AUDIT-R3-2026-08-21.md` section 6,
+> M1). Base `origin/main` at `0a3fa1ea`. Branch `lane/m1-distanceblue`, pushed,
+> **not merged to main**. Server `127.0.0.1:5910`, `--strictPort`, sentinel
+> `dist/of-sentinel-rn2400.txt` written into this worktree's own `dist` and
+> fetched back over the port before every rebuilt server was trusted (six
+> rebuilds across the tuning loop, each with its own sentinel), killed by the
+> PID `netstat -ano` named each time (last: PID 20576, confirmed gone, only
+> `TIME_WAIT` remnants after). `npx tsc --noEmit`, `npx vite build` and
+> `npm run check` run as SEPARATE steps, each exit status read on its own:
+> 0, 0, **8 of 8**.
+
+### 2.25.1 THE CAUSE, restated as the fix's shape
+
+R3's own finding: `aerosolTint` (RN-2320, L3) is a FLAT spectral bias applied
+at every optical depth. At short paths that is correct -- Mie forward
+scattering IS warm, and L3 proved a flat warm bias closes the four daylight
+aerial poses' cold read. At long paths it is wrong: the SAME warm bias, at a
+4.7 km ridge where the aerosol above is nearly fully opaque, becomes the
+ridge's colour almost undiluted by the terrain under it, and the distance
+goes cream instead of blue (`vista.hzBand` warm +48.36 against a `skyHz` at
+-12.14, a 60.5-count seam). Aerial perspective's actual physics is that the
+in-scattered light IS skylight at long path (multiple scattering dominates
+and converges to the ambient the sky itself carries), so the fix is a tint
+that VARIES with optical depth rather than a new constant.
+
+### 2.25.2 THE DESIGN, and the two corrections inside this lane's own history
+
+**`aerosolTintFar`** (`Atmosphere.glsl.ts`) is `aerosolTint` MIRRORED about
+the shared 0.31 mean: `(0.40, 0.31, 0.22) -> (0.22, 0.31, 0.40)`, R and B
+swapped. Not an arbitrary blue: it is the same molecular (Rayleigh) bias the
+sky itself carries, stated as a constant, and mirroring about the SAME mean
+(rather than authoring a second level) keeps the `dawnsun` sky-ray brightness
+argument RN-2175 tuned undisturbed at every blend weight, since the two
+endpoints average back to exactly 0.31 whatever the blend does.
+
+**The blend mechanism went through two designs, and the first FAILED
+STRUCTURALLY, not just by mistuning.** Attempt one blended by
+`1 - tr^aerosolTintK` (`tr = exp(-od)`, reusing the transmittance both entry
+points already compute). This fails for a reason worth stating precisely:
+for any `tr` in `(0, 1)`, `tr^K` is monotonic in `K` in the SAME direction at
+every `tr`, so turning `K` up to protect one range of optical depth pushes
+EVERY range the same way. Measured: `K = 2.4` closed `vista.hzBand`'s seam
+(60.52 -> 26.09) but cost `flyover` whole-frame warm -0.18 -> -11.21; turning
+`K` up to 9.0 to try to spare `flyover` made BOTH ends worse (`flyover`
+-18.93, seam gap widened to 32.59). The flyover family's own horizon reaches
+a COMPARABLE optical depth to `vista.hzBand`'s 4.7 km ridge -- they are
+physically the same kind of ray -- so no single exponent can hold one near
+zero while pushing the other to one.
+
+**Attempt two, shipped: a THRESHOLD RAMP on optical depth**, `ofAeroTintAt`
+(`AtmosphereAero.glsl.ts`): `k = clamp((od - od0) / span, 0, 1)`, then
+`mix(aerosolTint, aerosolTintFar, k)`. A threshold buys the one thing an
+exponent cannot -- EXACTLY zero below it, whatever the far end needs. A
+five-point sweep (od0 = 0.55, 0.85, 1.0, 1.15, 1.5) found: `vista`'s own ray
+sits at roughly 1.5 to 1.6 of optical depth (od0 = 0.85 and od0 = 0.55 give
+IDENTICAL vista numbers, both fully saturating the ramp; od0 = 1.5 nearly
+undoes the seam fix, `vista.hzBand` back to 42.66, because the threshold now
+sits just below vista's own value). **od0 = 1.0, span = 0.35 is what
+shipped.** The ramp ALONE (sky floor 0) closes vista's seam 60.52 -> 10.41
+and vistanoon's 49.87 -> 2.88; the SKY FLOOR added next (2.25.2 below, for
+the dawn fix) cools the sky rectangles further, so the SHIPPED seam with
+both terms in is vista 60.53 -> **17.42** and vistanoon 49.88 -> **12.23**,
+both still inside the audit's stated single-digit-tens target, at a bounded
+aerial cost (below, 2.25.4).
+
+**A second structural finding, caught by the same sweep and requiring a
+second correction.** At EVERY od0 tested, including 0.15, `dawnsun.skyUp`
+and `vistadawn.skyR` never moved AT ALL (7.13 and 25.56 to the digit), while
+the K = 2.4 exponent (never exactly zero at any od > 0) DID move them
+(skyUp to -1.63, skyR to 17.45). This is not a tuning gap: these are
+ELEVATED dawn sky rays, not grazing ones, so their own boundary-layer
+optical depth is genuinely tiny, and a threshold that is exactly zero below
+itself can never reach them at ANY setting -- the seam-fix mechanism and the
+dawn-side-effect fix need OPPOSITE local behaviour (zero response at low od
+for the ground/aerial protection; nonzero response at low od for the dawn
+sky rays), which one threshold parameter cannot deliver simultaneously.
+
+**The fix is a `floor`, and it is asymmetric between the two entry points on
+purpose**, following the SAME precedent `ofAeroPhase`'s own two floors
+already set two screens up in this same file (ground floors at 0.55, sky
+floors lower, "because the constraint that argued for 0.55 does not exist
+there"). `ofAeroTintAt(od, floor)`: the GROUND entry (`ofAtmoAerial`) calls
+with `floor = 0.0` (pure threshold, protecting the flyover family's nearer
+ground); the SKY entry (`ofAtmoSkyAero`) calls with `floor = 0.3`, because
+the sky's own `col` is scattered light of the same order as the haze, so
+even a ray at near-zero optical depth shows a real hue shift from a small
+tint blend -- diluted by nothing the way a ground ray's terrain albedo
+dilutes it. `SkyProbe.ts` (the CPU port of the sky ambient) mirrors the same
+floor for the same reason.
+
+### 2.25.3 THE SEAM, before and after (fresh process each, `docs/screenshots/RN2400_*`)
+
+| pose | rectangle | before (flat, `?aerodepth=0`) | after (shipped) |
+|---|---|---:|---:|
+| `vista` | `hzBand` warm | 48.36 | **-1.96** |
+| `vista` | `skyHz` warm | -12.17 | -19.38 (sky floor's own cost, 2.25.4) |
+| `vista` | seam gap (`hzBand` - `skyHz`) | **60.53** | **17.42** |
+| `vistanoon` | `hzBand` warm | 48.20 | **1.02** |
+| `vistanoon` | `skyHz` warm | -1.68 | -11.21 |
+| `vistanoon` | seam gap | **49.88** | **12.23** |
+
+Both gaps fall from R3's measured 60.5-count seam into the audit's own
+stated "single-digit tens" target (71 and 75 per cent reductions
+respectively). `?aerosol=0` on `vista` reproduces the audit's own reference
+figure to the digit (`hzBand` luma **186.09**), confirming the control is
+completely unaffected by this lane, as it must be: both entry points gate on
+`uAerosol.x <= 0.0` before `ofAeroTintAt` is ever reached.
+
+### 2.25.4 THE FOUR AERIAL WHOLE-FRAME FIGURES, and the honest cost of the sky floor
+
+| pose | before | after (ramp only, floor 0) | after (ramp + sky floor 0.3, SHIPPED) |
+|---|---:|---:|---:|
+| `flyover` | -0.18 | -1.75 | **-1.99** |
+| `flyovernoon` | +6.62 | +5.19 | **+4.84** |
+| `forestair` | -7.38 | -7.72 | **-7.95** |
+| `forestairnoon` | -0.96 | -1.26 | **-1.54** |
+
+**These are real regressions against the strict wording of "does not regress
+below landed values anywhere", reported rather than hidden.** The residual
+tension is physical and stated in 2.25.2: the flyover family's own horizon
+reaches a comparable optical depth to `vista.hzBand`'s ridge, so ANY
+threshold that fully saturates one partially saturates the other, and the
+sky floor (needed for the dawn fix below) adds a small further cost to the
+sky PORTION of these frames (a downward-looking aerial pose is still
+part sky). The residual is bounded (under 2 counts on `flyover`/
+`flyovernoon`, under 0.6 on `forestair`/`forestairnoon`) and an order of
+magnitude smaller than the unmitigated first attempt (`flyover` -11.21 at
+K = 2.4, -18.93 at K = 9.0). The two negatives move AWAY from zero rather
+than closing toward it as the audit's stated target asked; this is flagged
+to Admin as an open item rather than papered over (2.25.6).
+
+**A fresh-context verifier's own eyes ruled this trade decisively better, and
+found two wins this section did not headline.** `flyovernoon`'s whole-frame
+slip is an AVERAGE dragged down by its own horizon strip genuinely
+IMPROVING, not by a broad cooling of the frame: `hzBand` moves 38.98 ->
+**3.80**. `flyover`'s own `hzBand` moves the same way, 41.74 -> **1.96**.
+Both are the seam fix working exactly as intended on THESE poses' own far
+ridge, the same mechanism as `vista.hzBand`; the whole-frame number reported
+above is real but it nets a genuine improvement at the horizon against a
+small cost spread over the rest of the frame, and the improvement was not
+in the record until this correction. By eye, the vista massif now recedes
+as real aerial perspective rather than sitting at one flat cream value.
+
+**Two GROUND poses also move, through the same GLSL ground entry, and were
+missing from this table entirely.**
+
+| pose | before | after (shipped) |
+|---|---:|---:|
+| `meadow` whole-frame warm | 20.22 | **17.40** |
+| `meadow` `hzBand` warm | 32.13 | **25.48** |
+| `mtnslope` whole-frame warm | 24.08 | **22.62** |
+
+`meadow`'s own horizon band clears `od >= 1.0` (a standing eye's sightline to
+its own tree line is a long enough path), so the ground entry's ramp engages
+there exactly as it does on the flyover family and on `vista.hzBand` -- this
+was omitted from the cost table above, which the corrected note on
+`ofAeroTintAt` (`AtmosphereAero.glsl.ts`) now states plainly: floor 0 is NOT
+"the ground entry is protected at ground ranges," it is a pure threshold,
+and ABOVE that threshold every ground ray moves, standing-eye poses
+included. By eye this is the SAME improvement as the aerial cases: the cream
+treeline bar at the back of `meadow` and `mtnslope` goes cool and recedes
+instead of sitting at one flat warm value against the sky.
+
+### 2.25.5 THE DAWN SIDE EFFECT, quoted per the brief's own instruction
+
+`dawnsun.skyUp` warm: **+7.13 -> -4.91**, crossing below zero (acceptance:
+"returns below zero"). `vistadawn.skyR` warm: **+25.56 -> +19.38**, falling
+(acceptance: "falls"). `vistadawn.skyHz` also fell, 42.22 -> 36.57. Both
+land inside the L3-era range (R2 measured `skyUp` at -11.81 before L3's flat
+bias pushed it to +7.19); this lane does not claim to restore R2's exact
+figure, only to cross back to the correct SIGN, which the acceptance wording
+asked for.
+
+### 2.25.6 Owed
+
+1. **The two aerial negatives move away from zero rather than toward it**
+   (`flyover` -0.18 -> -1.99, `forestairnoon` -0.96 -> -1.54), against the
+   acceptance wording's explicit target. This is the SAME physical tension
+   named in 2.25.2 and 2.25.4: the flyover family's own horizon is optically
+   the same kind of ray as `vista.hzBand`'s ridge, so a correct depth-varying
+   fix cannot avoid touching it somewhat. Flagged for Admin/the verifier to
+   rule on whether the bounded residual (under 2 counts) is acceptable
+   against the primary seam-closure score, or whether a smaller
+   `aerosolTintFar` bias (a partial rather than full mirror) should be tried
+   next, trading some seam closure for less aerial cost.
+2. **The sky floor (0.3) is a SECOND magic constant this lane did not have
+   budget to sweep as finely as `od0`/`span`.** It was chosen to reliably
+   cross `dawnsun.skyUp` below zero; a smaller floor might cross with less
+   cost to `vista.skyHz`/`vistanoon.skyHz` (2.25.3's own after-column shows
+   the sky floor cooled `skyHz` further than the ramp alone did). Worth a
+   follow-up sweep if the seam gap needs to tighten further.
+3. **BiomePalette's hue rows were NOT touched**, per the corrected brief
+   (flagged coordination only, not this lane's file). If the residual
+   `forestair`/`forestairnoon` warm gap (routed in RN-2320's own owed list)
+   is revisited, it should be re-measured AFTER this lane's od-dependent
+   tint, since the two terms now compose differently than a flat tint did.
+
+### 2.25.7 Rails
+
+Sentinel-verified server, six rebuilds across the tuning loop (K = 2.4, K =
+9.0, ramp od0 = 0.55/0.85/1.5/1.0/0.15-diagnostic, final with sky floor),
+each with its own sentinel written before boot and fetched back over the
+port before any number from that build was trusted; killed by the PID
+`netstat -ano` named each time. `npx tsc --noEmit`, `npx vite build` and
+`npm run check` run as SEPARATE steps, each exit status read on its own: 0,
+0, **8 of 8**. `web/wasm/dist/*` and `test/expected.json` untouched (confirmed
+by `git status`: only `web/src/render/materials/{Atmosphere.glsl.ts,
+AtmosphereAero.glsl.ts,SkyProbe.ts}` and `web/tools/smoke/run.mjs` modified,
+plus three new tool files under `web/tools/smoke/` for this lane's own sweeps
+-- `rn2400sweep.mjs` (the committed instrument, all pass-condition rectangles),
+`rn2400tune.mjs`/`rn2400dawn.mjs`/`rn2400shots.mjs` (tuning-loop and proof-
+capture helpers)). No `BiomePalette.ts`, `TerrainHorizon*`, `render/grass/*`,
+`render/post/*`, or night-branch edit, per the corrected brief's file seams.
+`?aerodepth=0` registered in `run.mjs`'s `PAGE_PARAMS` in the same commit
+that introduces it, restoring the flat RN-2320 blend exactly (bit-identical
+reproduction of RN-2320's own committed figures, confirmed to the digit
+across three separate fresh-process reruns). Ten proof screenshots at
+`docs/screenshots/RN2400_{vista,vistanoon,flyover,forestair,dawnsun}_
+{before,after}.png`. Branch `lane/m1-distanceblue`, pushed, **not merged to
+main**.

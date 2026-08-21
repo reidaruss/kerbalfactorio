@@ -33,6 +33,7 @@
 
 import * as THREE from 'three';
 import type { AtmosphereParams } from './Atmosphere.glsl.js';
+import { AERO_TINT_ON } from './Atmosphere.glsl.js';
 
 /**
  * Nine directions: the zenith plus two rings of four. The rings sit at 20 and
@@ -134,17 +135,32 @@ export function skyIrradiance(
       // so the fill reddens at dawn for the same reason the horizon does. Its
       // absence here is what would make the shade disagree with the sky above
       // it, which is the whole defect this file exists to close.
-      const aTr = Math.exp(-aeroSigma * chapman(
-        Math.max(altM - baseM, 0), vSin, vCos, p.planetRadiusM, p.aerosolScaleM));
+      const aOd = aeroSigma * chapman(
+        Math.max(altM - baseM, 0), vSin, vCos, p.planetRadiusM, p.aerosolScaleM);
+      const aTr = Math.exp(-aOd);
       const aPh = phaseM(mu, p.aerosolG) * 0.85 + 0.0795775 * 0.15;
+      // RN-2400. THE SAME `ofAeroTintAt` AS THE SHADER, term for term: a
+      // threshold ramp on THIS RING DIRECTION's own optical depth, zero below
+      // `aerosolTintOd0` and linear to 1 over `aerosolTintOdSpan`, floored at
+      // 0.3 exactly as the GLSL sky entry (`ofAtmoSkyAero`) is -- this probe
+      // is the sky's own ambient, so it takes the SKY floor and not the
+      // ground entry's 0. `?aerodepth=0` (AERO_TINT_ON) restores the flat
+      // blend on this CPU port exactly as it does in the GLSL, which is the
+      // "one switch for both halves" rule this file's own header states.
+      const tintRamp = Math.min(Math.max(
+        (aOd - p.aerosolTintOd0) / Math.max(p.aerosolTintOdSpan, 1e-3), 0), 1);
+      const tintK = AERO_TINT_ON ? Math.max(tintRamp, 0.3) : 0;
       const w = cosT;
       wSum += w;
       // Single scattering with the sun path's extinction on the source and the
       // view path's on what comes back, then the layer composited over it.
       for (let c = 0; c < 3; ++c) {
         const bR = c === 0 ? p.betaR.x : c === 1 ? p.betaR.y : p.betaR.z;
-        const tint = c === 0 ? p.aerosolTint.x
+        const tintNear = c === 0 ? p.aerosolTint.x
           : c === 1 ? p.aerosolTint.y : p.aerosolTint.z;
+        const tintFar = c === 0 ? p.aerosolTintFar.x
+          : c === 1 ? p.aerosolTintFar.y : p.aerosolTintFar.z;
+        const tint = tintNear + (tintFar - tintNear) * tintK;
         const sky = (bR * colR * pr + mie)
           * Math.exp(-(bR * (odSR + colR) + bm * (odSM + colM))) * p.sunIntensity;
         const haze = p.sunIntensity * tint * aPh

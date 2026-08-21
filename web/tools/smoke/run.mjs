@@ -534,6 +534,11 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // scattering-curvature multiple), `skyirr=0` the zenith-only sky ambient,
   // `clouds=0` the cloud layer, `sunglare=0` the disc aureole.
   'aerobase', 'aerosol', 'skyaero', 'sunarc', 'skyirr', 'clouds', 'cloudamp', 'sunglare',
+  // RN-2400 (lane M1, THE DISTANCE GOES BLUE). `aerodepth=0` restores the
+  // flat RN-2320 tint exactly, whatever the optical depth: `ofAeroTintAt`
+  // returns `uAeroTint` unconditionally. Registered in the same commit that
+  // introduces it, per this list's own rule.
+  'aerodepth',
   // Like `sandbox` above, not an isolation switch: it selects WHICH BODY the
   // client boots on. `body=cinder` (or `moon`, or `1`) boots the moon; absent
   // or anything else is Forge, which is every existing probe unchanged.
