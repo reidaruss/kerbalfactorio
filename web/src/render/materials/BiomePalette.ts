@@ -91,7 +91,7 @@ export const BIOME_NAMES = [
  * ground's own substrate feeds `GrassPalette.coverAlbedo` as the ROTATION'S OWN
  * BASE, RN-2145, so a brighter substrate cascades into brighter grass at
  * exactly the same luminance ratio) and was rejected; 0x4a4030 moves the same
- * box to 28.64, +25%, visibly unchanged by eye (`docs/screenshots/RN2320_v4_
+ * box to 28.64, +25%, visibly unchanged by eye (`docs/screenshots/RN2320_
  * forestfloor.png` against the pre-lane frame). (2) RN-2275's four wood-versus-
  * clearing pairs must still invert (wood darker than its own clearing) at every
  * sun angle -- they do, and by a healthier margin than before rather than a

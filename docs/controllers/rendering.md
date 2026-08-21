@@ -6272,7 +6272,7 @@ build, `docs/screenshots/RN2320_<shot>.png` for all eight:
 |---|---:|---:|---|
 | `flyover` | -10.55 | **-0.08** | Crosses to essentially neutral. The remaining hair of cold is the haze's own floor at a mid-height sun (dot 0.553); moving it further risked the `dawnsun` sky-ray ceiling for a fraction of a count nobody would see as blue any more. |
 | `flyovernoon` | -3.26 | **+6.70** | Clears zero with margin. At this high a sun (dot 0.897) the ground itself dominates the frame and the haze's own warm bias reaches it almost undiluted. |
-| `forestair` | -18.72 | **-7.14** | Improved by 11.58 counts and does not cross. At this pose's dot 0.55 sun the RN-2275 self-shadow law (`S = FLOOR + (1-FLOOR) exp(-K mu / sinSun)`) has a longer sun path through the canopy than at `forestairnoon`'s dot 0.736, so more of the frame is legitimately near-black wood; forcing this pose to neutral would mean weakening K or the floor below RN-2275's own physical derivation, which this lane will not do. Reported rather than chased. |
+| `forestair` | -18.72 | **-7.14** | Improved by 11.58 counts and does not cross. **CORRECTION, a fresh-context verifier's own finding, reproduced here to the digit:** the residual is NOT mostly the self-shadow law. `?canopy=0` at this pose (no vegetation in frame at all) reads warm **-4.49** -- the bare Forest substrate plus haze at this pose's dot 0.55, with nothing RN-2275 touches anywhere in the rectangle. So at most `-7.14 - (-4.49) = -2.65` counts of the residual is the self-shadow law; the majority, -4.49 of -7.14 (63%), is the TREELESS frame itself. **The consequence changes the routing**: this residual is reachable by the same lever family this lane already used (a further `aerosolTint` push, or a further Forest-hex lift, both of which this lane stopped short of to protect `forestfloor`'s own grade and the `dawnsun` sky-ray ceiling), not blocked on RN-2275's physics. Reported as owed rather than chased further inside this lane's own stopping point (2.21.7 item 2, corrected). |
 | `forestairnoon` | -13.44 | **-0.85** | Effectively neutral. The remaining fraction is the same self-shadow effect at a shorter path; it is not zero because Forest's own canopy area index is the highest in the game (`mu` = 1.014). |
 
 Eleven ground poses, four representative (meadow, forestfloor, vista,
@@ -6333,7 +6333,7 @@ law more room rather than less, since the wood side of the comparison
 
 ### 2.21.4 THE CONFETTI MECHANISM AND FIX
 
-Traced to `web/src/render/instancing/PropSkyAmbient.ts`'s `AERIAL` block
+Traced to `web/src/render/materials/PropSkyAmbient.ts`'s `AERIAL` block
 (RN-2232): the canopy CARD batch is a stock `MeshStandardMaterial` spliced
 with the same aerial-perspective term the terrain uses, `ofAtmoAerial`,
 reading the SAME `uAeroTint` object by reference (`publishPropSkyAmbient`
@@ -6390,6 +6390,36 @@ Branch `lane/l3-palette`, pushed, **not merged to main**.
    desaturation and `PropSkyAmbient`'s blue sky-ambient fill on canopy cards,
    both outside this lane's files, are the next lever if the frame still
    reads cold by eye once ranks 1 and 2 land.
-2. **`forestair`'s -7.14** (2.21.2): argued from RN-2275's own physics rather
-   than chased; worth a fresh look once the far-ground material (L1) gives
-   the pose more to look at besides canopy and haze.
+2. **`forestair`'s -7.14** (2.21.2), CORRECTED by a fresh-context verifier:
+   only -2.65 of it is the RN-2275 self-shadow law; the majority, -4.49
+   (`?canopy=0`, no vegetation), is the treeless frame -- Forest substrate
+   plus haze at this pose's dot 0.55. Reachable by the SAME lever family this
+   lane already used (a further `aerosolTint` push or Forest-hex lift), not
+   blocked on RN-2275; this lane stopped short of it to protect `forestfloor`'s
+   grade and the `dawnsun` sky-ray ceiling. Worth a fresh push from either
+   lever, or a fresh look once the far-ground material (L1) gives the pose
+   more to look at besides canopy and haze.
+
+### 2.21.8 Correction pass (2026-08-21, verifier corrections)
+
+A fresh-context verifier that never touched this lane reproduced the whole
+warm table, the rejected-candidate cascade, RN-2275's four pairs and the
+`dawnsun` ceiling to the digit on its own two-arm build, and verdict MERGE.
+Four corrections applied here rather than silently: (1) 2.21.2's `forestair`
+row and 2.21.7 item 2 wrongly attributed the -7.14 residual mostly to the
+RN-2275 self-shadow law; the verifier armed `?canopy=0` and read warm -4.49
+with no vegetation in frame, so at most -2.65 of the -7.14 is the self-shadow
+law and the majority is the treeless frame itself (Forest substrate plus
+haze at dot 0.55), which changes the routing from "blocked on RN-2275" to
+"reachable by this lane's own lever family". (2) `BiomePalette.ts`'s own
+comment cited `RN2320_v4_forestfloor.png`, a superseded frame never
+committed; corrected to `RN2320_forestfloor.png`, the committed one. (3)
+2.21.4 gave `PropSkyAmbient.ts`'s path as `render/instancing/`; it is
+`render/materials/`. (4) The routed confetti residual lived only in 2.21.7;
+added to the NUMBERS.md row (below) so Admin can allocate from the ledger.
+**The verifier's own side finding, published rather than hidden:** dawn
+`skyUp` warm moves -11.81 to +7.19 as a real side effect of the aerosolTint
+bias (reproduced on this build at +7.13, within rounding) -- the same
+warming that fixes the aerial poses also warms the near-horizon sky ray at
+dawn, and it is disclosed here as a look consequence rather than a defect,
+since nothing in this lane's pass condition governs `dawnsun`'s own hue.
