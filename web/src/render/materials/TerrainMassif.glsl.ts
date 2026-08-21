@@ -93,9 +93,13 @@ export const TERRAIN_HORIZON_MASSIF = /* glsl */`
           //     most of the meadow it has and a crag gets all of it.
           float msfFoot = smoothstep(OF_HZ_FOOT_F0, OF_HZ_FOOT_F1, msfFootM);
           float msfFar = 1.0 - smoothstep(uMassifFade.x, uMassifFade.y, dist);
-          float msfBand = smoothstep(OF_MSF_BAND0, OF_MSF_BAND1,
-                                     vRelief / max(1.0, uMaxRelief));
-          msfW = msfFoot * msfFar * msfBand * (1.0 - coverSel * 0.7);
+          // RN-2475. THE RELIEF BAND IS hzMsfBand, COMPUTED ONCE IN
+          // TERRAIN_HORIZON_BLOCK and read here rather than recomputed. The
+          // analytic stand-in's plains gain is this gate's exact COMPLEMENT, so
+          // the two have to sum to a constant across the boundary or a shoulder
+          // gets both terms and a crest gets neither; two copies of one
+          // smoothstep is RN-1855's scar and this is the seam it would show on.
+          msfW = msfFoot * msfFar * hzMsfBand * (1.0 - coverSel * 0.7);
           // THE HEIGHT IS EVALUATED UNCONDITIONALLY INSIDE THIS BARE-UNIFORM
           // BRANCH, and the three gates above are applied as a MULTIPLY on the
           // amplitude rather than as a branch around the field. That is not

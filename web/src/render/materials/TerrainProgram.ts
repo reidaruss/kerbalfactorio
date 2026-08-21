@@ -39,7 +39,7 @@ export function makeTerrainMaterial(
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
     horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
-    phaseProbe, horizonAmp, horizonEco, horizonCell, emitGround,
+    phaseProbe, horizonAmp, horizonEco, horizonCell, horizonPlains, emitGround,
     massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff,
     splatScree, splatSnow } = s;
@@ -126,6 +126,7 @@ export function makeTerrainMaterial(
     uHorizonAmp: horizonAmp,
     uHorizonEco: horizonEco,
     uHorizonCell: horizonCell,
+    uHorizonPlains: horizonPlains,
     uMassifAmp: massifAmp,
     uMassifM: massifM,
     uMassifFade: massifFade,

@@ -276,6 +276,13 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // Registered in the same commit that introduces them, per this list's own
   // rule and RN-152's scar.
   'horizoncell', 'horizoncellan',
+  // RN-2475. THE FAR MACRO PAIR, the stand-in's 640 m and 2560 m octaves.
+  // `horizonplains=0` is the exact pre-RN-2475 frame with the cell guard and the
+  // stand-in both still ARMED, which is what `horizoncell=0` cannot be: that
+  // flag zeroes the guard and the stand-in together on purpose, so it is the
+  // before of RN-2421 and not of this. Registered in the same commit that
+  // introduces the term, per this list's own rule and RN-152's scar.
+  'horizonplains',
   // RN-2422. THE GROUND's half of RN-2385's emissive irradiance.
   // `firelightground=0` keeps every program and every machine surface as M3
   // shipped them and zeroes the TERRAIN's take alone, which is what makes the

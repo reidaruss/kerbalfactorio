@@ -183,6 +183,15 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // because the pair is what makes ?horizoncell=0 a single exact negative
     // control while ?horizoncellan= still sweeps the replacement on its own.
     uniform vec2 uHorizonCell;
+    // RN-2475. THE FAR MACRO PAIR's own amplitude, a multiplier on
+    // uHorizonCell.y. Its own scalar and not a third component of that vector
+    // for uHorizonEco's reason: it fails in a way neither of those two can. Too
+    // strong and the distance is a blotchy watercolour at exactly the range
+    // where nothing else is drawing to argue with it, and ?horizonplains=0 has to
+    // be the exact pre-RN-2475 frame while the guard and the stand-in both stay
+    // armed -- which a component of uHorizonCell could not be, because
+    // ?horizoncell=0 zeroes that whole vector as ONE change on purpose.
+    uniform float uHorizonPlains;
     // RN-2340. THE MASSIF TERM: x the albedo value amplitude, y the bump
     // amplitude. Two and not one for uFineAmp's reason exactly: too much value
     // is a blotchy mountain and too much bump is a corrugated one, and a single

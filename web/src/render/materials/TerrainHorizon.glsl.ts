@@ -190,6 +190,18 @@ export const TERRAIN_HORIZON_BLOCK = /* glsl */`
       float hzT = 0.0;
       float hzRough = 1.0;
       float hzVal = 0.0;
+      // RN-2475. THE RELIEF-BAND GATE, COMPUTED ONCE HERE AND READ BY BOTH
+      // CONSUMERS: the massif term, which is what it was written for, and the
+      // analytic stand-in's plains gain, which is the complement of it.
+      //
+      // It moved out of TERRAIN_HORIZON_MASSIF for RN-1855's reason and no
+      // other: a gate and the term that hands over on it written down twice
+      // agree on the day and drift the day one of them moves, and these two now
+      // have to sum to a constant across that boundary for the gain to be
+      // exactly zero on a mountain. Declared OUTSIDE the OF_SCALED guard because
+      // the massif block is compiled into BOTH programs and this is its input.
+      float hzMsfBand = smoothstep(OF_MSF_BAND0, OF_MSF_BAND1,
+                                   vRelief / max(1.0, uMaxRelief));
       #ifndef OF_SCALED
         if (uHorizonAmp.x > 0.0 || uHorizonAmp.y > 0.0
             || uHorizonAmp.z > 0.0 || uHorizonAmp.w > 0.0) {
@@ -310,11 +322,34 @@ export const TERRAIN_HORIZON_BLOCK = /* glsl */`
             // coverSel or on the relief band: a flat far plain is exactly the
             // ground this has to carry (HORIZON_TILE_PX_OUT's own stated cost),
             // so a gate that excused it would excuse the case it exists for.
+            //
+            // RN-2475. AND ITS AMPLITUDE CARRIES THE PLAINS GAIN, which is the
+            // fix for world audit R4's rank 1 and is one multiply.
+            //
+            // On relieved ground the far field is this term PLUS the massif's
+            // two kilometre octaves; on a plain the massif is off by its own
+            // relief-band gate, correctly, and this term is left carrying the
+            // whole of the far ground alone at an amplitude that was fitted at
+            // an AERIAL pose over FOREST. Measured at the new midfield.r250
+            // rectangle, one flag apart: removing this term takes iqr 32.63 to
+            // 17.42 and removing the ENTIRE horizon term takes it to 17.42 as
+            // well, to the digit -- so on plains this is not the main term, it
+            // is the ONLY term.
+            //
+            // THE GAIN RIDES hzMsfBand'S OWN COMPLEMENT, so it is exactly 1.0
+            // wherever the massif is at full strength and every relieved pose is
+            // bit-identical by construction rather than by tuning, and it
+            // introduces no fade constant of its own. See
+            // HORIZON_AN_PLAINS_GAIN for the sweep the 0.5 is read off and for
+            // the coarse-octave design this replaced, which was built, measured
+            // at 20x, moved the rectangle by 0.00 and was thrown away.
             float hzAnA = (ofArtVnoise(pM / OF_HZ_AN_M0 + 17.3) - 0.5)
               * (1.0 - smoothstep(OF_HZ_AN_M0 * 0.125, OF_HZ_AN_M0 * 0.333, footM));
             float hzAnB = (ofArtVnoise(pM / OF_HZ_AN_M1 + 63.1) - 0.5)
               * (1.0 - smoothstep(OF_HZ_AN_M1 * 0.125, OF_HZ_AN_M1 * 0.333, footM));
-            albedo *= vec3(1.0) + uHorizonCell.y * hzT * (1.0 - hzCell)
+            albedo *= vec3(1.0)
+              + uHorizonCell.y * (1.0 + uHorizonPlains * (1.0 - hzMsfBand))
+              * hzT * (1.0 - hzCell)
               * (hzAnA * OF_HZ_AN_WA + hzAnB * OF_HZ_AN_WB) * vTint.xyz;
 
             // THE CHROMA HALF: slope-driven layer tinting, and it is the whole

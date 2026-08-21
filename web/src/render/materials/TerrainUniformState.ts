@@ -21,7 +21,8 @@ import { ART_COARSE_M, ART_FINE_M, FINE_A, FINE_B, FINE_R, FINE_W,
   MID_A_M, MID_B_M, RELIEF_FINE_M } from './TerrainArt.glsl.js';
 import { artAmpFromQuery, emitGroundFromQuery, fineAmpFromQuery,
   groundReliefAmpFromQuery,
-  horizonAmpFromQuery, horizonCellFromQuery, horizonEcoFromQuery, massifAmpFromQuery,
+  horizonAmpFromQuery, horizonCellFromQuery, horizonEcoFromQuery,
+  horizonPlainsFromQuery, massifAmpFromQuery,
   massifFadeFromQuery, massifMFromQuery,
   splatAmpFromQuery, splatFarAmpFromQuery,
   groundTexAmpFromQuery, midAmpFromQuery, specAmpFromQuery, wetBandFromQuery }
@@ -223,6 +224,9 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
   const horizonCell: THREE.IUniform<THREE.Vector2> = {
     value: horizonCellFromQuery(),
   };
+  // RN-2475. The far macro pair's amplitude, its own scalar for the reason
+  // TerrainFragPars gives beside the uniform, shared by reference likewise.
+  const horizonPlains: THREE.IUniform<number> = { value: horizonPlainsFromQuery() };
   // RN-2340. The MASSIF term's two amplitudes and its two octave wavelengths,
   // shared by reference for the same one-authority reason.
   const massifAmp: THREE.IUniform<THREE.Vector2> = {
@@ -282,7 +286,7 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
-    phaseProbe, horizonAmp, horizonEco, horizonCell, emitGround,
+    phaseProbe, horizonAmp, horizonEco, horizonCell, horizonPlains, emitGround,
     massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,
   };
