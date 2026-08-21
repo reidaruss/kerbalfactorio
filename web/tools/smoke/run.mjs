@@ -268,6 +268,21 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // them, per this list's own rule and RN-152's scar.
   'horizon', 'horizonval', 'horizonchroma', 'horizonnrm', 'horizonao',
   'horizoneco', 'horizonecoamp',
+  // RN-2421. THE CELL GUARD and its analytic stand-in. `horizoncell=0` is the
+  // exact pre-RN-2421 rung (both halves off in one flag, because a guard
+  // without its replacement is a state the material has never been in and is
+  // not a before), and `horizoncellan=` sweeps the stand-in alone for the
+  // question that IS separate: whether the replacement is too strong.
+  // Registered in the same commit that introduces them, per this list's own
+  // rule and RN-152's scar.
+  'horizoncell', 'horizoncellan',
+  // RN-2422. THE GROUND's half of RN-2385's emissive irradiance.
+  // `firelightground=0` keeps every program and every machine surface as M3
+  // shipped them and zeroes the TERRAIN's take alone, which is what makes the
+  // night-ground pair one flag apart on one build. `firelight=0` remains the
+  // control over the WHOLE model. Registered in the same commit that
+  // introduces it, per this list's own rule.
+  'firelightground',
   // RN-2340, the MASSIF term: two kilometre-scale octaves on pM that carry the
   // band past where a 256 m-period texture rung can reach. NOT nested under
   // `horizon=0`, deliberately: it is a different mechanism on a different

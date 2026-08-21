@@ -4,20 +4,26 @@
 > **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2435 to RN-2439, `lane/m5-night`: **THE NIGHT.** R3 rank 5, run after M3 and M1 per the corrected queue. The sky had no night term at all (not a dim one: `ofAtmoScatter`'s sun-occlusion test returns bit-for-bit zero once the sun is below the horizon), so `meadownight.skyHi` read iqr EXACTLY 0.00. Fixed with a separate, additive dark-blue-black-zenith-to-warmer-horizon term in `SkyAtmosphere.ts`'s own upward branch, gated to exactly zero above the same sun-elevation band `TerrainAmbient`'s starlight floor already uses (`?nightsky=0` isolates it, reproduces the old flat-black sky to the digit). `skyHi` iqr 0.00 -> **1.79**, `hzBand` luma 0.10 -> **16.88** (brighter toward the horizon, the intended shape). **THE ADJACENT BUG THE BRIEF NAMED, "check both ends of the arc":** the star-fade mask (`daylightFactor`) multiplied its day/night gate by `airDensityAt`'s PHYSICAL Rayleigh-scale-height decay, conflating "thinning air" with "closer to space" -- `flyover`'s own 1,200 m pose was 0.21 scale heights up, so the star field was **~19 per cent visible on an ordinary noon flight**. Replaced with `spaceMaskAt`, linear in the fraction of the 60 km SHELL THICKNESS still overhead (1,200 m reads 2 per cent there), computed and reasoned rather than screenshotted since no shot isolates it. **THE GROUND:** `TerrainAmbient`'s `STARLIGHT` floor raised 1.7x (`meadownight.nearG/mid/shade` 5.68/4.87/2.29 -> **8.29/10.07/5.22** on the shipped build, three fresh-process repeats, bit-identical each time; corrected 2026-08-22 from a first write-up that quoted 12.53/10.46, read off an intermediate build carrying the rejected headlamp candidate below and never re-measured after that candidate was reverted), because the pre-lane floor read as grass crushed to silhouette-black past the lamp's own pool rather than "barely-legible form," this lane's own bar. **THE HEADLAMP CONE:** a flattened-decay candidate (1.45 -> 1.1, candela raised to hold the 6 m calibration point) was tried and REJECTED, measured rather than argued -- it reads well in the open field but BLOWS OUT `smelternight`'s close-range pose worse than before (`firebox` 151 -> 196, five rectangles pinned above 200); `LAMP_CD`/`LAMP_DECAY` ship unchanged. The lever that worked is angular: the SpotLight's own penumbra, 0.6 -> 0.92, since at 0.6 the inner 40 per cent of the half-angle is flat-full and only the outer rim ramps -- a disc with a ramped edge, independent of the radial falloff. At 0.92 there is no flat interior left to have an edge. **ACCEPTANCE:** `meadow`/`vista` (daylit control) and `dawnsun` (the arc's bottom edge) bit-identical to the digit before/after; `setup.upCheck` still 0 on every night pose (A4's fix holds). A disclosed side effect: the added sky term also feeds the night IBL capture, lifting `smelternight`'s own clean-shell negative controls (`hearthL`/`hearthR`) by 2-3 counts under `?lamp=0` -- bounded, and acceptable since night rectangles are judged by eye, not pinned. `npm run check` 8/8. Full record in section 2.26. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2420 to RN-2422, `lane/m2-lattice`: **THE AERIAL LATTICE, and it is a 2 m rock texture stretched over 128 m.** World audit R3's rank 2, published undiagnosed after seven null one-flag arms, convicted here by painted intermediates: the albedo carries it and `vBiomeColor` does not (std 0.28, so this is NOT R2's biome staircase again and `BiomePalette` was never touched); the horizon rungs carry it and the MID rung alone does not; the carrier fetch alone carries it, and HALVING the tile scale DOUBLES the screen period. **The repeating thing is not the tile, it is the tile over eight:** `terraintex._layer_rock` builds its facets from `_worley(s, s, 8, sd)` terraced flat at weight 0.48 of the height and 0.30 of the value, the shipped asset's own DFT reads a spectral LINE at 1024/6 texels with **peak/median 2565**, and RN-2340's retirement guard is written in pixels per TILE, i.e. eight times too late. THE FIX is that guard in the right unit (`HORIZON_CARRIER_CELLS = 8`, `HORIZON_CELL_PX` [24, 12] read off the audit's own three-height measurement) plus an analytic two-octave stand-in on `pM` (40 m and 160 m) faded in by the guard's complement, because `ofArtVnoise` is broadband and has no line to stamp; `HORIZON_A_ANALYTIC = 1.65` is the ONE fitted number and it is fitted to hold the patch std. **`forestair` `?canopy=0`: autocorrelation 0.621 at lag 10 -> NO LOCAL MAXIMUM, patch std 6.22 -> 6.09** (done-when: no max above 0.25 with std >= 5.0, MET); `flyovernoon` 0.372 at lag 6 -> 0.359 at lag 39, i.e. the short repeat gone and a 42 px octave left. `vista.hzBand` iqr **2.21 -> 3.07** and `meadowfield.r100` **51.51 -> 59.63** (M4's owed regression recovered); `meadow`, `forestfloor`, `mtnslope`, `meadowfield` r4-r55 and `midfield` all BIT-IDENTICAL. **One disclosed regression: `vista.nearG` iqr 19.22 -> 17.14**, the grazing near-ground, where the contrast lost was lattice contrast and nothing finer is resolvable there. `?horizoncell=0` is the exact control. **ALSO M3's ROUTED TERRAIN SEAM (RN-2422):** one line in the lit assembly, `EMIT_DECL_GLSL`/`EMIT_UNIFORMS` newly exported so there is still one copy of the model, no `/ PI` (this material is `lit = albedo * irradiance`), near program only, `?firelightground=0` its own isolator -- the night ground beside a furnace gains **+7.4% and +11.9% of luma, +19% and +27% of RED**, the machine box is bit-identical, daylit `smelterhero` and `machine` boxes are bit-identical, and `?firelight=0` still returns every M3 rectangle to its published control TO THE DIGIT. `npm run check` 8/8. Full record in section 2.26. THIS LINE IS A POINTER: replace it, never append to it.)
+
 
 
 
 
 >
-> *(previous pointer, kept one deep: 2026-08-21, RN-2365 to RN-2372,
-> `lane/world-audit-r3`, **THE WORLD LOOK AUDIT, ROUND 3**: the third full
-> judgement of the world against the D-020 bar, taken with R2's whole top five
-> landed. **THE FRONTIER HAS MOVED FROM SURFACE TO LIGHT** -- the ground is now
-> a material everywhere the eye stops on it, and the five largest remaining
-> defects (the air's own hue, an aerial lattice, emissives that light nothing,
-> the mid-field carpet's flatness, and an unbuilt night) are all about what
-> lights the world and what colour that light is. Full record in section 2.24;
-> ranked queue in docs/web/WORLD-AUDIT-R3-2026-08-21.md.)*
+> *(previous pointer, kept one deep: 2026-08-21, RN-2410 to RN-2419,
+> `lane/m4-midnear`, **THE MID FIELD, NEAR END** (`meadowfield.r55` 21.56 ->
+> 38.93 on `GrassTuning.MAT_PATCH_AMP`, a mean-preserving per-patch value
+> multiplier, with `r100` 55.70 -> 51.51 disclosed and routed; section 2.25),
+> and RN-2385 to RN-2389, `lane/m3-emissive`, **EMISSIVES THAT LIGHT
+> SOMETHING** (the emissive was a hundred times too dim to be light;
+> `FIRE_L_HOT = 40` from a blackbody ratio, six emitters in a compile-time
+> array so `programs` is unchanged, `smelternight` whole frame 1.80 -> 7.12,
+> and the terrain seam routed to M2 and paid at RN-2422; section 2.25).
+> Before those, RN-2365 to RN-2372, `lane/world-audit-r3`, **THE WORLD LOOK
+> AUDIT, ROUND 3**: the frontier moved from SURFACE to LIGHT. Full records in
+> sections 2.24 and 2.25; ranked queue in
+> docs/web/WORLD-AUDIT-R3-2026-08-21.md.)*
 
 ## 1. Mission
 Make surface→orbit→interplanetary→surface look seamless and run fast. Own the "rendering magic" that sells continuous traversal, plus the techniques that let a dense 3D factory render without melting the GPU.
@@ -8328,3 +8334,293 @@ from a first count of ten. Files touched: `Headlamp.ts`,
 `materials/Atmosphere.glsl.ts`, `materials/SkyAtmosphere.ts`,
 `materials/TerrainAmbient.ts`, and `tools/smoke/run.mjs` (the `nightsky` flag
 registration only). Branch `lane/m5-night`, pushed, **not merged to main**.
+
+## 2.26 THE AERIAL LATTICE (RN-2420 to RN-2422, 2026-08-21, `lane/m2-lattice`)
+
+> **Base:** `origin/main` at `6c196e59`. **Numbers:** RN-2420 to RN-2422 used of
+> the RN-2420 to RN-2434 block; **RN-2423 to RN-2434 SURRENDERED UNUSED**
+> (abandoned per rule 4, never reuse). **Frames:** `docs/screenshots/RN2420_*`,
+> 17 files. World audit R3's **rank 2**, dispatched after M3 and carrying M3's
+> own routed terrain seam.
+
+### 2.26.1 THE ONE-LINE ANSWER
+
+**The lattice is a 2 m rock texture stretched over 128 m, and what reaches the
+screen is not the tile but the tile's own eight-cell worley grid.**
+`terraintex._layer_rock` builds its facets from `texgen._worley(s, s, 8, sd)`
+terraced flat, at weight 0.48 of the height and another 0.30 of the value; at
+the horizon rung's 128 m tile that cell lattice has a 16 m pitch, and at
+`forestair`'s aerial footprint it lands at about ten screen pixels. RN-2340's
+own retirement guard is written in PIXELS PER TILE, so it is eight times too
+late to catch it, and the value half has no legal band left anywhere in the far
+field.
+
+### 2.26.2 THE CONVICTION (RN-2420), in the order it was taken
+
+The instrument first, because the audit's was ad hoc: `web/tools/smoke/latmeter.mjs`
+is section 4.2's measurement written down as a tool (column-mean DFT with DC and
+three low bins dropped, peak/median, the first autocorrelation MAXIMUM after the
+first MINIMUM, and the patch std). On the shipped build at `forestair` under
+`?canopy=0`, patch 256 x 128 at (900, 620), it returns **acMax 0.620 at lag 10
+and std 6.22** against the audit's own **0.622 at lag 10 and 6.21**, so the
+instrument is verified against a figure it did not produce. Its dominant period
+reads 9.85 px where the audit reported 12.19; both are the same peak two DFT
+bins apart, and the autocorrelation lag (10) agrees with THIS tool's period
+rather than with that one, which is stated rather than hidden.
+
+**THE PAINTED INTERMEDIATES**, L2's 2.21.2 method exactly: one line of
+`TerrainFragLight.glsl.ts` (or, for the two rung arms, one line of
+`TerrainHorizon.glsl.ts`), one build each, each served from a preview restarted
+after it with a served-vs-disk bundle hash printed before the capture.
+
+| painted | frame | period / acMax / std | verdict |
+|---|---|---|---|
+| `albedo` | `RN2420_term_albedo` | 9.85 / 0.584 at 10 / 7.82 | **the lattice**, so it is not the lighting, the shadow, the specular or the air |
+| `vBiomeColor` | `RN2420_term_biomecolor` | 64.00 / **none** / **0.28** | **flat.** The palette carries NO lattice here, so this is not R2's rank 2 a second time and `BiomePalette` never needed the flagged coordination the brief allowed for |
+| `hzVal * hzT` | `RN2420_term_hzval` | 9.85 / 0.256 at 10 / 24.60 | **the far-ground rungs** |
+| the same with `ft` forced to 0 (MID rung alone) | `RN2420_term_hzval_midonly` | 9.14 / 0.244 at 3 / **4.05** | **not the mid rung**: at this footprint its 32 m tile is fully minified and carries almost nothing |
+| the same with `ft` forced to 1 (HORIZON rung alone) | `RN2420_term_hzval_faronly` | 9.85 / 0.216 at 11 / 26.90 | **the horizon rung** |
+| the far rung with its anti-tiling warp removed | (reverted, not kept) | 9.85 / 0.268 at 10 / 24.63 | **not the warp** |
+| the carrier alone on the DOMINANT plane, `texture2D(uSplatRock, (vPhase * OF_HZ_FREP).xy).r` | `RN2420_term_carrierxy` | 9.85 / 0.288 at 11 / 6.56 | **the carrier's own content** |
+| the same fetch at HALF the repeat, i.e. a 256 m tile | `RN2420_term_carrierxy_halfrep` | **23.27** / 0.259 at 20 / 10.38 | **halving the tile scale DOUBLES the screen period**, so the repeat is locked to the carrier's tile and not to the mesh, the screen or the pixel grid |
+| the far tile's own PITCH, `fract(vPhase.xz * OF_HZ_FREP)` | `RN2420_term_fartilepitch` | **51.20** / 0.458 at 102 / 24.57 | the tile is 51 px wide here, so the 9.85 px repeat is the tile over about five, NOT the tile |
+
+**AND THE ASSET SAYS THE SAME THING FROM THE OTHER SIDE.** The same instrument
+pointed at `assets/textures/dist/of_terrain_rock.png` (`--chan=r --w=1024
+--h=512 --drop=2`) returns a dominant column period of **170.67 texels, which is
+1024 / 6, at a peak/median of 2565**; the g, b and a channels return 85.33,
+170.67 and 170.67 at 176, 88 and 2478. A peak/median in the thousands is not a
+texture with some structure in it, it is a spectral LINE. 170.67 texels of a
+128 m tile is 21.3 m, which at this patch's own 2.5 m per pixel (calibrated by
+the tile-pitch arm above: 128 m = 51.2 px) is 8.5 px against the 9.85 px
+measured, i.e. two DFT bins. The loop closes: generator, asset, frame.
+
+**THE FLAG MATRIX THE AUDIT NEVER RAN AT THIS POSE.** Seven arms were null there
+and `?horizon=0` was not among them; it was run only at `flyovernoon`. On one
+build, one flag apart, at `forestair` under `?canopy=0`:
+
+| arm | acMax after first min | std |
+|---|---|---:|
+| shipped | **0.620 at lag 10** | 6.24 |
+| `?horizonval=0` | **none** | **3.39** |
+| `?horizon=0` | **none** | **3.38** |
+| `?horizonnrm=0` | 0.597 at lag 10 | 6.35 |
+| `?horizonao=0` | 0.620 at lag 10 | 6.26 |
+| `?horizonmassif=0` | 0.621 at lag 10 | 6.22 |
+| `?groundmid=0` | 0.621 at lag 10 | 6.22 |
+
+So it is the horizon rungs' **VALUE HALF** alone, and the same table is the trap
+the fix has to avoid: removing that half removes the lattice AND 2.9 counts of
+the patch's 6.2 counts of contrast.
+
+### 2.26.3 THE FIX (RN-2421): THE CELL GUARD AND ITS ANALYTIC STAND-IN
+
+**The guard is RN-2340's own retirement in the unit the artefact is in.**
+`HORIZON_TILE_PX_OUT` = [12, 5] px per TILE is argued from "at 24 px a repeat is
+a texture, at 6 px it is a lattice", and the argument is right while the unit is
+wrong: the repeating thing is the carrier's cell, an eighth of the tile.
+`HORIZON_CARRIER_CELLS = 8` (the authored worley count, chosen over the
+projected six because it is the SMALLER cell and therefore the more protective
+guard), so the cells are 4 m and 16 m, and `HORIZON_CELL_PX` = **[24, 12]**,
+read off the frame rather than argued: the audit measured the lattice at 9.14 px
+at y540 and 12.80 px at y660 and **no peak at all** at y820, so it is present
+where the repeat spans nine to thirteen pixels and absent where it spans twenty
+or more. In footprint metres that is [0.167, 0.333] for the mid rung and
+[0.667, 1.333] for the horizon rung.
+
+**WHICH RETIRES THE CARRIER'S VALUE HALF EVERYWHERE, and that is the finding
+rather than a side effect.** The mid rung fades IN at a 0.60 m footprint and its
+cell is under twelve pixels by 0.33 m; the horizon rung fades in at 1.80 m and
+its cell is gone by 1.33 m. With this carrier the value half never had a legal
+band. The guard is still written as a fade rather than as a deletion because it
+is the RULE that is right, and an asset without a spectral line would keep its
+value half automatically.
+
+**THE STAND-IN** is two `pM` octaves at **40 m and 160 m** (weights 0.62 / 0.38,
+the massif's own split), faded in by the guard's own complement so the handover
+has one boundary and no constant of its own, and retired at each octave's own
+Nyquist point on the curve every fade in this material uses. **Why an analytic
+field is allowed where the carrier is not** is the measured difference above and
+not a preference: `ofArtVnoise` is broadband and has no line to stamp, which is
+why the massif's two octaves on the same coordinate have never produced a
+lattice at any range. `HORIZON_A_ANALYTIC = 1.65` is **the lane's one fitted
+number**, fitted against an instrument: it is the amplitude that holds the
+patch's std at the shipped 6.2 once the carrier has retired out of it (2.6 was
+measured first and overshot to 8.91).
+
+`?horizoncell=0` is the exact pre-lane rung, both halves in one flag, nested
+under `?horizon=0`; `?horizoncellan=` sweeps the stand-in alone. Both are
+registered in `run.mjs` in this commit and both are published by
+`__ofTerrainArt.horizonDefault()` with their derivations (`cellM`, `cellPx`,
+`cellFootMid`, `cellFootFar`, `anM`, `anW`) so a probe can check the arithmetic
+rather than the result.
+
+### 2.26.4 THE PASS CONDITION, JUDGED
+
+`forestair`, `?canopy=0`, one flag apart on one build
+(`RN2420_before_forestair` against `RN2420_after_forestair`):
+
+| | before (`?horizoncell=0`) | after |
+|---|---:|---:|
+| autocorrelation max after the first min | **0.621 at lag 10** | **NO LOCAL MAXIMUM** |
+| patch std | 6.22 | **6.09** |
+| period / peak-median | 9.85 px / 16.54 | 64.00 px / 32.99 |
+| `box` luma / iqr / warm | 96.67 / 23.49 / 1.67 | 96.42 / 24.22 / 1.46 |
+
+**Done-when: no local maximum above 0.25 with the std at or above 5.0. MET**,
+and the before column reproduces the audit's own committed figures to the digit,
+so the control is verified rather than asserted. Stated honestly: the
+autocorrelation has no local maximum but is still rising at the end of the
+window (0.315 at the last lag), which is the 160 m octave's long-range
+correlation and not a repeat. **By eye at 1x the grid is gone** and the ground
+reads as irregular mottle.
+
+`flyovernoon`, `?canopy=0`: the short repeat goes (**0.372 at lag 6 -> 0.359 at
+lag 39**) and the std rises 11.62 -> 14.16. What is left at lag 39 is a 42.67 px
+period, which is the stand-in's coarse octave and is above the 24 px line this
+lane's own guard calls a texture. By eye the grid is gone at that pose too.
+
+**GROUND POSES UNTOUCHED, and it is by construction rather than by luck** (the
+rungs are footprint-gated and never reach a standing eye):
+
+| pose | before | after |
+|---|---|---|
+| `meadow` `box` | 85.23 / 56.47 / 25.29 | **bit-identical** |
+| `forestfloor` `box` | 29.63 / 24.08 / 8.95 | **bit-identical** |
+| `mtnslope` `box` | 127.04 / 89.19 / 26.54 | **bit-identical** |
+| `meadowfield` r4 / r10 / r25 / r55 | 65.27 / 48.27 / 42.92 / 38.93 | **all four bit-identical** |
+| `midfield` r18 / r27 / r35 | 35.36 / 44.20 / 41.70 | **all three bit-identical** |
+
+**WHAT MOVED AT RANGE, all of it disclosed:**
+
+| rectangle | before | after | |
+|---|---:|---:|---|
+| `vista.hzBand` iqr | 2.21 | **3.07** | +39% on the 4.7 km ridge, which is R3's rank 1's own number |
+| `vista.mid` iqr | 14.36 | **17.08** | +19% |
+| `vistanoon.hzBand` iqr | 2.07 | 2.21 | |
+| `vistanoon.mid` iqr | 8.00 | 9.79 | |
+| `flyovernoon.under` iqr | 73.40 | 76.33 | the audit's decisive aerial number |
+| `flyovernoon.shadowStep` iqr | 47.77 | 45.85 | the staircase keeps softening |
+| `meadowfield.r100` iqr | 51.51 | **59.63** | M4's own disclosed regression, recovered past its pre-M4 55.70 |
+| **`vista.nearG` iqr** | **19.22** | **17.14** | **-11%, a REGRESSION, and it is the honest cost** |
+
+`vista.nearG` is the 5-to-40 m scree at a GRAZING pose, where the dFdy arm makes
+the footprint large and the carrier's cell is therefore in the lattice band
+there too. The contrast it loses was lattice contrast, and what replaces it
+cannot be as fine because the pixel cannot resolve anything finer without
+gridding again. Its luma moves 147.96 -> 145.00 with it. Reported rather than
+tuned away.
+
+### 2.26.5 THE M3 SEAM (RN-2422): THE FIRE LIGHTS THE GROUND IT STANDS ON
+
+RN-2385's own owed item, one call site. `injectEmissiveLight` anchors on
+`#include <lights_fragment_begin>` and the terrain has no such include, so the
+terrain takes `EMIT_DECL_GLSL` and `EMIT_UNIFORMS` directly -- both newly
+exported from `EmissiveLight.ts`, so there is still exactly ONE copy of
+`ofEmitIrradiance` and one set of uniform holders -- and adds one line to the
+lit assembly: `lit += albedo * ofEmitIrradiance(pM + uBodyCenter, n) *
+uEmitGround`. **No division by PI**, deliberately: the stock splice writes
+`irradiance += E * PI` because three multiplies by `BRDF_Lambert = albedo / PI`
+afterwards, and this material's model is `lit = albedo * irradiance` with no such
+convention. **Near program only**, because the emitters' positions are
+engine-space metres and the scaled scene's unit is 1e5 m, so out there the term
+is not expressible in the same numbers.
+
+`?firelightground=0` is the seam's own isolator, and it exists because the
+machine half and the ground half fail differently (a shell too bright is a
+material error, a ground too bright is a footprint of light on a surface with no
+shadowing in it). It makes the pair ONE FLAG apart on one build.
+
+**THE PAIR**, `smelternight` at `?lamp=0 ?props=0` (the grass removed so the
+ground is visible at all), `RN2420_seam_off_smelternight` against
+`RN2420_seam_on_smelternight`:
+
+| rectangle | seam off | seam on | |
+|---|---:|---:|---|
+| ground left (60,700-300,825) | 2.690 | **2.888** | +7.4% luma, and **+19% RED** (2.813 -> 3.347) |
+| ground right (1300,700-1560,825) | 2.402 | **2.688** | +11.9% luma, **+27% RED** (2.884 -> 3.662) |
+| the machine box | 13.66 / 12.50 / 42.37 | **bit-identical** | the seam adds nothing to the machine |
+| whole frame | 7.13 | 7.16 | |
+
+**The modest size is the pose and not the term, and the painted intermediate is
+what says so**: `RN2420_term_emit_smelternight` paints
+`ofEmitIrradiance * 40` straight to the terrain's `gl_FragColor` and shows a
+bright pool of fire light on the ground at both bottom corners. At
+`smelterhero`'s 3.2 m standoff the machine fills the frame and the only terrain
+in it is 8 to 15 m out at the edges, where an inverse-square falloff has already
+spent itself. **A pose with a fire and open ground in front of it is owed.**
+
+**DAYLIT GROUND IS UNTOUCHED**, one flag apart: `smelterhero` `box`
+63.77 / 51.81 / 53.42 **bit-identical** (whole frame 75.48 -> 75.49), `machine`
+`box` 22.37 / 17.66 / 1.33 **bit-identical** (43.03 -> 43.17), and `forestair`,
+which has no emitter in frame, is identical to the digit on every field
+(96.42 / 24.22 / 1.46, world 125.84) between the lattice-only build and the
+lattice-plus-seam build, because `uEmitN` is 0 and the loop breaks on its first
+iteration.
+
+**M3's OWN CONTROL IS STILL EXACT.** At `smelternight` `?lamp=0`, this build
+reproduces M3's committed after-column to the digit (`firebox` 21.05, `plate`
+9.48, `hearthL` 3.97, `hearthR` 4.29, `peep` 44.13, `strip` 78.69, `placard`
+25.39, `bandLit` 19.20, `band` 16.87, `bandShade` 14.25, `sunface` 7.24), and
+`?firelight=0` returns every one of them to M3's published control value to the
+digit (1.51 / 0.41 / 4.74 / 2.72 / 1.61 / 1.94 / 3.94 / 5.18 / 4.77). So the
+seam did not perturb the machine half at all.
+
+### 2.26.6 Rails, cost and determinism
+
+**Cost, WG-189, `forestair` `?canopy=0`, three fresh processes per build:**
+before `frameMs.p50` 3.2 / 4.2 / 3.3 with `passMs.near` 2.4 / 3.5 / 2.4 and
+`programs` 53 / 55 / 53; after **3.2 / 3.2 / 3.2** with near 2.5 / 2.2 / 2.4 and
+`programs` 53 / 53 / 53. `vramMB` 114.8 in every arm. The two `ofArtVnoise`
+evaluations and one extra irradiance loop are **under the harness's own spread**,
+and the after arm is the tighter one; reported as that rather than as a number.
+
+**The served build.** A `vite preview` this lane started on `127.0.0.1:5877`,
+`--strictPort`, sentinel `dist/of-sentinel-rn2420.txt` written into this
+worktree's own `dist` before the server started, and a **served-vs-disk SHA-256
+of the bundle** printed before every batch; every diagnostic build restarted it
+(the sirv startup-snapshot trap), and the PID was read from
+`Get-NetTCPConnection -LocalPort 5877` and killed by PID at each restart. **The
+byte-level proof that no diagnostic shipped:** after the last paint was reverted
+the build came back at `index-B-eIdgeX.js`, the same hash as the build taken
+before that paint.
+
+**Every pose came back `valid: true`** (which is `poolRefused === 0` by the
+probe's own definition) at 1600x900 on real Windows D3D11 through ANGLE
+(RTX 4060 Ti).
+
+**GATES: `npx tsc --noEmit`, `npx vite build` and `cd web && npm run check` run
+as SEPARATE steps with each exit status read on its own; 0, 0 and 8 of 8.**
+Did not touch `web/wasm/dist/*`, `test/expected.json`, any texgen, Blender or
+`assets/textures/dist` byte, `Atmosphere*`/`SkyProbe` (M1's), `render/grass/*`
+or `TerrainCoverFar*` (M4's), `Headlamp`, `ShadowRig` or `ContactPass`.
+`BiomePalette` was NOT edited and did not need to be (2.26.2). Ten source
+files: `TerrainHorizon.ts`, `TerrainHorizon.glsl.ts`, `TerrainFragLight.glsl.ts`,
+`TerrainFragPars.glsl.ts`, `TerrainAmpQuery.ts`, `TerrainUniformState.ts`,
+`TerrainProgram.ts`, `TerrainHorizonHandle.ts`, `EmissiveLight.ts` (two exports
+and their doc block, nothing else) and `web/tools/smoke/run.mjs` (three flag
+registrations), plus the new `web/tools/smoke/latmeter.mjs`. Branch
+`lane/m2-lattice`, pushed, **not merged to main**.
+
+### 2.26.7 Owed
+
+1. **`vista.nearG` is down 11 per cent** (2.26.4) and the band it lost is the
+   grazing near-ground, where nothing this lane built can reach: the stand-in's
+   fine octave is retired there by its own Nyquist fade. A finer world-locked
+   field that survives a large footprint is a real open question and it is
+   nobody's yet.
+2. **The carrier is the defect and the carrier was not touched.** A rock layer
+   whose value channel is not dominated by one worley frequency would let the
+   horizon rung's value half live again; that is a `terraintex` change and an
+   asset rebuild, i.e. a different domain's lane, and it would move every
+   near-field splat rectangle in the project.
+3. **The NORMAL and ROUGHNESS halves still read the same cells.** They measured
+   null on this instrument (`?horizonnrm=0` moves the lattice metric by 0.02),
+   so the guard was deliberately NOT applied to them; if a lighting-angle pose
+   ever shows the grid through the normal, the guard is one `mix` away.
+4. **A night pose with a fire and open ground** (2.26.5). Every emissive frame
+   in the project is a machine filling the viewport.
+5. **`HORIZON_FOOT_OUT`'s doc comment says "8.0 m to 21.3 m"** and the code it
+   documents computes 10.67 and 25.6 from `HORIZON_TILE_PX_OUT` = [12, 5].
+   Stale prose, not a stale number; left for the file's owner rather than
+   silently edited under a different lane's RN.

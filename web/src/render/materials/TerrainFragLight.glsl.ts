@@ -9,6 +9,7 @@
 // Split out of TerrainShader.ts at RN-2051, GLSL unchanged to the character.
 
 import { TERRAIN_SUN_IRRADIANCE } from './TerrainAmbient.js';
+import { EMIT_INSTALLED } from './EmissiveLight.js';
 
 /**
  * The direct-sun irradiance literal, INLINED into the GLSL rather than passed as
@@ -117,6 +118,46 @@ export const TERRAIN_FRAG_LIGHT = /* glsl */`
         + sunT * (${SUN_IRR} * max(dot(up, sd), 0.0) * bounceShadow));
       vec3 lit = albedo * (uAmbient + skyAmb * skyViewEff + ground * groundView
         + sunT * (${SUN_IRR} * ndl * shadow));
+
+      // RN-2422. THE FIRE LIGHTS THE GROUND IT STANDS ON, and this one line is
+      // the half of RN-2385 its own verifier routed here.
+      //
+      // M3 built the emissive irradiance model and spliced it into the machine
+      // and prop programs, and it could not reach the ground: injectEmissiveLight
+      // anchors on #include <lights_fragment_begin>, which this material does not
+      // have, because it lights itself from uSunDir and reads no three.js light
+      // at all. That was recorded there as luck rather than method
+      // (Headlamp.ts's header) and as the FIRST reason a pool of real point
+      // lights was rejected. The declaration and the four uniform holders are
+      // imported from EmissiveLight.ts, so there is exactly one copy of the
+      // model and the ground and the furnace cannot drift apart.
+      //
+      // NO DIVISION BY PI HERE, and that is not an omission. The stock splice
+      // writes irradiance += E * PI because three multiplies irradiance by
+      // BRDF_Lambert = albedo / PI afterwards; this material's whole lighting
+      // model is lit = albedo * irradiance with no such convention, so the
+      // same physical contribution is albedo * E written plainly.
+      //
+      // ENGINE SPACE: uEmitPos is written in engine units by EmissiveLight's
+      // own selector, pM is planet-centred METRES, and the two agree exactly
+      // when uMetresPerUnit is 1, which is the near scene. This block is
+      // compiled out of the scaled program for that reason (TerrainFragPars),
+      // so the addition below is only ever evaluated where the frames agree.
+      //
+      // It rides the BUMPED normal n, like the specular below and unlike
+      // skyView above: a firebox 1.2 m away is a local source and the ripple
+      // is exactly what should break its falloff into relief.
+      //
+      // ?firelight=0 multiplies uEmitAmp by zero and leaves the program
+      // untouched, so this term inherits M3's own exact control rather than
+      // needing one of its own.
+      // Under ?firelight=off the declaration is not spliced at all, so the USE
+      // has to disappear with it or the program stops compiling; that is what
+      // the interpolation below is, and it is the same three-state flag rather
+      // than a second one.
+      ${EMIT_INSTALLED ? `#ifndef OF_SCALED
+        lit += albedo * ofEmitIrradiance(pM + uBodyCenter, n) * uEmitGround;
+      #endif` : ''}
 
       // THE SPECULAR LOBE (RN-731). Until this existed the line above WAS the
       // entire lighting model: albedo times irradiance, pure Lambert, with no

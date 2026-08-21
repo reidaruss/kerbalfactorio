@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { TERRAIN_AMBIENT, TERRAIN_SKY_AMBIENT } from './TerrainAmbient.js';
 import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 import { FAR_SCALE } from '../Scenes.js';
+import { EMIT_UNIFORMS } from './EmissiveLight.js';
 import type { TerrainMaterialOptions } from './TerrainMaterialTypes.js';
 import type { TerrainUniformState } from './TerrainUniformState.js';
 
@@ -38,7 +39,8 @@ export function makeTerrainMaterial(
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
     horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
-    phaseProbe, horizonAmp, horizonEco, massifAmp, massifM, massifFade,
+    phaseProbe, horizonAmp, horizonEco, horizonCell, emitGround,
+    massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff,
     splatScree, splatSnow } = s;
   // UniformsLib.lights is MANDATORY for a lights:true ShaderMaterial: three
@@ -123,6 +125,7 @@ export function makeTerrainMaterial(
     // is what makes the runtime handle and both materials one object.
     uHorizonAmp: horizonAmp,
     uHorizonEco: horizonEco,
+    uHorizonCell: horizonCell,
     uMassifAmp: massifAmp,
     uMassifM: massifM,
     uMassifFade: massifFade,
@@ -133,6 +136,15 @@ export function makeTerrainMaterial(
     uSplatScree: splatScree,
     uSplatSnow: splatSnow,
   });
+  // RN-2422. THE EMISSIVE IRRADIANCE BUNDLE, the four holders EmissiveLight
+  // writes every frame, taken BY REFERENCE for the atmosphere's own reason
+  // twenty lines up: the ground and the machine beside it must be lit by one
+  // set of emitters, and sharing the objects is what makes that structural.
+  // Assigned to BOTH programs: the scaled one compiles the term out, so its
+  // uniforms are stripped by the compiler and these entries go nowhere, which
+  // is cheaper than a second uniform table that could disagree.
+  Object.assign(uniforms, EMIT_UNIFORMS);
+  uniforms.uEmitGround = emitGround;
   const m = new THREE.ShaderMaterial({
     uniforms,
     vertexShader: terrainVertexShader(o.depth),

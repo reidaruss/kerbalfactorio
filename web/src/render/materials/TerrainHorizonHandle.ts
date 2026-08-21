@@ -14,7 +14,11 @@
 // is what makes a before/after attributable to the term instead of to the run.
 
 import {
-  HORIZON_A_AO, HORIZON_A_CHROMA, HORIZON_A_NORMAL, HORIZON_A_VALUE,
+  HORIZON_AN_M, HORIZON_AN_WA, HORIZON_AN_WB,
+  HORIZON_A_ANALYTIC, HORIZON_A_AO, HORIZON_A_CHROMA, HORIZON_A_NORMAL,
+  HORIZON_A_VALUE,
+  HORIZON_CELL_FOOT_FAR, HORIZON_CELL_FOOT_MID, HORIZON_CELL_FAR_M,
+  HORIZON_CELL_MID_M, HORIZON_CELL_PX,
   HORIZON_ECO_GATE, HORIZON_ECO_PX, HORIZON_FAR_REPEATS, HORIZON_FAR_TILE_M,
   HORIZON_FOOT_FAR, HORIZON_FOOT_MID, HORIZON_FOOT_OUT, HORIZON_MID_REPEATS,
   HORIZON_MID_TILE_M, HORIZON_TILE_PX_OUT,
@@ -61,6 +65,20 @@ Record<string, unknown> {
       return horizonEco.value;
     },
     getHorizonEco(): number { return horizonEco.value; },
+    /** RN-2421. The cell guard's arming scalar and the analytic stand-in's
+     *  amplitude, on setHorizon's rule (negatives refused, not clamped). */
+    setHorizonCell(armed: number, analytic?: number): [number, number] {
+      const v = s.horizonCell.value;
+      if (Number.isFinite(armed) && armed >= 0) v.x = armed;
+      if (analytic !== undefined && Number.isFinite(analytic) && analytic >= 0) {
+        v.y = analytic;
+      }
+      return [v.x, v.y];
+    },
+    getHorizonCell(): [number, number] {
+      const v = s.horizonCell.value;
+      return [v.x, v.y];
+    },
     /** RN-2340. The MASSIF term's two amplitudes, on setHorizon's rule. */
     setMassif(value: number, bump?: number): [number, number] {
       const v = s.massifAmp.value;
@@ -111,12 +129,17 @@ Record<string, unknown> {
       massifAmp: [number, number]; massifShipped: [number, number];
       massifM: [number, number]; massifFadeM: [number, number];
       massifBand: [number, number];
+      cell: [number, number]; cellShipped: number;
+      cellM: [number, number]; cellPx: [number, number];
+      cellFootMid: [number, number]; cellFootFar: [number, number];
+      anM: [number, number]; anW: [number, number];
     } {
       const p = new URLSearchParams(self.location.search);
       const boot = horizonAmpFromQuery();
       const bootM = massifAmpFromQuery();
       const keys = ['horizon', 'horizonval', 'horizonchroma', 'horizonnrm',
-        'horizonao', 'horizoneco', 'horizonecoamp', 'horizonmassif',
+        'horizonao', 'horizoneco', 'horizonecoamp', 'horizoncell',
+        'horizoncellan', 'horizonmassif',
         'horizonmassifval', 'horizonmassifbump', 'horizonmassifm'];
       const tiles: [number, number, number, number] = [
         HORIZON_MID_TILE_M, HORIZON_FAR_TILE_M,
@@ -164,6 +187,18 @@ Record<string, unknown> {
         massifM: [s.massifM.value.x, s.massifM.value.y],
         massifFadeM: [MASSIF_FADE_M[0], MASSIF_FADE_M[1]],
         massifBand: [MASSIF_BAND[0], MASSIF_BAND[1]],
+        // RN-2421. The cell guard, published in BOTH units for footOut's own
+        // reason: a probe can check the derivation (tile / cells, then cell /
+        // pixels) rather than the result, and `cell` is the LIVE pair so a
+        // frame can prove which arm it is.
+        cell: [s.horizonCell.value.x, s.horizonCell.value.y],
+        cellShipped: HORIZON_A_ANALYTIC,
+        cellM: [HORIZON_CELL_MID_M, HORIZON_CELL_FAR_M],
+        cellPx: [HORIZON_CELL_PX[0], HORIZON_CELL_PX[1]],
+        cellFootMid: [HORIZON_CELL_FOOT_MID[0], HORIZON_CELL_FOOT_MID[1]],
+        cellFootFar: [HORIZON_CELL_FOOT_FAR[0], HORIZON_CELL_FOOT_FAR[1]],
+        anM: [HORIZON_AN_M[0], HORIZON_AN_M[1]],
+        anW: [HORIZON_AN_WA, HORIZON_AN_WB],
       };
     },
   };
