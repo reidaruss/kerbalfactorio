@@ -15,7 +15,8 @@ import type { TerrainWaterBand } from './TerrainMaterialTypes.js';
 import { SPLAT_A_VALUE, SPLAT_A_CHROMA, SPLAT_A_NORMAL }
   from './TerrainSplat.js';
 import { SPLAT_A_FAR } from './TerrainCoverFar.js';
-import { HORIZON_A_ANALYTIC, HORIZON_A_AO, HORIZON_A_CHROMA, HORIZON_A_NORMAL,
+import { HORIZON_AN_PLAINS_GAIN,
+  HORIZON_A_ANALYTIC, HORIZON_A_AO, HORIZON_A_CHROMA, HORIZON_A_NORMAL,
   HORIZON_A_VALUE,
   MASSIF_A_BUMP, MASSIF_A_M, MASSIF_A_VALUE, MASSIF_B_M, MASSIF_FADE_M }
   from './TerrainHorizon.js';
@@ -277,6 +278,26 @@ export function horizonCellFromQuery(): THREE.Vector2 {
   return new THREE.Vector2(
     1, ampParam(p, 'horizoncellan', 1) * HORIZON_A_ANALYTIC,
   );
+}
+
+/**
+ * RN-2475. THE FAR MACRO PAIR's amplitude, as a multiplier on the stand-in's.
+ *
+ * NESTED UNDER BOTH `?horizon=0` AND `?horizoncell=0`, and the second nesting is
+ * the one worth stating: this pair rides `uHorizonCell.y` and hands over on the
+ * stand-in's own 160 m fade, so with the stand-in off it is not a term this
+ * material has ever shipped. An un-nested third term makes every "before" arm a
+ * half-before, which is the scar `massifAmpFromQuery` and `horizonCellFromQuery`
+ * both already carry.
+ *
+ * `?horizonfar=0` is therefore the EXACT pre-RN-2475 frame with the guard and
+ * the stand-in both still armed, which is the control every number in
+ * rendering.md 2.28 is read against.
+ */
+export function horizonPlainsFromQuery(): number {
+  const p = new URLSearchParams(self.location.search);
+  if (p.get('horizon') === '0' || p.get('horizoncell') === '0') return 0;
+  return ampParam(p, 'horizonplains', 1) * HORIZON_AN_PLAINS_GAIN;
 }
 
 /**

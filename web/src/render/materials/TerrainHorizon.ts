@@ -429,6 +429,80 @@ export const HORIZON_AN_WB = 0.38;
 export const HORIZON_A_ANALYTIC = 1.65;
 
 /**
+ * RN-2475. THE PLAINS MACRO GAIN, and it is the whole of the fix for world audit
+ * R4's rank 1.
+ *
+ * WHAT IS ACTUALLY WRONG, and it is neither a missing term nor a broken gate.
+ * At the plains site, one flag apart on one build, on the new `midfield.r250`
+ * rectangle (the first rectangle in this project that frames the plains far
+ * ground -- see artframe.js for why `meadow.hzBand` never could):
+ *
+ *   shipped                iqr 32.63
+ *   ?horizoncellan=0       iqr 17.42   the stand-in removed
+ *   ?horizon=0             iqr 17.42   EVERYTHING removed, to the digit
+ *   ?horizonmassif=0       iqr 32.63   the massif is a NULL there
+ *   ?aerosol=0             iqr 32.62   the AIR is a null there, 0.01 counts
+ *   ?grass=0               iqr 32.63   the rectangle is pure terrain
+ *   ?horizoncellan=6       iqr 133.05  and the term responds to amplitude
+ *
+ * Read those seven rows together and there is only one conclusion available.
+ * **RN-2421's analytic stand-in is the ONLY thing drawing the plains far ground
+ * -- it is 15.2 of the rectangle's 32.6 counts and removing it lands exactly on
+ * removing the whole term -- and its amplitude was fitted somewhere else.**
+ * HORIZON_A_ANALYTIC was chosen to hold `forestair`'s patch std at 6.24, i.e. at
+ * an AERIAL pose over FOREST, and the plains far ground inherited that number
+ * without anybody ever measuring it there, because there was no rectangle there
+ * to measure with.
+ *
+ * WHY A PLAIN NEEDS MORE OF IT THAN A MOUNTAIN DOES, which is the argument this
+ * constant rests on. On relieved ground the far field is the stand-in PLUS the
+ * massif's 390 m and 1240 m octaves at MASSIF_A_VALUE = 1.5. On a plain the
+ * massif is off by its own relief-band gate -- painted, `msfBand` reads luma
+ * 0.17 with p95 0.00 at `midfield`'s far band against 215.76 saturated at
+ * `vista.mid` on the same build -- and that gate is RIGHT: putting 390 m
+ * mountain octaves and their NORMAL half on flat ground lights a meadow like a
+ * dune field, and MASSIF_BAND's own note promises the plains are untouched. So a
+ * plain gets one macro term where a hill gets three, and nothing in the material
+ * ever noticed.
+ *
+ * SO THE GAIN RIDES THE MASSIF GATE'S OWN COMPLEMENT. `1 + gain * (1 - msfBand)`
+ * is exactly 1 wherever the massif is at full strength, which makes every
+ * relieved pose BIT-IDENTICAL by construction rather than by tuning, and it
+ * introduces no fade constant of its own: the boundary is the one MASSIF_BAND
+ * already draws. That is RN-2195's complementary-fade idiom, which this file
+ * already spends twice (the stand-in against the cell guard, the cell guard
+ * against the carrier), applied to the one seam that had nothing on the far side
+ * of it.
+ *
+ * THE VALUE IS 0.5 AND IT IS READ OFF THE LADDER RATHER THAN LIKED. The
+ * amplitude sweep at `midfield.r250`, one flag apart on one build, is 17.42 at
+ * 0x, 32.63 at 1x, 43.83 at 1.5x, 53.56 at 2x and 133.05 at 6x. The mid field's
+ * own committed rectangles at this pose read 41.78 at r35, 41.41 at r60 and
+ * 47.33 at r120, so "the far ground carries what the mid field carries" is the
+ * 41-to-47 band, and 1.5x lands at 43.83, inside it. 2x is refused for the same
+ * shape of reason MASSIF_A_VALUE refuses 2.50: past the mid field's own contrast
+ * the distance stops reading as ground and starts reading as a watercolour, and
+ * there is nothing else drawing out there to argue with it.
+ *
+ * WHAT THIS IS NOT, recorded because it was BUILT AND MEASURED AND THROWN AWAY
+ * rather than reasoned past. The first design was two coarser octaves (640 m and
+ * 2560 m) handed over on the 160 m octave's own Nyquist complement, on the
+ * reading that the footprint at the plains far band is tens of metres and every
+ * existing octave has retired there. That reading came from the SHOT MANIFEST's
+ * `footM`, which inverts a FLAT PLANE and reports 48.6 m at r250. The shader's
+ * own `footM` is `max(length(dFdx(vWorld)), length(dFdy(vWorld)))` and, painted
+ * as a step ladder at that same rectangle, it lands between **1.8 and 8.0 m**.
+ * The two disagree by an order of magnitude because the ground at this site is
+ * not a plane: it swells, so the visible horizon is a crest a few hundred metres
+ * out rather than the 1,549 m geometric one, and the incidence is nothing like
+ * grazing. The far pair therefore never faded in at all -- `?horizonfar=20`
+ * moved the rectangle by **0.00 counts**, which is what a term outside its own
+ * gate looks like, and is the same shape as HORIZON_ECO_GATE's own scar one
+ * range band out. See NUMBERS.md.
+ */
+export const HORIZON_AN_PLAINS_GAIN = 0.5;
+
+/**
  * The four amplitudes, and they are four rather than one for uSplatAmp's own
  * reason: they FAIL DIFFERENTLY, so a single switch could only ever answer "is
  * the far ground on" and never "which half of it is doing this".

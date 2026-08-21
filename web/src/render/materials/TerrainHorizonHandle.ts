@@ -14,6 +14,7 @@
 // is what makes a before/after attributable to the term instead of to the run.
 
 import {
+  HORIZON_AN_PLAINS_GAIN,
   HORIZON_AN_M, HORIZON_AN_WA, HORIZON_AN_WB,
   HORIZON_A_ANALYTIC, HORIZON_A_AO, HORIZON_A_CHROMA, HORIZON_A_NORMAL,
   HORIZON_A_VALUE,
@@ -26,8 +27,8 @@ import {
   HORIZON_WARP_MID_TILE_M, HORIZON_WARP_UV_FAR, HORIZON_WARP_UV_MID,
   MASSIF_A_BUMP, MASSIF_A_VALUE, MASSIF_BAND, MASSIF_FADE_M,
 } from './TerrainHorizon.js';
-import { horizonAmpFromQuery, horizonEcoFromQuery, massifAmpFromQuery }
-  from './TerrainAmpQuery.js';
+import { horizonAmpFromQuery, horizonEcoFromQuery, horizonPlainsFromQuery,
+  massifAmpFromQuery } from './TerrainAmpQuery.js';
 import { PHASE_PERIOD_M, phasePeriodDivides, phaseQuantumM }
   from '../../world/ChunkPhase.js';
 import type { TerrainUniformState } from './TerrainUniformState.js';
@@ -79,6 +80,14 @@ Record<string, unknown> {
       const v = s.horizonCell.value;
       return [v.x, v.y];
     },
+    /** RN-2475. The far macro pair's amplitude, on setHorizon's rule (negatives
+     *  refused, not clamped). Setting it to 0 is the exact pre-RN-2475 frame
+     *  with the cell guard and the stand-in both still armed. */
+    setHorizonPlains(value: number): number {
+      if (Number.isFinite(value) && value >= 0) s.horizonPlains.value = value;
+      return s.horizonPlains.value;
+    },
+    getHorizonPlains(): number { return s.horizonPlains.value; },
     /** RN-2340. The MASSIF term's two amplitudes, on setHorizon's rule. */
     setMassif(value: number, bump?: number): [number, number] {
       const v = s.massifAmp.value;
@@ -133,13 +142,14 @@ Record<string, unknown> {
       cellM: [number, number]; cellPx: [number, number];
       cellFootMid: [number, number]; cellFootFar: [number, number];
       anM: [number, number]; anW: [number, number];
+      plains: number; plainsBoot: number; plainsShipped: number;
     } {
       const p = new URLSearchParams(self.location.search);
       const boot = horizonAmpFromQuery();
       const bootM = massifAmpFromQuery();
       const keys = ['horizon', 'horizonval', 'horizonchroma', 'horizonnrm',
         'horizonao', 'horizoneco', 'horizonecoamp', 'horizoncell',
-        'horizoncellan', 'horizonmassif',
+        'horizoncellan', 'horizonplains', 'horizonmassif',
         'horizonmassifval', 'horizonmassifbump', 'horizonmassifm'];
       const tiles: [number, number, number, number] = [
         HORIZON_MID_TILE_M, HORIZON_FAR_TILE_M,
@@ -199,6 +209,16 @@ Record<string, unknown> {
         cellFootFar: [HORIZON_CELL_FOOT_FAR[0], HORIZON_CELL_FOOT_FAR[1]],
         anM: [HORIZON_AN_M[0], HORIZON_AN_M[1]],
         anW: [HORIZON_AN_WA, HORIZON_AN_WB],
+        // RN-2475. THE PLAINS MACRO GAIN. `plains` is the LIVE value and
+        // `plainsBoot` what the query asked for, so a frame can prove which arm
+        // it is, and `plainsShipped` is the constant so a probe can see what
+        // ships without importing the module (splatDefault's own rule, RN-150).
+        // The gain rides MASSIF_BAND's own complement and this fixture already
+        // publishes `massifBand`, so the whole handover is checkable from the
+        // probe's side of the fence without a second constant to keep in step.
+        plains: s.horizonPlains.value,
+        plainsBoot: horizonPlainsFromQuery(),
+        plainsShipped: HORIZON_AN_PLAINS_GAIN,
       };
     },
   };
