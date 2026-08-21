@@ -159,6 +159,81 @@ export const MAT_IN_LO_M = 12;
 export const MAT_IN_HI_M = 20;
 
 /**
+ * RN-2355 to RN-2364, world audit R2 lane L4. WHERE THE FAR RUNG HANDS OVER,
+ * and it is a real window rather than the shipped "never" (1e8, 1e9).
+ *
+ * MEASURED, NOT ASSUMED: `meadowfield`, one flag apart on one build, the same
+ * `?grass=0` isolator every other lane uses. With the carpet ON the ground past
+ * 35 m reads FLATTER than the BARE terrain does, and the gap widens with range:
+ *
+ *   range   ON iqr   OFF iqr (bare terrain, now real material since L1)
+ *    20 m    33.85    54.76
+ *    35 m    25.91    53.18
+ *    55 m    21.14    55.76
+ *    75 m    19.07    51.93
+ *    95 m    17.00    45.06
+ *
+ * The near tuft's own header states the law this rung was shipped without:
+ * "a flat-per-m2 carpet is ... a wall of instances at the horizon". That is
+ * exactly what MAT_PER_M2 held at a 1e9 half-distance is, and it is exactly
+ * what the audit's "uniform plate" is measuring. A screen row at a grazing
+ * pose compresses a large, and RANGE-GROWING, depth of the 12-to-95 m annulus
+ * into a handful of pixels, so the number of independently-coloured cards
+ * averaging into one pixel grows with range even though the ground-area each
+ * card occupies does not fall to compensate (unlike the near tuft's own
+ * DENS_HALF_M law, whose whole job is exactly that compensation). The result
+ * is the classic many-samples-average-to-a-constant read: luma flatlines near
+ * 150 from 55 m to 95 m while the bare ground beneath it swings from 74 to 86.
+ *
+ * THE FIX IS THE SAME MECHANISM THE NEAR TUFT ALREADY HANDS OVER BY
+ * (`uOut`, GrassGlsl's own "a HANDOVER, not a Nyquist fade": TUFT_OUT_LO_M),
+ * applied to the rung it was always wired for and never given numbers. It is
+ * not a density-law rewrite (which would need the far rung made GRADED to
+ * avoid GrassSample.ts's own contract -- "densityAt must be the SAME CURVE
+ * THE SHADER EVALUATES, or ... thins" -- and this rung is built once per
+ * chunk arrival, never resampled): a smoothstep multiplier can only ever
+ * REDUCE `dens` below what `densityAt` (unchanged, still MAT_PER_M2 flat)
+ * provisioned for, so the failure mode this can ever produce is WASTE (an
+ * instance built and never shown), never THIN (a shown instance that was
+ * never built). That is the safe side of GrassSample's own warning.
+ *
+ * THE WINDOW, AND WHY IT IS NOT [40, 100] AS FIRST TRIED. A [40, 100] arm was
+ * built and measured on the same rectangles, and the r55-to-r100 band it was
+ * aimed at DID NOT MOVE (`r95` iqr 17.00 before and after, to the digit),
+ * while `r130`/`r160` jumped hard (16.86 -> 25.93, 20.06 -> 46.99). The cause
+ * is CARD HEIGHT, not card count: a far-rung card grown to its GROW_MAX
+ * height (0.798 m) subtends `0.798 / d` radians, which at d = 45 m is 13.9 px
+ * at this pose's own `uPxPerRad` -- enough to visually reach a screen row the
+ * flat-ground range map assigns to roughly 60 m. A card at 40 to 70 m is only
+ * lightly thinned by a [40, 100] window (95.7 per cent density still stands
+ * at 35 m, 92.6 per cent at 50 m) and its own height BLEEDS UPWARD into the
+ * rows this lane's instrument reads, so the row-level number never saw the
+ * far-range thinning at all: it was reading nearer, barely-touched cards the
+ * whole time. Pulling the window in fixes the row it was aimed at rather than
+ * moving the effect further out and calling it done.
+ *
+ * THE WINDOW THAT SHIPPED. Lower edge 30 m: `r25` (footM 0.487, well inside
+ * the coarse splat's own crossover) is untouched (smoothstep(30, ., 25) is
+ * exactly 0) and `r35`'s audit-praised 25.91 loses under 5 per cent of the
+ * rung's density (95.7 per cent retained). Upper edge 70 m: by there density
+ * is exactly zero, so no card exists to bleed into the rows past it, and the
+ * bleed radius of the LAST cards still fading out (at 60 to 70 m, itself
+ * under 13 px of angular height) does not reach the `r95`/`r100` band this
+ * lane's instrument reads. Both are unchanged from measurement to shipping
+ * decision: this is the arm that was actually re-read on the same rectangles,
+ * not a second guess left untested.
+ *
+ * REACH_M IS UNCHANGED (95) and does not need to move: the mechanism is
+ * per-instance and keyed on live `dist`, so it retires every card by 70 m
+ * regardless of chunk/LOD residency slack, well inside the existing reach.
+ * Past 70 m the terrain's own material -- real since L1's RN-2340, iqr 45 to
+ * 56 bare in this same band -- is what carries the read, which is the
+ * composition this lane's charter asks for rather than a fight over it.
+ */
+export const MAT_OUT_LO_M = 30;
+export const MAT_OUT_HI_M = 70;
+
+/**
  * THE FADE, IN PIXELS, AND WHY IT IS NOT IN METRES.
  *
  * RN-1855's rule is that a fade constant must be DERIVED from the thing it

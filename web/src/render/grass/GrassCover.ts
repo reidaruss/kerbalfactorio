@@ -26,8 +26,9 @@ import { sampleGrass, type GrassSampleDeps, type RungSpec } from './GrassSample.
 import { coverPaletteState } from './GrassPalette.js';
 import {
   BUILDS_PER_UPDATE, DENS_HALF_M, GRASS_ON, GRASS_RAW, MAT_CAP, MAT_H_M,
-  MAT_IN_HI_M, MAT_IN_LO_M, MAT_PER_M2, MAT_W_M, NEAR_PER_M2, REACH_M,
-  TUFT_CAP, TUFT_H_M, TUFT_REACH_M, TUFT_W_M, bandOf, tuftDensity,
+  MAT_IN_HI_M, MAT_IN_LO_M, MAT_OUT_HI_M, MAT_OUT_LO_M, MAT_PER_M2, MAT_W_M,
+  NEAR_PER_M2, REACH_M, TUFT_CAP, TUFT_H_M, TUFT_REACH_M, TUFT_W_M, bandOf,
+  tuftDensity,
 } from './GrassTuning.js';
 
 export interface GrassCoverOptions {
@@ -84,16 +85,32 @@ export class GrassCover {
         windGain: 2.2,
       },
     });
-    // THE FAR RUNG. Flat density (a half-distance of 1e9 IS "flat", which is
-    // how one shader expression covers both rungs), one wide quad, faded in
-    // behind the tufts and out at its own pixel size.
+    // THE FAR RUNG. Flat AREAL density (a half-distance of 1e9 IS "flat",
+    // which is how one shader expression covers both rungs), one wide quad,
+    // faded in behind the tufts.
+    //
+    // RN-2355 to RN-2364. IT NO LONGER RUNS FLAT ALL THE WAY TO ITS OWN PIXEL
+    // SIZE. GrassTuning.MAT_OUT_LO_M/HI_M's own measurement is the reason:
+    // flat areal density under a grazing standing-eye view is "a wall of
+    // instances at the horizon" (the near tuft's own header, DENS_HALF_M's
+    // note, applied here for the first time), and it reads as a flatter plate
+    // than the bare terrain beneath it once that terrain carries real material
+    // (L1, RN-2340). `outM` was always wired for exactly this -- the near
+    // tuft already hands over through it at TUFT_OUT_LO_M/TUFT_REACH_M -- and
+    // this rung shipped with it pinned at (1e8, 1e9), "never", for want of a
+    // number rather than by design. It is safe against GrassSample's own
+    // "densityAt must be the SAME CURVE the shader evaluates, or ... thins"
+    // rule because `densityAt` below is UNCHANGED (still flat MAT_PER_M2):
+    // this multiplier can only ever reduce the shader's live `dens` below
+    // what was built for, so the one failure mode it can produce is an unseen
+    // instance, never a missing one.
     const mat = createGrassMaterial({
       depth: o.depth, terrain: o.terrain, atmosphere: o.atmosphere,
       cascades: o.cascades, name: 'GrassCover(mat)',
       rung: {
         densK: new THREE.Vector2(MAT_PER_M2, 1e9),
         inM: new THREE.Vector2(MAT_IN_LO_M, MAT_IN_HI_M),
-        outM: new THREE.Vector2(1e8, 1e9),
+        outM: new THREE.Vector2(MAT_OUT_LO_M, MAT_OUT_HI_M),
         windGain: 1.1,
       },
     });
@@ -207,6 +224,14 @@ export class GrassCover {
       cap: r.pool.cap,
       refused: r.pool.refused,
       cardBound: r.mat.cardBound(),
+      // RN-2355 to RN-2364. Read back off the LIVE uniforms rather than
+      // asserted, this file's own "print the denominator you mean" rule
+      // extended to the fade windows: a probe can check the mat rung's real
+      // hand-over band from its own side instead of trusting the constant it
+      // was built from.
+      inM: (r.mat.material.uniforms.uIn.value as THREE.Vector2).toArray(),
+      outM: (r.mat.material.uniforms.uOut.value as THREE.Vector2).toArray(),
+      fadePx: (r.mat.material.uniforms.uFadePx.value as THREE.Vector2).toArray(),
     }));
     return {
       on: GRASS_ON, raw: GRASS_RAW,
