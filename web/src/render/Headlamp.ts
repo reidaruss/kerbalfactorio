@@ -148,7 +148,7 @@ const LAMP_ANGLE = 0.44;
  * with a ramped rim rather than a graduated cone. 0.6 -> 0.92 starts the ramp
  * at 8% of the half-angle instead of 40%, so there is no flat-full interior
  * left for an edge to appear at the boundary of; verified on `meadownight`
- * (`docs/screenshots/RN2445_meadownight_final.png`), where the lit patch now
+ * (`docs/screenshots/RN2445_meadownight_after.png`), where the lit patch now
  * reads as a lamp's cone fading outward rather than a disc with a rim, at
  * the SAME candela and decay the cone always shipped at.
  */

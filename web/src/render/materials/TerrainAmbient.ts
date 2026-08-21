@@ -169,16 +169,25 @@ const AMBIENT_BASE = TERRAIN_AMBIENT.clone();
  * RN-2445 (lane M5, THE NIGHT). RAISED, AND MEASURED RATHER THAN GUESSED.
  * `meadownight`'s own `nearG`/`mid`/`shade` rectangles read luma 5.68 / 4.87 /
  * 2.29 at the RN-152 level, which by eye (`docs/screenshots/
- * RN2445_meadownight_after.png`, taken before this constant moved) is grass
- * silhouetted flat black past the headlamp's own pool with no readable blade
- * structure at all -- closer to "crushed" than to "a starlit floor holds
- * barely-legible form", the bar this lane's brief sets. 1.7x (chosen from a
- * three-point look-check, not derived) lifts the same three rectangles to
- * 12.53 / 10.46 / 5.22 (`docs/screenshots/RN2445_meadownight_final.png`,
- * taken after this AND the headlamp's own falloff correction below, so the
- * rise is somewhat more than 1.7x on these particular rectangles: they sit
- * partly inside the widened cone too): blade silhouettes read against the
- * sky and against each other at the tree line, and the frame is still
+ * RN2445_meadownight_before.png`) is grass silhouetted flat black past the
+ * headlamp's own pool with no readable blade structure at all -- closer to
+ * "crushed" than to "a starlit floor holds barely-legible form", the bar
+ * this lane's brief sets. 1.7x (chosen from a three-point look-check, not
+ * derived) lifts the same three rectangles to **8.29 / 10.07 / 5.22** on the
+ * SHIPPED build (`LAMP_CD`/`LAMP_DECAY` at their original values, only
+ * `LAMP_PENUMBRA` changed -- see `Headlamp.ts`), three fresh-process repeats,
+ * bit-identical on every named rectangle each time. **CORRECTED 2026-08-22
+ * (verifier finding): this comment first quoted 12.53 / 10.46, read off an
+ * INTERMEDIATE build that still had the rejected flatter-decay headlamp
+ * candidate (`LAMP_CD` 86 / `LAMP_DECAY` 1.1) in place; that candidate was
+ * reverted for blowing out `smelternight` (see `Headlamp.ts`), and this
+ * comment was never re-measured against the reverted, actually-shipped code
+ * before being written down. The committed screenshot
+ * (`docs/screenshots/RN2445_meadownight_after.png`) was always rendered from
+ * the correct, reverted build, so the picture was right and only this prose
+ * was stale.** By eye at the corrected 8.29: the claim still holds --
+ * blade silhouettes read against the sky and against each other at the tree
+ * line in that same committed screenshot, and the frame is still
  * unmistakably night -- `world` stays under 10 with the lamp in frame,
  * against `meadow`'s own daylit 118. The colour ratio (STARLIGHT's own blue
  * bias, RN-152) is unchanged; only the level moved.

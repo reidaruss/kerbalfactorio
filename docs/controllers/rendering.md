@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2435 to RN-2439, `lane/m5-night`: **THE NIGHT.** R3 rank 5, run after M3 and M1 per the corrected queue. The sky had no night term at all (not a dim one: `ofAtmoScatter`'s sun-occlusion test returns bit-for-bit zero once the sun is below the horizon), so `meadownight.skyHi` read iqr EXACTLY 0.00. Fixed with a separate, additive dark-blue-black-zenith-to-warmer-horizon term in `SkyAtmosphere.ts`'s own upward branch, gated to exactly zero above the same sun-elevation band `TerrainAmbient`'s starlight floor already uses (`?nightsky=0` isolates it, reproduces the old flat-black sky to the digit). `skyHi` iqr 0.00 -> **1.79**, `hzBand` luma 0.10 -> **16.88** (brighter toward the horizon, the intended shape). **THE ADJACENT BUG THE BRIEF NAMED, "check both ends of the arc":** the star-fade mask (`daylightFactor`) multiplied its day/night gate by `airDensityAt`'s PHYSICAL Rayleigh-scale-height decay, conflating "thinning air" with "closer to space" -- `flyover`'s own 1,200 m pose was 0.21 scale heights up, so the star field was **~19 per cent visible on an ordinary noon flight**. Replaced with `spaceMaskAt`, linear in the fraction of the 60 km SHELL THICKNESS still overhead (1,200 m reads 2 per cent there), computed and reasoned rather than screenshotted since no shot isolates it. **THE GROUND:** `TerrainAmbient`'s `STARLIGHT` floor raised 1.7x (`meadownight.nearG/mid/shade` 5.68/4.87/2.29 -> 12.53/10.46/5.22), because the pre-lane floor read as grass crushed to silhouette-black past the lamp's own pool rather than "barely-legible form," this lane's own bar. **THE HEADLAMP CONE:** a flattened-decay candidate (1.45 -> 1.1, candela raised to hold the 6 m calibration point) was tried and REJECTED, measured rather than argued -- it reads well in the open field but BLOWS OUT `smelternight`'s close-range pose worse than before (`firebox` 151 -> 196, five rectangles pinned above 200); `LAMP_CD`/`LAMP_DECAY` ship unchanged. The lever that worked is angular: the SpotLight's own penumbra, 0.6 -> 0.92, since at 0.6 the inner 40 per cent of the half-angle is flat-full and only the outer rim ramps -- a disc with a ramped edge, independent of the radial falloff. At 0.92 there is no flat interior left to have an edge. **ACCEPTANCE:** `meadow`/`vista` (daylit control) and `dawnsun` (the arc's bottom edge) bit-identical to the digit before/after; `setup.upCheck` still 0 on every night pose (A4's fix holds). A disclosed side effect: the added sky term also feeds the night IBL capture, lifting `smelternight`'s own clean-shell negative controls (`hearthL`/`hearthR`) by 2-3 counts under `?lamp=0` -- bounded, and acceptable since night rectangles are judged by eye, not pinned. `npm run check` 8/8. Full record in section 2.26. THIS LINE IS A POINTER: replace it, never append to it.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2435 to RN-2439, `lane/m5-night`: **THE NIGHT.** R3 rank 5, run after M3 and M1 per the corrected queue. The sky had no night term at all (not a dim one: `ofAtmoScatter`'s sun-occlusion test returns bit-for-bit zero once the sun is below the horizon), so `meadownight.skyHi` read iqr EXACTLY 0.00. Fixed with a separate, additive dark-blue-black-zenith-to-warmer-horizon term in `SkyAtmosphere.ts`'s own upward branch, gated to exactly zero above the same sun-elevation band `TerrainAmbient`'s starlight floor already uses (`?nightsky=0` isolates it, reproduces the old flat-black sky to the digit). `skyHi` iqr 0.00 -> **1.79**, `hzBand` luma 0.10 -> **16.88** (brighter toward the horizon, the intended shape). **THE ADJACENT BUG THE BRIEF NAMED, "check both ends of the arc":** the star-fade mask (`daylightFactor`) multiplied its day/night gate by `airDensityAt`'s PHYSICAL Rayleigh-scale-height decay, conflating "thinning air" with "closer to space" -- `flyover`'s own 1,200 m pose was 0.21 scale heights up, so the star field was **~19 per cent visible on an ordinary noon flight**. Replaced with `spaceMaskAt`, linear in the fraction of the 60 km SHELL THICKNESS still overhead (1,200 m reads 2 per cent there), computed and reasoned rather than screenshotted since no shot isolates it. **THE GROUND:** `TerrainAmbient`'s `STARLIGHT` floor raised 1.7x (`meadownight.nearG/mid/shade` 5.68/4.87/2.29 -> **8.29/10.07/5.22** on the shipped build, three fresh-process repeats, bit-identical each time; corrected 2026-08-22 from a first write-up that quoted 12.53/10.46, read off an intermediate build carrying the rejected headlamp candidate below and never re-measured after that candidate was reverted), because the pre-lane floor read as grass crushed to silhouette-black past the lamp's own pool rather than "barely-legible form," this lane's own bar. **THE HEADLAMP CONE:** a flattened-decay candidate (1.45 -> 1.1, candela raised to hold the 6 m calibration point) was tried and REJECTED, measured rather than argued -- it reads well in the open field but BLOWS OUT `smelternight`'s close-range pose worse than before (`firebox` 151 -> 196, five rectangles pinned above 200); `LAMP_CD`/`LAMP_DECAY` ship unchanged. The lever that worked is angular: the SpotLight's own penumbra, 0.6 -> 0.92, since at 0.6 the inner 40 per cent of the half-angle is flat-full and only the outer rim ramps -- a disc with a ramped edge, independent of the radial falloff. At 0.92 there is no flat interior left to have an edge. **ACCEPTANCE:** `meadow`/`vista` (daylit control) and `dawnsun` (the arc's bottom edge) bit-identical to the digit before/after; `setup.upCheck` still 0 on every night pose (A4's fix holds). A disclosed side effect: the added sky term also feeds the night IBL capture, lifting `smelternight`'s own clean-shell negative controls (`hearthL`/`hearthR`) by 2-3 counts under `?lamp=0` -- bounded, and acceptable since night rectangles are judged by eye, not pinned. `npm run check` 8/8. Full record in section 2.26. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
 
@@ -8131,6 +8131,24 @@ count, M3's). `web/wasm/dist/*`, `test/expected.json`, `MachineBatch`/
 (M4's) and every daylight aerosol term in `Atmosphere.glsl.ts`/
 `AtmosphereAero.glsl.ts`/`SkyProbe.ts` (M1's) are all untouched.
 
+**CORRECTION, 2026-08-22 (verifier finding, one number in the record, method
+endorsed otherwise):** the first version of this section, of the NUMBERS.md
+row and of two source comments quoted `meadownight.nearG`/`mid` as 12.53 /
+10.46; the shipped build reads **8.29 / 10.07** (three fresh-process
+repeats, bit-identical). THE CAUSE, IN ONE SENTENCE: those two figures were
+measured against an intermediate build that still carried the headlamp's
+rejected flatter-decay candidate (2.26.3), and after that candidate was
+reverted this section's own prose was never re-measured against the
+reverted, actually-shipped code before being written down -- not a stale
+build serving old bytes (the sentinel hash-check passed on every build used)
+and not a different settle condition, simply an unresynced write-up. The
+committed screenshots were always rendered from the correct, reverted build
+throughout, so the pictures and the shipped code were right the whole time;
+only these two prose numbers, one code comment's copy of them, a phantom
+citation to an uncommitted `_final.png` filename, and a screenshot count of
+ten (eight exist) were wrong, and all four are corrected in place below and
+in `Headlamp.ts`/`TerrainAmbient.ts`'s own comments.
+
 ### 2.26.1 THE SKY: FLAT BLACK HAD NO NIGHT TERM AT ALL
 
 World Audit R3 3.12 read `meadownight.skyHi` at luma 0.07, iqr EXACTLY 0.00:
@@ -8204,13 +8222,28 @@ near zero either way); verified bit-identical before/after regardless (2.26.5).
 black past the headlamp's pool with no readable blade structure, closer to
 "crushed" than to this lane's own bar ("a starlit floor holds barely-legible
 form"). `TerrainAmbient.ts`'s `STARLIGHT` constant raised 1.7x (a
-three-point look-check, not derived); the same three rectangles now read
-12.53 / 10.46 / 5.22 with the headlamp's own falloff fix folded in (2.26.3
-next). By eye (`docs/screenshots/RN2445_meadownight_after.png`): the whole
-field now carries legible blade silhouette, not only the lit patch, and the
+three-point look-check, not derived); the same three rectangles read
+**8.29 / 10.07 / 5.22** on the shipped build, with the headlamp's own falloff
+fix folded in (2.26.3 next) -- three fresh-process repeats on a freshly
+sentinel-verified build, bit-identical to the digit on every named
+rectangle each time.
+
+**CORRECTION, 2026-08-22 (verifier finding):** this section first published
+12.53 / 10.46 for `nearG`/`mid`, which was a real reading but of the WRONG
+BUILD -- an intermediate one that still carried the rejected flatter-decay
+headlamp candidate below (`LAMP_CD` 86 / `LAMP_DECAY` 1.1) rather than the
+shipped code (`LAMP_CD`/`LAMP_DECAY` at their original values). That
+candidate was measured, rejected for blowing out `smelternight`, and
+reverted, but the meadownight prose was never re-measured against the
+reverted build before being written down; the committed screenshot below was
+always rendered from the correct, reverted build, so only the two prose
+numbers were stale, not the picture or the code. By eye at the corrected
+8.29 (`docs/screenshots/RN2445_meadownight_after.png`): the whole field
+still carries legible blade silhouette, not only the lit patch, and the
 frame is still unmistakably night (`world` stays under 10 against `meadow`'s
-own daylit 118). `?starlight=0`/`?starlightamp=` (pre-existing) unaffected;
-the colour ratio is untouched, only the level moved.
+own daylit 118) -- the claim stands at the corrected number.
+`?starlight=0`/`?starlightamp=` (pre-existing) unaffected; the colour ratio
+is untouched, only the level moved.
 
 **THE HEADLAMP CONE: ONE CANDIDATE TRIED AND REJECTED, ONE SHIPPED, BOTH
 RECORDED.** World Audit R3 3.12: "a hard-edged circular pool with a
@@ -8232,6 +8265,17 @@ edge to appear at the boundary of. Verified by eye,
 `docs/screenshots/RN2445_meadownight_after.png`: the lit patch now reads as
 a cone fading outward, not a disc with a rim, at the ORIGINAL candela and
 decay. `LAMP_ANGLE`, `LAMP_RANGE_M`, `LAMP_OFFSET` untouched.
+
+**THE SHIPPED BUILD'S OWN `firebox`, STATED EXPLICITLY SO "151" ABOVE IS NOT
+MISTAKEN FOR THE SHIPPED VALUE (verifier finding, 2026-08-22 correction):**
+`smelternight.firebox` reads **142.99** on the actually-shipped code, three
+fresh-process repeats, bit-identical each time -- a real but modest ~8-count
+drop from the 151 pre-lane baseline quoted above, attributable to the same
+penumbra widening (0.6 -> 0.92) changing how much of the spotlight's beam
+falls across this specific rectangle at this pose, not to any change in
+`LAMP_CD`/`LAMP_DECAY` (both unchanged from their original values) and not to
+any emissive or registration term (M3's, untouched). `band`/`plate` show the
+same small, bounded drop (106.72/53.86 against the pre-lane 113.39/61.7).
 
 **A DISCLOSED SIDE EFFECT.** `SkyAtmosphere.ts`'s upward branch is also what
 `SkyIbl` captures for the scene's environment map, so 2.26.1's added night
@@ -8277,9 +8321,10 @@ Gates, each a separate step, exit status read: `npx tsc --noEmit` **0**;
 (`check:roles`/`check:probes`/`check:proxies`/`check:proplods`/`typecheck`/
 `check:pose`/`check:limits`/`check:boot`, `check:limits` confirms every
 touched file stays under the 400-line cap). `web/wasm/dist/*` and
-`test/expected.json` untouched. Ten screenshots at
+`test/expected.json` untouched. Eight screenshots at
 `docs/screenshots/RN2445_{meadownight,smelternight,dawnsun}_{before,after}.png`
-plus `RN2445_{meadow,vista}_control.png`. Files touched: `Headlamp.ts`,
+(six) plus `RN2445_{meadow,vista}_control.png` (two) -- corrected 2026-08-22
+from a first count of ten. Files touched: `Headlamp.ts`,
 `materials/Atmosphere.glsl.ts`, `materials/SkyAtmosphere.ts`,
 `materials/TerrainAmbient.ts`, and `tools/smoke/run.mjs` (the `nightsky` flag
 registration only). Branch `lane/m5-night`, pushed, **not merged to main**.
