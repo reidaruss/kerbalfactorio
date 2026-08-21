@@ -83,6 +83,34 @@
 //     --evalfile=tools/smoke/probes/artframe.js --evalargs='{"shot":"meadow"}' \
 //     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
 //
+// AND TWO MORE AT RN-2285 (WORLD AUDIT R2), each added because a domain this
+// audit had to SCORE had no frame anywhere in the set that could show it, and
+// adding a shot is cheaper than arguing (NUMBERS.md, "a shot set can be
+// structurally blind to its own subject"):
+//   pondside     the home pond's dry beach looking across the water. Forge has
+//                exactly ONE water surface, 55 m from the spawn pad, and no
+//                canonical frame in this project has ever contained it, so
+//                "water as a compositional element" was a domain nothing could
+//                photograph. Its site is the pond's own centre offset 19 m
+//                north; see the row for the derivation and for the drawn-water
+//                assertion the setup block makes.
+//   meadownight  `meadow`'s pose and rectangles to the digit at a SUB-HORIZON
+//                sun (dot -0.25), i.e. the third of the day arc no shot in the
+//                file reaches. `basedusk` at dot 0.20 was the darkest frame
+//                this project had, and the storyline puts the player outdoors
+//                overnight on day one.
+// Both take the `--scenario=walk` line above with the shot name changed:
+//
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=walk \
+//     --width=1600 --height=900 \
+//     --evalfile=tools/smoke/probes/artframe.js --evalargs='{"shot":"pondside"}' \
+//     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
+//
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=walk \
+//     --width=1600 --height=900 \
+//     --evalfile=tools/smoke/probes/artframe.js --evalargs='{"shot":"meadownight"}' \
+//     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
+//
 // ==========================================================================
 // WHY THIS FILE EXISTS AT ALL, given `artshot.js` and the `*shot.js` family
 // ==========================================================================
@@ -652,6 +680,89 @@
       },
       why: 'the eye on a MOUNTAIN SLOPE facing uphill: the steep-substrate '
         + 'frame, where the terrain material has to carry the whole picture',
+    },
+    // RN-2285 (WORLD AUDIT R2). `pondside`: THE ONLY WATER SURFACE IN THE
+    // WORLD, AND NO FRAME HAS EVER CONTAINED IT.
+    //
+    // The world audit's gap 11 ("the water shader is good and there is exactly
+    // one pond in the world wearing it") was carried forward twice on prose
+    // alone, because nothing in `SHOTS` could photograph water: nine of the
+    // canonical shots are inside forty metres of dry ground, the vista set is
+    // a 4.7 km ridge above the treeline, and the aerials are 1,200 m up. A
+    // domain nothing can photograph accumulates no findings and a queue ranked
+    // by findings ranks it last for ever, which is this file's own recorded
+    // lesson at RN-2065.
+    //
+    // THE SITE IS DERIVED, NOT SCOUTED BLIND. `cubed_sphere.h` puts Forge's
+    // one pond at `pondDir` (-0.86689714668285123, -0.059473307692452633,
+    // 0.49492652257203795), 55 m from the spawn pad and wholly inside the
+    // 150 m dead-flat disc, with a 22 m basin, a waterline at 16.623 m and
+    // 3.40 m of water at the middle. `dirToLatLon` (lat = asin(y),
+    // lon = atan2(z, x)) puts that centre at lat -3.409582, lon 150.277209;
+    // this eye stands 19 m NORTH of it, i.e. 2.4 m of dry beach outside the
+    // waterline, and looks back south across the whole pond. Four bearings
+    // were taken to choose it (0 / 90 / 180 / 270) and 180 is the only one
+    // with the far bank, its wood and the sky above it in the same frame.
+    // THE LAT/LON ARE LITERALS FOR THE REASON EVERY OTHER ROW'S ARE: the site
+    // IS the pose. What is NOT trusted is that the pose still LANDS on water,
+    // which is why the setup block below asserts the water mesh was drawn.
+    //
+    // WHY dot 0.55 AND NOT NOON. Water's whole subject is the specular and the
+    // Fresnel, and both are a function of the angle between the eye, the
+    // surface and the sun; a near-zenith sun at a shallow eye puts the
+    // reflected sun behind the camera and photographs the one hour at which a
+    // water shader has least to say. 0.55 is `meadow`'s own constant, so the
+    // two ground heroes are lit the same and the pond can be compared with the
+    // field beside it rather than only with itself.
+    pondside: {
+      scenario: 'walk', needsSandbox: false,
+      lat: -3.4077676, lon: 150.277209, yaw: 180, pitch: -8,
+      sunDot: 0.55, sunTol: 0.05,
+      // Open water, clear of the near shore and of the sand bar at frame right.
+      box: [0.1500, 0.5000, 0.6500, 0.7000],
+      extra: {
+        sky: [0.3500, 0.0500, 0.6500, 0.1500],
+        wood: [0.2000, 0.2700, 0.8000, 0.3600],   // the far bank's tree line
+        bank: [0.2500, 0.3850, 0.7500, 0.4250],   // the far bank's grass strip
+        shore: [0.7500, 0.5200, 0.9500, 0.5800],  // the wet sand bar, frame right
+        nearW: [0.0500, 0.8000, 0.2500, 0.8800],  // water at the feet, clear of the gloves
+      },
+      why: 'the HOME POND from its own beach: the only water surface on Forge, '
+        + '55 m from the spawn, and the first frame in this file to contain any',
+    },
+    // RN-2285 (WORLD AUDIT R2). `meadownight`: THE THIRD OF THE DAY ARC NO
+    // SHOT IN THIS FILE REACHES.
+    //
+    // Every sun in `SHOTS` is above the horizon and the lowest is `basedusk`
+    // at dot 0.20. So the whole of the night -- the star field, the ambient
+    // floor, the headlamp, whether a player can read the ground at all -- has
+    // never been judged, and the storyline has the player outdoors on foot
+    // through the first night. `setSunElev` reaches a sub-horizon phase at
+    // this site: dot -0.25 pins with a miss inside 0.03, measured before this
+    // row was written.
+    //
+    // IT IS `meadow` ONE FIELD APART, POSE AND RECTANGLES TO THE DIGIT, on the
+    // `vista`/`vistadawn`/`vistanoon` precedent: three rows that share one
+    // camera and differ in `sunDot` make the day arc a CONTROLLED comparison,
+    // and a night shot at a hand-picked new site would only be comparable with
+    // itself. `hzBand`, `mid`, `nearG` and `shade` keep their names because at
+    // this pose they still mean what they say; what they will read is dark,
+    // and reading dark is the finding rather than a reason to move them.
+    meadownight: {
+      scenario: 'walk', needsSandbox: false,
+      lat: -7.9675, lon: 116.53189, yaw: 120, pitch: -8,
+      sunDot: -0.25, sunTol: 0.03,
+      box: [0.2500, 0.5200, 0.7500, 0.7000],
+      extra: {
+        skyHi: [0.3500, 0.0500, 0.6500, 0.1500],
+        skyHz: [0.4000, 0.2200, 0.6000, 0.2800],
+        hzBand: [0.0500, 0.3000, 0.4000, 0.3400],
+        mid: [0.3000, 0.4000, 0.7000, 0.4600],
+        nearG: [0.2000, 0.6600, 0.8000, 0.7400],
+        shade: [0.0600, 0.7000, 0.2600, 0.7500],
+      },
+      why: 'the PLAINS MEADOW at a SUB-HORIZON sun (dot -0.25): `meadow` one '
+        + 'field apart, and the only night frame this project has',
     },
     // THE TWO FLY POSES, AND THEY NEED A DIFFERENT SCENARIO, WHICH IS THE
     // WHOLE REASON THIS FILE HAD NONE.
@@ -1633,8 +1744,17 @@
   // on its first run (`setup: {}`, `vramMB` 82.4 against the site's own 104.2)
   // and the only reason it was caught is that a lane happened to know what the
   // right numbers looked like. ADDING A SHOT MEANS ADDING IT HERE TOO.
+  // RN-2285. `pondside` and `meadownight` join this branch and are LISTED
+  // here as well as in `SHOTS`, which is exactly what the paragraph above
+  // demands in capital letters. `meadownight` is `meadow`'s site and camera at
+  // one different `sunDot`, so it needs nothing this branch does not already
+  // do; `pondside` is a different site at the same 2 m eye, and the one thing
+  // it needs beyond this branch (a proof that the water was actually DRAWN) is
+  // asserted immediately after it rather than inside it, so this shared setup
+  // stays one sequence for every shot that takes it.
   if (name === 'vista' || name === 'vistadawn' || name === 'vistanoon'
-      || name === 'meadow' || name === 'mtnslope' || name === 'dawnsun') {
+      || name === 'meadow' || name === 'mtnslope' || name === 'dawnsun'
+      || name === 'pondside' || name === 'meadownight') {
     posed = true;
     const w0 = of.world();
     of.teleport(A.lat ?? S.lat, A.lon ?? S.lon, 2.0);
@@ -1699,6 +1819,32 @@
       sunYawOffDeg, sunElevDeg, upCheck,
       regime: of.world().regime, chunks: of.world().chunks,
       tickAdvanced: of.world().tick > w0.tick };
+  }
+
+  // RN-2285. `pondside` ASSERTS THAT THE WATER WAS DRAWN, and it is the one
+  // check that separates this shot from a lat/lon typo.
+  //
+  // `WaterSurface` sets `mesh.frustumCulled = true` and increments `grabs`
+  // inside `onBeforeRender`, which three fires ONLY for an object that has
+  // survived the cull. So a non-zero `grabs` is not a claim that the pond
+  // exists somewhere on the planet, it is a measurement that this camera drew
+  // it -- which is the property a "water" frame has to have and the property a
+  // pose two hundred metres off would silently lose while every other field in
+  // the report read correct (RN-2169's own defect, one layer out).
+  if (name === 'pondside') {
+    const wtr = window.__ofWater;
+    const st = wtr === undefined ? null : wtr.state();
+    const grabs = (wtr === undefined || wtr.grabs === undefined)
+      ? null : wtr.grabs();
+    setup.water = st === null ? null
+      : { grabs, grab: st.grab, amp: st.amp, live: st.live };
+    if (grabs === null || grabs <= 0) {
+      return { valid: false, shot: name, setup,
+        why: 'the water mesh was never drawn at this pose (`__ofWater.grabs()` '
+          + `is ${String(grabs)}), so this frame is of dry ground under a `
+          + 'filename that claims a pond. Check the site against '
+          + "`cubed_sphere.h`'s `pondDir` before changing anything else." };
+    }
   }
 
   // RN-2065. THE TWO FLY POSES. See their manifest rows for why they cannot
