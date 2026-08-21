@@ -222,9 +222,36 @@ export class ViewModelLight {
     if (this.ambientScale !== 1 && this.hemi !== null) this.hemi.intensity *= this.ambientScale;
     if (c === null || this.wired === false) return;
     const sh = s.shadow;
+    // RN-2306. A DIRECTIONAL LIGHT MAY NOT CAST WITH NO MAP TO LEND, and this
+    // is where `?shadowcast=0`'s GL error storm came from.
+    //
+    // `resolve` sets `s.castShadow = true` once and the block there calls that
+    // permanent on purpose: toggling it is a lights-state change and therefore
+    // a recompile of the view model's thirteen materials, which is why the
+    // night case below is handled with `intensity = 0` instead. That is right
+    // for the night, where cascade 0's map still holds the last daylight frame
+    // and the binding is valid. It is WRONG for a map that was never
+    // allocated: `autoUpdate` and `needsUpdate` are both false on this shadow,
+    // so three never creates one of its own, and with no cascade map to alias
+    // `sh.map` stays null while the light still declares `USE_SHADOWMAP`.
+    // three then binds its default 2-D texture into a `sampler2DShadow` and
+    // every view-model draw takes `GL_INVALID_OPERATION: glDrawElements:
+    // Mismatch between texture format and sampler type` -- the x256 storm
+    // WORLD-AUDIT-R2 section 4 recorded at `machine`, which is a WALK pose
+    // because the view model is what a walk pose has and an aerial one does
+    // not. It reproduces at `meadow` too, and it is not only a flag's problem:
+    // any boot that never sees a daylight cascade (`?shadowcast=0`, and orbit
+    // from boot) is the same state.
+    //
+    // `haveMap` LATCHES, which is what keeps this cheap. three does not
+    // dispose a shadow map, so it goes false -> true once, on the first frame
+    // cascade 0 renders, and never back: one recompile at boot, none at dusk,
+    // and the intensity path below still owns the night exactly as it did.
+    const haveMap = c.shadow.map !== null;
+    if (s.castShadow !== haveMap) s.castShadow = haveMap;
     // Failure mode B. `ShadowRig.update` clears `castShadow` at night and in
     // orbit and leaves the map holding the last daylight frame.
-    const live = this.shadowOn && c.castShadow && c.shadow.map !== null;
+    const live = this.shadowOn && c.castShadow && haveMap;
     sh.intensity = live ? c.shadow.intensity : 0;
     if (!live) return;
     sh.map = c.shadow.map;
