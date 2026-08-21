@@ -314,6 +314,14 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   'horizonmassif', 'horizonmassifval', 'horizonmassifbump', 'horizonmassifm',
   'horizonmassiffade',
   'crownshadefar', 'crownshadecard',
+  // RN-2525. THE SPECTRAL SPLIT of RN-2275's self-shadow scalar: a per-channel
+  // attenuation derived from FoliageTone.ts's leaf optics in place of one
+  // achromatic multiply, applied to both halves through the shared
+  // CanopySelfShadow/SurfaceBind seam. `crownspectral=0` sets every channel's
+  // exponent to 1 and is the exact pre-lane achromatic frame (the pin makes
+  // this an algebraic identity, not a second code path). Registered in the
+  // commit that introduces it, per this list's own rule and RN-152's scar.
+  'crownspectral',
   // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
   // night exactly); `starlightamp=` sweeps it.
   // RN-952, the DAYLIGHT floor underneath it, which had no control at all and
