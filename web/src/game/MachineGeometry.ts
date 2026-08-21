@@ -89,6 +89,104 @@ export interface FamilyTiers {
    *  study. Built here rather than by the caller so the ghost cannot drift
    *  from what the batch drew. */
   lod0: THREE.BufferGeometry | null;
+  /** RN-2385. What this template's fire is, as a light source. Null for the
+   *  templates that author no `ember` family, which is most of them. */
+  emit: EmitterSource | null;
+}
+
+/**
+ * RN-2385. THE EMITTER, MEASURED OFF THE SHIPPED GEOMETRY.
+ *
+ * `EmissiveLight.ts` needs a position and an emitting AREA to turn a radiance
+ * into an irradiance, and both are properties of the asset rather than choices
+ * a renderer gets to make. `build_smelter.py`'s own header states the design
+ * target it authored the firebox to ("Fire seen through a peep hole and a
+ * sight strip is 0.083 m2"), so measuring the .glb rather than transcribing
+ * that number also means the two can be compared instead of trusted.
+ *
+ * In the TEMPLATE's own space: `normalize` has already applied each
+ * primitive's world matrix, so this is the same space the instance matrix is
+ * about to be applied to.
+ */
+export interface EmitterSource {
+  x: number; y: number; z: number;
+  /** Total triangle area, m2. Sets the POWER. */
+  area: number;
+  /**
+   * The source's own SIZE, which is what the inverse square has to be softened
+   * by, and it is NOT `sqrt(area / PI)`.
+   *
+   * That was the first version and the picture refused it. An on-axis
+   * Lambertian disc of radius R gives `E = PI * L * R^2 / (R^2 + d^2)`, which
+   * is exactly `L * A / (d^2 + R^2)`, so `R = sqrt(A / PI)` is right for a
+   * source whose area is CONTIGUOUS AND ROUND. The smelter's is neither: it is
+   * a 0.30 x 0.22 peep and a 0.86 x 0.05 sight strip a third of a metre apart
+   * on the same door, so `sqrt(A / PI)` came out at 0.28 m while the thing is
+   * nearly a metre across. The door casting sits 0.04 m from that plane, and
+   * `1 / (0.0016 + 0.078)` blew it to lava in `RN2385_after_smelternight_lamp0`
+   * before this was fixed.
+   *
+   * So the softening radius is the source's own SECOND MOMENT: the area
+   * weighted RMS distance of the emitting surface from its centroid, times
+   * sqrt(2), which is the factor that turns an RMS back into the radius of the
+   * uniform disc with that moment. For a genuinely round contiguous patch the
+   * two agree to the digit and this changes nothing; for a spread-out one it
+   * reports what is actually there. `max` of the two, so a source can never be
+   * softened by LESS than its own area implies.
+   */
+  radius: number;
+  /** Reported so the two can be compared rather than trusted. */
+  discRadius: number;
+  rmsRadius: number;
+}
+
+/**
+ * Area-weighted centroid and total area of one geometry's triangles. Area
+ * weighted rather than vertex averaged, because a peep hole tessellated into
+ * four triangles and a sight strip into two must not vote equally per vertex:
+ * the centroid of the LIGHT is where the emitting surface is, not where the
+ * mesh happens to be dense.
+ */
+export function measureEmitter(g: THREE.BufferGeometry): EmitterSource | null {
+  const pos = g.getAttribute('position') as THREE.BufferAttribute | undefined;
+  const idx = g.getIndex();
+  if (pos === undefined || idx === null) return null;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+  let area = 0, cx = 0, cy = 0, cz = 0;
+  for (let i = 0; i + 2 < idx.count; i += 3) {
+    a.fromBufferAttribute(pos, idx.getX(i));
+    b.fromBufferAttribute(pos, idx.getX(i + 1));
+    c.fromBufferAttribute(pos, idx.getX(i + 2));
+    ab.subVectors(b, a); ac.subVectors(c, a);
+    const tri = n.crossVectors(ab, ac).length() * 0.5;
+    if (!(tri > 0)) continue;
+    area += tri;
+    cx += tri * (a.x + b.x + c.x) / 3;
+    cy += tri * (a.y + b.y + c.y) / 3;
+    cz += tri * (a.z + b.z + c.z) / 3;
+  }
+  if (area <= 0) return null;
+  const ox = cx / area, oy = cy / area, oz = cz / area;
+  // Second pass for the second moment. Two passes rather than one, because the
+  // centroid it is measured about is not known until the first one finishes.
+  let m2 = 0;
+  for (let i = 0; i + 2 < idx.count; i += 3) {
+    a.fromBufferAttribute(pos, idx.getX(i));
+    b.fromBufferAttribute(pos, idx.getX(i + 1));
+    c.fromBufferAttribute(pos, idx.getX(i + 2));
+    ab.subVectors(b, a); ac.subVectors(c, a);
+    const tri = n.crossVectors(ab, ac).length() * 0.5;
+    if (!(tri > 0)) continue;
+    const dx = (a.x + b.x + c.x) / 3 - ox;
+    const dy = (a.y + b.y + c.y) / 3 - oy;
+    const dz = (a.z + b.z + c.z) / 3 - oz;
+    m2 += tri * (dx * dx + dy * dy + dz * dz);
+  }
+  const disc = Math.sqrt(area / Math.PI);
+  const rms = Math.sqrt(m2 / area) * Math.SQRT2;
+  return { x: ox, y: oy, z: oz, area,
+    radius: Math.max(disc, rms), discRadius: disc, rmsRadius: rms };
 }
 
 /** Merge a bucket, keeping the single-element case allocation free exactly as
@@ -132,7 +230,13 @@ export function gatherTiers(def: MachineTemplate, scene: THREE.Object3D,
     }
     if (t === 0) lod0 = mergeAll(all);
   }
-  return { byFamily, lod0 };
+  // RN-2385. Off the MERGED tier-0 `ember` geometry, so a template whose fire
+  // is authored as several primitives (the smelter's peep and sight strip are
+  // two) gets one source at their common area-weighted centroid rather than
+  // one emitter per primitive eating the light budget.
+  const emberG = byFamily.get('ember')?.[0] ?? null;
+  const emit = emberG === null ? null : measureEmitter(emberG);
+  return { byFamily, lod0, emit };
 }
 
 /** Vertices and indices a ladder needs, which a `BatchedMesh` must know before

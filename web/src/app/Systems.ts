@@ -12,6 +12,7 @@ import { updateCanopyCardShade } from '../render/materials/CanopySelfShadow.js';
 import { updateToneDrive } from '../render/post/ToneDrive.js';
 import { bootCelestialBodies } from '../render/CelestialBoot.js';
 import { MILESTONE, grantMilestone } from '../game/Research.js';
+import { selectEmitters } from '../render/materials/EmissiveLight.js';
 
 /** Sun elevation, as dot(sunDir, up), at which the stock lights are fully out. */
 const NIGHT_DOT = -0.12;
@@ -382,6 +383,14 @@ export function registerSystems(s: Services, loop: Loop): void {
   // fitting them in onDrain would shadow last frame's pose.
   loop.onPreRender.push(() => {
     if (s.session.isRebooting) return;   // CE-20, see onFixedStep above.
+    // RN-2385. WHICH SIX FIRES THIS FRAME'S PROGRAMS SEE. Here and not in
+    // `onFixedStep` beside the headlamp, because the score is measured from
+    // the EYE and this is the block that runs after `rig.setView`; scoring
+    // against last tick's camera would swap emitters a frame late every time
+    // the player turned. `EMIT_MAX` is a compile-time array bound, so this
+    // moves a uniform and can never change a program.
+    const c = s.rig.nearCam.position;
+    selectEmitters(c.x, c.y, c.z);
     // AFTER observer.interpolate and rig.setView: the vessel is drawn at the
     // interpolated instant the camera was placed for, so the model and the eye
     // agree. Placing it in onDrain instead put it a whole tick of travel out,

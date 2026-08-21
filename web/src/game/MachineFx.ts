@@ -17,10 +17,19 @@
 import * as THREE from 'three';
 import { findNode } from '../assets/Loaders.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
+import { EMBER_LIN, FIRE_LIN } from '../render/materials/EmissiveLight.js';
 
-/** The fire colour the smelter's VisualState 1 is authored against. */
-const FIRE = new THREE.Color(0xff7a1e);
-const EMBER = new THREE.Color(0xd63c10);
+/**
+ * The fire colour the smelter's VisualState 1 is authored against.
+ *
+ * RN-2385: NOW IMPORTED RATHER THAN DECLARED. The two hexes moved to
+ * `render/materials/EmissiveLight.ts` when the batch path learned to draw and
+ * to CAST fire, so that the furnace in a stone hut (this file) and a smelter's
+ * firebox (`MachineBatch`'s ember layer) are one colour by construction. The
+ * values are unchanged to the digit; only the authority moved.
+ */
+const FIRE = FIRE_LIN;
+const EMBER = EMBER_LIN;
 
 export interface GlowState { burning: boolean; hasFuel: boolean }
 
