@@ -111,6 +111,23 @@
 //     --evalfile=tools/smoke/probes/artframe.js --evalargs='{"shot":"meadownight"}' \
 //     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
 //
+// AND ONE MORE AT RN-2365 (WORLD AUDIT R3), added for the same reason and
+// derived by SPREAD rather than transcribed (see its own block beside the
+// `forestair`/`flyover` sun variants):
+//   smelternight `smelterhero`'s pose, standoff, bearing and all twelve
+//                rectangles TO THE DIGIT at `meadownight`'s own sub-horizon
+//                sun (dot -0.25). Rank 12 of two audits is "nothing emissive
+//                lights anything", and every frame that claim rests on is
+//                daylit, so it cannot separate an emissive that contributes
+//                nothing from one the sun is drowning. This is the only frame
+//                in the file where a hot machine is the brightest object in
+//                the world.
+//
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=walk \
+//     --sandbox=1 --width=1600 --height=900 \
+//     --evalfile=tools/smoke/probes/artframe.js --evalargs='{"shot":"smelternight"}' \
+//     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
+//
 // ==========================================================================
 // WHY THIS FILE EXISTS AT ALL, given `artshot.js` and the `*shot.js` family
 // ==========================================================================
@@ -1540,6 +1557,48 @@
     };
   }
 
+  // RN-2365 (WORLD AUDIT R3). `smelternight`: THE ONE FRAME THAT CAN TELL
+  // "nothing emissive lights anything" APART FROM "the sun is louder than it".
+  //
+  // R1 gap, R2 rank 12: a white-hot hearth throws no light and no bloom onto
+  // the ground a metre away. Every frame that claim has ever rested on is a
+  // DAYLIT one -- `smelterhero` and `machine` at dot 0.448, `basedusk`'s wall
+  // strip at dot 0.20 -- and a daylit frame cannot distinguish an emissive
+  // that contributes nothing from an emissive that contributes something
+  // forty decibels under the sun. The distinction is the whole of the
+  // question a lane would be dispatched to answer, and no shot in this file
+  // could ever have asked it. That is the "a shot set can be structurally
+  // blind to its own subject" rule (NUMBERS.md), one domain over from the two
+  // shots RN-2285 added for the same reason.
+  //
+  // IT IS `smelterhero` ONE FIELD APART, DERIVED BY SPREAD, on the
+  // `meadow`/`meadownight` precedent and for that row's own stated reason:
+  // the pose, the standoff, the bearing and all TWELVE rectangles must be the
+  // parent's to the digit or the arms are not comparable, and a transcribed
+  // rectangle block is a second authority that drifts the first time either
+  // is nudged. `firebox`, `peep` and `strip` are the emissive surfaces;
+  // `plate`, `sunface`, `hearthL` and `hearthR` are clean shell and brick
+  // that contain no fire BY THEIR OWN MANIFEST NOTES, so they are the
+  // negative controls: if the emissive lights the machine at all, those four
+  // rise off the night floor while the sky ambient cannot move them.
+  //
+  // dot -0.25 IS `meadownight`'S OWN PIN, unchanged, so the two night frames
+  // this file now has share one sun and the machine can be read against the
+  // bare meadow at the same hour rather than against itself.
+  //
+  //   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=walk \
+  //     --sandbox=1 --width=1600 --height=900 \
+  //     --evalfile=tools/smoke/probes/artframe.js \
+  //     --evalargs='{"shot":"smelternight"}' \
+  //     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
+  SHOTS.smelternight = {
+    ...SHOTS.smelterhero, sunDot: -0.25, sunTol: 0.03,
+    why: `${SHOTS.smelterhero.why} -- at a SUB-HORIZON sun (dot -0.25), the `
+      + 'only frame in this file where a hot machine is the brightest thing '
+      + 'in the world, so "nothing emissive lights anything" becomes a '
+      + 'measurement instead of an inference from a daylit frame',
+  };
+
   const name = A.shot;
   const S = SHOTS[name];
   if (S === undefined) {
@@ -1984,7 +2043,12 @@
       removedCells: vox.removedCells };
   }
 
-  if (name === 'machine' || name === 'smelterhero') {
+  // RN-2365. `smelternight` IS LISTED HERE AS WELL AS IN `SHOTS`, which is
+  // what the dispatch's own comment demands in capital letters: it is
+  // `smelterhero` at one different `sunDot`, so it needs nothing this branch
+  // does not already do, and the branch re-pins the sun after `standAt`
+  // anyway, which is the step a sub-horizon pin has to survive.
+  if (name === 'machine' || name === 'smelterhero' || name === 'smelternight') {
     posed = true;
     // machinemat.js's scene, and deliberately the same one: a smelter for the
     // Steel and Accent roles and a belt for Rubber, so one frame contains roles
