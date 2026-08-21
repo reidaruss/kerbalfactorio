@@ -830,6 +830,21 @@ add_executable(spawn_site
   tools/spawn_site.cpp)
 target_link_libraries(spawn_site PRIVATE of_core)
 
+# --- Tools: skyline_probe (WG-240): world-gen DIAGNOSTIC for the SILHOUETTE.
+#     Every other instrument in this project measures a rectangle of pixels,
+#     i.e. tone; a skyline is the upper envelope of the ground against the sky,
+#     which is an ANGLE PER AZIMUTH and no rectangle can hold it. Marches a
+#     great circle per azimuth over the surface authority (sampleDesignedHeight)
+#     with EXACT spherical geometry, and reports the spread of the silhouette
+#     elevation in millidegrees and in on-axis PIXELS, against the elevation a
+#     perfectly smooth sphere of the same radius would give (which is not zero
+#     and is the definition of a razor horizon). Prints the RANGE at which each
+#     azimuth's silhouette is won, which separates "the relief is not there"
+#     from "the relief is beyond the curve". A pure CONSUMER of of_core. ---
+add_executable(skyline_probe
+  tools/skyline_probe.cpp)
+target_link_libraries(skyline_probe PRIVATE of_core)
+
 # --- Per-test timeout: every suite finishes in seconds; a generous 120 s cap
 #     means a future loader/DLL failure fails FAST instead of stalling ~1000 s
 #     in Windows Error Reporting (the historical "hung overnight run" mode). ---
