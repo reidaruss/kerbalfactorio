@@ -345,6 +345,13 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // value between sweeps it, and the SHIPPED default is 1 whether or not this
   // flag is passed, which is the half RN-150 says must be asserted separately.
   'foliagetone',
+  // RN-2495, the CANOPY-ONLY saturation of that same tone (FoliageTone.ts's own
+  // `canopy` row, which no longer copies `leaf`'s digit). `canopysat=0.62` is
+  // the pre-RN-2495 build exactly and is the one-flag-apart control for the
+  // aerial crown chroma; any value sweeps it. It defaults to the shipped row
+  // whether or not it is passed, which is the half RN-150 says must be
+  // asserted separately.
+  'canopysat',
   // RN-47, the underwater view. `underwater=0` removes the pass; the other
   // four tune extinction, tint, scatter and the path clamp.
   'underwater', 'uwext', 'uwtint', 'uwscatter', 'uwpath',
