@@ -333,7 +333,45 @@
       sunDot: 0.70, sunTol: 0.06,
       props: false,
       box: [0.1500, 0.3975332, 0.8500, 0.4030888],   // the 27 m strip
-      rangeRects: [18, 27, 35],
+      // RN-2475. THE FAR RUNG, AND IT IS THE FIRST RECTANGLE IN THIS PROJECT
+      // THAT FRAMES THE PLAINS FAR GROUND.
+      //
+      // World audit R4 ranked "the plains far ground is a flat painted plane
+      // past ~130 m" its number one and quoted `meadow.hzBand` iqr 4.06,
+      // unmoved across three audits, as the evidence. **`meadow.hzBand`
+      // contains no terrain.** Paint every terrain fragment magenta and that
+      // rectangle comes back rgb (214.11, 207.55, 188.64) against a shipped
+      // (214.08, 207.56, 188.60): it sits at frame y 270 to 306 and the
+      // horizon at that pose is at y 317 to 325. Its 4.06 is the haze band's
+      // own iqr and no ground term can ever move it, which is exactly why
+      // three audits watched it not move. NUMBERS.md's site-blindness entry
+      // one level finer: the rectangle was not merely at the wrong SITE, it
+      // was on the wrong SIDE OF THE HORIZON.
+      //
+      // WHERE THE SUBJECT ACTUALLY IS, measured on the same painted frame:
+      // terrain covers frame rows 310 to 322 at THIS pose at 100 per cent and
+      // 0.000 to 0.02 of every row below 330, because the carpet and the
+      // scatter own the whole lower frame. The plains far ground is a
+      // THIRTEEN-ROW BAND under the horizon, and this rung sits in the middle
+      // of it (rows 315 to 320 on the pose as committed).
+      //
+      // WHY 250 m AND NOT A FRACTION. `rangeRects` places it live off this
+      // capture's own observer and the report prints `rangeM` and `footM`
+      // beside it, and `footM` is the number this whole gap is about: at a
+      // standing eye the pixel footprint grows as the SQUARE of the range --
+      // 0.257 m at 18 m, 0.957 at 35, 2.79 at 60, 11.1 at 120, **48.6 at 250**
+      // and 292 at 600. Every rung of the material's own ladder has retired at
+      // its own Nyquist point by 130 m, so 250 m is inside the band where the
+      // question "does anything draw here" has a yes/no answer. A hand-written
+      // fraction would name a range it does not have the moment the terrain
+      // moves the eye, and the guard above refuses outright if the range falls
+      // off the frame rather than clamping it onto some other ground.
+      //
+      // 600 m was measured and NOT taken, and the reason is recorded rather
+      // than the choice hidden: at 600 m the strip is rows 312 to 317, three
+      // rows from the horizon line, and any pose drift walks it into the sky.
+      // 250 m has six rows of margin on both sides.
+      rangeRects: [18, 27, 35, 250],
       rangeRowsPx: 5,
       extra: {
         r18c: [0.1500, 0.4236282, 0.8500, 0.4291838],
@@ -413,7 +451,23 @@
       // the pre-lane build, 55.70 on this one, same rectangle and pose, fresh
       // process each (the change is a shipped constant rather than a query
       // override, so the two builds are read rather than diffed by a flag).
-      rangeRects: [4, 10, 25, 55, 100],
+      // RN-2475. THE SIXTH RUNG IS `midfield`'s NEW FAR RUNG AT THE SAME RANGE,
+      // deliberately, so the two poses at this site can be read against each
+      // other: `midfield` declares `props: false` and its 250 m strip is 100
+      // per cent terrain, this one keeps the props and its 250 m strip is 48 to
+      // 74 per cent terrain with distant scatter in the rest. Same site, same
+      // range, one flag of difference in what stands on it, which is the pair
+      // "is the far ground bare, and is it bare in the frame the player
+      // actually gets". See `midfield`'s own note for why `meadow.hzBand`,
+      // which R4 called the only rectangle framing this subject, is above the
+      // horizon and contains no terrain at all.
+      //
+      // AT THIS POSE THE SUBJECT IS ROWS 278 TO 296 and this rung lands at 287
+      // to 292, measured on the terrain-painted frame. `hz` above is NOT this
+      // rectangle and does not replace it: `hz` spans rows 252 to 297, so more
+      // than half of it is sky, and its own note already records that it was
+      // placed by looking rather than by range.
+      rangeRects: [4, 10, 25, 55, 100, 250],
       rangeRowsPx: 5,
       extra: {
         sky: [0.3000, 0.1000, 0.7000, 0.2000],
