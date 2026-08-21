@@ -162,8 +162,48 @@ export function forgeAtmosphere(planetRadiusM: number): AtmosphereParams {
     // Measured on the `dawnsun` pose, which is the frame that finds this: at
     // 0.40 every sky rectangle looking INTO a 5.85 degree sun sits above 200
     // with hiFrac 0.5 to 0.65, i.e. the forward lobe clips the whole upper
-    // frame. Flat across the channels for the first attempt's reason, unchanged.
-    aerosolTint: new THREE.Vector3(0.32, 0.32, 0.32),
+    // frame.
+    //
+    // RN-2320, lane L3 COLOUR AT RANGE. NOT FLAT ANY MORE, and the reason the
+    // flat version was wrong is arithmetic rather than taste: World Audit R2
+    // measured whole-frame `warm` (meanR - meanB) NEGATIVE on all four daylight
+    // aerial poses (`flyover` -10.55, `flyovernoon` -3.26, `forestair` -18.72,
+    // `forestairnoon` -13.44) while eleven of twelve ground poses read warm-
+    // positive, i.e. the world reads as a sea the moment the eye leaves the
+    // ground. `sunT`'s reddening (2.19's own note, "that is the term that
+    // should own it") only fires near the horizon; at a HIGH sun (`flyovernoon`
+    // dot 0.897, `forestairnoon` dot 0.736) `sunT` is nearly white, so a flat
+    // haze contributes no warmth at the two arms where the audit's numbers are
+    // worst. `?aerosol=0` is the honest control and it says why a small warm
+    // bias is safe rather than a repeat of the pre-RN-2175 mistake: with the
+    // WHOLE aerosol term removed, `forestairnoon` reads warm -29.94 and
+    // `flyovernoon` reads -12.94, both COLDER than the shipped flat-grey haze
+    // (-13.44 / -3.26). So the haze is not the thing making the frame cold, the
+    // sky and the ground it is compared against are, and a flat haze was
+    // already the least-bad of the two directions; it just was not warm enough
+    // to close the gap. (0.40, 0.31, 0.22) keeps the SAME mean level (0.31,
+    // against 0.32 before) so the sky-ray brightness argument two paragraphs up
+    // is undisturbed -- `dawnsun`'s three sky rectangles (`skyUp`, `skyOff`,
+    // `hzBand`) still read `hiFrac` 0 at this triple, verified on this build --
+    // and moves the bias from a symmetric +/-0.02 to an asymmetric +0.09/-0.09
+    // around it, R up and B down, which is the SAME direction `sunT` already
+    // reddens in and the OPPOSITE of the pre-RN-2175 blue bias this file's
+    // first note warns against. Measured, one flag apart, same build:
+    // `flyover` -10.55 -> -0.08, `flyovernoon` -3.26 -> +6.70, `forestair`
+    // -18.72 -> -7.14, `forestairnoon` -13.44 -> -0.85 (the last three finish
+    // the move alongside RN-2320's BiomePalette Forest change below; aerosolTint
+    // alone reaches roughly halfway). `forestair` is the one pose that does not
+    // cross zero: at its dot 0.55 sun the inter-crown self-shadow law (RN-2275,
+    // K = 3.2 off a real LAI) is doing MORE darkening than at `forestairnoon`'s
+    // dot 0.736, because the sun path through the canopy is longer, and that
+    // darkening is physically grounded rather than a defect this lane may
+    // correct by weakening RN-2275's law. Reported rather than chased further.
+    // Every ground-pose rectangle this lane checked moved by grade-intent
+    // amounts and none changed sign; see rendering.md 2.21 for the full table.
+    // `?aerosoltint=` is not a registered sweep (no such flag existed before
+    // this lane and one uniform triple does not need a page-param isolator on
+    // top of `?aerosol=0`, which already isolates the whole term).
+    aerosolTint: new THREE.Vector3(0.40, 0.31, 0.22),
     // 10.6x Forge's own 600 km, i.e. Earth's curvature, and it is the single
     // constant in this lane that is a CHOICE rather than a correction.
     //

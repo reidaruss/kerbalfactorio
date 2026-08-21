@@ -61,12 +61,51 @@ export const BIOME_NAMES = [
  * topsoil at (0.27, 0.21, 0.145), i.e. brown, because a pit floor the colour of
  * a lawn read as absurd. The surface has now been brought into agreement with
  * the material one metre below it instead of contradicting it.
+ *
+ * RN-2320 SUPERSEDES FOREST'S OWN ROW, and the numbers above are kept rather
+ * than edited because they are still the record of what RN-347 fixed; this is
+ * what the audit found ONE LAYER FURTHER IN. World Audit R2's own ranked gap 3
+ * and RN-2275's owed item 3 both name the same arithmetic: this hex is not just
+ * the walking-level litter RN-347 wanted, it is ALSO what every FAR clearing
+ * between wooded stands paints (`TerrainCoverFar`'s chroma rotation is
+ * luminance-PRESERVING by construction, so it cannot brighten a dark substrate,
+ * only rotate its hue), and it is the base the crown card's self-shadow floor
+ * is compared against (CanopySelfShadow.ts). At the old 0x41392b (luma 0.0422)
+ * the margin between a self-shadowed wood and its own clearing was as little as
+ * -0.30 counts at `forestairnoon`'s own local noon (rendering.md 2.19.3) --
+ * correct in sign, but thin enough that a slightly darker substrate or a
+ * slightly brighter card would have put it back over the line. 0x4a4030 (linear
+ * ~(0.068, 0.051, 0.030), luma 0.0533, HSV S 0.352 -- still inside RN-347's own
+ * "vegetated biomes sit at 0.25 to 0.35" band, section 3 of this file's own
+ * history) is a moderate, DELIBERATE lift toward "duff and moss over soil, with
+ * more of the clearing's own light reaching it" rather than "pure shaded
+ * litter", not a return to green: it is warmer as well as a little brighter
+ * (TINT_W's own warm-litter axis in BiomeMaterial.ts is unchanged and the new
+ * hex sits on the same warm side of neutral the old one did). It was chosen
+ * empirically against two constraints pulling opposite ways, both measured on
+ * this build: (1) `forestfloor`'s own committed box (RN-352's standing-eye
+ * calibration pose, the same one RN-347 tuned against) must still read as
+ * litter with a crack network by eye and must not move outside a grade-intent
+ * band -- an earlier, larger candidate (0x5a4f36, luma 0.080) moved `box` from
+ * 22.82 to 42.48, which visibly re-lit the whole understorey carpet (the
+ * ground's own substrate feeds `GrassPalette.coverAlbedo` as the ROTATION'S OWN
+ * BASE, RN-2145, so a brighter substrate cascades into brighter grass at
+ * exactly the same luminance ratio) and was rejected; 0x4a4030 moves the same
+ * box to 28.64, +25%, visibly unchanged by eye (`docs/screenshots/RN2320_
+ * forestfloor.png` against the pre-lane frame). (2) RN-2275's four wood-versus-
+ * clearing pairs must still invert (wood darker than its own clearing) at every
+ * sun angle -- they do, and by a healthier margin than before rather than a
+ * thinner one: see this file's own header note below the table and rendering.md
+ * 2.21 for the requoted four pairs. Swept by eye against both constraints
+ * together; there is no registered page-param for this hex (it is a table
+ * lookup, not a uniform, and `?splat=0`/`?canopy=0` already isolate the terms
+ * that read it).
  */
 const HEX = [
   0x14406e, // Ocean
   0xb3a184, // Beach: sand, a stop darker and less golden
   0x6d6a47, // Plains: dry turf over pale soil, not a lawn
-  0x41392b, // Forest: leaf litter and humus, not a canopy
+  0x4a4030, // Forest: RN-2320, duff-and-moss over soil (was 0x41392b, RN-347)
   0x6b6650, // Hills: thin turf over stony ground
   0x7c7a74, // Mountains: unchanged, already substrate
   0xe8eef2, // Polar: unchanged

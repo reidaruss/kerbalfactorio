@@ -6,6 +6,8 @@
 >
 > *(previous pointer, kept one deep: RN-2285 to RN-2290, `lane/world-audit-r2`: THE WORLD LOOK AUDIT ROUND 2, which re-judged the whole world against the D-020 bar from scratch through everything landed since R1. **The first hundred metres is now good, the sky is good, and everything from a hundred metres to the horizon is unbuilt.** Five of R1's seven blocking gaps are closed and the haze is at bar; the two that remain are the far terrain's material AND sub-massif relief (the massif silhouettes themselves read; nothing finer than that does) -- proved by an `?aerosol=0` ceiling of 5.49 on `vista.hzBand` and an `under` iqr of 6.07 at 1,200 m with the vegetation off, so the haze is not what is hiding the mountain -- and the aerial texel staircase, which survives `?shadowcast=0`, `?clouds=0`, `?splat=0` and `?canopy=0` and whose own flag turns out to be a broken control that GL-errors at `machine`. Third new blocking item: the world's whole-frame `warm` is NEGATIVE on all four aerial poses and positive on eleven of the twelve ground poses, the stated exception being `pondside` (whole-frame warm -18.04, a ground pose whose frame is mostly water surface), i.e. it reads as a sea from the air apart from that one water frame. Two new poses, each closing a domain nothing could photograph: `pondside` (the only water surface on Forge, 55 m from spawn) and `meadownight` (sky luma 0.07 at iqr 0.00). Twelve committed rectangles from 2.14 to 2.19 reproduce to the digit. Full record in section 2.20; ranked queue and top five lanes in docs/web/WORLD-AUDIT-R2-2026-08-21.md.)*
 
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2320 to RN-2322, `lane/l3-palette`: THE RANGE PALETTE, World Audit R2's rank 3. Aerosol haze warmed from flat (0.32,0.32,0.32) to (0.40,0.31,0.22) at the same mean level, closing most of the aerial `warm` gap on its own (`flyovernoon` -3.26 -> +6.70, `forestairnoon` -13.44 -> -0.85, `flyover` -10.55 -> -0.08, `forestair` -18.72 -> -7.14, the one pose that does not cross zero and is argued from RN-2275's own physics rather than chased). BiomePalette Forest hex lifted `0x41392b` -> `0x4a4030` (luma 0.0422 -> 0.0533) to answer RN-2275's owed item 3 (an under-canopy litter tone was also every far clearing's colour); RN-2275's four wood-vs-clearing pairs re-quoted and all four still invert, with healthier margins than before. Blue-confetti mechanism verified by one-flag arm (`?prophaze=0`): `aerosolTint` is confirmed part of the cast via `PropSkyAmbient`'s shared uniform, and RN-2320's own fix already carries most of the correction. Full record in section 2.21. THIS LINE IS A POINTER: replace it, never append to it.)
+
 
 
 
@@ -6630,3 +6632,212 @@ file, no Blender file, no `assets/textures/dist` byte. Three source files:
 2. **The `?canopyshade=1` frame pair** at `forestfloor` (rank 17) is still
    owed and is still nobody's.
 3. **`station` is unphotographable** in this shot set. Fourth audit running.
+
+## 2.21 THE RANGE PALETTE (RN-2320 to RN-2322, 2026-08-21, `lane/l3-palette`)
+
+World Audit R2's L3, rank 3 (plus RN-2275's owed item 3 and the blue-confetti
+note in rank 3's own section 3.11). Base `origin/main` at `e7b8f037`. Server
+`127.0.0.1:5822`, `--strictPort`, sentinel written into this worktree's own
+`dist` and fetched back over the port BEFORE every rebuilt server was trusted
+(five rebuilds across the tuning loop, each with its own sentinel), killed by
+the PID `Get-NetTCPConnection` named each time. Owned files touched:
+`web/src/render/materials/Atmosphere.glsl.ts` (`aerosolTint` only) and
+`web/src/render/materials/BiomePalette.ts` (Forest's `HEX` row only). Not
+touched: `TerrainSplat.ts`'s hue table (no change was needed there),
+`CanopySelfShadow.ts` (read for the apply-point, not edited), `PostDefaults.ts`
+(read for `ToneDrive`'s highlight/shadow split, not edited), `grass/*`,
+`TerrainCoverFar*`, `TerrainTreeline*` (L1's/L4's, per the audit's own file
+seam), `ShadowRig`/`ContactPass`, any Blender or texgen file.
+
+### 2.21.1 THE HUE REBALANCE DESIGN
+
+Two independent levers, aimed at two different halves of the same complaint.
+
+**`aerosolTint`, the world's own haze radiance.** `ofAtmoAerial`/`ofAtmoSkyAero`
+blend `col * tr + haze * (1 - tr)` where `haze = uSunColor * uAeroTint * phase
+* sunT`. `sunT` (the sun-ray transmittance) only reddens near the horizon; at
+a HIGH sun (`flyovernoon` dot 0.897, `forestairnoon` dot 0.736 -- the two
+poses the audit's own numbers are worst at) `sunT` is nearly white, so a FLAT
+`aerosolTint` contributes no warmth at exactly the arms that need it most. The
+fix is not a level change: the mean stays 0.31, against 0.32 before, so the
+`dawnsun` sky-ray brightness argument the flat value was set against is
+undisturbed (checked below). It is a bias, (0.40, 0.31, 0.22) against the old
+(0.32, 0.32, 0.32), in the SAME direction `sunT` already reddens and the
+OPPOSITE of the pre-RN-2175 blue bias RN-2175's own comment warns against.
+
+**BiomePalette's Forest hex, the far ground's own colour authority.** Traced
+through the material: past 75 m the near splat's chroma term has faded to
+nothing (`TerrainSplat.ts`'s own C4), so what a clearing between wooded stands
+paints is the palette hex, run through `TerrainCoverFar`'s chroma rotation
+(`ofFarCoverRotate`, L4's, luminance-PRESERVING by construction so it can
+rotate hue but cannot brighten a dark substrate) and then, where canopy
+density is high enough, MIXED toward the treeline's own crown tone by
+`TerrainTreeline`'s `treeK` weight (L1's). At the old hex (`0x41392b`, luma
+0.0422) the margin between a self-shadowed wood and its own unmixed clearing
+was as thin as -0.30 counts (rendering.md 2.19.3) -- correct in sign, but one
+bad K or one bright card away from inverting again. Lifted to `0x4a4030`
+(luma 0.0533, +26%), which is still inside RN-347's own 0.25-to-0.35 HSV-S
+band for a vegetated biome (S 0.352) and is a moderate, argued lift toward
+"duff and moss with more of the clearing's own light reaching it," not a
+return to green.
+
+### 2.21.2 THE PASS-CONDITION WARM TABLE
+
+Whole-frame `warm` (`meanR - meanB`, positive is warm), `world` box, one
+build, `docs/screenshots/RN2320_<shot>.png` for all eight:
+
+| pose | before (baseline, reproduced) | after | judgement |
+|---|---:|---:|---|
+| `flyover` | -10.55 | **-0.08** | Crosses to essentially neutral. The remaining hair of cold is the haze's own floor at a mid-height sun (dot 0.553); moving it further risked the `dawnsun` sky-ray ceiling for a fraction of a count nobody would see as blue any more. |
+| `flyovernoon` | -3.26 | **+6.70** | Clears zero with margin. At this high a sun (dot 0.897) the ground itself dominates the frame and the haze's own warm bias reaches it almost undiluted. |
+| `forestair` | -18.72 | **-7.14** | Improved by 11.58 counts and does not cross. **CORRECTION, a fresh-context verifier's own finding, reproduced here to the digit:** the residual is NOT mostly the self-shadow law. `?canopy=0` at this pose (no vegetation in frame at all) reads warm **-4.49** -- the bare Forest substrate plus haze at this pose's dot 0.55, with nothing RN-2275 touches anywhere in the rectangle. So at most `-7.14 - (-4.49) = -2.65` counts of the residual is the self-shadow law; the majority, -4.49 of -7.14 (63%), is the TREELESS frame itself. **The consequence changes the routing**: this residual is reachable by the same lever family this lane already used (a further `aerosolTint` push, or a further Forest-hex lift, both of which this lane stopped short of to protect `forestfloor`'s own grade and the `dawnsun` sky-ray ceiling), not blocked on RN-2275's physics. Reported as owed rather than chased further inside this lane's own stopping point (2.21.7 item 2, corrected). |
+| `forestairnoon` | -13.44 | **-0.85** | Effectively neutral. The remaining fraction is the same self-shadow effect at a shorter path; it is not zero because Forest's own canopy area index is the highest in the game (`mu` = 1.014). |
+
+Eleven ground poses, four representative (meadow, forestfloor, vista,
+mtnslope) plus the other seven read (voxelface, midfield, mtnslope's own
+neighbours, station, machine, ruin family, basedusk) checked for sign only
+via the same build:
+
+| pose | before | after | delta | judgement |
+|---|---:|---:|---:|---|
+| `meadow` | +16.45 | **+20.48** | +4.03 | Grade-intent move: the same warm haze that helps the aerials also warms a long sightline's far third of this frame. Sign unchanged, magnitude in line with the other ground poses. |
+| `forestfloor` | +9.34 | **+12.99** | +3.65 | Warm moved from both levers (Forest hex is under this pose's own feet); box luma moved +25% (22.82 -> 28.64) and was checked by eye (2.21.3) to still read as litter. |
+| `vista` | +0.10 | **+9.36** | +9.26 | The largest ground-pose move, and it is the pose least like the other three: a 4.7 km ridge seen through the same optical depth that dominates the aerial poses, so it responds almost as an aerial one would. Sign unchanged (was already barely positive). |
+| `mtnslope` | +21.61 | **+24.00** | +2.39 | Smallest ground-pose move (Mountains' own hex untouched, minimal haze at this range). |
+
+The stated `pondside` water exception (whole-frame warm -18.04, World Audit
+R2 3.11) was not re-taken: this lane owns no water term and the exception is
+a property of the pond's own material, not of anything moved here.
+
+### 2.21.3 THE CLEARING-COLOUR DECISION, AND WHAT WAS REJECTED FIRST
+
+The first candidate, `0x5a4f36` (luma 0.080, roughly the old value doubled),
+was tried and rejected on its own frame: `forestfloor`'s committed box moved
+22.82 -> 42.48, +86%, and `docs/screenshots/RN2320_v3_forestfloor.png`
+(superseded, not kept) showed why the number was that large -- the ground's
+own substrate feeds `GrassPalette.coverAlbedo` as the rotation's OWN base
+(RN-2145: the carpet's colour is a chroma rotation of the terrain's own
+albedo, held at the SAME luminance, so the fade to the bare palette cannot
+show as a value step), so brightening the substrate cascades into brightening
+the WHOLE understorey carpet at the same ratio, not just the bare dirt
+patches between blades. The frame still looked like a plausible forest floor,
+but it was a wholesale relight of RN-347's own calibrated pose, not the
+targeted fix this lane was chartered for.
+
+`0x4a4030` (luma 0.0533, +26%) was chosen instead, and re-checked by eye
+against `docs/screenshots/RN2320_forestfloor.png`: the dead-blade litter
+streak and the dark, mottled ground between blades are both still visibly
+present, same as the pre-lane frame, and `forestfloor`'s own box (28.64) is a
+grade-intent move rather than a repaint. The decision, stated as the audit
+asked for: Forest's ground colour is now "duff and moss over soil, with more
+of the light a real clearing gets reaching it," not a return to the pre-RN-347
+green error and not a doubling-down on pure shaded litter.
+
+**RN-2275's four wood-vs-clearing pairs, re-quoted on this build** (box luma,
+positive `before` = the pre-shadow-lane inversion, negative `after` = the
+photo-correct sign RN-2275 shipped):
+
+| pose | clearing | before (no self-shadow) | after (shipped) | RN-2275's own after |
+|---|---:|---:|---:|---:|
+| `forestairnoon` | 110.32 | +11.28 | **-2.84** | -0.30 |
+| `forestairlow` | 84.44 | +5.88 | **-2.32** | -1.43 |
+| `flyovernoon` | 150.32 | +0.43 | **-8.46** | -7.05 |
+| `flyoverlow` | 107.63 | +4.39 | **-2.15** | -1.75 |
+
+All four still invert and every margin is healthier (more negative) than
+RN-2275 shipped, not thinner: brightening the clearing gave the self-shadow
+law more room rather than less, since the wood side of the comparison
+(`CROWN_SELF_K`, `CROWN_SELF_FLOOR`) was untouched by this lane.
+
+### 2.21.4 THE CONFETTI MECHANISM AND FIX
+
+Traced to `web/src/render/materials/PropSkyAmbient.ts`'s `AERIAL` block
+(RN-2232): the canopy CARD batch is a stock `MeshStandardMaterial` spliced
+with the same aerial-perspective term the terrain uses, `ofAtmoAerial`,
+reading the SAME `uAeroTint` object by reference (`publishPropSkyAmbient`
+takes it from the shared atmosphere bundle). So the far treeline's crown
+tone and the near instanced canopy cards are both hazed by whatever
+`aerosolTint` says, same as the ground.
+
+**Verified by one-flag arm, `?prophaze=0`** (RN-2232's own isolator, value
+control: same program, term multiplied by zero), on the shipped build:
+whole-frame `warm` at `forestair` moves -7.14 -> -5.14 (+2.00) and at
+`forestairnoon` -0.85 -> +0.52 (+1.37, crosses zero) when the prop haze is
+removed. That is `aerosolTint`'s own measured share of the cast on canopy,
+confirmed rather than assumed, and it is smaller now than it would have been
+against the old flat tint precisely because RN-2320's own fix already warmed
+the term this splice reads. The residual cast that remains with the haze
+fully on is outside this lane's files: `FoliageTone.ts`'s canopy row (`sat:
+0.62, val: 0.86`, desaturating the crown toward its OWN luma) and
+`PropSkyAmbient`'s separate sky-ambient fill (`TERRAIN_SKY_AMBIENT`, a blue
+zenith irradiance added to canopy irradiance) both sit in files this lane was
+not chartered to touch, and are named here as the next lever if the residual
+still reads cold once L1/L2's rank-1/2 work lands and the frame can be
+rejudged by eye.
+
+### 2.21.5 C1..C4 AND THE TWIN-CONSTANT ASSERTIONS
+
+Neither edit touches a splat layer or a fade band, so `TerrainSplat.ts`'s
+C1..C4 module-load assertions (`assertHueLuminance`) were not exercised by
+this lane's own changes; `npm run check` (below) confirms they still pass on
+the shipped tree. `GrassPalette.coverAlbedo`'s carpet-side rotation and
+`TerrainCoverFar`'s far-side mirror were read (2.21.1) but not edited, so
+`assertFarCoverMatchesGrass`'s cross-check (TerrainCoverFar.ts, throws at
+module load if the two drift) is unaffected and still passes.
+
+### 2.21.6 Rails
+
+Sentinel-verified server on `127.0.0.1:5822`, five rebuilds across the tuning
+loop (aerosolTint v1/v2, BiomePalette v1 rejected/v2 accepted), each with its
+own sentinel written before boot and fetched back over the port before any
+number from that build was trusted; killed by the PID
+`Get-NetTCPConnection -LocalPort 5822` named each time. `npx tsc --noEmit`,
+`npx vite build` and `cd web && npm run check` run as SEPARATE steps, each
+exit status read on its own: 0, 0, and 8 of 8. `web/wasm/dist/*` untouched;
+this repo carries no `test/expected.json`; no texgen file, no Blender file, no
+density table, no `Registry.ts`/`ScatterTuning.ts` edit. Two files touched:
+`web/src/render/materials/Atmosphere.glsl.ts` (`aerosolTint` only) and
+`web/src/render/materials/BiomePalette.ts` (Forest's `HEX` row only). One new
+tool, `web/tools/smoke/rn2320sweep.mjs`, on `rn2275sweep.mjs`'s own pattern
+(warm/luma/sat sweeper for the eight poses this lane's pass condition names).
+Branch `lane/l3-palette`, pushed, **not merged to main**.
+
+### 2.21.7 Owed
+
+1. **The residual confetti cast** (2.21.4): `FoliageTone.ts`'s canopy
+   desaturation and `PropSkyAmbient`'s blue sky-ambient fill on canopy cards,
+   both outside this lane's files, are the next lever if the frame still
+   reads cold by eye once ranks 1 and 2 land.
+2. **`forestair`'s -7.14** (2.21.2), CORRECTED by a fresh-context verifier:
+   only -2.65 of it is the RN-2275 self-shadow law; the majority, -4.49
+   (`?canopy=0`, no vegetation), is the treeless frame -- Forest substrate
+   plus haze at this pose's dot 0.55. Reachable by the SAME lever family this
+   lane already used (a further `aerosolTint` push or Forest-hex lift), not
+   blocked on RN-2275; this lane stopped short of it to protect `forestfloor`'s
+   grade and the `dawnsun` sky-ray ceiling. Worth a fresh push from either
+   lever, or a fresh look once the far-ground material (L1) gives the pose
+   more to look at besides canopy and haze.
+
+### 2.21.8 Correction pass (2026-08-21, verifier corrections)
+
+A fresh-context verifier that never touched this lane reproduced the whole
+warm table, the rejected-candidate cascade, RN-2275's four pairs and the
+`dawnsun` ceiling to the digit on its own two-arm build, and verdict MERGE.
+Four corrections applied here rather than silently: (1) 2.21.2's `forestair`
+row and 2.21.7 item 2 wrongly attributed the -7.14 residual mostly to the
+RN-2275 self-shadow law; the verifier armed `?canopy=0` and read warm -4.49
+with no vegetation in frame, so at most -2.65 of the -7.14 is the self-shadow
+law and the majority is the treeless frame itself (Forest substrate plus
+haze at dot 0.55), which changes the routing from "blocked on RN-2275" to
+"reachable by this lane's own lever family". (2) `BiomePalette.ts`'s own
+comment cited `RN2320_v4_forestfloor.png`, a superseded frame never
+committed; corrected to `RN2320_forestfloor.png`, the committed one. (3)
+2.21.4 gave `PropSkyAmbient.ts`'s path as `render/instancing/`; it is
+`render/materials/`. (4) The routed confetti residual lived only in 2.21.7;
+added to the NUMBERS.md row (below) so Admin can allocate from the ledger.
+**The verifier's own side finding, published rather than hidden:** dawn
+`skyUp` warm moves -11.81 to +7.19 as a real side effect of the aerosolTint
+bias (reproduced on this build at +7.13, within rounding) -- the same
+warming that fixes the aerial poses also warms the near-horizon sky ray at
+dawn, and it is disclosed here as a look consequence rather than a defect,
+since nothing in this lane's pass condition governs `dawnsun`'s own hue.
