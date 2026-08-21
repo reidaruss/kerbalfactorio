@@ -12,6 +12,7 @@
 
 import { ART_DEFAULT, fineAmpFromQuery, specAmpFromQuery} from './TerrainAmpQuery.js';
 import { canopyToneNow } from './TerrainTreeline.js';
+import { canopySelfNow } from './CanopySelfShadow.js';
 import { horizonOccFromQuery, reliefCellFromQuery, reliefCellNoiseFromQuery,
   reliefGradFromQuery, reliefGradUvFromQuery, reliefSwingFromQuery }
   from './TerrainReliefQuery.js';
@@ -364,14 +365,26 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
     treeline(): {
       amp: number; mottle: number; reachM: number;
       tone: { r: number; g: number; b: number; live: boolean };
+      self: ReturnType<typeof canopySelfNow> & { uniform: [number, number, number] };
     } {
       const v = s.treeline.value;
+      const c = s.crownShade.value;
       return {
         amp: v.x, mottle: v.y, reachM: v.z,
         tone: {
           r: s.treelineTone.value.x, g: s.treelineTone.value.y,
           b: s.treelineTone.value.z, live: canopyToneNow().live,
         },
+        // RN-2275. The self-shadow's two halves, read back TOGETHER and from
+        // the two ends: `uniform` is what the terrain's fragment shader is
+        // actually holding and the rest is what the card updater computed.
+        // A probe compares `amp`/`k`/`floor` against `uniform` (one triple, or
+        // the sharing broke) and recomputes the law from `cardMu` and `sinSun`
+        // to check `cardShade` (the GLSL and the TypeScript are still the same
+        // three lines). `live` false means the canopy batch never bound and
+        // the NEAR half of this term is silently absent -- 2.18.5's failure
+        // mode one term over, and invisible in a frame for the same reason.
+        self: { ...canopySelfNow(), uniform: [c.x, c.y, c.z] },
       };
     },
     ...terrainSplatHandle(s),

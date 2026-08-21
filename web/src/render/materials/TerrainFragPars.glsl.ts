@@ -184,6 +184,11 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // The canopy CARD's own mean rendered albedo, linear, read off the live
     // material by SurfaceBind rather than copied. See TerrainTreeline.ts.
     uniform vec3 uTreelineTone;
+    // RN-2275. INTER-CROWN SELF-SHADOWING: (amp, K, floor). The SAME three
+    // floats the canopy card's per-frame colour update reads, held once in
+    // CanopySelfShadow.SHADE, so the near stand and the far treeline cannot be
+    // darkened by different numbers. x = 0 is the exact pre-RN-2275 frame.
+    uniform vec3 uCrownShade;
     varying vec3 vBiomeColor;
     varying vec4 vMatW;
     varying vec4 vRelW;

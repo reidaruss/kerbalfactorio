@@ -29,6 +29,7 @@ import { fineMFromQuery, horizonOccFromQuery, reliefCellFromQuery,
 import type { TerrainMaterialOptions } from './TerrainMaterialTypes.js';
 import { onCanopyTone, treelineAmpFromQuery, treelineMottleFromQuery }
   from './TerrainTreeline.js';
+import { SHADE } from './CanopySelfShadow.js';
 import { SPLAT_FADE_ALBEDO, SPLAT_FADE_NORMAL, SPLAT_MAPS }
   from './TerrainSplat.js';
 
@@ -221,6 +222,13 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     value: new THREE.Vector3(),
   };
   onCanopyTone((r, g, b) => { treelineTone.value.set(r, g, b); });
+  // RN-2275. INTER-CROWN SELF-SHADOWING, (amp, K, floor). Built FROM the same
+  // `SHADE` triple the canopy card's per-frame update reads, so the near cards
+  // and the far paint are darkened by one set of numbers rather than by two
+  // that agree today. Shared by reference into both materials.
+  const crownShade: THREE.IUniform<THREE.Vector3> = {
+    value: new THREE.Vector3(SHADE[0], SHADE[1], SHADE[2]),
+  };
   const wetBand = wetBandFromQuery(o.water);
   const wetDir = new THREE.Vector3(
     o.water?.dirX ?? 0, o.water?.dirY ?? 1, o.water?.dirZ ?? 0);
@@ -235,7 +243,7 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     fineLum, reliefGrad, reliefGradUv, artFineM, reliefFineM, artCoarseM,
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
-    splatAmp, splatFade, splatFarAmp, treeline, treelineTone,
+    splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
     splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,
   };
 }
