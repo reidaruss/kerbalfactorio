@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2450 to RN-2456, `lane/world-audit-r4`: **THE WORLD LOOK AUDIT, ROUND 4.** R3's whole top five landed and four of them closed their rank outright; every one of the five reproduces through its own isolator, four of them to the digit (`?aerodepth=0` returns R3's `vista.skyHz` -12.14, `vistadawn.skyR` +25.58 and `dawnsun.skyUp` +7.19 exactly; `?horizoncell=0` returns R3's 0.622-at-lag-10 lattice; `?nightsky=0` returns its flat-black sky at iqr exactly 0.00; `?grasspatch=0` returns r25 29.48 and r55 21.56). **THE DISTANCE GOES BLUE:** `vista.hzBand` warm +48.36 -> **-2.07** against a sky at -19.36, i.e. a 60.5-count OPPOSITE-hue seam became a 17.29-count SAME-hue one. **THE NIGHT EXISTS:** the headlamp is 6.5 per cent of an empty field (R3: 23) and 69.7 per cent beside a furnace (R3: 94), and the sky went from iqr exactly 0.00 to a graded 9.33/14.46/16.88 with a real star field. **A FURNACE NOW BRIGHTENS ITS OWN FRAME** 1.31x above an empty meadow, where R3 measured it DARKER (10.88 against 8.28, R3: 1.81 against 2.03); `firebox` 0.41 -> **21.66** and `?firelight=0` attributes 94 per cent of that to M3's term. **THE NEW BLOCKING FINDING, AND IT IS NOT R3's LATTICE:** a SCREEN-locked 4-pixel cross-hatch lies over bare ground at any low sun, convicted as the CONTACT-SHADOW pass's own ordered dither. Six one-flag terrain arms are null (phaseStd 1.772 to 1.838), `?contact=0` collapses it to **0.602 while the patch's own std RISES 30.2 -> 33.2**, the period-5 control on the same pixels does not move at all, the signal is monotone in sun elevation (1.791 / 0.978 / 0.830 at dot 0.101 / 0.699 / 0.920), a sky patch reads 0.053, and the same armed arm removes NONE of it at a grassed pose because the dither needs bare ground to sit on. `ContactGlsl.ts`'s own header says the apply pass's 5-tap cross resolves a 4-px dither; five taps cover five of sixteen phases and it does not. **THE SECOND NEW FINDING IS A RE-JUDGEMENT OF R3:** every "the far ground has no material" reading in this campaign was taken at the VISTA site, and at the PLAINS site the player actually spawns in it is a flat painted plane past about 130 m -- `meadow.hzBand` iqr **4.06**, unmoved across three audits, with `?aerosol=0` buying 0.79 counts, so unlike the vista site the lever is the GROUND and not the air. It is also the only committed rectangle in the whole shot set that frames that subject. **TWO RETRACTIONS, both against this project's own prior findings:** the orbital terminator seam is NOT creeping (64.27 against R3's 64.27, so 59.39 -> 63.21 -> 64.27 was two points of noise), and the station's five-audit roll-convention suspect was removed by CE-116 -- `StationMount.ts:173` registers the only writer and `:193` fires that same watcher at install, one convention, not two -- with two stale docstrings (`StationMount.ts:16-34`, `StationView.ts:144-156`) the cause of four wasted rounds. **NEW INSTRUMENT:** `web/tools/smoke/rn2450bayer.mjs`, a 4-pixel phase meter with a free period-5 negative control, written because `latmeter.mjs` walks from `minLag = 4` and is structurally blind to a repeat at that period. Next top five: N1 the plains far ground (opus, diagnosis first, plus two new RECTANGLES not poses), N2 the contact dither (sonnet), N3 the world from the air, four audits BEHIND and never given a lane (opus, carries rank 8's bloom), N4 the carpet's LEVEL, 1.96x its substrate (sonnet), N5 the station's one derived probe field (sonnet, an afternoon). Full record in section 2.27; audit in [docs/web/WORLD-AUDIT-R4-2026-08-22.md](../web/WORLD-AUDIT-R4-2026-08-22.md). THIS LINE IS A POINTER: replace it, never append to it.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2475 to RN-2482, `lane/n1-plains`: **THE PLAINS FAR GROUND, R4's rank 1, and the diagnosis retires the rectangle it was ranked on.** `meadow.hzBand`, the number three audits watched sit at 4.06, **contains no terrain**: paint every terrain fragment magenta and it returns rgb 214.11/207.55/188.64 against a shipped 214.08/207.56/188.60, because it sits at rows 270-306 and that pose's horizon is at rows 317-325. It is a SKY rectangle, no ground term can move it, and `?aerosol=0` "buying 0.79 counts" there was a measurement of the haze. R4's site-blindness finding is right and one level short: the rectangle was on the wrong SIDE OF THE HORIZON, not merely at the wrong site. **The subject is a THIRTEEN-ROW BAND** (terrain covers `midfield` rows 310-322 at 100 per cent and 0.00-0.02 of every row below 330), which is why no fraction ever landed in it. **TWO RECTANGLES ADDED**, `midfield.r250` and `meadowfield.r250`, and the seven-arm table they make possible is the conviction: shipped **32.63**, `?horizoncellan=0` **17.42**, `?horizon=0` **17.42 to the digit**, `?horizonmassif=0` 32.63 (null), `?aerosol=0` 32.62 (**the air is a null, 0.01 counts**), `?grass=0` 32.63, `?horizoncellan=6` 133.05. **On plains RN-2421's analytic stand-in is not the main term, it is the ONLY term**, at an amplitude fitted at an aerial pose over forest, while the massif's kilometre octaves are correctly gated off -- painted, `msfBand` reads luma **0.17 p95 0.00** at `midfield`'s far band against **215.76 saturated** at `vista.mid` on the same build. **THE FIX IS ONE MULTIPLY ON THAT GATE'S OWN COMPLEMENT** (`1 + 0.5 * (1 - hzMsfBand)`), so a mountain is bit-identical by construction: `midfield.r250` **32.63 -> 43.83**, inside the mid field's own 41-to-47 band; `meadowfield.r250` 44.50 -> 47.25; `vista`, `mtnslope`, `meadow` and every rectangle inside 160 m bit-identical; `?horizon=0` 17.42 and `?horizoncell=0` 27.85 exact on both builds. **A DESIGN WAS BUILT AND THROWN AWAY:** two coarser octaves sized against the shot manifest's flat-plane `footM` (48.6 m at r250) moved the rectangle by **0.00 at 20x**, because the SHADER's own `footM`, painted as a step ladder, is **between 1.8 and 8.0 m** there -- the ground swells, so the visible horizon is a near crest and the manifest's range map is an order of magnitude out past 100 m. **THE EYE IS A PARTIAL PASS AND SAYS SO:** at 1x the plane still meets the sky at a razor line, seven times the gain reads WORSE (a dark smear, iqr 95.05), and the residue is the SILHOUETTE (world-gen's height field) and objects standing on it (`TerrainCoverFar`'s stand field), both outside this material. Full record in section 2.28. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
 
@@ -8849,3 +8849,272 @@ main**.
 4. **Fifteen of the thirty-one arms are published as numbers without a committed
    frame**, because each is a figure rather than a picture; each names its own
    one-line invocation in the audit's section 4.
+
+## 2.28 THE PLAINS FAR GROUND (RN-2475 to RN-2482, 2026-08-21, `lane/n1-plains`)
+
+> **Numbers:** RN-2475 to RN-2482 of the RN-2475 to RN-2489 block; RN-2483 to
+> RN-2489 surrendered unused. **Base:** `origin/main` at `8549155d`.
+> **Charter:** world audit R4's **rank 1**, the top blocking row: "the plains far
+> ground is a flat painted plane past ~130 m", diagnosis first.
+> **Frames:** `docs/screenshots/RN2475_*`.
+
+### 2.28.1 THE ONE-LINE ANSWER
+
+The rectangle the gap was ranked on is **above the horizon and contains no
+terrain**, the plains far ground is a **thirteen-row band** no rectangle in the
+project had ever framed, and inside that band **RN-2421's analytic stand-in is
+the only term drawing at all** -- at an amplitude fitted at an aerial pose over a
+forest, with the massif's two kilometre octaves correctly gated off by a relief
+band a plain cannot open. The fix is one multiply on the massif gate's own
+complement; the residue is not in this material and is named in 2.28.7.
+
+### 2.28.2 RN-2475, THE INSTRUMENT: `meadow.hzBand` IS SKY
+
+**One paint settles it.** `lit = vec3(4.0, 0.0, 4.0)` at the end of
+`TerrainFragLight.glsl.ts`, i.e. every terrain fragment magenta, one build,
+reverted with the hash proof in 2.28.6.
+
+| rectangle | shipped rgb | terrain-painted rgb | reading |
+|---|---|---|---|
+| `meadow.hzBand` | 214.08 / 207.56 / 188.60 | **214.11 / 207.55 / 188.64** | **not one pixel is terrain** |
+| `meadow.mid` | 97.41 / 122.38 / 63.23 | 97.80 / 122.49 / 63.62 | 0.4 counts, i.e. carpet |
+| `vista.hzBand` | (shipped) | **248.30 / 190.78 / 220.08** | fully painted: the positive control |
+| `vista.mid` | (shipped) | **252 / 193 / 223 at iqr 0** | 100 per cent terrain |
+
+`meadow.hzBand` sits at frame rows 270 to 306. A row profile of the shipped frame
+across x 80 to 1520 puts the sky/ground transition at rows **317 to 325** (per-row
+iqr 3.93 at 307, 15.50 at 318, 130.28 at 323), and the rectangle's own committed
+iqr of 4.06 is the same 3.9-to-4.2 the haze band reads on every row above it.
+**Three audits watched a number not move because no ground term can move it, and
+`?aerosol=0` "buying only 0.79 counts" there was a measurement of the sky.**
+R4's RN-2453 is right that the shot set was blind to this subject and one level
+short of how blind: the rectangle was not merely at the wrong SITE, it was on the
+wrong SIDE OF THE HORIZON. Frame: `RN2475_term_terrain_meadow.png`.
+
+**And the subject's real extent, off the same paint.** Terrain covers rows
+**310 to 322 at `midfield` at 100 per cent** and **278 to 296 at `meadowfield` at
+48 to 74 per cent** (the rest is distant scatter), and 0.000 to 0.02 of every row
+below 330 at `midfield`, because the carpet and the props own the whole lower
+frame. The plains far ground is a THIRTEEN-ROW BAND, which is why no hand-placed
+fraction had ever landed in it and why rank 1 needed a rectangle.
+
+### 2.28.3 RN-2476, THE CONVICTION: THE MASSIF GATE READS EXACTLY ZERO THERE
+
+Painted `hzDbg = msfBand`, one line, one build, both poses in the same run.
+
+| rectangle | painted `msfBand` |
+|---|---|
+| `midfield` far band (rows 310-322) | **luma 0.17, iqr 0, p95 0.00** |
+| `midfield.r250` | luma 0.20, iqr 0, p95 0.00 |
+| `vista.mid` | **215.76 at iqr 0**, i.e. saturated |
+| `vista.hzBand` | 213.22 |
+
+Frames `RN2475_term_msfband_midfield.png` and `RN2475_term_msfband_vista.png`.
+**The gate is not broken and must not be opened.** `MASSIF_BAND`'s own note
+promises "the plains a player walks for the first several hours are
+bit-identical", and it is right to: the massif's 390 m and 1240 m octaves carry a
+NORMAL half, and a normal perturbation at that scale over flat ground lights a
+meadow like a dune field. What the gate does not do is tell anything else that a
+plain has therefore been left with one macro term where a hill has three.
+
+### 2.28.4 RN-2477, THE SEVEN-ARM TABLE, and it is what the project never had
+
+`midfield.r250`, the new rectangle (2.28.5), one flag apart, fresh process each,
+one build.
+
+| arm | r250 iqr | what it says |
+|---|---:|---|
+| shipped | **32.63** | |
+| `?horizoncellan=0` | **17.42** | RN-2421's analytic stand-in removed |
+| `?horizon=0` | **17.42** | the WHOLE far-ground term removed, and it lands on the same number to the digit |
+| `?horizonmassif=0` | 32.63 | the massif is a **null**, from the other side of 2.28.3's paint |
+| `?aerosol=0` | 32.62 | **the air is a null**: 0.01 counts |
+| `?grass=0` | 32.63 | the rectangle is pure terrain, independently of the paint |
+| `?horizoncellan=6` | **133.05** | and the term responds to amplitude |
+
+**Read those seven rows together and only one conclusion is available: on the
+plains far ground the analytic stand-in is not the main term, it is the ONLY
+term.** Its amplitude, `HORIZON_A_ANALYTIC = 1.65`, was fitted at RN-2421 to hold
+`forestair`'s patch std at 6.24 -- an AERIAL pose over FOREST -- and the plains
+far ground inherited it without anyone measuring there, because there was nothing
+to measure with.
+
+**R4's conclusion survives its own broken evidence.** RN-2453 concluded from a
+sky rectangle that "at the plains site the lever is the GROUND and not the air".
+It is: on a rectangle that can actually see the subject, `?aerosol=0` moves it by
+**0.01 counts**.
+
+### 2.28.5 RN-2478, THE TWO RECTANGLES
+
+`midfield` gains `r250` and `meadowfield` gains `r250`: the same named range at
+the same site, one pose with `props: false` (100 per cent terrain) and one with
+the props the player actually gets (48 to 74 per cent). Placed by `rangeRects`
+rather than as fractions so the report prints `rangeM` and `footM` beside them
+and the guard refuses outright if the range walks off the frame. 600 m was
+measured and refused: its strip is three rows from the horizon line, where any
+pose drift walks it into the sky. Full argument in the manifest rows themselves.
+
+**AND A CAVEAT THAT IS PART OF THE FIXTURE, not a footnote.** `rangeM` and
+`footM` are a FLAT-PLANE inversion. At this site they are wrong past about 100 m
+and 2.28.6 is the measurement that says so; the rectangle is a reproducible
+PLACEMENT, not a survey, which is exactly what the mechanism's own header claims
+for it.
+
+### 2.28.6 RN-2479, A DESIGN BUILT, MEASURED AT 20x, AND THROWN AWAY
+
+The first fix was two coarser octaves (640 m and 2560 m) handed over on the
+160 m octave's own Nyquist complement. It was built, wired to its own uniform and
+flag, typechecked, shipped to the preview and measured: **`?horizonfar=20` moved
+`midfield.r250` by 0.00 counts.** An amplitude sweep that moves nothing is a term
+outside its own gate (`HORIZON_ECO_GATE`'s own scar, one range band out).
+
+**Why, and it is the instrument trap this lane contributes.** The design was
+sized against the SHOT MANIFEST's `footM`, which inverts a flat plane and reports
+0.257 m at 18 m, 0.957 at 35, 2.79 at 60, 11.1 at 120, **48.6 at 250** and 292 at
+600. The SHADER's own `footM` is `max(length(dFdx(vWorld)), length(dFdy(vWorld)))`
+and, painted as a step ladder at the ladder's own boundaries (1.8 / 8.0 / 20.0 /
+53.3 / 213.0 m) at that same rectangle, exactly **one step passes**: the shader
+sees **between 1.8 and 8.0 m** where the manifest says 48.6. The two disagree by
+an order of magnitude because the ground at this site is not a plane -- it swells,
+so the visible horizon is a crest a few hundred metres out rather than the
+1,549 m geometric one, and the incidence is nothing like grazing. Every octave in
+the material is therefore still Nyquist-legal out there and there was never a
+hole in the ladder.
+
+**A second lesson from the same afternoon, and it invalidated two readings before
+it was noticed.** A painted intermediate whose value sits above about 0.3 is read
+through the SHOULDER of the grade: on this build a painted 0.25 photographs at
+177.55, 0.5 at ~207 and 1.0 at 215.76, so half the term's range is compressed
+into nine counts. Two arms were re-run at one fifth scale for that reason. **Paint
+diagnostics into the bottom of the curve, and prefer a `step()` ladder to a
+continuous value.**
+
+### 2.28.7 RN-2480, THE FIX: THE PLAINS MACRO GAIN
+
+One multiply. The analytic stand-in's amplitude carries
+`1 + HORIZON_AN_PLAINS_GAIN * (1 - hzMsfBand)`, i.e. it is given the macro
+headroom the massif's relief gate is withholding, on that gate's OWN COMPLEMENT
+so it is exactly 1.0 wherever the massif is at full strength and every relieved
+pose is bit-identical by construction rather than by tuning. No new fade constant:
+the boundary is the one `MASSIF_BAND` already draws. That is RN-2195's
+complementary-fade idiom, which this file already spends twice, applied to the one
+seam that had nothing on the far side of it.
+
+`msfBand` moved out of `TerrainMassif.glsl.ts` and became `hzMsfBand`, computed
+once in `TERRAIN_HORIZON_BLOCK` outside the `OF_SCALED` guard and read by both
+consumers, for RN-1855's reason: the two now have to sum to a constant across
+that boundary, and two copies of one smoothstep would give a shoulder both terms
+and a crest neither the day one of them moved.
+
+**The gain is 0.5 and it is read off a ladder rather than liked.** The sweep at
+`midfield.r250`: **17.42 at 0x, 32.63 at 1x, 43.83 at 1.5x, 53.56 at 2x, 133.05
+at 6x.** The mid field's own committed rectangles at this pose read 41.78 at r35,
+41.41 at r60 and 47.33 at r120, so "the far ground carries what the mid field
+carries" is the 41-to-47 band and 1.5x lands at **43.83**, inside it.
+
+### 2.28.8 THE NUMBERS, one flag apart on one build, fresh process each
+
+`?horizonplains=0` is the exact before arm with the cell guard and the stand-in
+both still ARMED.
+
+| rectangle | before | after | note |
+|---|---:|---:|---|
+| `midfield.r250` iqr | **32.63** | **43.83** | **+34 per cent**, against a stated target of the 41-to-47 mid-field band |
+| `meadowfield.r250` iqr | 44.50 | **47.25** | the same range with the props the player gets |
+| `meadowfield.r100` iqr | 59.62 | **63.98** | |
+| `meadowfield.hz` iqr | 91.60 | 92.53 | half sky, so most of it cannot move |
+| `midfield` r18 / r27 / r35, `box` | | **bit-identical** | |
+| `meadowfield` r4 / r10 / r25 / r55, `box`, `sky` | | **bit-identical** | |
+| `meadow`, all six rectangles + `box` | | **bit-identical** (`hzBand` 4.06, and 2.28.2 is why it cannot move) | |
+| `vista`, all seven | | **bit-identical**, `hzBand` iqr 3.28 warm -2.07, `mid` 13.96, `nearG` 25.00, `box` 174.53 / 14.48 | R4's committed figures to the digit |
+| `mtnslope`, all seven | | **bit-identical between shipped and `?horizonplains=0`** | the gain is exactly zero on a mountain, proven rather than argued |
+
+**THE TWO EXACTNESS CONTROLS, measured on a pre-lane build and on this one.**
+`?horizon=0` at `midfield.r250`: **17.42 both sides**. `?horizoncell=0`: **27.85
+both sides**. Both to the digit.
+
+**COST, WG-189, two interleaved pairs, fresh process each.** `frameMs.p50`
+shipped **2.90 / 2.50** against `?horizonplains=0` **3.40 / 2.90**, i.e. the arm
+WITH the term is the faster one in both pairs and the within-arm spread exceeds
+the between-arm difference. `programs` 45 in all four. Not resolvable from zero,
+and reported as that rather than as a number.
+
+### 2.28.9 THE EYE, AND THE HALF THAT IS NOT THIS MATERIAL'S
+
+`RN2475_midfield_farband_before.png` against `_after.png` (3x) is the pair. The
+band gains real lateral tone -- light and dark patches at field scale where there
+was a smooth wash -- and that is the whole of what the number says.
+
+**At 1x the frame still reads as a plane meeting the sky at a razor line, and
+this lane says so rather than claiming its number.** The residue is proven not to
+be amplitude: `RN2475_midfield_plains6_refused.png` is the same pose at seven
+times the shipped gain (`r250` iqr **95.05**) and it reads WORSE, as a dark smear
+rather than as land, which is the same shape of refusal `MASSIF_A_VALUE`'s own
+note records at 2.50. What is missing is not tone:
+
+1. **The horizon SILHOUETTE is dead straight.** That is the height field, i.e.
+   world-gen's, not a term any material can add.
+2. **The band is thirteen rows tall**, so nothing painted into it can occupy
+   enough screen to read as landscape on its own.
+3. **A real plain carries objects standing on it at that range** -- hedgerows,
+   distant treelines, stands. That is `TerrainCoverFar`'s stand field, which is
+   outside this lane's partition by the standing file seam.
+
+Both are flagged to Admin in the report as cross-domain items rather than
+absorbed here.
+
+### 2.28.10 Rails
+
+Real Windows D3D11 through ANGLE (Chrome, RTX 4060 Ti), 1600x900, HUD-free
+through `of.screenshot()`; every capture in this section came back `valid: true`
+and `poolRefused: 0`. Served from a `vite preview` this lane owned on
+`127.0.0.1:5931`, `--strictPort --host 127.0.0.1`. One script re-asserted three
+things before and between every batch and refused if any failed: the sentinel
+`dist/of-sentinel-rn2475.txt` fetched back over the port, the served `index-*.js`
+against the same file on disk, and the port's owner PID against the PID this lane
+started; every run printed `match=True ownerOk=True` with `servedJs=diskJs`. The
+preview was restarted after every diagnostic build (the `sirv` startup-snapshot
+trap, RN-2305).
+
+**THE BYTE-LEVEL PROOF THAT NO DIAGNOSTIC SHIPPED.** The pristine build before
+the first paint was `index-TqVcgIro.js`; after five painted-intermediate builds
+and their reverts, with `git status` empty, the build came back
+**`index-TqVcgIro.js`**, the same hash. **And a warning that comes with it:** this
+project's bundle embeds `__OF_BUILD__`, which `vite.config.ts` computes from
+`git rev-parse --short HEAD` plus a DIRTY marker derived from `git diff
+--name-only HEAD -- web core`. A clean tree and a tree with one modified probe
+file produce different bundle hashes for identical source, so a hash-identity
+proof is only valid against an equally clean tree. Recorded because it looked for
+twenty minutes like a source difference that did not exist.
+
+**GATES: `npx tsc --noEmit`, `npx vite build` and `cd web && npm run check` run
+as SEPARATE steps with each exit status read on its own: 0, 0 and 8 of 8.**
+`web/wasm/dist/*`, `test/expected.json`, every texgen and Blender file and
+`assets/textures/dist` untouched. `BiomePalette` NOT edited and not needed.
+No grass, no post, no `Atmosphere*`, no `TerrainCoverFar*`. Eight source files,
+all `materials/Terrain*` per the standing partition (`TerrainHorizon.ts`,
+`TerrainHorizon.glsl.ts`, `TerrainMassif.glsl.ts`, `TerrainFragPars.glsl.ts`,
+`TerrainAmpQuery.ts`, `TerrainUniformState.ts`, `TerrainProgram.ts`,
+`TerrainHorizonHandle.ts`), plus one flag registration in `tools/smoke/run.mjs`
+and two `rangeRects` entries with their headers in `tools/smoke/probes/artframe.js`
+-- **no pose was added, no pose-dispatch line touched and no `extra` block edited,
+so N5's concurrent station-pose work does not collide.** Branch `lane/n1-plains`,
+pushed, **not merged to main**.
+
+### 2.28.11 Owed
+
+1. **The eye judgement is a PARTIAL PASS and 2.28.9 states it.** The number
+   moved 34 per cent and the frame is better; it does not yet read as land
+   receding to a horizon, and the two reasons are outside this material.
+2. **Only the plains site was re-judged.** `forestair` and `flyover` also stand
+   over low-relief ground and this gain reaches them; neither was captured, and
+   the direction is toward more far-ground contrast, which is rank 3's own ask.
+   Unmeasured is unmeasured.
+3. **The painted intermediates are numbers without committed frames** for the
+   footprint ladder and the analytic-field arms, because both were read through
+   the grade's shoulder before 2.28.6's lesson and re-run; the two that convict
+   (the terrain paint and `msfBand`) are committed.
+4. **`meadow` gained no rectangle.** Its `hzBand` is sky and this lane did not
+   move it or replace it, because `midfield` and `meadowfield` are the same site
+   with better geometry for the subject. A `meadow` far-band rectangle is an
+   afternoon if the hero frame ever needs to be scored on its own ground.
