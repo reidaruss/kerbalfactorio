@@ -1393,9 +1393,38 @@
       // read is the direct sun, the IBL and the material. `yawOff` and `pitch`
       // are a framing offset off the spine bearing and were chosen against the
       // first aft frame, which put the hull in the top right corner.
+      //
+      // FORWARD POINTER, RN-2472. "Looking AFT from that same spot is the
+      // whole hull against the star field" is the claim six audits then
+      // measured as an interior corner. It was never true: the vestibule seat
+      // is about 4.0 m from the hull's own local origin and the merged hull's
+      // own bounding sphere is 36.003 m (`stationDraw.boundM`), so the eye sat
+      // roughly 32 m inside solid hull volume and no look direction from
+      // there could have cleared it. See the pose-dispatch block's own note
+      // for the fix (the eye now leaves the bound before aiming at anything)
+      // and `eyeLocal`/`eyeLocalOverBound` (published every capture) for the
+      // measurement that would have caught this the first time.
       sunMode: 'time', timeOfDay: 0.60,
-      back: true, yawOff: 105, pitch: 3,
-      box: [0.4200, 0.2000, 0.9800, 0.7200],
+      // RN-2472. `back`/`yawOff`/`pitch` used to frame the OLD vestibule seat,
+      // 4.0 m from the hull's own local origin, 32 m inside `boundM`'s 36.003 m
+      // -- no look direction from there could ever clear the hull, which is
+      // the six-audit interior reading `eyeLocal`/`eyeLocalOverBound` now
+      // measure directly (rendering.md 2.27, 3.21). The eye is reseated first
+      // (see the pose-dispatch block) to a point PAST the bound, straight out
+      // the spine's own +X (`standAboard`'s documented convention), and the
+      // base bearing below is "look back at the hull's own local origin", not
+      // "along the orbit": `back`/`yawOff`/`pitchOff` are now a framing
+      // offset ON TOP OF that look-at-hull bearing rather than the whole of
+      // it, and 0/0/0 (dead centre) already delivers the MUST-SHOW frame RN-
+      // 1935 described and this row could not reach from inside the hull: the
+      // full hull, a strut truss and solar panels, against a starred sky
+      // (`docs/screenshots/RN2470_station_after.png`).
+      back: false, yawOff: 0, pitchOff: 0,
+      // The hull's own body, clear of both first-person hands (which sit below
+      // y 0.62 in this frame) and the frame's outer margin, verified by
+      // capture rather than guessed: `loFrac` 0.77, `hiFrac` 0, no clipped
+      // glove skin inside it.
+      box: [0.0500, 0.0800, 0.9500, 0.6000],
       // RN-1800. THE STATION'S OWN ORBITAL CLOCK, PINNED, AND THIS IS THE
       // ACTUAL FIX FOR THE NON-REPRODUCIBLE SHOT.
       //
@@ -2436,10 +2465,49 @@
         why: 'the press did not put the walker on the deck',
         player: { grounded: w.grounded, onDeck: w.onDeck }, ride };
     }
+    // RN-2472. STEP OUT PAST THE HULL'S OWN BOUND BEFORE AIMING AT ANYTHING.
+    //
+    // The default arrival socket (`visit:station`'s own vestibule deck, RN-822)
+    // is a documented ~4.0 m from the hull's local origin (`ride.local`) while
+    // the merged hull's own bounding sphere (`stationDraw.boundM`) measures
+    // 36.003 m: the eye above that socket is at `eyeLocalOverBound` about 0.12,
+    // i.e. inside the hull's own volume by a wide margin, which is the six-audit
+    // interior reading (rendering.md 2.27, WORLD-AUDIT-R4 3.21). No look
+    // direction from a point inside a closed hull's bound can photograph its
+    // outside, so the eye has to leave that volume before `back`/`yawOff`/
+    // `pitch` mean anything.
+    //
+    // `of.standAboard(lx, ly, lz)` (`DebugSeat.ts`, CE-54) reseats the SAME
+    // boarded rider at an arbitrary point in the station's OWN authored local
+    // frame -- "+X along the spine, +Y the radial (up), +Z across", its own
+    // documented convention -- at rest in the carrier (matched velocity), so
+    // this does not re-board and does not touch the real `visit:station` path
+    // already exercised above; it only re-seats within it, exactly as
+    // `stationride.js` and `stationwalk.js` already drive it. The default
+    // target is straight out along the spine (+X), past the bound by a stated
+    // margin, both overridable so the next lane can re-sweep without editing
+    // this file: `eyeLx` defaults to `boundM + eyeMarginM`, `eyeLy`/`eyeLz`
+    // default to 0 (on the spine's own centreline, so the hull silhouettes
+    // symmetrically rather than off to one side).
+    const boundM0 = of.stats().stationDraw?.boundM ?? 0;
+    const eyeMarginM = A.eyeMarginM ?? S.eyeMarginM ?? 12;
+    const eyeLx = A.eyeLx ?? S.eyeLx ?? (boundM0 + eyeMarginM);
+    const eyeLy = A.eyeLy ?? S.eyeLy ?? 0;
+    const eyeLz = A.eyeLz ?? S.eyeLz ?? 0;
+    const seat2 = typeof of.standAboard === 'function'
+      ? of.standAboard(eyeLx, eyeLy, eyeLz) : null;
+    if (seat2 === null || seat2.error) {
+      return { valid: false, shot: name, why: 'standAboard refused the exterior seat',
+        seat2, boundM0, eyeLx, eyeLy, eyeLz };
+    }
+    await of.run(0.3, 15);
     // Aim down the spine's own local +X, with yaw measured in the LOCAL TANGENT
     // FRAME at the player's radial. A screen-space atan2 of the body-frame axis
     // is a different frame and points at a wall (stationdraw.js's own scar).
-    const f = w.feet;
+    // `w` is re-read after the reseat above: the walker's body-frame `feet`
+    // moved with it, and the tangent frame below is built off THAT point.
+    const w1 = of.world().player;
+    const f = w1.feet;
     const l = len(f) || 1;
     const u = [f[0] / l, f[1] / l, f[2] / l];
     const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -2451,9 +2519,38 @@
     const north = cross(u, east);
     const al = of.station().axes.along;
     const fwd = (Math.atan2(dot(al, east), dot(al, north)) * 180) / Math.PI;
-    const base = A.back ?? S.back ? fwd + 180 : fwd;
+    // RN-2472. THE BASE BEARING IS NOW "BACK TOWARD THE HULL", NOT "ALONG THE
+    // ORBIT", because the eye no longer sits inside the hull the orbital
+    // bearing used to graze. `back`/`fwd` above are kept and still published
+    // (`diag.fwdDeg`/`baseDeg`) because they are still the true orbital
+    // reading, but they are no longer what `of.look` is aimed from.
+    //
+    // The direction from the NEW seat back to the hull's own local origin is
+    // computed in the hull's OWN authored frame (`[-eyeLx, -eyeLy, -eyeLz]`,
+    // the negative of the point just stood at, since the origin is (0,0,0) in
+    // that frame by construction -- the same frame `eyeLocal` reads into) and
+    // rotated into BODY frame by the hull's live `quat` (`StationView.sync`'s
+    // own orientation, local-to-world, so this is the forward rotation and not
+    // `atCapture`'s inverse). Decomposed into the SAME east/north/up tangent
+    // triple `fwd` used, so `of.look`'s yaw/pitch convention is unchanged.
+    const sdq = of.stats().stationDraw?.quat ?? [0, 0, 0, 1];
+    const rotQuat = (q, v) => {
+      const [qx, qy, qz, qw] = q;
+      const [vx, vy, vz] = v;
+      const tx = 2 * (qy * vz - qz * vy);
+      const ty = 2 * (qz * vx - qx * vz);
+      const tz = 2 * (qx * vy - qy * vx);
+      return [vx + qw * tx + (qy * tz - qz * ty), vy + qw * ty + (qz * tx - qx * tz),
+        vz + qw * tz + (qx * ty - qy * tx)];
+    };
+    const localDir = norm([-eyeLx, -eyeLy, -eyeLz]);
+    const bodyDir = rotQuat(sdq, localDir);
+    const hullYawDeg = (Math.atan2(dot(bodyDir, east), dot(bodyDir, north)) * 180) / Math.PI;
+    const hullHorizM = Math.hypot(dot(bodyDir, east), dot(bodyDir, north));
+    const hullPitchDeg = (Math.atan2(dot(bodyDir, u), hullHorizM) * 180) / Math.PI;
+    const base = A.back ?? S.back ? hullYawDeg + 180 : hullYawDeg;
     const finalYawDeg = A.yaw ?? (base + (A.yawOff ?? S.yawOff ?? 0));
-    const finalPitchDeg = A.pitch ?? S.pitch ?? -2;
+    const finalPitchDeg = A.pitch ?? (hullPitchDeg + (A.pitchOff ?? S.pitchOff ?? 0));
     of.look(finalYawDeg, finalPitchDeg);
     await of.run(1.0, 30);
     const d = of.stats().stationDraw;
@@ -2473,8 +2570,12 @@
     const sunBearingDeg = postSun === null ? null
       : (Math.acos(Math.max(-1, Math.min(1,
         dot(norm(aim.dir), norm(postSun))))) * 180) / Math.PI;
-    setup = { grounded: w.grounded, onDeck: w.onDeck,
+    setup = { grounded: w1.grounded, onDeck: w1.onDeck,
       yawDeg: r2(finalYawDeg), ride,
+      // RN-2472. The exterior reseat, named rather than folded into `diag`,
+      // because a shot that stops reproducing wants this checked before
+      // anything below it.
+      seat2, boundM0: r3(boundM0), eyeLx: r3(eyeLx), eyeLy: r3(eyeLy), eyeLz: r3(eyeLz),
       drawnParts: d.drawnParts, staleMaxM: d.staleMaxM,
       eyeDistM: r2(d.eyeDistM), altM: r2(st.deckR - 600000),
       diag: {
@@ -2653,6 +2754,44 @@
   const atCapture = () => {
     const s0 = of.stats();
     const sd = s0.stationDraw ?? null;
+    // RN-2470. THE EYE, IN THE HULL'S OWN FRAME, AND IT IS A DERIVED FIELD ONLY.
+    //
+    // Six audits asked "is the station shot inside the hull" by reading a
+    // frame with an eye, never by asking the hull itself. Everything this
+    // needs already ships: `s0.cam.posE` (`Debug.ts`'s `cam`, the ENGINE-space
+    // transform the frame was actually rasterised from, RN-1955) and
+    // `sd.posE`/`sd.quat`/`sd.boundM` (`StationView.stats`, the drawn hull's
+    // own engine position, orientation and merged bounding radius, all read at
+    // this SAME `of.stats()` call so nothing here compares two instants).
+    // `eyeLocal` rotates the camera-minus-hull vector by the INVERSE of
+    // `sd.quat` -- the identical quaternion `StationView.sync`'s
+    // `this.m.compose(this.p, this.quat, this.one)` composes the drawn
+    // transform with, so this is not a second convention, only its inverse.
+    // `eyeLocalOverBound` is that vector's magnitude against `sd.boundM`: under
+    // 1 means the eye sits inside the merged hull's own bounding sphere and NO
+    // look direction from here can find open space past all of it; over 1
+    // means it cannot, structurally, whatever the frame goes on to show.
+    let eyeLocal = null;
+    let eyeLocalOverBound = null;
+    if (sd && sd.posE && sd.quat && s0.cam && s0.cam.posE) {
+      const dx = s0.cam.posE[0] - sd.posE[0];
+      const dy = s0.cam.posE[1] - sd.posE[1];
+      const dz = s0.cam.posE[2] - sd.posE[2];
+      const [qx, qy, qz, qw] = sd.quat;
+      // Conjugate of a unit quaternion is its inverse: negate the vector part.
+      const ix = -qx; const iy = -qy; const iz = -qz; const iw = qw;
+      const tx = 2 * (iy * dz - iz * dy);
+      const ty = 2 * (iz * dx - ix * dz);
+      const tz = 2 * (ix * dy - iy * dx);
+      eyeLocal = [
+        dx + iw * tx + (iy * tz - iz * ty),
+        dy + iw * ty + (iz * tx - ix * tz),
+        dz + iw * tz + (ix * ty - iy * tx),
+      ];
+      if (sd.boundM > 0) {
+        eyeLocalOverBound = Math.hypot(eyeLocal[0], eyeLocal[1], eyeLocal[2]) / sd.boundM;
+      }
+    }
     return {
       cam: s0.cam ?? null,
       drawQuat: sd ? sd.quat : null,
@@ -2662,6 +2801,8 @@
       drawVisible: sd ? sd.visible : null,
       drawnParts: sd ? sd.drawnParts : null,
       staleMaxM: sd ? sd.staleMaxM : null,
+      drawBoundM: sd ? sd.boundM : null,
+      eyeLocal, eyeLocalOverBound,
       clock: typeof of.stationClock === 'function' ? of.stationClock() : null,
       frames: of.world().frames, tick: of.world().tick,
       rebases: of.world().origin.rebases,
