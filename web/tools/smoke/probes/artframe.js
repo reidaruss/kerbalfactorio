@@ -376,11 +376,27 @@
       // `rangeRects` places them LIVE off this capture's own observer, and the
       // report prints `rangeM` for each, so if the terrain moves the eye the
       // fixture says so out loud instead of quietly measuring somewhere else.
-      // The four rungs are the four questions: 4 m is at the feet where any
+      // The five rungs are the five questions: 4 m is at the feet where any
       // carpet wins, 10 m is where the near rung is still dense, 25 m is the
-      // handover, and 55 m is inside the fade and is where "bald in the middle
-      // distance" would show.
-      rangeRects: [4, 10, 25, 55],
+      // handover, 55 m is inside the fade and is where "bald in the middle
+      // distance" would show, and 100 m is RN-2355 to RN-2364's own addition:
+      // THE PLATE BAND'S CENTRE.
+      //
+      // World audit R2's corrected rank 4 named the defect as the band from
+      // the carpet's fade to the treeline, and until this lane no committed
+      // rectangle sat anywhere past `r55` -- `hz` below measures the true
+      // horizon, hundreds of metres out, which is a different question. A
+      // sweep of the gap (20 to 260 m, `?grass=0` one flag apart) found the
+      // floor of it empirically rather than by argument: iqr fell to 17.00
+      // at 95-100 m on the shipped (pre-fix) build while the BARE terrain
+      // underneath, now real material since L1's RN-2340, read 42 to 45 --
+      // i.e. the carpet itself was the flatter of the two at exactly this
+      // range, which is GrassTuning.MAT_OUT_LO_M/HI_M's own finding. r100 is
+      // that floor's centre, and it is where the fix is judged: iqr 16.48 on
+      // the pre-lane build, 55.70 on this one, same rectangle and pose, fresh
+      // process each (the change is a shipped constant rather than a query
+      // override, so the two builds are read rather than diffed by a flag).
+      rangeRects: [4, 10, 25, 55, 100],
       rangeRowsPx: 5,
       extra: {
         sky: [0.3000, 0.1000, 0.7000, 0.2000],
@@ -391,12 +407,18 @@
         // own reach, where `rangeRects`' flat-plane inversion is not the
         // right tool. Located by looking (RN2195_meadowfield_after.png): the
         // tan/khaki band sits between the treeline and the sky, roughly
-        // y 0.28 to 0.33 of the frame. This is the band `meadowfield`'s own
-        // r4..r55 cannot reach (they are calibrated for the carpet's OWN 2 to
-        // 60 m domain, which is denser than this band and therefore
-        // insensitive to a term that only acts past it), and it is the one
-        // A2's own file names as the residual ("a khaki band along the
-        // horizon where the green stops").
+        // y 0.28 to 0.33 of the frame.
+        //
+        // CORRECTION, RN-2355 to RN-2364. THE OLD NOTE HERE CLAIMED THIS BAND
+        // WAS "insensitive to a term that only acts past it" (the carpet's
+        // own 2 to 60 m domain). That was already stale by the time this lane
+        // measured it: `hz`'s own pixel band (y 252 to 297 of 900) OVERLAPS
+        // `r85` through `r130`'s rows (297 down to 292), not just the true
+        // horizon past REACH_M. `hz` therefore DOES move with the far rung's
+        // own tuning -- measured here at 90.48 before this lane's fix and
+        // 96.84 after, on the same build, one flag apart -- and that is
+        // corroborating evidence for the fix rather than noise: `hz` sits
+        // inside the plate band it was assumed to sit past.
         hz: [0.0500, 0.2800, 0.9500, 0.3300],
       },
       why: 'the MEADOW: plains at a standing eye, the frame section 1 '
