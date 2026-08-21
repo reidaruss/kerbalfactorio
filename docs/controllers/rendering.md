@@ -9575,9 +9575,11 @@ established". That machinery is `ChunkCanopy.fillCanopyIndex`, which evaluates
 world-gen's `canopyWeight` per terrain vertex and uploads it as `aCanopy`. It
 cannot drive a ground mosaic here, and the reason is measured.
 
-`canopyWeight` is `max(ramp(stand, STAND_LO, STAND_HI) * groveWeight(grove) *
-(1 - above), CANOPY_FLOOR_W)` (`ScatterTuning.ts:911`; the floor is why the
-measured min is 0.012 and not 0): two hard thresholds plus a floor, so the
+`canopyWeight` is `(CANOPY_FLOOR_W + (1 - CANOPY_FLOOR_W) * ramp(stand,
+STAND_LO, STAND_HI)) * groveWeight(grove) * (1 - above)` (`ScatterTuning.ts:911`;
+the floor rides the STAND factor, which is why the measured min is
+`CANOPY_FLOOR_W` 0.10 x `GROVE_FLOOR_W` 0.12 = 0.012 and not 0; `GROVE_FLOOR_W`
+at `ScatterTuning.ts:500` and `:458`): two hard thresholds plus a floor, so the
 realised field is **bimodal**. Measured over 64 deterministic sites x a 64x64
 lattice at 190 m, 262,144 samples: **mean 0.308214, sd 0.344924, min 0.012, max
 1.000**. **This mean and sd are site-set dependent**: the 64-site list was
@@ -9699,7 +9701,8 @@ lane changes no pixel. What it can say about the frame it photographed:
   not difference 2 (materials).** At 1x the plains mid field's character is set
   entirely by what STANDS in it: a pepper of sub-pixel prop cards and a
   near-black silhouette wall of uniform height on the horizon line. The ground
-  under them is fifteen rows and mostly hidden.
+  under them is about four and a half rows (was fifteen, see 2.31.11) and
+  mostly hidden.
 * **Difference 1's complaint is inverted out here.** At the feet the ground is a
   table with objects on it; at 200 m to 1 km it is objects with no ground
   visible between them, and the objects are the wrong ones.
@@ -9799,7 +9802,9 @@ code, frames, or any other file.
    and a half** (281.3 to 276, was fifteen); 2.31.3's "twelve and a half" rows
    for the 170-to-340 m band is corrected to **about three** (281.3 to 278.5,
    was twelve and a half); 2.31.4's "170 m is row 291" is corrected to **row
-   281.3**; 2.31.10 item 1's "fifteen rows" is corrected the same way.
+   281.3**; 2.31.10 item 1's "fifteen rows" and 2.31.8's difference-5 bullet
+   ("the ground under them is fifteen rows and mostly hidden") are corrected
+   the same way.
 2. **2.31.3's straddle claim** ("`r250` straddles 170 m to about 340 m, so the
    rectangle IS on the right ground") **is replaced with measured coverage:**
    about 22 per cent of `meadowfield.r250` is past the ring and about 78 per
