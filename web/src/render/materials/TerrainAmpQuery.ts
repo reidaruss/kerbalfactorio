@@ -15,7 +15,8 @@ import type { TerrainWaterBand } from './TerrainMaterialTypes.js';
 import { SPLAT_A_VALUE, SPLAT_A_CHROMA, SPLAT_A_NORMAL }
   from './TerrainSplat.js';
 import { SPLAT_A_FAR } from './TerrainCoverFar.js';
-import { HORIZON_A_AO, HORIZON_A_CHROMA, HORIZON_A_NORMAL, HORIZON_A_VALUE,
+import { HORIZON_A_ANALYTIC, HORIZON_A_AO, HORIZON_A_CHROMA, HORIZON_A_NORMAL,
+  HORIZON_A_VALUE,
   MASSIF_A_BUMP, MASSIF_A_M, MASSIF_A_VALUE, MASSIF_B_M, MASSIF_FADE_M }
   from './TerrainHorizon.js';
 
@@ -250,6 +251,32 @@ export function massifFadeFromQuery(): THREE.Vector2 {
     && n[1] > n[0])
     ? new THREE.Vector2(n[0], n[1])
     : new THREE.Vector2(MASSIF_FADE_M[0], MASSIF_FADE_M[1]);
+}
+
+/**
+ * RN-2421. THE CELL GUARD and its analytic stand-in: (armed, stand-in amplitude).
+ *
+ * `?horizoncell=0` is the EXACT pre-RN-2421 rung -- guard off AND stand-in off
+ * in one flag -- because the two are one change: the guard retires the carrier's
+ * value half where its cell grids and the stand-in is what replaces it, so an
+ * arm with one and not the other is a state this material has never been in and
+ * is not a before. `?horizoncellan=` sweeps the stand-in alone for the case that
+ * IS a separate question ("is the replacement too strong"), and it is a
+ * multiplier on HORIZON_A_ANALYTIC rather than a replacement for it, so 1 is the
+ * fitted amplitude and 0 is the guard with nothing behind it.
+ *
+ * NESTED UNDER `?horizon=0` for massifAmpFromQuery's own recorded scar: an
+ * un-nested second term makes every "before" arm a half-before, and that was
+ * caught in this same file by a committed rectangle that moved in the control.
+ */
+export function horizonCellFromQuery(): THREE.Vector2 {
+  const p = new URLSearchParams(self.location.search);
+  if (p.get('horizon') === '0' || p.get('horizoncell') === '0') {
+    return new THREE.Vector2(0, 0);
+  }
+  return new THREE.Vector2(
+    1, ampParam(p, 'horizoncellan', 1) * HORIZON_A_ANALYTIC,
+  );
 }
 
 export function horizonEcoFromQuery(): number {

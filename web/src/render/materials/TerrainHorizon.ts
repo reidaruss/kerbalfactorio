@@ -331,6 +331,104 @@ export const HORIZON_FOOT_OUT: readonly [number, number] = [
 ];
 
 /**
+ * RN-2421. THE CARRIER'S OWN CELL COUNT, and it is the unit the retirement above
+ * should always have been written in.
+ *
+ * HORIZON_TILE_PX_OUT is in PIXELS PER TILE and its argument is that a repeating
+ * thing at 24 px is a texture and at 6 px is a lattice. That argument is right
+ * and the unit is wrong, because the repeating thing is not the tile. The rock
+ * carrier is `terraintex._layer_rock`, whose dominant field is
+ * `texgen._worley(s, s, 8, sd)` terraced into flat facets at weight 0.48 of the
+ * height AND another 0.30 of the value on top of it: EIGHT CELLS ACROSS THE
+ * TILE, and everything else in that layer (a 20-cell worley at 0.26, an fbm at
+ * 0.14, a 64-cell gravel at 0.12) is finer and washes out first under
+ * minification. So the finest surviving structure at range is the tile over
+ * eight, and the tile itself is one order coarser than the thing on the screen.
+ *
+ * MEASURED ON THE SHIPPED ASSET rather than read off the generator alone:
+ * `node tools/smoke/latmeter.mjs assets/textures/dist/of_terrain_rock.png
+ * --x=0 --y=0 --w=1024 --h=512 --chan=r --drop=2` returns a dominant column
+ * period of 170.67 texels -- 1024 / 6 -- at a peak/median of 2565, and the g, b
+ * and a channels return 85.33, 170.67 and 170.67 at 176, 88 and 2478. A
+ * peak/median in the thousands is not a texture with some structure in it, it is
+ * a spectral LINE, and that line is what the frame draws. The authored EIGHT is
+ * used below rather than the projected six because it is the SMALLER cell and
+ * therefore the more protective guard; the six is what a 1-D projection of a
+ * jittered 2-D cell field reports and is corroboration, not a second number.
+ */
+export const HORIZON_CARRIER_CELLS = 8;
+
+/** The two rungs' cell sizes in metres: the tile over the carrier's cell count. */
+export const HORIZON_CELL_MID_M = HORIZON_MID_TILE_M / HORIZON_CARRIER_CELLS;
+export const HORIZON_CELL_FAR_M = HORIZON_FAR_TILE_M / HORIZON_CARRIER_CELLS;
+
+/**
+ * THE CELL GUARD's band, in PIXELS PER CELL, and it is HORIZON_TILE_PX_OUT's own
+ * sentence read back at the right scale: "at 24 px a repeat is a texture, at
+ * 6 px it is a lattice". The fade therefore starts where the cell stops reading
+ * as ground and is complete before it reaches the pitch that generates a grid.
+ *
+ * IT IS READ OFF THE FRAME AND NOT ARGUED. World audit R3 section 4.2 measured
+ * the lattice at `forestair` on one frame at three heights: 9.14 px at y540,
+ * 12.80 px at y660 and NO PEAK IN BAND at y820. The lattice is present where the
+ * repeat spans nine to thirteen pixels and absent where it spans twenty or more,
+ * and those are the two numbers below.
+ */
+export const HORIZON_CELL_PX: readonly [number, number] = [24, 12];
+
+/** The two guards in METRES OF PIXEL FOOTPRINT, derived rather than typed. */
+export const HORIZON_CELL_FOOT_MID: readonly [number, number] = [
+  HORIZON_CELL_MID_M / HORIZON_CELL_PX[0], HORIZON_CELL_MID_M / HORIZON_CELL_PX[1],
+];
+export const HORIZON_CELL_FOOT_FAR: readonly [number, number] = [
+  HORIZON_CELL_FAR_M / HORIZON_CELL_PX[0], HORIZON_CELL_FAR_M / HORIZON_CELL_PX[1],
+];
+
+/**
+ * RN-2421. THE ANALYTIC STAND-IN's two octave wavelengths, in metres.
+ *
+ * WHY THE VALUE HALF NEEDS ONE AT ALL. Apply the guard above and the carrier's
+ * value half has no legal band left: the mid rung fades IN at a 0.60 m footprint
+ * and its 4 m cell is already under twelve pixels by 0.33 m, and the horizon
+ * rung fades in at 1.80 m with its 16 m cell under twelve pixels by 1.33 m.
+ * Every metre of the far ground's range is inside the regime where this carrier
+ * paints a grid. `?horizonval=0` measures what that half is worth
+ * (`forestair`'s patch std 6.24 -> 3.39), so retiring it without a replacement
+ * hands rank 1 back its "the far ground has no material" in exchange for
+ * closing rank 2, which is a trade and not a fix.
+ *
+ * WHY AN ANALYTIC FIELD IS ALLOWED WHERE THE CARRIER IS NOT, and this is the
+ * whole of the argument: the carrier's spectrum has a LINE at its cell frequency
+ * (peak/median 2565, measured above), so undersampling it stamps that one
+ * frequency across the frame; `ofArtVnoise` is broadband with no line to stamp,
+ * which is why the same two octaves the massif term already runs on `pM` have
+ * never produced a lattice at any range. It is therefore faded on this
+ * material's OWN Nyquist curve (0.125 to 0.333 of the wavelength) rather than on
+ * the pixels-per-cell band, and the difference between the two rules is a
+ * measured property of the two fields rather than a preference.
+ *
+ * THE PAIR: 40 m is 2.5 times the horizon rung's own cell, so it holds at least
+ * twenty-four pixels per cycle exactly where the cell falls under twelve; 160 m
+ * is four times that, which is the ladder's step with no gap between the two.
+ * They are `pM` octaves for the massif term's reason and under the massif term's
+ * gate: past a 1.8 m footprint `pM`'s 62.5 mm quantum is a thirtieth of a pixel
+ * and falling, which is what makes the coordinate legal out here (RN-45).
+ */
+export const HORIZON_AN_M: readonly [number, number] = [40, 160];
+
+/**
+ * The stand-in's two octave weights and its amplitude. The weights are the
+ * massif's own split (a coarse octave carrying most of the field with a finer
+ * one on top of it) because the shape of the claim is the same; the AMPLITUDE is
+ * this lane's ONE FITTED NUMBER and it is fitted against an instrument rather
+ * than an eye: it is the value that holds `forestair`'s 256 x 128 patch std at
+ * the shipped 6.24 once the carrier's value half has retired out of it.
+ */
+export const HORIZON_AN_WA = 0.62;
+export const HORIZON_AN_WB = 0.38;
+export const HORIZON_A_ANALYTIC = 1.65;
+
+/**
  * The four amplitudes, and they are four rather than one for uSplatAmp's own
  * reason: they FAIL DIFFERENTLY, so a single switch could only ever answer "is
  * the far ground on" and never "which half of it is doing this".

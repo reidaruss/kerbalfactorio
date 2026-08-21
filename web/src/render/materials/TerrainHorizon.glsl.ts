@@ -14,6 +14,8 @@
 // and nothing else.
 
 import {
+  HORIZON_AN_M, HORIZON_AN_WA, HORIZON_AN_WB,
+  HORIZON_CELL_FOOT_FAR, HORIZON_CELL_FOOT_MID,
   HORIZON_ECO_FIELD, HORIZON_ECO_GATE, HORIZON_ECO_PX, HORIZON_FAR_REPEATS, HORIZON_FOOT_FAR,
   HORIZON_FOOT_MID, HORIZON_FOOT_OUT, HORIZON_MID_REPEATS, HORIZON_N_COVER,
   HORIZON_N_ROCK, HORIZON_WARP_FAR_REPEATS, HORIZON_WARP_MID_REPEATS,
@@ -33,6 +35,14 @@ export const TERRAIN_HORIZON_PARS = /* glsl */`
   #define OF_HZ_FOOT_F1 ${HORIZON_FOOT_FAR[1].toFixed(4)}
   #define OF_HZ_FOOT_O0 ${HORIZON_FOOT_OUT[0].toFixed(4)}
   #define OF_HZ_FOOT_O1 ${HORIZON_FOOT_OUT[1].toFixed(4)}
+  #define OF_HZ_CELL_M0 ${HORIZON_CELL_FOOT_MID[0].toFixed(4)}
+  #define OF_HZ_CELL_M1 ${HORIZON_CELL_FOOT_MID[1].toFixed(4)}
+  #define OF_HZ_CELL_F0 ${HORIZON_CELL_FOOT_FAR[0].toFixed(4)}
+  #define OF_HZ_CELL_F1 ${HORIZON_CELL_FOOT_FAR[1].toFixed(4)}
+  #define OF_HZ_AN_M0 ${HORIZON_AN_M[0].toFixed(3)}
+  #define OF_HZ_AN_M1 ${HORIZON_AN_M[1].toFixed(3)}
+  #define OF_HZ_AN_WA ${HORIZON_AN_WA.toFixed(3)}
+  #define OF_HZ_AN_WB ${HORIZON_AN_WB.toFixed(3)}
   #define OF_HZ_NROCK ${HORIZON_N_ROCK.toFixed(4)}
   #define OF_HZ_NCOVER ${HORIZON_N_COVER.toFixed(4)}
   #define OF_HZ_ECO_PX ${HORIZON_ECO_PX.toFixed(3)}
@@ -255,12 +265,57 @@ export const TERRAIN_HORIZON_BLOCK = /* glsl */`
             ofSplatW(coverSel, flat_, vRelief / max(1.0, uMaxRelief), 0.0,
                      hzVeg, hzPatch, hzWA, hzWB);
 
+            // RN-2421. THE CELL GUARD, and it is the retirement above written in
+            // the unit the artefact is actually in. HORIZON_TILE_PX_OUT retires
+            // the top rung when its TILE falls under a few pixels; the thing
+            // that repeats is the carrier's own eight-cell worley facet field,
+            // an eighth of the tile, so the pitch that reaches the screen
+            // arrives eight times earlier in footprint than the guard expects
+            // and the whole far band is drawn inside it. See
+            // TerrainHorizon.ts's HORIZON_CARRIER_CELLS for the generator line
+            // and the DFT of the shipped asset that says peak/median 2565.
+            //
+            // ONE GUARD PER RUNG, applied on the SAME ft the two rungs are
+            // mixed on, because the cell is a property of the rung's own tile
+            // and the two tiles are 4:1 apart.
+            //
+            // IT IS APPLIED HERE, AT THE ALBEDO, AND NOT TO hzVal ITSELF. hzVal
+            // and hzDet are also read by the roughness and by the
+            // biome-boundary break below, where they are a decorrelated
+            // displacement channel rather than a picture: a lattice in the
+            // DIRECTION a boundary is nudged is not a lattice on the screen, and
+            // zeroing them there would take the ragged edge off a term that has
+            // nothing to do with this defect.
+            float hzCellM = 1.0 - smoothstep(OF_HZ_CELL_M0, OF_HZ_CELL_M1, footM);
+            float hzCellF = 1.0 - smoothstep(OF_HZ_CELL_F0, OF_HZ_CELL_F1, footM);
+            float hzCell = mix(1.0, mix(hzCellM, hzCellF, ft), uHorizonCell.x);
+
             // THE VALUE HALF, on the same tint axis every other albedo term in
             // this material rides and MEAN-PRESERVING by the same construction:
             // hzVal is centred on zero, so a fixed tint vector moves each
             // channel's SPREAD and leaves its LEVEL alone. Clause C2, one rung
             // further out.
-            albedo *= vec3(1.0) + uHorizonAmp.x * hzT * hzVal * vTint.xyz;
+            albedo *= vec3(1.0) + uHorizonAmp.x * hzT * hzCell * hzVal * vTint.xyz;
+
+            // RN-2421. THE ANALYTIC STAND-IN, faded in by the guard's own
+            // COMPLEMENT so the handover has one boundary and no constant of its
+            // own -- RN-2195's complementary-fade idiom, one rung further out.
+            //
+            // Two pM octaves, each retired at its own Nyquist point on the
+            // curve every fade in this material uses, and broadband by
+            // construction rather than by luck: ofArtVnoise has no spectral
+            // line to stamp, which is the measured difference between it and the
+            // carrier and the whole reason one is allowed here and the other is
+            // not. Mean-preserving on the same tint axis, and NOT gated on
+            // coverSel or on the relief band: a flat far plain is exactly the
+            // ground this has to carry (HORIZON_TILE_PX_OUT's own stated cost),
+            // so a gate that excused it would excuse the case it exists for.
+            float hzAnA = (ofArtVnoise(pM / OF_HZ_AN_M0 + 17.3) - 0.5)
+              * (1.0 - smoothstep(OF_HZ_AN_M0 * 0.125, OF_HZ_AN_M0 * 0.333, footM));
+            float hzAnB = (ofArtVnoise(pM / OF_HZ_AN_M1 + 63.1) - 0.5)
+              * (1.0 - smoothstep(OF_HZ_AN_M1 * 0.125, OF_HZ_AN_M1 * 0.333, footM));
+            albedo *= vec3(1.0) + uHorizonCell.y * hzT * (1.0 - hzCell)
+              * (hzAnA * OF_HZ_AN_WA + hzAnB * OF_HZ_AN_WB) * vTint.xyz;
 
             // THE CHROMA HALF: slope-driven layer tinting, and it is the whole
             // of "a distant mountain should read as rock and not as painted

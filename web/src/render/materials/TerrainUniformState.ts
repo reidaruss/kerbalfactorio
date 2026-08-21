@@ -20,7 +20,8 @@ import { GROUND_RELIEF_MAP, GROUND_VALUE_MAP, groundTexture } from './GroundText
 import { ART_COARSE_M, ART_FINE_M, FINE_A, FINE_B, FINE_R, FINE_W,
   MID_A_M, MID_B_M, RELIEF_FINE_M } from './TerrainArt.glsl.js';
 import { artAmpFromQuery, fineAmpFromQuery, groundReliefAmpFromQuery,
-  horizonAmpFromQuery, horizonEcoFromQuery, massifAmpFromQuery, massifFadeFromQuery, massifMFromQuery,
+  horizonAmpFromQuery, horizonCellFromQuery, horizonEcoFromQuery, massifAmpFromQuery,
+  massifFadeFromQuery, massifMFromQuery,
   splatAmpFromQuery, splatFarAmpFromQuery,
   groundTexAmpFromQuery, midAmpFromQuery, specAmpFromQuery, wetBandFromQuery }
   from './TerrainAmpQuery.js';
@@ -212,6 +213,11 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     value: horizonAmpFromQuery(),
   };
   const horizonEco: THREE.IUniform<number> = { value: horizonEcoFromQuery() };
+  // RN-2421. The cell guard's arming scalar and the analytic stand-in's
+  // amplitude, shared by reference into both materials for horizonAmp's reason.
+  const horizonCell: THREE.IUniform<THREE.Vector2> = {
+    value: horizonCellFromQuery(),
+  };
   // RN-2340. The MASSIF term's two amplitudes and its two octave wavelengths,
   // shared by reference for the same one-authority reason.
   const massifAmp: THREE.IUniform<THREE.Vector2> = {
@@ -271,7 +277,8 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
-    phaseProbe, horizonAmp, horizonEco, massifAmp, massifM, massifFade,
+    phaseProbe, horizonAmp, horizonEco, horizonCell,
+    massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,
   };
 }

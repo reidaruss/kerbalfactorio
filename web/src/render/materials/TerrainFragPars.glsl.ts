@@ -174,6 +174,14 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // sharp) and has to be isolable on its own flag, ?horizoneco=0. It is a
     // multiplier on HORIZON_ECO_PX, so 1 is the authored 2.5-pixel band.
     uniform float uHorizonEco;
+    // RN-2421. THE CELL GUARD and its analytic stand-in: x arms the guard
+    // (0 is the exact pre-RN-2421 rung, guard AND stand-in both off), y is the
+    // stand-in's amplitude. TWO components and not one because they fail
+    // differently -- a guard that fires too early costs the far ground its
+    // carrier, and a stand-in that is too strong is blotchy distance -- and
+    // because the pair is what makes ?horizoncell=0 a single exact negative
+    // control while ?horizoncellan= still sweeps the replacement on its own.
+    uniform vec2 uHorizonCell;
     // RN-2340. THE MASSIF TERM: x the albedo value amplitude, y the bump
     // amplitude. Two and not one for uFineAmp's reason exactly: too much value
     // is a blotchy mountain and too much bump is a corrugated one, and a single
@@ -264,5 +272,21 @@ export function terrainFragPars(depth: DepthPolicy): string {
     ${CASCADE_GLSL}
     ${TERRAIN_TREELINE_PARS}
     ${TERRAIN_PHASE_PARS}
+    // RN-2422. THE EMISSIVE IRRADIANCE DECLARATION, taken directly rather than
+    // through injectEmissiveLight, because that splicer anchors on
+    // #include <lights_fragment_begin> and this program has no such include:
+    // it lights itself from uSunDir and reads no three.js light at all, which
+    // is the FIRST of the two measured facts that made M3 reject a pool of
+    // real point lights (rendering.md 2.25.2). One copy of the function and
+    // one copy of the uniforms still, both exported from EmissiveLight.ts.
+    //
+    // NEAR PROGRAM ONLY, and not merely to save instructions: the emitters'
+    // positions are ENGINE-SPACE metres and the scaled scene's unit is 1e5 m,
+    // so out there the term is not expressible in the same numbers.
+    //
+    // EMIT_INSTALLED is ?firelight=off, whose whole purpose is that the arm it
+    // produces is the PRE-SPLICE PROGRAM (2.25.7). Honouring it here keeps the
+    // ground's per-fragment cost measurable against the same three-state flag
+    // the machine programs are measured against instead of a fourth one.
 `;
 }

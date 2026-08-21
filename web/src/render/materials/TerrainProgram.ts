@@ -38,7 +38,8 @@ export function makeTerrainMaterial(
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
     horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
-    phaseProbe, horizonAmp, horizonEco, massifAmp, massifM, massifFade,
+    phaseProbe, horizonAmp, horizonEco, horizonCell,
+    massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff,
     splatScree, splatSnow } = s;
   // UniformsLib.lights is MANDATORY for a lights:true ShaderMaterial: three
@@ -123,6 +124,7 @@ export function makeTerrainMaterial(
     // is what makes the runtime handle and both materials one object.
     uHorizonAmp: horizonAmp,
     uHorizonEco: horizonEco,
+    uHorizonCell: horizonCell,
     uMassifAmp: massifAmp,
     uMassifM: massifM,
     uMassifFade: massifFade,
