@@ -16,6 +16,38 @@
 // every layer the SAME hook function object or the layers compile one program
 // each for a shader that is character-for-character identical.
 
+// RN-2385 ADDS A SECOND SHAPE OF THIS SPLICE, and it is a second shape rather
+// than a uniform because the two surfaces it serves are two different things
+// that happened to share one authored role.
+//
+// `MachineGeometry.roleOf` maps EVERY material whose name ends `EmissiveState`
+// to `ROLE_STATUS`, so a smelter's firebox peep and its +X status chip arrive
+// at the fragment stage indistinguishable, and both were drawn by the status
+// branch below: a 0.2-radiance chip of flat colour picked out of the sim's
+// VisualState. That is right for a chip and it is the whole of world audit
+// R3's rank 3 for a firebox.
+//
+// THE ASSET ALREADY SEPARATES THEM AND NOTHING READ IT. `build_smelter.py:793`
+// gives the peep and the sight strip `OF_EmberEmissiveState` and keeps
+// `OF_EmissiveState` on the chip; `SurfaceRoles.ts:207` maps that name to the
+// `ember` FAMILY, and `isTilingFamily('ember')` is true, so RN-1478's split
+// already draws the fire on its own `BatchedMesh` with its own material. The
+// separation this file needs is therefore free at the MATERIAL level and
+// impossible at the vertex level, which is why `ember` is an argument here and
+// not another `vRole` value: a new role would need a new attribute value baked
+// through `normalize`, and the material split is already there.
+//
+// TWO MODULE-LEVEL HOOKS, NEVER A CLOSURE PER MATERIAL. The header's warning
+// about three's program cache key stringifying `onBeforeCompile` still applies
+// in full; `MachineBatch` holds one hook object per SHAPE, and the ember one
+// is only ever attached to the one layer that carries fire, which is a
+// material that already had its own program (it is the only one with an
+// emissive map). Measured, not assumed: the `programs` count is quoted before
+// and after in the lane record.
+
+import { EMBER_LIN_GLSL, FIRE_GLOW_UNIFORM, FIRE_L_EMBER, FIRE_L_HOT,
+  FIRE_LIN_GLSL } from './EmissiveLight.js';
+
 /** The three uniforms the channel needs, owned by the batch. */
 export interface FxUniforms {
   uFx: { value: unknown };
@@ -30,16 +62,83 @@ export interface MachineShader {
 }
 
 /**
+ * THE STATUS CHIP: entityVisualState, and nothing invented on top of it.
+ * Unchanged by RN-2385 to the character; it is lifted into a constant only so
+ * the fire can stand beside it rather than inside an `if (false)`.
+ */
+const CHIP = /* glsl */`
+  vec3 c = vec3( 0.14, 0.55, 0.24 );
+  if ( vFx.z > 2.5 )      c = vec3( 0.32, 0.32, 0.38 );
+  else if ( vFx.z > 1.5 ) c = vec3( 0.90, 0.18, 0.08 );
+  else if ( vFx.z > 0.5 ) c = vec3( 0.18, 0.74, 1.00 );
+  diffuseColor.rgb = c * 0.22;
+  // RN-1780. This ADDS to totalEmissiveRadiance, so it never read a bound
+  // emissiveMap at all: material.emissive is the batch's own fresh
+  // MeshStandardMaterial default (never set from any glTF value on this
+  // path), the standard emissivemap_fragment chunk MULTIPLIES that zero and
+  // stays zero, and this line runs entirely on top of it. Measured, not
+  // assumed: ember's first authored map moved nothing (peep iqr 0.93 to
+  // about 4, entirely from the normal map's own specular response, confirmed
+  // by toggling normal/orm and emissive independently and finding the SAME
+  // number both times emissive was flipped). statusTex closes that gap for
+  // any status-role material that DOES carry one, and stays the identity
+  // (1,1,1) for the other status chips in the game that do not, so this
+  // is provably a no-op everywhere except the one family it exists for.
+  vec3 statusTex = vec3( 1.0 );
+  #ifdef USE_EMISSIVEMAP
+  statusTex = emissiveColor.rgb;
+  #endif
+  totalEmissiveRadiance += c * ( 0.22 + 0.95 * vFx.w ) * statusTex;`;
+
+/**
+ * THE FIREBOX (RN-2385). The whole of its difference from the chip above is
+ * that it has a RADIOMETRIC RANGE.
+ *
+ * World audit R3 measured the old behaviour on this exact surface: the sight
+ * strip glowed at display luma 26.54 while the clean shell 0.3 m away read
+ * 2.72, because a status chip's ~0.2 of linear radiance is under the bloom
+ * threshold (0.86) and two orders under a firebox. The two colours and the two
+ * radiances are GENERATED from `EmissiveLight.ts`'s exported constants, so the
+ * light this fire casts (`fireRadiance`, the same four numbers) and the
+ * brightness it is drawn at cannot drift apart.
+ *
+ * `vFx.z` is /core's VisualState and `vFx.w` the level `FactoryView.fxFor`
+ * already computes (a breathing sine while working, 0.18 otherwise), so the
+ * flicker rides through with nothing invented here. The albedo expression is
+ * `game/MachineFx.ts`'s own `0.05 + 0.16 * k`, which is the other place in
+ * this project that draws a fire, kept identical on purpose.
+ */
+const FIRE = /* glsl */`
+  vec3 ofFireTex = vec3( 1.0 );
+  #ifdef USE_EMISSIVEMAP
+  ofFireTex = emissiveColor.rgb;
+  #endif
+  bool ofHot = vFx.z > 0.5 && vFx.z < 1.5;
+  vec3 ofFireC = ofHot ? ${FIRE_LIN_GLSL} : ${EMBER_LIN_GLSL};
+  float ofLvl = max( vFx.w, 0.0 );
+  float ofFireL = ( ofHot ? ${FIRE_L_HOT.toFixed(2)} : ${FIRE_L_EMBER.toFixed(2)} )
+    * ofLvl * uFireGlow;
+  diffuseColor.rgb = ofFireC * ( 0.05 + 0.16 * ofLvl );
+  totalEmissiveRadiance += ofFireC * ofFireL * ofFireTex;`;
+
+/**
  * Splice the per-instance channel into a compiling machine material.
  *
  * The per-instance channel is a DataTexture indexed by three's own batching id
  * (`getIndirectIndex(gl_DrawID)`), exactly the mechanism three uses for
  * per-instance colour, so it cannot fall out of step with the matrix texture.
+ *
+ * `ember` picks the FIRE shape of the status role instead of the CHIP shape.
+ * It is a material-level argument and not a `vRole` value; the header carries
+ * the reason.
  */
-export function injectMachineFx(shader: MachineShader, uniforms: FxUniforms): void {
+export function injectMachineFx(shader: MachineShader, uniforms: FxUniforms,
+                                ember = false): void {
   shader.uniforms.uFx = uniforms.uFx;
   shader.uniforms.uFxW = uniforms.uFxW;
   shader.uniforms.uTime = uniforms.uTime;
+  // UNCONDITIONAL and outside the irradiance bundle: see FIRE_GLOW_UNIFORM.
+  shader.uniforms.uFireGlow = FIRE_GLOW_UNIFORM;
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', `#include <common>
 uniform sampler2D uFx;
@@ -60,6 +159,7 @@ vFx = vec4( 0.0 );
   shader.fragmentShader = shader.fragmentShader
     .replace('#include <common>', `#include <common>
 uniform float uTime;
+uniform float uFireGlow;
 varying float vRole;
 varying vec4 vFx;
 varying vec3 vLocalPos;`)
@@ -90,28 +190,6 @@ if ( vRole > 2.5 ) {
   diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.66, 0.47, 0.21 ), blob * 0.95 );
   totalEmissiveRadiance += vec3( 0.44, 0.25, 0.06 ) * blob * lit;
 } else if ( vRole > 0.5 ) {
-  // THE STATUS CHIP: entityVisualState, and nothing invented on top of it.
-  vec3 c = vec3( 0.14, 0.55, 0.24 );
-  if ( vFx.z > 2.5 )      c = vec3( 0.32, 0.32, 0.38 );
-  else if ( vFx.z > 1.5 ) c = vec3( 0.90, 0.18, 0.08 );
-  else if ( vFx.z > 0.5 ) c = vec3( 0.18, 0.74, 1.00 );
-  diffuseColor.rgb = c * 0.22;
-  // RN-1780. This ADDS to totalEmissiveRadiance, so it never read a bound
-  // emissiveMap at all: material.emissive is the batch's own fresh
-  // MeshStandardMaterial default (never set from any glTF value on this
-  // path), the standard emissivemap_fragment chunk MULTIPLIES that zero and
-  // stays zero, and this line runs entirely on top of it. Measured, not
-  // assumed: ember's first authored map moved nothing (peep iqr 0.93 to
-  // about 4, entirely from the normal map's own specular response, confirmed
-  // by toggling normal/orm and emissive independently and finding the SAME
-  // number both times emissive was flipped). statusTex closes that gap for
-  // any status-role material that DOES carry one, and stays the identity
-  // (1,1,1) for the other status chips in the game that do not, so this
-  // is provably a no-op everywhere except the one family it exists for.
-  vec3 statusTex = vec3( 1.0 );
-  #ifdef USE_EMISSIVEMAP
-  statusTex = emissiveColor.rgb;
-  #endif
-  totalEmissiveRadiance += c * ( 0.22 + 0.95 * vFx.w ) * statusTex;
+${ember ? FIRE : CHIP}
 }`);
 }

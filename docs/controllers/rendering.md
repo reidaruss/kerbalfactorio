@@ -2,6 +2,12 @@
 
 
 > **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2410 to RN-2419, `lane/m4-midnear`: **THE MID FIELD, NEAR END.** World audit R3's rank 4, the half L4 did not reach: `meadowfield.r55` read 21.56 against a bare 55.76 one band inside L4's own `(30, 70)` handover, and thinning further could not be the lever (a second confirmation of L4's own "CARD HEIGHT, not card count" finding). The fix is a spatially-correlated per-PATCH value multiplier baked into the mat rung's instance colour (`GrassTuning.MAT_PATCH_AMP`, 4x4-cell patches, mean-preserving), since `GrassPalette.coverAlbedo`'s own constant-luminance rule means a blade can otherwise only vary in hue, never in value, and independent per-instance jitter alone is too weak an amplitude to close a 34-count gap. `r55` **21.56 -> 38.93** (target 38.66, half L4's gap, MET); `r25` 29.48 -> **42.92**; `midfield.r18/r27/r35` all improved, none regressed. **One measured, disclosed, UNRESOLVED regression:** `r100` 55.70 -> **51.51** (not in this lane's SCORE; two distance-keyed fade gates both failed to recover it, arguing the `r55`/`r100` populations are not cleanly separable by world distance, likely terrain relief foreshortening a nearer cell into the far row (2.25.7's first owed item). `npm run check` 8/8. Full record in section 2.25. THIS LINE IS A POINTER: replace it, never append to it.)
+
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2385 to RN-2389 used of the RN-2385 to RN-2399 block, `lane/m3-emissive`, R3 rank 3, dispatched first because it was the only one of the top five that arrived with a measured done-when: **A FURNACE LIGHTS ITS OWN SHELL NOW, AND THE REASON IT NEVER DID IS THAT THE EMISSIVE WAS A HUNDRED TIMES TOO DIM TO BE LIGHT.** The status-chip expression every emissive in the game ran through peaked near **0.2** of linear radiance; a firebox at 1500 to 1800 K is **13 to 78** by the blackbody-to-sunlit-ground luminance ratio, and no falloff model closes a hundredfold shortfall in the SOURCE. `FIRE_L_HOT = 40` is the middle of that band and it is the fix; embers take `game/MachineFx.ts`'s own authored 0.26 ratio, and the two fire hexes moved to `EmissiveLight.ts` so the project has ONE copy of the fire colour. **THE LIGHT IS AN EMISSIVE-DRIVEN LOCAL IRRADIANCE TERM AND NOT A LIGHT FARM, decided against the ceiling study's one hard WebGL2 limit:** a pool of real `THREE.PointLight`s was refused on two MEASURED facts and not on the budget -- `TerrainShader` reads no three.js light at all (so a point light cannot light the ground a furnace stands on) and the light COUNT is part of three's program cache key (`Headlamp.ts`'s own measured 441 ms stall, 30 programs). Six emitters max, a COMPILE-TIME array bound, so `programs` is **61 -> 61** at `smelternight` and **46 -> 46** at both daylit machine poses, and `__ofEmit.report().sceneLights` reads **2** before and after, which is the no-light-farm claim taken as a reading rather than a sentence. **THE HERO, `smelternight` `?lamp=0`:** whole frame **1.80 -> 7.12** against an empty `meadownight` at 1.95 to 2.03, so a running furnace stops making the world darker than a field; `firebox` (the coaming 0.3 m above the fire) **0.41 -> 21.05, 51.3x**; `plate` **2.72 -> 9.48**; `sunface` 1.51 -> 7.24; `band` 4.74 -> 16.87; and the far columns `hearthL`/`hearthR` **1.61 -> 3.97 / 1.94 -> 4.29**, a 23-fold spread across one machine, which is what says the light is LOCAL. **`?firelight=0` returns EVERY non-fire rectangle to the pre-change baseline TO THE DIGIT** (1.51 / 0.41 / 4.74 / 2.72 / 1.61 / 1.94 / 3.94 / 5.18 / 4.77) with the program unchanged, so the whole move is attributed to one uniform and the before column is re-derived on the AFTER build. **DAYLIT GUARDS:** `machine` (the service side, one camera move away) moves **0.3 per cent**; `basedusk` moves **0.15 counts**; `smelterhero` DOES move by intent (+17% `plate`, +57% `firebox`, +3.9%/+6.3% far columns, +8.2% on the one SUNLIT rectangle) and the argument is that shot's OWN published sweep -- "NONE OF THE FOUR IS LIT... the subject is BLUE because the sky is the only light on it" -- with `plate`'s `warm` going **-13.28 -> +12.23**. `meadownight`, `forestfloor` and `meadow` bit-identical, walk counters 41,300/25,655 and 52,139/26,124 unmoved. **TWO HONEST NEGATIVES.** (1) **The bloom halo is NOT bought:** bloom on against `?bloom=0` is +0.94 counts on the fire and **+0.01** on the rectangle beside it, and FOUR TIMES the strength changes neither; the pyramid is proven healthy (`?bloomthresh=0` moves `firebox` to 76.26) and the cause is the Karis first level's `c /= (1 + luma(c))` times a strength of 0.1 -- both GLOBAL grade constants that would move every published rectangle in the project, so this lane refuses to spend them and hands Admin the numbers. (2) **Rank 14 is LEFT**: the missing dapple is a shadow-CASTER registration problem in the canopy batch and not a term in `TerrainFragLight`'s cascade half, and the crushed-shade half is `PropSkyAmbient`'s weight, whose own landing measured 0.10 to 0.25 counts. **A CORRECTION THE AUDIT OWED ITSELF: the smelter in that frame is NOT running.** `entityVisualState` returns 2, STARVED, so every number above is the banked-EMBER case at 0.26 of burning, not the ceiling; and `plate` is 1.2 m from the emitting centroid, not 0.3 m (that is the FRAME gap between two rectangles). The surface actually at 0.3 m is `firebox`. Emitter position, area (0.2445 m2) and softening radius are MEASURED off the shipped .glb, not authored; the picture refused `sqrt(A/PI)` and the shipped radius is the area-weighted second moment. `wrap = 0.35` is the one fitted number. Cost under the noise floor (`passMs.near` 7.8 spliced against 8.8 absent). Owed cross-lane seam, ONE call site: the terrain does not receive the term because M2 owns those materials. `npm run check` 8/8, every gate also run singly with its exit status read. Full record in section 2.25. THIS LINE IS A POINTER: replace it, never append to it.)
+
+
+
+
 >
 > *(previous pointer, kept one deep: 2026-08-21, RN-2365 to RN-2372,
 > `lane/world-audit-r3`, **THE WORLD LOOK AUDIT, ROUND 3**: the third full
@@ -7554,3 +7560,333 @@ not touch). Branch `lane/m4-midnear`, pushed, **not merged to main**.
    term TerrainMaterial's fragment shader carries would let the carpet inherit
    the ground's REAL contrast rather than an approximation of it, which is
    candidate (b) done properly rather than as a range-gated opacity fade.
+
+## 2.25 EMISSIVES THAT LIGHT SOMETHING (RN-2385 to RN-2389, 2026-08-21, `lane/m3-emissive`)
+
+> **Base:** `origin/main` at `0a3fa1ea`. **Numbers:** RN-2385 to RN-2389 used of
+> the RN-2385 to RN-2399 block; RN-2390 to RN-2399 SURRENDERED UNUSED (abandoned
+> per rule 4, never reuse). **Frames:** `docs/screenshots/RN2385_*`, 10 files,
+> five matched before/after pairs (`smelternight` `?lamp=0`, `smelternight`
+> shipped, `smelterhero`, `machine`, `meadownight` `?lamp=0`), each pair one
+> BUILD apart on one owned server rather than one flag apart.
+> R3's rank 3, dispatched first because it was the only one of the top five that
+> arrived with a measured done-when instead of a diagnosis.
+
+### 2.25.1 THE ONE-LINE ANSWER
+
+**A furnace lights its own shell now, and the reason it never did is that the
+emissive was a hundred times too dim to be light.** The status-chip expression
+peaked near 0.2 of linear radiance; a firebox is between 13 and 78. No falloff
+model closes a hundredfold shortfall in the SOURCE, and that is what two audits
+were looking at.
+
+### 2.25.2 THE DESIGN, AGAINST THE ONE HARD WEBGL2 LIMIT
+
+`CEILING-STUDY-2026-08-19.md` section 3 names exactly one capability WebGL2
+cannot reach and this is it ("Many small lights... ClusteredLighting /
+Forward+ is WebGPU-only in r185. Current mitigation is a hard budget of 4 to 8
+point lights"). Two shapes were available. **A pool of real `THREE.PointLight`s
+was rejected on two measured facts, neither of them the budget:**
+
+1. **`TerrainShader` reads no three.js light at all.** `Headlamp.ts`'s own
+   header says the terrain survives `?lamp=0` "only because TerrainShader reads
+   no three.js light, which is luck rather than method". A real point light
+   therefore cannot light the ground a furnace stands on, which is half the
+   picture the audit asked for.
+2. **The light COUNT is part of three's program cache key.** `Headlamp.ts`
+   measured a 441 ms stall and 30 new programs the first time one light
+   appeared, which is why that lamp is intensity 0 rather than hidden. A pool
+   that grows with the factory pays that repeatedly.
+
+**What is built is the ceiling study's own second option, an emissive-driven
+local irradiance term:** one fixed-size uniform array of at most `EMIT_MAX = 6`
+emitters (inside the study's stated 4-to-8 budget), spliced into the machine
+programs (`MachineBatch`'s hook) and the prop / node programs
+(`PropSkyAmbient`'s splice). The array bound is a COMPILE-TIME constant, so the
+program is character-identical with zero emitters and with six. **`programs` is
+61 before and 61 after at `smelternight`, 46 and 46 at `smelterhero` and
+`machine`** -- no permutation, because the isolator is a uniform.
+
+**It adds ZERO three.js lights, and that is a reading rather than a sentence.**
+`Headlamp`'s constructor calls `auditSceneLights(near)` at the instant every
+light the near scene will ever hold exists, and `__ofEmit.report().sceneLights`
+publishes it on the photographed frame: **2** (the headlamp spot and the near
+hemisphere), in every pose measured, before and after.
+
+### 2.25.3 THE MODEL, AND THE ONE FITTED NUMBER
+
+    E = L * A * wrap(cos_recv, w) * window(d) / (d^2 + r^2)
+
+`L * A` is radiance times emitting AREA and `r` is the source's own size, both
+**measured off the shipped .glb** by `MachineGeometry.measureEmitter` rather
+than authored: the smelter's ember family comes to **0.2445 m2** against
+`build_smelter.py`'s own design target of 0.083 m2 for the two front faces (the
+difference is that `mf.part` builds boxes, so the sides and back of the peep
+boss and the sight strip count too). `window` is UE4's squared range window, so
+an emitter's reach is finite; the reach is derived from its peak power against a
+0.002 cut-off, **40 m clamped** for this one.
+
+**`wrap = 0.35` is the only fitted number in the file**, and it is there because
+a pure cosine says a furnace does not light its own front: the peep and the
+sight strip stand 0.037 m and 0.006 m proud of a door 1.1 m wide, so every
+surface the audit measures is nearly COPLANAR with the source. The expression is
+the carpet's own `uTrans.x` area-source wrap, character for character.
+
+**`r` IS NOT `sqrt(A / PI)`, AND THE PICTURE IS WHAT REFUSED IT.** That is the
+on-axis Lambertian disc solution and it is exact for a source that is contiguous
+and round; the smelter's is a 0.30 x 0.22 peep and a 0.86 x 0.05 strip a third
+of a metre apart, so `sqrt(A / PI)` reported 0.279 m for a thing nearly a metre
+across. `r` is now the area-weighted RMS distance of the emitting surface from
+its own centroid times sqrt(2) (the factor that turns a second moment back into
+the radius of the uniform disc with that moment), **`max`ed with the disc radius
+so a source can never be softened by less than its area implies**. Measured:
+disc 0.279, RMS 0.321, shipped 0.321. **The honest outcome is that this source
+really is compact and the correction was worth 1.02 counts on `firebox` (22.07
+-> 21.05), not the 2.4x the first-look diagnosis predicted.** Recorded because
+the reasoning is right and reusable and the magnitude was not.
+
+### 2.25.4 THE SOURCE: A BLACKBODY RATIO, NOT A LOOK KNOB
+
+`FIRE_L_HOT = 40`. A smelter's firebox runs 1500 to 1800 K; a blackbody cavity
+at 1500 K has a luminance near 1.6e5 cd/m2 and at 1800 K near 1e6, against about
+1.6e4 for a sunlit 0.5-albedo surface. So a firebox is **10 to 60 times a
+sunlit ground**, a sunlit ground leaves about 1.3 of radiance in this project's
+units, and the honest range is 13 to 78. **40 is the middle of it**, i.e. about
+1650 K. Embers take `game/MachineFx.ts`'s OWN authored ratio, 0.26, so the
+furnace in a stone hut and a smelter's firebox stay one material; the two hexes
+moved to `EmissiveLight.ts` and that file now imports them back, so there is one
+copy of the fire colour in the project instead of two that agree today.
+
+**It is DRAWN at the number it radiates.** 40 clips to white on the strip's own
+pixels, which is what a firebox does to an eye and to a camera, and
+`BloomGlsl.ts`'s Karis first level divides each tap by `1 + luma` so a blown
+texel's contribution is bounded by construction. Clamping the drawn value would
+have thrown away the only HDR input that stage has ever been offered.
+
+### 2.25.5 THE ASSET ALREADY SEPARATED FIRE FROM STATUS AND NOTHING READ IT
+
+`MachineGeometry.roleOf` maps every material ending `EmissiveState` to
+`ROLE_STATUS`, so a firebox peep and a +X status chip arrived at the fragment
+stage indistinguishable and both were drawn by the status branch -- which is why
+**the smelter's firebox was glowing in the BLOCKED colour, red, at the blocked
+brightness.** `build_smelter.py:793` gives the peep and strip
+`OF_EmberEmissiveState` and `SurfaceRoles.ts:207` maps that to the `ember`
+FAMILY, which `isTilingFamily` accepts, so RN-1478's split already draws the
+fire on its own mesh with its own material. The separation was therefore free at
+the MATERIAL level and impossible at the vertex level, and `ember` is an
+argument to `injectMachineFx` rather than a sixth `vRole`. The status chip's
+expression is unchanged to the character. **A side effect worth stating: the
+firebox now shows FIRE and the chip still shows the sim's state, so the two
+signals stopped sharing one surface.**
+
+### 2.25.6 THE HERO, AND THE CORRECTION THAT CAME WITH IT
+
+`RN2385_before_smelternight_lamp0.png` against
+`RN2385_after_smelternight_lamp0.png`. Every before figure reproduces the
+audit's own table to the digit on this lane's own base.
+
+| rect | before | after | factor |
+|---|---|---|---|
+| **whole frame** (`world`) | **1.80** | **7.12** | **3.96x**, against `meadownight`'s own 1.95 to 2.03 at the same hour and flag |
+| `firebox`, the coaming 0.3 m above the fire | **0.41** | **21.05** | **51.3x** |
+| `placard` | 3.94 | 25.39 | 6.44x |
+| `sunface` | 1.51 | 7.24 | 4.79x |
+| `peep` | 8.95 | 44.13 | 4.93x |
+| `bandLit` | 5.18 | 19.20 | 3.71x |
+| `band` | 4.74 | 16.87 | 3.56x |
+| `strip` (the fire itself) | 26.54 | 78.69 | 3.04x, p95 210.62 |
+| `bandShade` | 4.77 | 14.25 | 2.99x |
+| `plate`, clean shell | **2.72** | **9.48** | **3.49x** |
+| `hearthL`, far column | **1.61** | **3.97** | **2.47x** |
+| `hearthR`, far column | **1.94** | **4.29** | **2.21x** |
+
+**That gradient IS the done-when.** 51x on the surface above the fire, 3.5x on
+the shell beside it, 2.2x on the columns at the frame edges: a 23-fold spread
+across one machine, which is what says the light is LOCAL and not a global lift.
+The whole frame clears the empty meadow by 3.5 to 3.7x, so a running furnace
+stops making the world darker than a field.
+
+**THE TARGET, STATED, AND A CORRECTION TO THE AUDIT'S OWN GEOMETRY.** The brief
+asks for "tens of counts" on a plate 0.3 m from the coals. **The `plate`
+rectangle is not 0.3 m from the coals.** 0.3 m is the gap between the `firebox`
+and `plate` rectangles in the FRAME; measured against the hearth columns' own
+3.8 m separation the frame is about 6.0 m wide at the machine, which puts
+`plate`'s centre about **1.2 m** from the emitting centroid. The surface that IS
+at 0.3 m is `firebox`, and it reads **21.05 against 0.41**. `plate` at 1.2 m
+reads 9.48, and reaching twenty there would need the source at the 1800 K end of
+its own range, which is available (`?fireglow=`) and was not taken: 40 is the
+middle of the physical band, and picking the top of it to hit a round number on
+a rectangle at the wrong distance is the tail wagging the dog.
+
+**AND THE MACHINE IN THIS FRAME IS NOT RUNNING, WHICH NO AUDIT NOTICED.**
+`entityVisualState` (`factory_sim.h:1054`) returns **2, starved**, for the
+smelter at this pose: it has power, it is not crafting, and its input slots are
+empty. So the audit's "a running smelter, at night" is a furnace with **banked
+embers**, drawn at 0.26 of the burning radiance by `game/MachineFx.ts`'s own
+authored ratio. Every number in the table above is the EMBER case; a working
+furnace is 3.85x brighter than this. Stated because the next lane to judge this
+frame will otherwise read it as the ceiling and it is the floor.
+
+### 2.25.7 THE CONTROL THAT ATTRIBUTES THE WHOLE MOVE, AND IT IS EXACT
+
+`?firelight=0` keeps the program and multiplies the irradiance by zero. On the
+shipped build, at `smelternight` with `?lamp=0`, **every non-fire rectangle
+returns to the pre-change baseline TO THE DIGIT**: `sunface` 1.51, `firebox`
+0.41, `band` 4.74, `plate` 2.72, `hearthL` 1.61, `hearthR` 1.94, `placard`
+3.94, `bandLit` 5.18, `bandShade` 4.77. Only `peep` and `strip` differ (25.35
+and 60.76), because those are the GLOW half and this flag does not touch it.
+So the pair is one uniform apart, the attribution is complete, and the before
+column above is independently re-derived on the AFTER build rather than carried
+across two trees.
+
+`?firelight=off` removes the splice entirely (the pre-RN-2385 programs). Cost,
+at `smelterhero`: `programs` 46 both ways, `calls` 100 both ways, `frameMs.p50`
+11.4 spliced against 11.2 absent and `passMs.near` 7.8 against **8.8** -- the
+absent arm is the slower one, so **the per-fragment cost is under the noise
+floor and is reported as that rather than as a number**, which is the same
+conclusion `PropSkyAmbient` reached for the same shape of splice.
+
+### 2.25.8 THE DAYLIT GUARDS, AND THE DRIFT IS ARGUED RATHER THAN DENIED
+
+**`machine` (the +X SERVICE side, one camera move from the hero):** `box`
+22.31 -> **22.37**, `hearthL` 23.87 -> 24.04, `hearthR` 20.94 -> 21.11, `world`
+43.06 -> 43.19. **Three tenths of one per cent.** The same machine, the same
+emitter, moving 23 per cent at `smelterhero` and 0.3 per cent here, is the
+strongest single locality proof in this lane.
+
+**`basedusk` (dot 0.20, an emitter in frame):** `world` 94.12 -> **94.27**,
+`box` 62.53 -> 62.55, both sky rectangles identical. **The sun is louder, and
+0.15 counts is how much louder.**
+
+**`smelterhero` (dot 0.448, the pour face, an emitter 1.2 m away) DOES move, by
+intent:**
+
+| rect | before | after | delta |
+|---|---|---|---|
+| `hearthL` | 68.13 | 70.79 | +3.9% |
+| `bandLit` | 136.51 | 142.62 | +4.5% |
+| `hearthR` | 44.05 | 46.83 | +6.3% |
+| `sunface` (the one SUNLIT rectangle) | 81.02 | 87.70 | +8.2% |
+| `placard` | 112.37 | 123.02 | +9.5% |
+| `band` | 63.75 | 73.75 | +16% |
+| `plate` | 47.65 | 55.76 | +17% |
+| `bandShade` | 41.36 | 51.94 | +26% |
+| `peep` | 50.70 | 68.43 | +35% |
+| `firebox` | 33.02 | 51.78 | +57% |
+| `strip` | 56.57 | 93.85 | +66% |
+
+**The argument is the shot's own published finding rather than a new claim.**
+`smelterhero`'s manifest records a four-arm bearing sweep whose conclusion was
+"**NONE OF THE FOUR IS LIT**... the subject is BLUE because the sky is the only
+light on it", with every vertical face in shade at every bearing. A machine lit
+only by a sky ambient, with a firebox a metre away, MUST be moved by that
+firebox; the question is by how much, and the ORDERING is the answer: the sunlit
+rectangle moves least in relative terms (+8.2%), the shaded shell beside the
+fire moves most (+17% to +57%), and the far brick columns move +3.9% and +6.3%.
+That is the sun staying louder than the emitter by day while the emitter stops
+being nothing. **`plate`'s `warm` goes -13.28 -> +12.23**, which is the same
+machine ceasing to read blue -- R3's own rank 8 complaint about props, one
+domain over.
+
+**The reservation, stated:** the door casting is a large orange oxide panel in
+its own ALBEDO (plainly visible in `RN2385_before_smelterhero.png`, untouched by
+this lane), and lighting it with firelight pushes it further toward reading as
+lava than as iron. That is a judgement about the door's texture, it is not
+fixable from the light side without dimming the light, and it is routed rather
+than tuned away.
+
+### 2.25.9 THE POSES THAT MUST NOT MOVE, AND DID NOT
+
+| pose | result |
+|---|---|
+| `meadownight` `?lamp=0` | every committed rectangle **bit-identical** (`box` 2.53, `skyHi` 0.07, `skyHz` 0.08, `hzBand` 0.10, `mid` 5.00, `nearG` 2.35, `shade` 2.29). `registered: 0` emitters, so the term is exactly zero. `world` reads 1.95 / 2.02 / 2.03 across three runs on two programs, which is that statistic's honest **+-0.05 run-to-run band** and is quoted rather than picked. |
+| `forestfloor` | `box` **29.63** (the audit's own figure), triangles **1,286,315** (likewise), calls 75; **walk counters `propsPlaced` 41,300 / `cellsScattered` 25,655, unmoved** |
+| `meadow` | `box` 85.23, iqr **56.47** (3.7's own figure); **walk counters 52,139 / 26,124, unmoved** |
+
+### 2.25.10 THE BLOOM HALO: MEASURED, DIAGNOSED, AND DELIBERATELY NOT BOUGHT
+
+The done-when asks for "a believable bloom halo without washing the frame".
+**It is not there, and the number is why.** At `smelternight` `?lamp=0`, bloom
+on against `?bloom=0`: `strip` 78.69 against **77.75** (+0.94 counts, on the
+fire's own pixels) and `firebox`, the rectangle immediately above it, 21.05
+against **21.04** (+0.01). At **four times** the shipped strength
+(`?bloomstrength=0.4`) `firebox` still reads 21.05 and `plate` is identical to
+the digit; only the source's own pixels lift (`strip` 81.41).
+
+**The pyramid is healthy and the term is simply small.** `?bloomthresh=0
+?bloomstrength=1` moves `firebox` 21.05 -> **76.26** and the whole frame 7.12 ->
+36.14, so the downsample, the additive upsample chain and the composite all
+work. The cause is the first level's Karis weight: `c /= (1 + luma(c))` takes a
+tap of luma 8.84 down to 0.889, so a bright emitter contributes about a tenth of
+its radiance to the pyramid before `bloomStrength = 0.1` takes another factor of
+ten. **Both levers are global grade constants** -- `bloomStrength`, and the
+Karis bound whose own header calls it the difference between bloom that reads as
+light and bloom that flickers -- and moving either would move every published
+rectangle in the project, including the frames M1 and M4 are live against.
+**This lane refuses to spend them and hands Admin the numbers instead.** Owed as
+its own item, with the diagnosis already done.
+
+### 2.25.11 RANK 14 (the dapple and the crushed shade): LEFT, WITH THE REASON
+
+Taken as a ride-along "only if cleanly reachable in the cascade half", and it is
+not, in either half:
+
+* **The forest floor's missing dapple is a shadow-CASTER registration problem,
+  not a term in `TerrainFragLight`'s cascade half.** `ofCascadeShadow` samples
+  correctly; what is absent is canopy geometry in the cascades at all. That is
+  `CanopySelfShadow` / the canopy batch's `castShadow` and the `ShadowLod` tier
+  rule, none of which this lane owns and none of which is one line.
+* **"Shadow sides crush toward black for want of a sky fill on NON-TERRAIN
+  surfaces" is `PropSkyAmbient`'s weight**, which this lane does own -- and
+  RN-2201's own landing measured that term at **+0.10 to +0.25 counts** on
+  `forestfloor` and `meadow`. Raising it enough to change the read is a global
+  look change on every prop pose in the project and needs the before/after set
+  that goes with one, not a constant nudged inside a lighting lane.
+
+`forestfloor` is therefore judged as a GUARD here (2.25.9) and not as a hero,
+and rank 14 goes back to the queue undiminished.
+
+### 2.25.12 STATED LIMITS
+
+1. **The emitter is unshadowed and non-directional.** It has no cosine at the
+   SOURCE, so a firebox lights surfaces its own coaming would occlude. A
+   one-sided emitter cosine is the correct term and was refused on arithmetic:
+   every rectangle the done-when measures is nearly coplanar with the source, so
+   an emitter cosine multiplies them by about the same 0.26 the receiver wrap
+   already costs, and buying that back needs the radiance past the top of its
+   physical range. The leak is bounded by distance and measured: the machine's
+   far side (`machine`'s own rectangles) receives about **17x less** than
+   `plate`.
+2. **The budget's overflow behaviour is UNMEASURED.** `dropped` reads 0 in every
+   pose taken, because every pose holds one furnace. The sort in
+   `selectEmitters` is by `power / (1 + d^2)` at the eye and `dropped` is
+   published on every frame, but no photograph in this lane has seven fires in
+   it. Said out loud rather than implied by a green.
+3. **The terrain does not receive the term**, because the R3 dispatch fences
+   this lane out of the terrain materials (M2's). The ground near a furnace is
+   therefore lit only where props stand on it. **This is the one owed
+   cross-domain seam and it is one call site**: `TerrainFragLight.glsl.ts`'s
+   `lit` assembly, `+ albedo * ofEmitIrradiance(pM + uBodyCenter, n)`, with the
+   uniform bundle published to `TerrainMaterial` the way `PropSkyAmbient`
+   already takes the atmosphere's.
+
+### 2.25.13 Rails
+
+Real Windows D3D11 through ANGLE (Chrome, RTX 4060 Ti), 1600x900, HUD-free
+through `of.screenshot()`, every shot `valid: true`, `poolRefused: 0`,
+`postState.post === true`. Two `vite preview` servers this lane owned (5871 for
+the base build, 5872 for the change), each `--strictPort --host 127.0.0.1`, each
+with a sentinel written into this worktree's own `dist` and **fetched back over
+the port before the first probe, with the served `index-*.js` hashed over HTTP
+and compared to the same file on disk (`16b766487b1a7dd6...` both ways)**; 5871
+killed by the PID `Get-NetTCPConnection` named, before 5872 started. `npx tsc
+--noEmit`, `npm run build` and `npm run check` run as separate steps;
+`check:roles`, `check:probes`, `check:proxies`, `check:proplods`, `typecheck`,
+`check:pose`, `check:limits` and `check:boot` each also run individually with
+their own exit status read, all **0**, and `npm run check` **8/8 PASS**.
+Determinism: two fresh Chrome processes at the hero, every rectangle
+bit-identical to two decimals. Did not touch `web/wasm/dist/*` or
+`test/expected.json`; no `Atmosphere*` or `SkyProbe` (M1's), no `render/grass`
+or `TerrainCoverFar*` (M4's), no terrain material (M2's), no `Headlamp` cone,
+falloff, angle or candela (M5's -- the only `Headlamp` edit is the registration
+count in 2.25.2). Branch `lane/m3-emissive`, pushed, **not merged to main**.

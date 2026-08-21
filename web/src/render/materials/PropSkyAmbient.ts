@@ -104,6 +104,7 @@
 import * as THREE from 'three';
 import { ATMOSPHERE_PARS } from './Atmosphere.glsl.js';
 import { TERRAIN_SKY_AMBIENT } from './TerrainAmbient.js';
+import { injectEmissiveLight } from './EmissiveLight.js';
 
 /**
  * THREE STATES, on `StockFill`'s and RN-1201's precedent, because the two
@@ -403,6 +404,15 @@ export function injectPropSkyAmbient(shader: Splicable,
   // which is a silently absent haze rather than a loud one, exactly the
   // failure the bundle's inert-defaults comment exists to prevent.
   shader.uniforms.uPropHaze = uPropHaze;
+  // RN-2385. THE OTHER HALF OF "A HOT SURFACE LIGHTS WHAT IS NEAR IT", and it
+  // rides this splice rather than getting a hook of its own for this file's
+  // own stated reason: a material holds ONE `onBeforeCompile`, and every prop,
+  // fern, boulder and mineral node in the game already spends it on `PropWind`
+  // or `RockShader` chaining into here. A furnace that lit its own shell and
+  // left the crate and the log pile beside it black would be the same defect
+  // one metre to the left. Its own `?firelight=` flags are separate, so the
+  // pair remains one variable apart.
+  injectEmissiveLight(shader);
   const before = shader.fragmentShader;
   if (foliage) spliceTrans++;
   shader.fragmentShader = shader.fragmentShader

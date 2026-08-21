@@ -43,6 +43,8 @@ import { CAPACITY, MAX_CAPACITY, registerPool, type PoolReport }
 import { noteShaderOrder, type Family } from '../render/instancing/Surfaces.js';
 import { injectPartMat } from '../render/materials/PartMaterial.js';
 import { injectMachineFx } from '../render/materials/MachineFx.js';
+import { injectEmissiveLight } from '../render/materials/EmissiveLight.js';
+import { MachineEmitters } from './MachineEmitters.js';
 import { assertMachineBase, machineMatEnabled } from '../render/materials/MachineMat.js';
 import { SHADOW_LOD_ON } from '../render/ShadowLod.js';
 import { iblDiagOverride } from '../render/IblDiag.js'; // RN-1521, see IblDiag.ts
@@ -92,7 +94,23 @@ export class MachineBatch {
    *  program. */
   private readonly hook = (shader: {
     vertexShader: string; fragmentShader: string; uniforms: Record<string, unknown>;
-  }): void => {
+  }): void => { this.compile(shader, false); };
+  /**
+   * RN-2385. The same hook for the `ember` family, which is the only one that
+   * draws fire. TWO MODULE-SHAPED OBJECTS AND NOT A CLOSURE PER MATERIAL: the
+   * cache-key warning above still binds, and this is one extra hook per BATCH,
+   * attached to at most one layer of it. The ember layer already compiled its
+   * own program (it is the only machine material carrying an emissive map), so
+   * this costs no permutation; `programs` is quoted before and after.
+   */
+  private readonly hookEmber = (shader: {
+    vertexShader: string; fragmentShader: string; uniforms: Record<string, unknown>;
+  }): void => { this.compile(shader, true); };
+  /** RN-2385. Slot -> live fire, for the pools whose templates have one. */
+  private readonly emitters = new MachineEmitters();
+  private compile(shader: {
+    vertexShader: string; fragmentShader: string; uniforms: Record<string, unknown>;
+  }, ember: boolean): void {
     noteShaderOrder(this.name, shader.fragmentShader);
     // RN-1200. The per-part channel, spliced into the hook DW-8 already spent.
     // It lands BEFORE the fx edits and that is safe rather than lucky: it
@@ -102,8 +120,14 @@ export class MachineBatch {
     // `#include <common>` and both keep the needle, so the two declaration
     // blocks stack rather than displace each other.
     if (machineMatEnabled()) injectPartMat(shader);
-    injectMachineFx(shader, this.uniforms);
-  };
+    injectMachineFx(shader, this.uniforms, ember);
+    // RN-2385. LAST, so the emitter's `irradiance +=` lands at
+    // `lights_fragment_begin` and cannot be displaced by either splice above:
+    // both of those anchor on `<common>` and `<emissivemap_fragment>`, which
+    // `noteShaderOrder` already asserts sit before the lighting block.
+    injectEmissiveLight(shader as unknown as
+      { uniforms: Record<string, THREE.IUniform>; fragmentShader: string });
+  }
   /** Slots released by demolition, reused before any new one is added. */
   private readonly free: number[] = [];
   private live = 0;
@@ -174,7 +198,7 @@ export class MachineBatch {
     m.name = `factory:machines:${family}`;
     assertMachineBase(m); iblDiagOverride(m);
     m.userData.uniforms = this.uniforms;
-    m.onBeforeCompile = this.hook;
+    m.onBeforeCompile = family === 'ember' ? this.hookEmber : this.hook;
     return m;
   }
 
@@ -205,6 +229,7 @@ export class MachineBatch {
       }
       per.set(key, ft);
       this.merged.set(key, ft.lod0);
+      this.emitters.learn(key, ft.emit);   // RN-2385
     }
     if (per.size === 0) return;
     for (const L of buildLayers(this.name, this.cap,
@@ -261,6 +286,7 @@ export class MachineBatch {
    *  to "the caller placed it AND I have something to draw for it". */
   private point(slot: number, key: string): void {
     this.slotKey[slot] = key;
+    this.emitters.point(slot, key);   // RN-2385
     const on = this.shown[slot] === true;
     for (const L of this.layers) {
       const g = L.geomId.get(key);
@@ -346,6 +372,7 @@ export class MachineBatch {
     if (this.layers.length === 0 || slot < 0 || this.free.includes(slot)) return;
     this.hide(slot);
     this.setFx(slot, { flow: 0, density: 0, state: 0, level: 0 });
+    this.emitters.clear(slot);   // RN-2385: a demolished furnace stops lighting
     this.free.push(slot);
     this.live = Math.max(0, this.live - 1);
   }
@@ -353,6 +380,7 @@ export class MachineBatch {
   place(slot: number, m: THREE.Matrix4): void {
     if (this.layers.length === 0 || slot < 0) return;
     this.shown[slot] = true;
+    this.emitters.place(slot, m);   // RN-2385
     const key = this.slotKey[slot];
     for (const L of this.layers) {
       L.mesh.setMatrixAt(slot, m);
@@ -364,12 +392,14 @@ export class MachineBatch {
   hide(slot: number): void {
     if (this.layers.length === 0 || slot < 0) return;
     this.shown[slot] = false;
+    this.emitters.hide(slot);   // RN-2385: an undrawn machine lights nothing
     for (const L of this.layers) L.mesh.setVisibleAt(slot, false);
   }
 
   /** ONE texel per instance. This is the whole of DW-8's per-instance channel. */
   setFx(slot: number, fx: Fx): void {
     if (slot < 0 || slot >= this.cap) return;
+    this.emitters.fx(slot, fx.state, fx.level);   // RN-2385
     const i = slot * 4;
     this.fxData[i] = fx.flow;
     this.fxData[i + 1] = fx.density;
@@ -377,8 +407,17 @@ export class MachineBatch {
     this.fxData[i + 3] = fx.level;
   }
 
-  /** One upload per frame, however many instances changed. */
-  flush(): void { if (this.live > 0) this.fxTex.needsUpdate = true; }
+  /** One upload per frame, however many instances changed, plus RN-2385's one
+   *  publish of whatever in this pool is currently on fire. */
+  flush(): void {
+    if (this.live > 0) this.fxTex.needsUpdate = true;
+    this.emitters.flush();
+  }
+
+  /** RN-2385. What this pool contributes to the light budget. */
+  emitterStats(): { templates: number; slots: number; live: number } {
+    return this.emitters.stats();
+  }
 
   geometryFor(key: string): THREE.BufferGeometry | null {
     return this.merged.get(key) ?? null;
