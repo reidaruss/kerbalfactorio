@@ -3407,6 +3407,18 @@
       return h === undefined || typeof h.treeline !== 'function'
         ? null : h.treeline();
     })(),
+    // WG-230. THE WORLD-LOCKED PHASE, read off the live page rather than
+    // recomputed here. `amp` is what the fragment shader is holding (0 in the
+    // shipped frame; `?phaseamp=1` is the arm that paints the checker), and
+    // `quantumM` against `pmQuantumM` is the whole claim of that lane made
+    // readable from a probe: how fine the shading coordinate is at a chunk of
+    // the given local extent, against what `pM` carries at the same fragment.
+    // `divides` is the seam rule for the period the caller asks about.
+    phase: (() => {
+      const h = window.__ofTerrainArt;
+      return h === undefined || typeof h.phaseState !== 'function'
+        ? null : h.phaseState();
+    })(),
     render: { triangles: s.draw.triangles, calls: s.draw.calls,
       programs: s.draw.programs, vramMB: s.vramEstimateMB,
       frameMs: { p50: r2(s.frameMs.p50), p95: r2(s.frameMs.p95),

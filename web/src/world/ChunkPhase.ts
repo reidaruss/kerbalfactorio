@@ -242,6 +242,119 @@ export function phaseError(
   return { maxErrCells, maxErrM: maxErrCells * wavelengthM };
 }
 
+// ---------------------------------------------------------------------------
+// WG-230. THE SHIPPED FORM: ONE PERIOD, ONE vec3, AND WHY IT IS NOT THE
+// (cell, frac) PAIR ABOVE
+// ---------------------------------------------------------------------------
+// Everything above this line is WG-50's reduction and its shader contract,
+// written in 2026-07-28 for a LATTICE consumer: a value-noise octave hashes an
+// integer cell, so it needs `cell` to be globally correct or the field repeats.
+// It has been correct and unconsumed ever since, because nothing shipped a
+// path from it to the GPU.
+//
+// The consumer that finally needs it is not a lattice. It is the far-field
+// SPLAT rung (TerrainSplat.ts's own note: "the real fix is not a shader change
+// ... a per-chunk phase attribute reduced mod the tile period on the CPU in
+// float64"), and a tiling texture fetch consumes only the FRACTIONAL part: a
+// wrapping sampler never sees an integer cell index. So the shipped attribute
+// is `frac` alone, one vec3, and `cell` stays available above for the day a
+// lattice consumer wants it. Halving the attribute from six floats to three is
+// not a micro-optimisation here: it is 3.74 MB of pooled vertex memory against
+// a pool that retains 12.6 MB of blobs.
+//
+// THE ONE THING `frac` ALONE GIVES UP is that the reconstructed coordinate has
+// a SUPER-PERIOD of PHASE_PERIOD_M. That is exactly why the period is a
+// published constant with a divisibility rule rather than a free parameter:
+// a consumer whose own period divides it sees no super-period at all, because
+// its own tiling is a whole number of tiles inside the phase's.
+
+/**
+ * THE PHASE PERIOD, in metres. The reduction modulus, and the coarsest
+ * world-locked wavelength any consumer of `aPhase` may use.
+ *
+ * IT IS A PRECISION BUDGET AND NOT A ROUND NUMBER. The shader forms
+ * `t = aPhase + position / PHASE_PERIOD_M` in float32, so the quantum of the
+ * reconstructed coordinate is `ulp(t) * PHASE_PERIOD_M`, i.e. the period
+ * divided by about 2^23. Doubling the period doubles the quantum everywhere.
+ * 256 m puts the quantum at 30.5 um for every chunk whose own half-extent is
+ * under the period, which is every chunk resident inside about 600 m -- the
+ * whole of the band phase 2 exists for -- against `pM`'s 31.25 mm there.
+ *
+ * THE OTHER END OF THE TRADE is that 256 m is the coarsest world-locked field
+ * a consumer can build on this attribute. An anti-tiling term wanting a
+ * kilometre-scale wavelength needs a SECOND reduction at that period, not a
+ * larger value here, because enlarging this one costs near-field precision
+ * linearly and the near field is where the quantum is already tightest against
+ * a 3.56 mm pixel footprint.
+ */
+export const PHASE_PERIOD_M = 256;
+
+/**
+ * True when `periodM` divides PHASE_PERIOD_M a whole number of times.
+ *
+ * THIS IS THE SEAM RULE AND IT IS THE ONLY ONE. Two chunks reaching the same
+ * ground reconstruct coordinates that differ by an exact INTEGER (each is the
+ * true coordinate in period units minus that chunk's own whole-period count),
+ * so `fract(t * n)` agrees between them for integer `n` and disagrees for any
+ * other. A consumer that picks 3.0 m out of a 256 m period draws a visible
+ * line along every chunk boundary in the frame, and it draws it only at range,
+ * where the boundaries are far apart and the cause is least obvious.
+ */
+export function phasePeriodDivides(periodM: number): boolean {
+  if (!(periodM > 0) || !Number.isFinite(periodM)) return false;
+  return Number.isInteger(PHASE_PERIOD_M / periodM);
+}
+
+/**
+ * The seam rule as a throw. Consumers call this at module load with their own
+ * tile metres, so a bad period is a boot failure and not a hairline seam
+ * someone notices in a screenshot three lanes later.
+ */
+export function assertPhasePeriod(periodM: number, who: string): number {
+  if (!phasePeriodDivides(periodM)) {
+    throw new Error(`ChunkPhase: ${who} wants a ${periodM} m world period, which does not `
+      + `divide PHASE_PERIOD_M (${PHASE_PERIOD_M} m) a whole number of times. `
+      + 'Chunk edges would disagree and the term would draw a line along every one.');
+  }
+  return PHASE_PERIOD_M / periodM;
+}
+
+/**
+ * Reduce one chunk anchor into the shipped attribute: `frac(anchor / P)` per
+ * axis, in [0, 1), narrowed to float32.
+ *
+ * The division, the floor and the subtraction all happen in float64, which is
+ * the entire point of the module and the one thing a shader cannot do. The
+ * float32 narrowing at the end is the ONLY error introduced, and it is at most
+ * half an ULP at 1.0, i.e. 2.98e-8 periods, i.e. 7.6 micrometres of ground at
+ * a 256 m period -- a quarter of the 30.5 um quantum the shader's own
+ * arithmetic then costs, so it is not the binding term.
+ */
+export function reduceAnchorPhase(anchor: Vec3d): [number, number, number] {
+  return [
+    f32(reduceAxis(anchor.x, PHASE_PERIOD_M)[1]),
+    f32(reduceAxis(anchor.y, PHASE_PERIOD_M)[1]),
+    f32(reduceAxis(anchor.z, PHASE_PERIOD_M)[1]),
+  ];
+}
+
+/**
+ * The quantum, in METRES of ground, of the coordinate the shader reconstructs
+ * from this attribute over a chunk of the given local radius. Published as a
+ * function rather than as a table because it is the number that decides
+ * whether a screen derivative survives, and a table would be a second
+ * authority on it.
+ *
+ * `t = frac + localRadius / P` and float32 carries 24 mantissa bits, so the
+ * quantum is `2^(floor(log2 |t|) - 23) * P`. Compare it against a pixel
+ * footprint, never against a wavelength: WG-51 measured that the VALUE of a
+ * field survives quantisation that destroys its DERIVATIVE.
+ */
+export function phaseQuantumM(localRadiusM: number): number {
+  const t = 1 + Math.abs(localRadiusM) / PHASE_PERIOD_M;
+  return 2 ** (Math.floor(Math.log2(t)) - 23) * PHASE_PERIOD_M;
+}
+
 /**
  * The two seam claims, executable.
  *

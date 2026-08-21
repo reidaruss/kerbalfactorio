@@ -250,6 +250,12 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // numbers the law is chosen on. Registered in the commit that introduces
   // them (RN-152's scar).
   'crownshade', 'crownshadeamp', 'crownshadek', 'crownshadefloor',
+  // WG-230. The world-locked phase PROBE. The shipped amplitude is 0, so the
+  // usual polarity is inverted here: `phaseamp=1` is the ON arm that paints the
+  // 2 m checker proving the attribute reaches the shader, and the DEFAULT is
+  // the exact pre-lane ground. Registered in the commit that introduces it
+  // (RN-152's scar).
+  'phaseamp', 'phaserep',
   'crownshadefar', 'crownshadecard',
   // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
   // night exactly); `starlightamp=` sweeps it.

@@ -22,6 +22,7 @@ import { ART_COARSE_M, ART_FINE_M, ART_FINE_M_PRE1855, FINE_ALB, FINE_BUMP,
   REL_SWING_DEFAULT } from './TerrainArt.glsl.js';
 import type { TerrainUniformState } from './TerrainUniformState.js';
 import { terrainSplatHandle } from './TerrainSplatHandle.js';
+import { terrainPhaseHandle } from './TerrainPhase.js';
 
 export function installTerrainArtHandle(s: TerrainUniformState): void {
   const { artAmp, wetBand, groundTex, groundAmp, reliefTex, reliefAmp,
@@ -388,5 +389,6 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
       };
     },
     ...terrainSplatHandle(s),
+    ...terrainPhaseHandle(s.phaseProbe),
   };
 }

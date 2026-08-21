@@ -30,6 +30,7 @@ import type { TerrainMaterialOptions } from './TerrainMaterialTypes.js';
 import { onCanopyTone, treelineAmpFromQuery, treelineMottleFromQuery }
   from './TerrainTreeline.js';
 import { SHADE } from './CanopySelfShadow.js';
+import { phaseProbeFromQuery } from './TerrainPhase.js';
 import { SPLAT_FADE_ALBEDO, SPLAT_FADE_NORMAL, SPLAT_MAPS }
   from './TerrainSplat.js';
 
@@ -229,6 +230,12 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
   const crownShade: THREE.IUniform<THREE.Vector3> = {
     value: new THREE.Vector3(SHADE[0], SHADE[1], SHADE[2]),
   };
+  // WG-230. The world-locked phase PROBE: (amplitude, checker repeats per
+  // period), amplitude 0 in the shipped frame. Shared by reference into both
+  // materials for splatFarAmp's reason: the scaled far scene carries the
+  // attribute too, and a probe that reached one material and not the other
+  // would photograph a seam this lane does not have.
+  const phaseProbe: THREE.IUniform<THREE.Vector2> = { value: phaseProbeFromQuery() };
   const wetBand = wetBandFromQuery(o.water);
   const wetDir = new THREE.Vector3(
     o.water?.dirX ?? 0, o.water?.dirY ?? 1, o.water?.dirZ ?? 0);
@@ -244,6 +251,7 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
+    phaseProbe,
     splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,
   };
 }

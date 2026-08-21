@@ -6,6 +6,7 @@
 
 import type { DepthPolicy } from '../DepthPolicy.js';
 import { BIOME_COUNT } from './BiomePalette.js';
+import { PHASE_PERIOD_M } from '../../world/ChunkPhase.js';
 
 export function terrainVertexShader(depth: DepthPolicy): string {
   return /* glsl */`
@@ -27,6 +28,11 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     // because ScatterTuning's field is an integer-lattice hash and this
     // material compiles as GLSL ES 1.00, which has no integer type.
     attribute float aCanopy;
+    // WG-230. The chunk's world phase, frac(anchor / P) reduced on the CPU in
+    // float64. A per-chunk CONSTANT replicated across the slot's vertices, on
+    // aFadeT0's precedent, because a BatchedMesh draws every resident chunk in
+    // one multi-draw and a uniform cannot vary per chunk inside one.
+    attribute vec3 aPhase;
     uniform vec3 uBiomeColor[${BIOME_COUNT}];
     uniform vec4 uBiomeMat[${BIOME_COUNT}];
     uniform vec4 uBiomeRelief[${BIOME_COUNT}];
@@ -49,6 +55,7 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     varying float vViewZ;
     varying vec2 vChunkUv;
     varying float vCanopy;
+    varying vec3 vPhase;
 
     void main() {
       #include <batching_vertex>
@@ -94,6 +101,20 @@ export function terrainVertexShader(depth: DepthPolicy): string {
       // the horizon. The area index is the linear quantity, so it is the one
       // that may be interpolated.
       vCanopy = aCanopy;
+      // WG-230. THE WORLD-LOCKED COORDINATE, in units of the phase period.
+      // Both terms are small -- the phase is in [0,1) and position is the
+      // vertex's offset from the chunk's own float64 anchor -- so the sum is
+      // never a planet-scale float and the quantum is set by the CHUNK's
+      // extent instead of by the BODY's radius. That is the entire mechanism.
+      //
+      // position and NOT vWorld: vWorld is engine space, which rebases, and
+      // it is the whole reason pM exists. The DIVIDE is by a compile-time
+      // constant, so it costs nothing.
+      //
+      // The integer part is meaningless and harmless: every consumer takes
+      // fract() of an integer multiple of this, and two chunks over the same
+      // ground differ here by an exact integer.
+      vPhase = aPhase + position / ${PHASE_PERIOD_M.toFixed(1)};
       // The SIGN of aFadeT0 selects the half of the dissolve: positive is the
       // incoming chunk fading in, negative is the outgoing one fading out. One
       // attribute, written once, carries both.

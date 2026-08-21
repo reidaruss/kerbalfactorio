@@ -16,6 +16,7 @@ import { TERRAIN_ART_PARS } from './TerrainArt.glsl.js';
 import { CASCADE_GLSL } from './CascadeShadow.glsl.js';
 import { BAYER } from './TerrainDither.glsl.js';
 import { TERRAIN_TREELINE_PARS } from './TerrainTreeline.glsl.js';
+import { TERRAIN_PHASE_PARS } from './TerrainPhase.glsl.js';
 import type { DepthPolicy } from '../DepthPolicy.js';
 
 export function terrainFragPars(depth: DepthPolicy): string {
@@ -210,8 +211,22 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // per terrain vertex on the CPU (ChunkCanopy.ts) because that field's
     // integer-lattice hash is not expressible in GLSL ES 1.00.
     varying float vCanopy;
+    // WG-230. The WORLD-LOCKED shading coordinate, in units of the 256 m phase
+    // period: the chunk's float64-reduced anchor phase plus the vertex's own
+    // chunk-local offset. It is what pM cannot be -- resolvable at range --
+    // and what vChunkUv cannot be -- the same world scale at every LOD ring.
+    // See TerrainPhase.glsl.ts for the integer-repeats seam rule.
+    varying vec3 vPhase;
+    // WG-230. The phase PROBE: x amplitude, y checker repeats per period.
+    // x ships at 0, so the default frame is bit-identical to the one before
+    // this lane; ?phaseamp=1 paints the checker that proves the attribute
+    // arrives and ?phaserep= sizes it to the pose. A bare uniform and not a
+    // define on purpose: no new program permutation, so the pair is one flag
+    // inside one build (RN-843/RN-1000).
+    uniform vec2 uPhaseProbe;
     ${BAYER}
     ${CASCADE_GLSL}
     ${TERRAIN_TREELINE_PARS}
+    ${TERRAIN_PHASE_PARS}
 `;
 }
