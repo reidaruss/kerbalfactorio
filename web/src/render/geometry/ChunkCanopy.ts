@@ -99,37 +99,6 @@ export const BIOME_CANOPY_MU: readonly number[] = BIOME_PROPS.map((specs) => {
 export const ANY_CANOPY_MU = BIOME_CANOPY_MU.some((m) => m > 0);
 
 /**
- * RN-2511. THE MEAN PLAN AREA OF ONE PLACED BIOME PROP, m^2, and it is the one
- * FITTED number in the mid-field cover term. The whole argument for why it is
- * fitted rather than quoted -- `props_canopy` publishes a `dims_xyz_m` per
- * species and `props_plains` publishes exactly one, for its `lod0_node` -- is
- * in `render/materials/TerrainCoverFarStand.ts`, which is the consumer. It
- * lives HERE beside `CROWN_AREA_M2` because this file is where the per-biome
- * area indices are derived and a second derivation site is a second answer.
- */
-export const COVER_PLAN_AREA_M2 = 0.10;
-
-/**
- * RN-2511. THE GROUND-COVER AREA INDEX PER BIOME, dimensionless, derived LIVE
- * from `Registry.BIOME_PROPS` on `BIOME_CANOPY_MU`'s own pattern and for its
- * own reason: a copied table is "a constant copied from the thing it watches".
- *
- * Over the specs the 170 m ring actually carries: NOT the canopy (it has its
- * own tier and its own material term one range band out, and counting it here
- * would paint a wood twice) and NOT the `detail` cards (they are gone by
- * `DETAIL_RADIUS_M`, 78 m, which is well inside the ring, so they are not
- * cover the ring's edge stops delivering).
- */
-export const BIOME_COVER_MU: readonly number[] = BIOME_PROPS.map((specs) => {
-  let sum = 0;
-  for (const s of specs) {
-    if (s.canopy === true || s.detail === true) continue;
-    sum += s.density;
-  }
-  return sum * COVER_PLAN_AREA_M2 / 1e6;
-});
-
-/**
  * The altitude past which `canopyWeight` is identically zero, so the noise is
  * never evaluated on a mountain top or anywhere on an airless body. The wander
  * term is `(stand * 2 - 1) * TREELINE_WANDER_M` with `stand` in [0,1], so the
@@ -154,76 +123,25 @@ const CANOPY_MAX_ALT_M = TREELINE_BARE_M + TREELINE_WANDER_M;
  * these were not the same quantity the ridge would go green.
  */
 export function fillCanopyIndex(
-  out: Float32Array, cover: Float32Array | null,
-  position: Float32Array, height: Float32Array,
+  out: Float32Array, position: Float32Array, height: Float32Array,
   biome: Uint8Array, verts: number, ax: number, ay: number, az: number,
 ): void {
   let s1 = 0;
   let s2 = 0;
   for (let i = 0; i < verts; ++i) {
-    const b = biome[i * 4];
-    const mu = BIOME_CANOPY_MU[b] ?? 0;
-    const cmu = BIOME_COVER_MU[b] ?? 0;
+    const mu = BIOME_CANOPY_MU[biome[i * 4]] ?? 0;
     const altM = height[i];
-    // RN-2511. The two consumers gate differently and the OR is deliberate:
-    // the canopy index is only meaningful where a biome plants trees and below
-    // the treeline, but the GROUND-COVER field is meaningful anywhere the
-    // 170 m prop ring places anything at all -- a beach carries driftwood and
-    // dune grass and no canopy, and its mid field is as bald as the plains'.
-    // Evaluating the two noise fields once and spending them twice is what
-    // makes the second consumer free wherever the first one already ran.
-    if ((mu <= 0 || altM >= CANOPY_MAX_ALT_M) && cmu <= 0) {
-      out[i] = 0;
-      if (cover !== null) cover[i] = 0;
-      continue;
-    }
+    if (mu <= 0 || altM >= CANOPY_MAX_ALT_M) { out[i] = 0; continue; }
     const wx = ax + position[i * 3];
     const wy = ay + position[i * 3 + 1];
     const wz = az + position[i * 3 + 2];
-    const sa = standAt(wx, wy, wz);
-    const ga = groveAt(wx, wy, wz);
-    if (cover !== null) cover[i] = coverField(sa, ga);
-    if (mu <= 0 || altM >= CANOPY_MAX_ALT_M) { out[i] = 0; continue; }
-    const w = canopyWeight(altM, sa, ga);
+    const w = canopyWeight(altM, standAt(wx, wy, wz), groveAt(wx, wy, wz));
     const v = w > 0 ? w * mu : 0;
     out[i] = v;
     s1 += v;
     s2 += v * v;
   }
   if (s1 > 0) accumulateCanopyMu(s1, s2);
-}
-
-/**
- * RN-2511. THE GROUND-COVER FIELD in [0,1], and it is world-gen's two stand
- * octaves BEFORE `canopyWeight`'s thresholds rather than after them.
- *
- * THE MEASUREMENT THAT FORCED THIS, and it is the finding this function exists
- * to record. The first version of RN-2512's mid-field term drove itself off
- * `canopyWeight` -- the same [0,1] the trees are placed by -- on the argument
- * that the ground's mosaic should be the instance tier's mosaic. It is not
- * usable for that: `canopyWeight` is `ramp(stand, STAND_LO, STAND_HI)` times
- * `ramp(grove, GROVE_LO, GROVE_HI)`, i.e. two hard thresholds, and the
- * realised field is BIMODAL -- planetary mean 0.308 with sd 0.345, min 0.012,
- * max 1.000. It is a wood/no-wood decision and it is right to be. Painted as a
- * three-threshold ladder at the plains art pose, EVERY terrain row from the
- * 170 m ring to the horizon came back at the top step, saturated to the digit
- * across thirteen rows (r 142.0 / g 156.0 with an off level of 7.0): the
- * observer stands inside one closed stand and the whole mid field is inside
- * it. A term referenced to a saturated field has nothing to say.
- *
- * The two octaves UNDER the thresholds are smooth trilinear value noise on
- * [0,1], and they are what a plain's ground cover actually looks like: a
- * continuous rise and fall at the stand's 165 m and the grove's 760 m, denser
- * where the copses are because it is the same field the copses are cut from.
- *
- * 0.65 / 0.35 rather than an even split because the 165 m octave is the one
- * that resolves as FIELD-SCALE structure at the ranges this term is visible at
- * (a 165 m feature at 250 m is a third of the frame's width; a 760 m one is
- * the whole of it, i.e. a level and not a mosaic), and the grove octave's job
- * here is to keep two neighbouring fields from reading as the same field.
- */
-export function coverField(stand: number, grove: number): number {
-  return 0.65 * stand + 0.35 * grove;
 }
 
 /**

@@ -14,7 +14,6 @@
 // preprocessor region.
 
 import { TERRAIN_TREELINE_BLOCK } from './TerrainTreeline.glsl.js';
-import { TERRAIN_COVER_STAND_BLOCK } from './TerrainCoverFarStand.glsl.js';
 // RN-2340. The far ground's two world-locked rungs and the range-aware
 // biome-boundary break, on TERRAIN_TREELINE_BLOCK's precedent: the shader half
 // of a term lives beside the term's other half, and this file splices it.
@@ -339,7 +338,6 @@ export const TERRAIN_FRAG_ALBEDO = /* glsl */`
       #endif
 
 ${TERRAIN_HORIZON_BLOCK}
-${TERRAIN_COVER_STAND_BLOCK}
 ${TERRAIN_TREELINE_BLOCK}
       // /core's maxRelief is a nominal 6,000 m on Forge but baseHeight peaks
       // above it (6,520 m measured), so the snowline is expressed past 1.0

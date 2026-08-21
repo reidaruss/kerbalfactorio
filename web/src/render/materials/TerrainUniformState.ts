@@ -34,9 +34,6 @@ import type { TerrainMaterialOptions } from './TerrainMaterialTypes.js';
 import { onCanopyTone, treelineAmpFromQuery, treelineMottleFromQuery }
   from './TerrainTreeline.js';
 import { SHADE } from './CanopySelfShadow.js';
-import { biomeCoverMuArray, coverStandAmpFromQuery, coverStandChromaFromQuery,
-  coverStandMosaicFromQuery,
-  coverStandValueFromQuery } from './TerrainCoverFarStand.js';
 import { phaseProbeFromQuery } from './TerrainPhase.js';
 import { SPLAT_FADE_ALBEDO, SPLAT_FADE_NORMAL, SPLAT_MAPS }
   from './TerrainSplat.js';
@@ -268,22 +265,6 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
   const crownShade: THREE.IUniform<THREE.Vector3> = {
     value: new THREE.Vector3(SHADE[0], SHADE[1], SHADE[2]),
   };
-  // RN-2512. THE MID FIELD'S GROUND COVER: (amp, mosaic, value, chroma). Shared by
-  // reference into both materials for splatFarAmp's reason, and the far
-  // material compiles the term out (`#ifndef OF_SCALED`) exactly as it does the
-  // treeline's, so the share is belt and braces there and is kept because the
-  // pattern must not have an exception.
-  const coverStand: THREE.IUniform<THREE.Vector4> = {
-    value: new THREE.Vector4(
-      coverStandAmpFromQuery(), coverStandMosaicFromQuery(),
-      coverStandValueFromQuery(), coverStandChromaFromQuery()),
-  };
-  // RN-2511. The per-biome ground-cover area index the vertex shader pairs the
-  // aCover attribute with. A Float32Array rather than a plain array because
-  // three uploads it to a float[] uniform directly and a table DERIVED from
-  // Registry has no reason to become boxed numbers on the way. Shared by
-  // reference for the same one-authority reason.
-  const biomeCover: THREE.IUniform<Float32Array> = { value: biomeCoverMuArray() };
   // WG-230. The world-locked phase PROBE: (amplitude, checker repeats per
   // period), amplitude 0 in the shipped frame. Shared by reference into both
   // materials for splatFarAmp's reason: the scaled far scene carries the
@@ -305,7 +286,6 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
-    coverStand, biomeCover,
     phaseProbe, horizonAmp, horizonEco, horizonCell, horizonPlains, emitGround,
     massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,

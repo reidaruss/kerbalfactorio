@@ -39,7 +39,6 @@ export function makeTerrainMaterial(
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
     horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
-    coverStand, biomeCover,
     phaseProbe, horizonAmp, horizonEco, horizonCell, horizonPlains, emitGround,
     massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff,
@@ -118,12 +117,6 @@ export function makeTerrainMaterial(
     // reference like every other holder here, and holding the SAME three
     // numbers the canopy card's per-frame colour update reads.
     uCrownShade: crownShade,
-    // RN-2512. The mid field's ground cover, (amp, value, chroma), and
-    // RN-2511's per-biome ground-cover area index the vertex shader pairs the
-    // aCover attribute with. Both already IUniform holders, so passed through
-    // rather than re-wrapped.
-    uCoverStand: coverStand,
-    uBiomeCoverMu: biomeCover,
     // WG-230. The world-locked phase probe, (amplitude, checker repeats),
     // already an IUniform holder, so passed through rather than re-wrapped.
     uPhaseProbe: phaseProbe,

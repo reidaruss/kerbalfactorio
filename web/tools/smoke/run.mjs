@@ -292,17 +292,13 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // before of RN-2421 and not of this. Registered in the same commit that
   // introduces the term, per this list's own rule and RN-152's scar.
   'horizonplains',
-  // RN-2512. THE MID FIELD'S GROUND COVER. `coverstand=0` is the exact
-  // pre-RN-2512 frame and is the negative control every proof in this lane is
-  // taken against; `coverstandamp=` scales the whole term, `coverstandm=` the
-  // stand-field mosaic, `coverstandv=` how much darker the cover layer is than
-  // the substrate and `coverstandc=` the carpet rotation applied to it. Four
-  // flags and not one because they fail differently: too much mosaic is a
-  // blotchy plain, too much value is a bruise under the horizon and too much
-  // chroma is a paint chart, and one switch could only ever answer "is it on".
-  // Registered in the same commit that introduces the term, per this list's
-  // own rule and RN-152's scar.
-  'coverstand', 'coverstandamp', 'coverstandm', 'coverstandv', 'coverstandc',
+  // RN-2512's `coverstand` family was registered here and is REMOVED again in
+  // the same lane: the term it switched -- the mid field's material ground
+  // cover -- was built, measured and refused on its own numbers (rendering.md
+  // 2.31). A registered flag whose term does not exist is worse than a missing
+  // one, which is RN-150's dead-default rule in its other direction. The
+  // implementation is in this branch's own history at RN-2511 to RN-2515 if a
+  // later lane wants it.
   // RN-2422. THE GROUND's half of RN-2385's emissive irradiance.
   // `firelightground=0` keeps every program and every machine surface as M3
   // shipped them and zeroes the TERRAIN's take alone, which is what makes the

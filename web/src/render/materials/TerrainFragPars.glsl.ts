@@ -252,13 +252,6 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // CanopySelfShadow.SHADE, so the near stand and the far treeline cannot be
     // darkened by different numbers. x = 0 is the exact pre-RN-2275 frame.
     uniform vec3 uCrownShade;
-    // RN-2512. THE MID FIELD'S GROUND COVER: (amp, mosaic, value, chroma).
-    // x = 0 is the exact pre-RN-2512 frame and is ?coverstand=0; the other
-    // three sweep independently (?coverstandm=, ?coverstandv=, ?coverstandc=)
-    // because they fail differently -- too much mosaic is a blotchy plain, too
-    // much value is a bruise under the horizon and too much chroma is a paint
-    // chart. See TerrainCoverFarStand.ts.
-    uniform vec4 uCoverStand;
     varying vec3 vBiomeColor;
     varying vec4 vMatW;
     varying vec4 vRelW;
@@ -280,12 +273,6 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // per terrain vertex on the CPU (ChunkCanopy.ts) because that field's
     // integer-lattice hash is not expressible in GLSL ES 1.00.
     varying float vCanopy;
-    // RN-2511. (this biome's ground-cover area index, world-gen's own stand
-    // and grove octaves here in [0,1]). The second component comes from the
-    // SAME two noise samples the canopy index above is built from, taken in
-    // the same CPU pass, so the mid field's mosaic and the far treeline cannot
-    // be reading two different worlds.
-    varying vec2 vCoverStand;
     // WG-230. The WORLD-LOCKED shading coordinate, in units of the 256 m phase
     // period: the chunk's float64-reduced anchor phase plus the vertex's own
     // chunk-local offset. It is what pM cannot be -- resolvable at range --
