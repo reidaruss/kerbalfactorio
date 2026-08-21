@@ -15,19 +15,24 @@
 
 import {
   HORIZON_ECO_FIELD, HORIZON_ECO_GATE, HORIZON_ECO_PX, HORIZON_FAR_REPEATS, HORIZON_FOOT_FAR,
-  HORIZON_FOOT_MID, HORIZON_MID_REPEATS, HORIZON_N_COVER, HORIZON_N_ROCK,
-  HORIZON_WARP_REPEATS, HORIZON_WARP_UV,
+  HORIZON_FOOT_MID, HORIZON_FOOT_OUT, HORIZON_MID_REPEATS, HORIZON_N_COVER,
+  HORIZON_N_ROCK, HORIZON_WARP_FAR_REPEATS, HORIZON_WARP_MID_REPEATS,
+  HORIZON_WARP_UV_FAR, HORIZON_WARP_UV_MID,
 } from './TerrainHorizon.js';
 
 export const TERRAIN_HORIZON_PARS = /* glsl */`
   #define OF_HZ_MREP ${HORIZON_MID_REPEATS.toFixed(1)}
   #define OF_HZ_FREP ${HORIZON_FAR_REPEATS.toFixed(1)}
-  #define OF_HZ_WREP ${HORIZON_WARP_REPEATS.toFixed(1)}
-  #define OF_HZ_WARP ${HORIZON_WARP_UV.toFixed(6)}
+  #define OF_HZ_WREP_M ${HORIZON_WARP_MID_REPEATS.toFixed(1)}
+  #define OF_HZ_WREP_F ${HORIZON_WARP_FAR_REPEATS.toFixed(1)}
+  #define OF_HZ_WARP_M ${HORIZON_WARP_UV_MID.toFixed(6)}
+  #define OF_HZ_WARP_F ${HORIZON_WARP_UV_FAR.toFixed(6)}
   #define OF_HZ_FOOT_M0 ${HORIZON_FOOT_MID[0].toFixed(4)}
   #define OF_HZ_FOOT_M1 ${HORIZON_FOOT_MID[1].toFixed(4)}
   #define OF_HZ_FOOT_F0 ${HORIZON_FOOT_FAR[0].toFixed(4)}
   #define OF_HZ_FOOT_F1 ${HORIZON_FOOT_FAR[1].toFixed(4)}
+  #define OF_HZ_FOOT_O0 ${HORIZON_FOOT_OUT[0].toFixed(4)}
+  #define OF_HZ_FOOT_O1 ${HORIZON_FOOT_OUT[1].toFixed(4)}
   #define OF_HZ_NROCK ${HORIZON_N_ROCK.toFixed(4)}
   #define OF_HZ_NCOVER ${HORIZON_N_COVER.toFixed(4)}
   #define OF_HZ_ECO_PX ${HORIZON_ECO_PX.toFixed(3)}
@@ -46,11 +51,21 @@ export const TERRAIN_HORIZON_PARS = /* glsl */`
   // lattice index with mod(), so a constant offset shifts where the field is
   // READ and leaves its period alone, and a second lattice would cost four more
   // hashes to buy decorrelation the offsets already give.
-  vec3 ofHzWarp(vec3 ph) {
+  //
+  // THE REPEAT COUNT AND THE AMPLITUDE ARE ARGUMENTS AND NOT DEFINES, because
+  // each rung is warped at a period COPRIME WITH ITS OWN TILE and the two rungs
+  // therefore need two warps. TerrainHorizon.ts's assertIncommensurate is the
+  // rule and its comment is the argument; the short version is that a warp
+  // sharing a factor with the tile displaces every copy of that tile alike and
+  // decorrelates nothing, and at the equal-period limit it paints the lattice
+  // itself. The rep argument is what assertPhasePeriod returned and amp is the
+  // shared derivative budget divided by it, so a caller cannot pair a period
+  // with the wrong strength.
+  vec3 ofHzWarp(vec3 ph, float rep, float amp) {
     return vec3(
-      ofArtVnoise2P(ph.yz * OF_HZ_WREP, OF_HZ_WREP) - 0.5,
-      ofArtVnoise2P(ph.zx * OF_HZ_WREP + 5.71, OF_HZ_WREP) - 0.5,
-      ofArtVnoise2P(ph.xy * OF_HZ_WREP + 13.37, OF_HZ_WREP) - 0.5) * OF_HZ_WARP;
+      ofArtVnoise2P(ph.yz * rep, rep) - 0.5,
+      ofArtVnoise2P(ph.zx * rep + 5.71, rep) - 0.5,
+      ofArtVnoise2P(ph.xy * rep + 13.37, rep) - 0.5) * amp;
   }
 
   // THE THREE-PLANE BLEND WEIGHTS, off the GEOMETRIC normal.
@@ -186,22 +201,47 @@ export const TERRAIN_HORIZON_BLOCK = /* glsl */`
           // it multiplies by zero, which is the same bargain the splat's own
           // six unconditional taps strike and for the same reason.
           {
-            vec3 hzPh = vPhase + ofHzWarp(vPhase);
+            // ONE WARP PER RUNG, at a period coprime with that rung's own
+            // tile. Six value-noise evaluations rather than three, which is
+            // the cost of the fix and is arithmetic rather than bandwidth: no
+            // extra texture fetch, no extra derivative. A single shared warp
+            // cannot serve both rungs honestly, because "coprime with 8" and
+            // "coprime with 2" pull the period in different directions and the
+            // one number that shipped satisfied neither.
             vec3 hzB = ofHzBlend(n);
             vec3 hzSg = sign(n) + step(abs(n), vec3(0.0));
+            vec3 hzPhM = vPhase + ofHzWarp(vPhase, OF_HZ_WREP_M, OF_HZ_WARP_M);
+            vec3 hzPhF = vPhase + ofHzWarp(vPhase, OF_HZ_WREP_F, OF_HZ_WARP_F);
             float vM, vF, dM, dF;
             vec3 nM, nF;
-            ofHzRung(uSplatRock, hzPh * OF_HZ_MREP, hzB, hzSg, vM, nM, dM);
-            ofHzRung(uSplatRock, hzPh * OF_HZ_FREP, hzB, hzSg, vF, nF, dF);
+            ofHzRung(uSplatRock, hzPhM * OF_HZ_MREP, hzB, hzSg, vM, nM, dM);
+            ofHzRung(uSplatRock, hzPhF * OF_HZ_FREP, hzB, hzSg, vF, nF, dF);
             // THE SECOND CROSSOVER, the same ladder one rung further out. The
             // two rungs are mixed as RAW decoded values before any combiner
             // runs, which is ofSplatTap's own argument: every channel is linear
             // and centred on 0.5, so mixing first is arithmetically identical to
             // running the combiners twice and mixing their outputs.
             float ft = smoothstep(OF_HZ_FOOT_F0, OF_HZ_FOOT_F1, footM);
-            hzVal = mix(vM, vF, ft);
-            hzNrm = mix(nM, nF, ft);
-            float hzDet = mix(dM, dF, ft);
+            // AND THE TOP RUNG'S RETIREMENT, which the ladder did not have.
+            // Every other rung in this material is retired by being handed to
+            // a coarser one; the coarsest was handed to nothing and ran to the
+            // horizon, where its 128 m tile subtends three to six pixels and
+            // stamps a 4 x 4 mip down at Nyquist. That is the diamond mesh, it
+            // is the TILE's pitch rather than its content, and no warp inside
+            // a mip budget can reach it. See HORIZON_TILE_PX_OUT for the DFT
+            // that says so and for why clause C1 does not already cover it.
+            //
+            // It multiplies the three TEXTURE-DERIVED fields only. The hue
+            // rotation and the roughness base are convex combinations of the
+            // splat weights, cost no fetch and have no tile, so they keep
+            // running to the horizon on hzT and a distant crag still reads as
+            // rock rather than as painted biome. hzRough converges to that
+            // base as hzDet goes out, which is its own stated behaviour under
+            // minification and not a special case.
+            float hzOut = 1.0 - smoothstep(OF_HZ_FOOT_O0, OF_HZ_FOOT_O1, footM);
+            hzVal = mix(vM, vF, ft) * hzOut;
+            hzNrm = mix(nM, nF, ft) * hzOut;
+            float hzDet = mix(dM, dF, ft) * hzOut;
 
             // THE WEIGHTS. The splat's own six, computed from the SAME
             // selectors at the same fragment -- there is no second opinion here
@@ -284,7 +324,24 @@ export const TERRAIN_HORIZON_BLOCK = /* glsl */`
               if (bK > 0.0) {
                 float jp = uHorizonEco * OF_HZ_ECO_PX * bK * hzT
                          / OF_HZ_ECO_FIELD;
-                albedo += (bdx * hzVal + bdy * hzDet) * jp * coverSel;
+                // CLAMPED INTO GAMUT, AND THE CLAMP IS THE TERM'S OWN LIMIT
+                // RATHER THAN A SAFETY NET. The displacement is a FIRST-ORDER
+                // EXTRAPOLATION of a linear field: it is exact only inside the
+                // triangle it was differentiated on, and several pixels past a
+                // boundary it walks the colour straight out of the far side of
+                // the neighbouring biome and below zero, which prints as dark
+                // speckle along the edge. That was recorded as a 4x-only
+                // effect and it is not: it fringes the boundary at 1x too.
+                //
+                // So the extrapolation is done on the FIELD and clamped there,
+                // and only the surviving DIFFERENCE is applied. vBiomeColor is
+                // a linear-RGB reflectance, so [0, 1] is its own definition and
+                // not a display convention; a displaced sample that leaves it
+                // is a colour no biome has, and the honest reading of the term
+                // there is "as far as the palette goes and no further".
+                vec3 bEco = clamp(vBiomeColor + (bdx * hzVal + bdy * hzDet) * jp,
+                                  vec3(0.0), vec3(1.0));
+                albedo = max(albedo + (bEco - vBiomeColor) * coverSel, vec3(0.0));
               }
             }
           }

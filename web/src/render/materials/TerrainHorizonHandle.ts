@@ -16,8 +16,10 @@
 import {
   HORIZON_A_AO, HORIZON_A_CHROMA, HORIZON_A_NORMAL, HORIZON_A_VALUE,
   HORIZON_ECO_GATE, HORIZON_ECO_PX, HORIZON_FAR_REPEATS, HORIZON_FAR_TILE_M,
-  HORIZON_FOOT_FAR, HORIZON_FOOT_MID, HORIZON_MID_REPEATS, HORIZON_MID_TILE_M,
-  HORIZON_WARP_REPEATS, HORIZON_WARP_TILE_M, HORIZON_WARP_UV,
+  HORIZON_FOOT_FAR, HORIZON_FOOT_MID, HORIZON_FOOT_OUT, HORIZON_MID_REPEATS,
+  HORIZON_MID_TILE_M, HORIZON_TILE_PX_OUT,
+  HORIZON_WARP_FAR_REPEATS, HORIZON_WARP_FAR_TILE_M, HORIZON_WARP_MID_REPEATS,
+  HORIZON_WARP_MID_TILE_M, HORIZON_WARP_UV_FAR, HORIZON_WARP_UV_MID,
   MASSIF_A_BUMP, MASSIF_A_VALUE, MASSIF_BAND, MASSIF_FADE_M,
 } from './TerrainHorizon.js';
 import { horizonAmpFromQuery, horizonEcoFromQuery, massifAmpFromQuery }
@@ -85,15 +87,27 @@ Record<string, unknown> {
      * coordinate's float32 quantum at the given chunk half-extent, which is the
      * number that decides whether a read at range is resolvable at all. A probe
      * that sees `divides` false has caught a seam before it is photographed.
+     *
+     * AND IT NOW PUBLISHES THE INCOMMENSURABILITY ARITHMETIC BESIDE IT, in the
+     * same four-wide shape (mid rung, horizon rung, mid warp, horizon warp),
+     * because divisibility was never the whole rule and the half that was
+     * missing is what shipped a lattice. `coprime` is gcd(warp, tile) == 1 per
+     * rung, computed here from the published repeats so a probe can check the
+     * claim rather than take it, and `superM` is the metres the composite of
+     * warp and tile actually repeats on -- 256 when the pair is coprime, the
+     * tile itself in the equal-repeat case that shipped.
      */
     horizonDefault(): {
       present: boolean; amp: [number, number, number, number]; eco: number;
       shipped: [number, number, number, number];
-      tileM: [number, number, number]; repeats: [number, number, number];
-      divides: [boolean, boolean, boolean];
+      tileM: [number, number, number, number];
+      repeats: [number, number, number, number];
+      divides: [boolean, boolean, boolean, boolean];
+      coprime: [boolean, boolean]; superM: [number, number];
       footMid: [number, number]; footFar: [number, number];
-      periodM: number; quantumM: [number, number]; warpUv: number;
-      warpM: number; ecoPx: number; ecoGate: [number, number];
+      footOut: [number, number]; tilePxOut: [number, number];
+      periodM: number; quantumM: [number, number]; warpUv: [number, number];
+      warpM: [number, number]; ecoPx: number; ecoGate: [number, number];
       massifAmp: [number, number]; massifShipped: [number, number];
       massifM: [number, number]; massifFadeM: [number, number];
       massifBand: [number, number];
@@ -104,8 +118,16 @@ Record<string, unknown> {
       const keys = ['horizon', 'horizonval', 'horizonchroma', 'horizonnrm',
         'horizonao', 'horizoneco', 'horizonecoamp', 'horizonmassif',
         'horizonmassifval', 'horizonmassifbump', 'horizonmassifm'];
-      const tiles: [number, number, number] =
-        [HORIZON_MID_TILE_M, HORIZON_FAR_TILE_M, HORIZON_WARP_TILE_M];
+      const tiles: [number, number, number, number] = [
+        HORIZON_MID_TILE_M, HORIZON_FAR_TILE_M,
+        HORIZON_WARP_MID_TILE_M, HORIZON_WARP_FAR_TILE_M,
+      ];
+      // gcd, recomputed on the probe's side of the fence for the same reason
+      // `divides` is: a fixture that only echoes the module's own answer proves
+      // the module ran, not that the answer is right.
+      const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+      const gMid = gcd(HORIZON_WARP_MID_REPEATS, HORIZON_MID_REPEATS);
+      const gFar = gcd(HORIZON_WARP_FAR_REPEATS, HORIZON_FAR_REPEATS);
       return {
         present: keys.some((k) => p.get(k) !== null),
         amp: [boot.x, boot.y, boot.z, boot.w],
@@ -114,19 +136,27 @@ Record<string, unknown> {
           HORIZON_A_AO],
         tileM: tiles,
         repeats: [HORIZON_MID_REPEATS, HORIZON_FAR_REPEATS,
-          HORIZON_WARP_REPEATS],
+          HORIZON_WARP_MID_REPEATS, HORIZON_WARP_FAR_REPEATS],
         divides: [phasePeriodDivides(tiles[0]), phasePeriodDivides(tiles[1]),
-          phasePeriodDivides(tiles[2])],
+          phasePeriodDivides(tiles[2]), phasePeriodDivides(tiles[3])],
+        coprime: [gMid === 1, gFar === 1],
+        superM: [PHASE_PERIOD_M / gMid, PHASE_PERIOD_M / gFar],
         footMid: [HORIZON_FOOT_MID[0], HORIZON_FOOT_MID[1]],
         footFar: [HORIZON_FOOT_FAR[0], HORIZON_FOOT_FAR[1]],
+        // The top rung's retirement, published in BOTH units: the pixels per
+        // tile the band is written in and the metres of footprint it becomes,
+        // so a probe can check the derivation rather than the result.
+        footOut: [HORIZON_FOOT_OUT[0], HORIZON_FOOT_OUT[1]],
+        tilePxOut: [HORIZON_TILE_PX_OUT[0], HORIZON_TILE_PX_OUT[1]],
         periodM: PHASE_PERIOD_M,
         // Two chunk half-extents: a max-depth quad and a coarse ring one, so a
         // probe can see that the quantum is set by the CHUNK and not by the
         // BODY, which is the whole reason this coordinate reaches the horizon
         // when `pM` cannot.
         quantumM: [phaseQuantumM(20.5), phaseQuantumM(3700)],
-        warpUv: HORIZON_WARP_UV,
-        warpM: HORIZON_WARP_UV * PHASE_PERIOD_M,
+        warpUv: [HORIZON_WARP_UV_MID, HORIZON_WARP_UV_FAR],
+        warpM: [HORIZON_WARP_UV_MID * PHASE_PERIOD_M,
+          HORIZON_WARP_UV_FAR * PHASE_PERIOD_M],
         ecoPx: HORIZON_ECO_PX,
         ecoGate: [HORIZON_ECO_GATE[0], HORIZON_ECO_GATE[1]],
         massifAmp: [bootM.x, bootM.y],

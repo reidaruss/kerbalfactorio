@@ -145,51 +145,118 @@ export const HORIZON_MID_TILE_M = 32;
  *
  * IT IS NOT 256 m, i.e. not the period itself, and that is deliberate: at
  * repeats = 1 the same image would tile in exact register with the phase period
- * over the whole planet, which is a 256 m lattice with nothing to break it,
- * because the anti-tiling warp below cannot be coarser than the period it lives
- * in. At repeats = 2 the warp is one period across two tiles and does bend them.
+ * over the whole planet, which is a 256 m lattice with nothing to break it.
  */
 export const HORIZON_FAR_TILE_M = 128;
 
 /**
- * THE ANTI-TILING WARP's period. 128 m, i.e. TWO repeats of the phase, and the
- * two is load-bearing rather than a choice of scale.
- *
- * IT SHIPPED FOR ONE ARM AT `PHASE_PERIOD_M` ITSELF, on the reasoning that the
- * period is the coarsest world-locked field this attribute can carry
- * (`PHASE_PERIOD_M`'s own note, which is correct). That is one repeat, and one
- * repeat is DEGENERATE: `ofArtVnoise2P` reduces its lattice index with
- * `mod(i, period)`, so at period 1 every cell reduces to cell 0 and the field
- * is a CONSTANT. The warp was multiplying the coordinate by a fixed offset and
- * doing nothing at all, and nothing in a frame or a rectangle would ever have
- * said so -- a constant offset to a tiling coordinate is invisible by
- * construction. Caught by reading the runtime fixture back (`horizonDefault()`
- * publishes the repeat counts) rather than by looking at a picture, which is
- * the whole reason that fixture publishes the arithmetic and not just the
- * amplitudes.
- *
- * The general rule, worth stating because the next consumer of `vPhase` will
- * meet it: a PERIODIC-NOISE consumer needs at least TWO repeats to have a field
- * at all, while a TEXTURE consumer is happy at one. The seam rule (integer
- * repeats) is necessary for both and sufficient for neither.
- */
-export const HORIZON_WARP_TILE_M = PHASE_PERIOD_M / 2;
-
-/**
- * The three repeat counts, and they are what `assertPhasePeriod` RETURNS rather
- * than integers typed beside the tiles above. That is TerrainPhase.glsl.ts's
- * stated handoff: "call it at module load with your tile metres and multiply by
- * what it returns". A tile that does not divide the period is a boot failure
- * here instead of a hairline seam along every chunk boundary at range, which is
- * the one artefact this coordinate can produce and the one that is hardest to
- * attribute after the fact.
+ * The two rungs' repeat counts, and they are what `assertPhasePeriod` RETURNS
+ * rather than integers typed beside the tiles above. That is
+ * TerrainPhase.glsl.ts's stated handoff: "call it at module load with your tile
+ * metres and multiply by what it returns". A tile that does not divide the
+ * period is a boot failure here instead of a hairline seam along every chunk
+ * boundary at range, which is the one artefact this coordinate can produce and
+ * the one that is hardest to attribute after the fact.
  */
 export const HORIZON_MID_REPEATS =
   assertPhasePeriod(HORIZON_MID_TILE_M, 'TerrainHorizon mid rung');
 export const HORIZON_FAR_REPEATS =
   assertPhasePeriod(HORIZON_FAR_TILE_M, 'TerrainHorizon horizon rung');
-export const HORIZON_WARP_REPEATS =
-  assertPhasePeriod(HORIZON_WARP_TILE_M, 'TerrainHorizon anti-tiling warp');
+
+/**
+ * THE INCOMMENSURABILITY RULE, as a throw, and it is the second half of the
+ * seam rule rather than a taste check.
+ *
+ * `assertPhasePeriod` says a period must DIVIDE 256 m, which is what keeps two
+ * chunks agreeing. It says nothing about how a warp period relates to the TILE
+ * it is supposed to break, and that is the gap this closes. Both fields are
+ * periodic on the same 256 m phase, so the composite they draw on the ground
+ * repeats every `PHASE_PERIOD_M / gcd(warpRepeats, tileRepeats)` metres. Any
+ * shared factor therefore shortens the visible super-period, and the worst case
+ * -- equal repeat counts -- shortens it to the tile itself, at which point
+ * every copy of the tile is warped IDENTICALLY and the warp is in register with
+ * the thing it exists to break.
+ *
+ * Coprime is the whole condition. It makes the super-period the full 256 m, the
+ * coarsest this coordinate can carry, and it is checkable by arithmetic rather
+ * than by looking at a frame -- which matters because looking at a frame is how
+ * this was caught the first time, one shipped build too late.
+ */
+function assertIncommensurate(warpRep: number, tileRep: number, who: string):
+number {
+  let a = warpRep; let b = tileRep;
+  while (b > 0) { const t = a % b; a = b; b = t; }
+  if (a !== 1) {
+    throw new Error(`TerrainHorizon: ${who} warps at ${warpRep} repeats against a `
+      + `tile at ${tileRep}, which share a factor of ${a}. The composite repeats every `
+      + `${PHASE_PERIOD_M / a} m instead of ${PHASE_PERIOD_M} m, so the warp is partly `
+      + 'in register with the tile it exists to break and paints a lattice.');
+  }
+  return warpRep;
+}
+
+/**
+ * THE TWO ANTI-TILING WARP PERIODS, one per rung, and the fact that there are
+ * TWO of them is the correction this file most needed.
+ *
+ * IT SHIPPED FOR ONE ARM AT `PHASE_PERIOD_M` ITSELF, i.e. one repeat, which is
+ * DEGENERATE: `ofArtVnoise2P` reduces its lattice index with `mod(i, period)`,
+ * so at period 1 every cell reduces to cell 0 and the field is a CONSTANT. That
+ * was corrected to two repeats and SHIPPED THAT WAY, and two repeats is the
+ * defect this comment now exists to explain, because it is worse than the
+ * constant was and it is visible:
+ *
+ *   1. TWO REPEATS IS NOT A NOISE. A value noise with a 2 x 2 lattice per
+ *      period is four corner values smoothstepped against each other and then
+ *      repeated: a diamond checkerboard, not a field. It has one orientation
+ *      and one scale everywhere.
+ *   2. AND ITS PERIOD WAS THE HORIZON RUNG'S OWN TILE. 256/2 = 128 m is exactly
+ *      HORIZON_FAR_TILE_M, so every copy of that tile was displaced by the same
+ *      pattern and the warp decorrelated nothing at all at that rung, while
+ *      stamping its own diamonds through the coordinate.
+ *
+ * Both halves show as ONE artefact: a regular diamond lattice over the far
+ * ground, over `vista`'s 4.7 km massif and over the whole of `flyovernoon`'s.
+ * Anti-tiling that is in register with its tile is not weak anti-tiling; it is
+ * a lattice generator.
+ *
+ * SO EACH RUNG GETS ITS OWN WARP, at 2.5 times its own tile's frequency:
+ *
+ *   mid rung     32 m tile   (8 repeats)  warped at 256/19 = 13.47 m
+ *   horizon rung 128 m tile  (2 repeats)  warped at 256/5  = 51.20 m
+ *
+ * 19 and 5 are PRIME, which is TERRAIN_ART_FINE's own rule for its three
+ * octaves ("no two lattices share a cell boundary") and here it is what makes
+ * `assertIncommensurate` pass against 8 and 2 respectively: gcd is 1 both
+ * times, so each composite repeats on the full 256 m period rather than on the
+ * tile. They are coprime with each other as well, so the two rungs do not share
+ * a cell boundary through the crossover where both are on screen.
+ *
+ * WHY FINER THAN THE TILE AND NOT COARSER, since coarser is the textbook shape.
+ * There is nothing coarser available. The only period above 128 m that divides
+ * 256 m is 256 m, which is the degenerate one repeat. A warp built on this
+ * attribute cannot be coarser than the horizon rung's tile, which is stated
+ * here rather than discovered again; what it CAN be is aperiodic-looking at the
+ * tile's own scale, and 5 and 19 cells per period is where that starts.
+ *
+ * The general rule, worth stating because the next consumer of `vPhase` will
+ * meet it: a PERIODIC-NOISE consumer needs at least two repeats to have a field
+ * at all, several to have one that does not read as a checkerboard, and a count
+ * COPRIME with whatever it modulates. A TEXTURE consumer is happy at one. The
+ * seam rule (integer repeats) is necessary for all of that and sufficient for
+ * none of it.
+ */
+export const HORIZON_WARP_MID_TILE_M = PHASE_PERIOD_M / 19;
+export const HORIZON_WARP_FAR_TILE_M = PHASE_PERIOD_M / 5;
+
+export const HORIZON_WARP_MID_REPEATS = assertIncommensurate(
+  assertPhasePeriod(HORIZON_WARP_MID_TILE_M, 'TerrainHorizon mid warp'),
+  HORIZON_MID_REPEATS, 'the mid rung',
+);
+export const HORIZON_WARP_FAR_REPEATS = assertIncommensurate(
+  assertPhasePeriod(HORIZON_WARP_FAR_TILE_M, 'TerrainHorizon horizon warp'),
+  HORIZON_FAR_REPEATS, 'the horizon rung',
+);
 
 /**
  * The ladder's one ratio. See the header: the coarse rung's handover ENDS at
@@ -211,6 +278,56 @@ export const HORIZON_FOOT_MID: readonly [number, number] = [
 /** The horizon rung's crossover, continuing the same ladder by the same ratio. */
 export const HORIZON_FOOT_FAR: readonly [number, number] = [
   HORIZON_FOOT_MID[1], HORIZON_FOOT_MID[1] * HORIZON_FOOT_RATIO,
+];
+
+/**
+ * THE TOP RUNG'S RETIREMENT, IN PIXELS PER TILE, and the ladder had none. This
+ * is the second half of the lattice defect and the half the warp could never
+ * have answered.
+ *
+ * WHAT THE MEASUREMENT SAYS. `flyovernoon`, canopy off, a 128 x 64 px patch at
+ * (700, 400), one-dimensional DFT along each axis: the dominant repeat is
+ * 25.6 px across and about 4 px down. The camera is 1,200 m up at a 14 degree
+ * depression, so that patch sees ground at a 20-odd metre pixel footprint,
+ * where HORIZON_FAR_TILE_M subtends 22 px laterally and 5 px along the ground.
+ * THE PATTERN IS THE TILE, at its own pitch, and the same DFT at (700, 600) --
+ * three times nearer in footprint -- is broadband with no such peak. It is not
+ * the warp: the arm with the warps at 19 and 5 repeats reads 25.6 px too.
+ *
+ * WHY C1 DOES NOT ALREADY COVER IT, which is the trap worth recording. Clause
+ * C1 makes a FULLY minified layer sample the identity, and RN-2166's working
+ * rule is "a rung retires when the footprint passes about a third of its tile".
+ * Both are about the CONTENT washing out. Neither is about the PITCH, and the
+ * pitch is what is visible: full minification is the 1x1 mip, which needs the
+ * tile down to ONE PIXEL, while a tile at three to six pixels is sampling a
+ * 4 x 4-ish mip -- sixteen distinct texels with real variance -- and stamping
+ * it down at Nyquist. That is not a washed-out layer, it is a grid generator,
+ * and it is worst exactly where RN-2166's rule says the rung is safely gone.
+ *
+ * SO THE GUARD IS IN PIXELS PER TILE AND NOT IN METRES, because the artefact is
+ * a screen-space one: at 24 px per tile a repeat is a texture, at 6 px it is a
+ * lattice, and the two numbers below are that band read off the frames. The
+ * rung fades out across it, and what carries the ground beyond is the massif
+ * term, which is analytic, kilometre-scale and has no tile to alias -- i.e.
+ * the far band is handed to the term this lane already built for it rather
+ * than to a rung that cannot reach.
+ *
+ * IT COSTS THE FLAT FAR PLAIN ITS MATERIAL, and that is stated rather than
+ * hidden: past a 21 m footprint on ground with no relief the audit's rank 1 is
+ * unanswered again. A flat far plain is the pre-lane defect; a far plain
+ * wearing a regular mesh is a worse one, and it is the one a viewer sees first.
+ */
+export const HORIZON_TILE_PX_OUT: readonly [number, number] = [12, 5];
+
+/**
+ * The retirement band in METRES OF PIXEL FOOTPRINT, derived from the tile and
+ * the pixel counts above rather than typed, so it cannot go stale against
+ * HORIZON_FAR_TILE_M the way a transcribed fade always eventually does
+ * (standing rule 11). 8.0 m to 21.3 m at the shipped 128 m tile.
+ */
+export const HORIZON_FOOT_OUT: readonly [number, number] = [
+  HORIZON_FAR_TILE_M / HORIZON_TILE_PX_OUT[0],
+  HORIZON_FAR_TILE_M / HORIZON_TILE_PX_OUT[1],
 ];
 
 /**
@@ -254,28 +371,48 @@ export const HORIZON_N_ROCK = 1.0;
 export const HORIZON_N_COVER = 0.35;
 
 /**
- * The anti-tiling warp's amplitude, in PHASE UNITS (one unit is 256 m).
+ * THE WARP's DERIVATIVE BUDGET, and the two amplitudes are DERIVED from it
+ * rather than typed beside it, because the budget is the thing that must hold
+ * and the amplitude is only how it is spent at a given repeat count.
  *
  * IT IS A DERIVATIVE BUDGET AND NOT A LOOK, on SPLAT_WARP_UV's argument
  * verbatim. The warp perturbs the sample coordinate's derivative by roughly
- * amplitude x 2 pi x repeats, i.e. 0.0098 x 6.28 x 2 = 12.3 per cent, which
- * moves the hardware mip choice by log2(1.123) = 0.17 of a level -- the same
- * budget the shipped near-field warp spends (11 per cent, 0.15 of a level) and
- * for the same reason: past about a fifth of a mip level a term is paying for
- * its anti-tiling in filtering.
+ * amplitude x 2 pi x repeats, and 12.3 per cent moves the hardware mip choice
+ * by log2(1.123) = 0.17 of a level -- the same budget the shipped near-field
+ * warp spends (11 per cent, 0.15 of a level) and for the same reason: past
+ * about a fifth of a mip level a term is paying for its anti-tiling in
+ * filtering. 0.123 is the number the one-warp version spent (0.0098 x 2 pi x 2)
+ * and it is carried over UNCHANGED, so the two-warp fix costs no extra
+ * filtering and this is a decorrelation change and not a strength change.
  *
- * In WORLD terms 0.0098 periods is 2.51 m, which displaces the mid rung's 32 m
- * lattice by 7.8 per cent of a tile and bends it visibly.
+ * WHAT THAT BUDGET BUYS IN WORLD METRES, and it is the honest half. A warp of
+ * period L displacing by d perturbs the derivative by 2 pi d / L, so holding
+ * the budget fixed makes the displacement PROPORTIONAL TO THE WARP PERIOD:
+ * 0.264 m at the mid rung and 1.00 m at the horizon rung. Because both periods
+ * are the same fraction (0.4) of their own rung's tile, both come out at 0.8
+ * per cent of a tile, which is far less RAW displacement than the 7.8 per cent
+ * the one-warp version claimed at the mid rung.
  *
- * IT IS NOT A FULL ANSWER AND IS NOT CLAIMED AS ONE, for SPLAT_WARP_UV's reason
- * and one more of its own: the warp cannot be coarser than the period it is
- * built from, so the HORIZON rung's own 128 m tile shares the warp's 128 m
- * period and is barely bent by it. Residual regularity at that rung's scale is
- * recorded as owed beside the two-carrier item, and it is visible in
- * RN2340_flyovernoon_canopy0_after.png as a fine regular lattice across the
- * aerial ground.
+ * THE DECORRELATION IS NOT THE DISPLACEMENT'S SIZE, WHICH IS WHY THAT IS NOT A
+ * REGRESSION. A displacement in register with the tile decorrelates NOTHING at
+ * any amplitude (it moves every copy identically), and that is exactly what
+ * 7.8 per cent bought at the horizon rung: a lattice. What breaks a repeat is
+ * neighbouring copies being displaced DIFFERENTLY, which is set by the warp's
+ * period against the tile's, not by its amplitude. 19 and 5 cells per period,
+ * coprime with 8 and 2, is that condition; the amplitude only has to be enough
+ * to be seen, and a metre of ground at the horizon rung is.
+ *
+ * IT IS STILL NOT A FULL ANSWER AND IS NOT CLAIMED AS ONE, for SPLAT_WARP_UV's
+ * reason: a domain warp bounded by a mip budget cannot hide a tiling texture,
+ * it can only stop it reading as a grid. The two-carrier item beside it is the
+ * other half.
  */
-export const HORIZON_WARP_UV = 0.0098;
+export const HORIZON_WARP_DERIV = 0.123;
+
+export const HORIZON_WARP_UV_MID =
+  HORIZON_WARP_DERIV / (2 * Math.PI * HORIZON_WARP_MID_REPEATS);
+export const HORIZON_WARP_UV_FAR =
+  HORIZON_WARP_DERIV / (2 * Math.PI * HORIZON_WARP_FAR_REPEATS);
 
 /**
  * THE RANGE-AWARE BIOME-BOUNDARY BREAK, and it is here rather than in a file of
