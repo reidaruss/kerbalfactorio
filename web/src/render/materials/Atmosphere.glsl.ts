@@ -47,8 +47,36 @@ export interface AtmosphereParams {
   aerosolSigma: number;
   aerosolScaleM: number;
   aerosolMs: number;
-  /** Haze radiance multiplier on uSunColor. Grey ON PURPOSE: see the note. */
+  /**
+   * Haze radiance multiplier on uSunColor at OPTICAL DEPTH ZERO, i.e. a short
+   * path: the Mie-forward-scattered, single-scatter-dominated end of the haze.
+   * See the note at `forgeAtmosphere` for why this one is warm.
+   */
   aerosolTint: THREE.Vector3;
+  /**
+   * RN-2400. THE OTHER END OF THE SAME RAMP: the haze radiance multiplier the
+   * blend converges to as optical depth GROWS, i.e. a long path where multiple
+   * scattering dominates and the in-scattered light IS skylight, which on this
+   * planet is Rayleigh-blue. See `forgeAtmosphere` for the derivation (it is
+   * `aerosolTint` mirrored about the same 0.31 mean, R and B swapped).
+   */
+  aerosolTintFar: THREE.Vector3;
+  /**
+   * RN-2400. WHERE THE BLEND ABOVE STARTS, in optical depth. Below this the
+   * weight toward `aerosolTintFar` is exactly zero, so a ray whose optical
+   * depth never reaches it keeps `aerosolTint` exactly, whatever its opacity.
+   * See `forgeAtmosphere`'s note for why a THRESHOLD is the right shape and a
+   * single exponent on transmittance (the first attempt) was not.
+   */
+  aerosolTintOd0: number;
+  /**
+   * RN-2400. THE SPAN, in optical depth, over which the blend weight climbs
+   * linearly from 0 at `aerosolTintOd0` to 1 at `aerosolTintOd0 +
+   * aerosolTintOdSpan`. `ofAeroTintAt` (AtmosphereAero.glsl.ts) computes
+   * `od` once (both entry points already have it before they exponentiate it
+   * into `tr`) and clamps the ramp, so it cannot overshoot `[0, 1]`.
+   */
+  aerosolTintOdSpan: number;
   /** Aerosol phase anisotropy. */
   aerosolG: number;
   /**
@@ -204,6 +232,86 @@ export function forgeAtmosphere(planetRadiusM: number): AtmosphereParams {
     // this lane and one uniform triple does not need a page-param isolator on
     // top of `?aerosol=0`, which already isolates the whole term).
     aerosolTint: new THREE.Vector3(0.40, 0.31, 0.22),
+    // RN-2400 (lane M1, THE DISTANCE GOES BLUE). WORLD AUDIT R3's rank 1: a
+    // FLAT tint applied at every optical depth is only ever scored in the
+    // middle of the range it should vary across. At a 4.7 km ridge (`vista.
+    // hzBand`) the aerosol above is nearly fully opaque (tr well under 0.5),
+    // so the ground's colour there IS `aerosolTint`, almost undiluted by the
+    // terrain under it -- and the flat triple above is warm, so the distance
+    // goes CREAM instead of blue: `hzBand` warm +48.36 against a `skyHz` at
+    // -12.14, a 60.5-count opposite-hue seam the audit measured and named as
+    // this lane's charter.
+    //
+    // THE FIX IS NOT A NEW LEVEL, IT IS THE SAME LEVEL AT THE OTHER END OF THE
+    // RAMP. `aerosolTintFar` is `aerosolTint` MIRRORED about the shared 0.31
+    // mean: R and B swap, (0.40, 0.31, 0.22) -> (0.22, 0.31, 0.40). That is
+    // not an arbitrary blue -- it is aerial perspective's own physics stated
+    // as a constant: at LOW optical depth the haze is single-scatter and Mie-
+    // forward-dominated, which is where the warm bias earns its keep (RN-2320
+    // measured all four daylight aerials cold without it); at HIGH optical
+    // depth multiple scattering dominates and the in-scattered light IS
+    // skylight, which on this planet is Rayleigh-blue, the same molecular bias
+    // Rayleigh's own 1/lambda^4 law gives the sky itself. Mirroring about the
+    // SAME mean rather than authoring a second level keeps the `dawnsun` sky-
+    // ray brightness argument two screens up undisturbed at every blend
+    // weight, because the two endpoints average back to exactly 0.31 whatever
+    // the blend does.
+    //
+    // `ofAeroTintAt` (AtmosphereAero.glsl.ts) blends the two by a THRESHOLD
+    // RAMP on optical depth, not by an exponent on transmittance -- and that
+    // is a correction inside this same lane, not the first design. A single
+    // `1 - tr^K` was tried first and FAILS STRUCTURALLY: for any tr in (0, 1),
+    // `tr^K` is monotonic in K in the SAME direction at every tr, so no
+    // exponent can hold the blend near zero at the flyover family's ground
+    // (tr around 0.8, a few hundred metres to low thousands) while pushing it
+    // large at `vista.hzBand`'s ground (tr around 0.5, 4.7 km) -- turning the
+    // exponent up to protect one end pushed the other end further the SAME
+    // way. Measured: K = 2.4 closed `vista.hzBand`'s seam (60.52 -> 26.09
+    // counts) but cost `flyover` whole-frame warm -0.18 -> -11.21; turning K
+    // up to 9.0 to try to spare `flyover` made BOTH ends worse (`flyover`
+    // -18.93, `vista.hzBand` seam gap widened to 32.59), which is the
+    // monotonic-in-the-same-direction failure stated as a measurement rather
+    // than derived. A RAMP WITH A THRESHOLD has the independent knob a single
+    // exponent does not: below `aerosolTintOd0` the weight is EXACTLY zero,
+    // so the flyover family's shorter paths are untouched regardless of how
+    // large the far end needs to reach.
+    aerosolTintFar: new THREE.Vector3(0.22, 0.31, 0.40),
+    // RN-2400. A FIVE-POINT SWEEP, stated so the next reader does not re-walk
+    // it: od0 = 0.55 closed the seam almost completely (vista.hzBand -3.51,
+    // skyHz -12.17, gap 8.66) but cost `flyover` whole-frame warm -0.18 ->
+    // -3.71 and `flyovernoon` +6.62 -> +3.42. od0 = 0.85 held the seam at the
+    // SAME closure (vista's own optical depth was already saturating the
+    // ramp at both settings) while roughly halving the aerial cost (`flyover`
+    // -2.23, `flyovernoon` +4.75). od0 = 1.5 nearly UNDOES the seam fix
+    // (vista.hzBand back up to 42.66) because vista's own ray sits at
+    // roughly 1.5 to 1.6 of optical depth, so a threshold that high leaves
+    // it barely inside the ramp; aerial cost at that point is under a count,
+    // confirming the flyover family's own horizon reaches a COMPARABLE
+    // optical depth to vista's ridge, not a much smaller one -- the two are
+    // physically the same kind of ray. **This is the residual tension a
+    // single threshold cannot dissolve**: the flyover family's own far pixels
+    // are optically the same object as vista's ridge, so any threshold that
+    // fully saturates one partially saturates the other. od0 = 1.0 is the
+    // point this lane ships, closing vista's seam 60.52 -> 10.41 counts and
+    // vistanoon's 49.87 -> 2.88 (both inside the audit's stated single-digit-
+    // tens target) at a real but bounded aerial cost (`flyover` -0.18 ->
+    // -1.75, `flyovernoon` +6.62 -> +5.19, `forestair`/`forestairnoon` under
+    // 0.4 counts each). Reported as a genuine trade-off rather than papered
+    // over: see rendering.md 2.25 and this lane's own report for the honest
+    // reading against the acceptance wording's "does not regress anywhere".
+    //
+    // A SEPARATE FINDING THE SAME SWEEP SURFACED: at every od0 tested, INCLUDING
+    // 0.15, `dawnsun.skyUp` and `vistadawn.skyR` never moved AT ALL (7.13 and
+    // 25.56 to the digit), while the first-attempt exponent (which is never
+    // exactly zero at any od > 0) DID move them (skyUp to -1.63, skyR to
+    // 17.45). That is not a tuning gap in od0, it is a structural property of
+    // a hard threshold: these are elevated dawn sky rays, not grazing ones, so
+    // their own boundary-layer optical depth is genuinely tiny, and a ramp
+    // that is EXACTLY zero below its threshold can never reach them at any
+    // setting. `ofAeroTintAt`'s own floor argument is the fix, not this
+    // constant -- see that function's note in AtmosphereAero.glsl.ts.
+    aerosolTintOd0: 1.0,
+    aerosolTintOdSpan: 0.35,
     // 10.6x Forge's own 600 km, i.e. Earth's curvature, and it is the single
     // constant in this lane that is a CHOICE rather than a correction.
     //
@@ -254,6 +362,11 @@ export function airlessAtmosphere(planetRadiusM: number): AtmosphereParams {
     aerosolScaleM: 1,
     aerosolMs: 0,
     aerosolTint: new THREE.Vector3(0, 0, 0),
+    // RN-2400. Never read: `ofAeroTintAt` is only reachable through the same
+    // `uAerosol.x <= 0.0` gate every other aerosol term already checks first.
+    aerosolTintFar: new THREE.Vector3(0, 0, 0),
+    aerosolTintOd0: 1,
+    aerosolTintOdSpan: 1,
     aerosolG: 0,
     // Never reached: every scattering term is zero, so no sun path is ever
     // integrated. 1 rather than 0 so a future caller that forgets the gate gets
@@ -283,8 +396,14 @@ export interface AtmosphereUniforms {
   uAtmosOn: { value: number };
   /** (sigma per metre, scale height m, isotropic MS fraction). x = 0 disables. */
   uAerosol: { value: THREE.Vector3 };
-  /** Haze radiance multiplier on uSunColor. */
+  /** Haze radiance multiplier on uSunColor, at optical depth zero. */
   uAeroTint: { value: THREE.Vector3 };
+  /** RN-2400. The same, at optical depth -> infinity. See `ofAeroTintAt`. */
+  uAeroTintFar: { value: THREE.Vector3 };
+  /** RN-2400. (optical depth the ramp starts at, its span to reach 1). */
+  uAeroTintOd: { value: THREE.Vector2 };
+  /** RN-2400. 1 while the tint varies with depth; 0 restores the flat blend. */
+  uAeroTintOn: { value: number };
   uAeroG: { value: number };
   /** RN-2175. (scattering curvature radius m, 1 = analytic Chapman sun path). */
   uSunArc: { value: THREE.Vector2 };
@@ -329,6 +448,9 @@ export function createAtmosphereUniforms(p: AtmosphereParams, on: boolean): Atmo
         p.aerosolSigma * AEROSOL_AMP, p.aerosolScaleM, p.aerosolMs),
     },
     uAeroTint: { value: p.aerosolTint.clone() },
+    uAeroTintFar: { value: p.aerosolTintFar.clone() },
+    uAeroTintOd: { value: new THREE.Vector2(p.aerosolTintOd0, p.aerosolTintOdSpan) },
+    uAeroTintOn: { value: AERO_TINT_ON ? 1 : 0 },
     uAeroG: { value: p.aerosolG },
     uAeroRef: { value: new THREE.Vector2(0, AERO_DATUM_ON ? 1 : 0) },
     uSunArc: {
@@ -377,6 +499,18 @@ const AERO_DATUM_ON =
   new URLSearchParams(self.location.search).get('aerobase') !== '0';
 
 /**
+ * RN-2400. `?aerodepth=0` restores the FLAT pre-lane blend exactly: `
+ * ofAeroTintAt` returns `uAeroTint` unconditionally, whatever the optical
+ * depth, which is bit-for-bit the RN-2320 behaviour this lane starts from.
+ * Exported (not module-private) because `SkyProbe.ts` is a second
+ * implementation of this same model on the CPU and must honour the same flag
+ * rather than silently always varying, per that file's own standing rule that
+ * a term with two halves needs one switch for both.
+ */
+export const AERO_TINT_ON =
+  new URLSearchParams(self.location.search).get('aerodepth') !== '0';
+
+/**
  * `?sunarc=` on the `stockfloor` precedent: absent ships `sunCurveK`, `0` puts
  * the three-step march back, and any other number is a curvature multiple, so
  * `?sunarc=1` is the body's own curvature. RN-150-safe: missing is MISSING.
@@ -399,6 +533,9 @@ export const ATMOSPHERE_PARS = /* glsl */`
   uniform float uAtmosOn;
   uniform vec3  uAerosol;
   uniform vec3  uAeroTint;
+  uniform vec3  uAeroTintFar;
+  uniform vec2  uAeroTintOd;
+  uniform float uAeroTintOn;
   uniform float uAeroG;
   uniform vec2  uAeroRef;
   uniform vec2  uSunArc;
