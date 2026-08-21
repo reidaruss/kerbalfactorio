@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2510 to RN-2517, `lane/n4-midobjects`: **THE MID FIELD IS FIFTEEN ROWS AND THE PROP RING STANDS IN FRONT OF IT, so R4 item N4 is refuted rather than closed and this lane ships no pixel change.** The charter said "at 250 m a real plain carries objects and ours carries nothing"; the pose it was reasoned from, `midfield`, **declares `props: false`**. At `meadowfield`, the pose the player gets, `?props=0` moves `r250` **47.44 -> 43.56 iqr and 96.70 -> 116.22 luma**: the scatter out there is worth +3.88 counts of contrast and **-19.52 of level**, i.e. it is present, it is DARK and it adds almost no structure. **`?canopy=0` leaves that rectangle at 47.43 against 47.44**, so not one pixel of it is canopy either. **WHICH ROW IS WHICH RANGE, measured for the first time** by painting the shader's own `dist` as a step ladder and reading it with a new per-row profile (`tools/smoke/rn2510rows.mjs`): 85 m at row 297.5, **170 m at row 291**, 340 m at row 278.5, horizon at ~276. **THE WHOLE VISIBLE PLAIN PAST THE PROP RING IS FIFTEEN ROWS.** **AND THERE IS A HARD HOLE IN THE PLACEMENT LADDER:** detail cards stop at 78 m, biome props at `RADIUS_M` **170 m with no edge weight at all**, and the canopy impostor tier does not begin until `CANOPY_NEAR_M` **550 m**, so 380 m of mid field carries only `TreeField`'s sparse harvest trees. **THE FIELD THE CHARTER NAMED IS SATURATED HERE:** `canopyWeight` is bimodal by construction (planetary mean 0.308, sd 0.345, min 0.012, max 1.000) and a three-threshold ladder painted at this pose comes back at the TOP STEP flat to the digit across thirteen rows, because the observer stands inside one closed stand. **A TERM WAS BUILT ON the raw octaves under those thresholds AND REFUSED:** its amplitude ladder moves `midfield.r250` 43.83 -> 38.98 -> 35.99 the WRONG WAY monotonically and at 1x it is invisible in both poses, so it is reverted and left in the branch history. **THREE REUSABLE LESSONS FROM BUILDING IT:** a term inside `TerrainFragAlbedo`'s splat `#ifndef OF_SCALED` region never reaches the plains far ground (magenta paint); a saturating law is the wrong carrier for a mosaic at a 0.005 depression; and `TREE_SIN_MIN`'s 0.02 rad floor is an AERIAL constant that would bind across the entire mid field at a standing eye. **N1's third residue is WITHDRAWN AS STATED:** `TerrainCoverFar` has no stand field, the machinery that does is saturated here, and the objects are already standing there. The mid field is the INSTANCE tier's problem. Full record in section 2.31. THIS LINE IS A POINTER: replace it, never append to it.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (correction pass, `lane/n4-midobjects`, applied by a doc-only mini-lane: section 2.31's headline finding stands, **THE MID FIELD IS ABOUT FOUR AND A HALF ROWS, NOT FIFTEEN,** and the prop ring still stands in front of it, so R4 item N4 remains refuted rather than closed and the lane still ships no pixel change. A fresh-context verifier confirmed the refutation and every headline arm exactly, and found that the lane's row-ladder instrument misread its load-bearing 170 m rung as row 291 when a wide-x row mean smeared a step that curves upward at the frame edges; read at a narrow centre column the 170 m rung is row **~281.3**, confirmed three ways (hue ladder, hard binary paint, flat-plane inversion fit). Downstream: the 170-to-340 m band is **about three rows**, not twelve and a half; `meadowfield.r250` is **about 78 per cent inside the ring, 22 per cent past it**, not a clean straddle; and 2.31.6's refused-term arm table mixed a committed control with three sweep arms measured on an uncommitted intermediate, a one-session arm-table trap, whose committed re-measurement (43.83 off / 36.28 / 42.63 / 42.85) is not monotonic but stays below the off arm, so the refusal's direction survives. Full corrected record, and the "was X" trail for every number that moved, in section 2.31 and its new 2.31.11. Full record in section 2.31. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
 
@@ -9455,7 +9455,7 @@ pushed, **not merged to main**.
    with better geometry for the subject. A `meadow` far-band rectangle is an
    afternoon if the hero frame ever needs to be scored on its own ground.
 
-## 2.31 THE MID FIELD IS FIFTEEN ROWS AND THE PROP RING STANDS IN FRONT OF IT (RN-2510 to RN-2517, 2026-08-21, `lane/n4-midobjects`)
+## 2.31 THE MID FIELD IS ABOUT FOUR AND A HALF ROWS, NOT FIFTEEN, AND THE PROP RING STANDS IN FRONT OF IT (RN-2510 to RN-2517, 2026-08-21, `lane/n4-midobjects`; corrected 2026-08-21, see 2.31.11)
 
 > **Numbers:** RN-2510 to RN-2517 of the RN-2510 to RN-2524 block; RN-2518 to
 > RN-2524 surrendered unused. **Base:** `origin/main` at `0d432bc1`.
@@ -9472,12 +9472,13 @@ pushed, **not merged to main**.
 
 ### 2.31.1 THE ONE-LINE ANSWER
 
-The plains mid field is **fifteen frame rows** between the biome-prop ring and
-the horizon, the instance tier places **nothing at all** in the 380 m between
-`RADIUS_M` (170 m) and `CANOPY_NEAR_M` (550 m), and at the pose the player
-actually stands in **the props inside the ring stand up in front of most of
-those fifteen rows**. So the charter's premise is half right and half
-site-blind: `midfield`, the pose it was reasoned from, declares `props: false`,
+The plains mid field is **about four and a half frame rows** (was fifteen; a
+wide-x row-mean smear misread the load-bearing 170 m rung, corrected in
+2.31.11) between the biome-prop ring and the horizon, the instance tier places
+**nothing at all** in the 380 m between `RADIUS_M` (170 m) and `CANOPY_NEAR_M`
+(550 m), and at the pose the player actually stands in **the props inside the
+ring stand up in front of most of those rows**. So the charter's premise is
+half right and half site-blind: `midfield`, the pose it was reasoned from, declares `props: false`,
 and at `meadowfield` the far plain is not empty, it is a dark speckled mat
 under a near-black silhouette wall. **Nothing a terrain material can paint out
 there is worth a lane**, and this lane proves that rather than asserting it.
@@ -9522,16 +9523,34 @@ profile, `tools/smoke/rn2510rows.mjs`. At `meadowfield`:
 | ground range | frame row |
 |---|---:|
 | 85 m | **297.5** |
-| 170 m | **291** |
+| 170 m | **281.3** (was 291, see 2.31.11) |
 | 340 m | **278.5** |
 | horizon | **~276** |
 
-**The whole visible plain past the prop ring is fifteen rows** (291 to 276) and
-the 170-to-340 m band -- the one the charter is about -- is **twelve and a
-half**. `meadowfield.r250` (rows 287-292) straddles 170 m to about 340 m, so the
-rectangle IS on the right ground even though its `footM` is not; RN-2478's
-caveat that the placement is reproducible and not a survey is confirmed rather
-than contradicted. Frame: `RN2510_paint_rangeladder_meadowfield.png`.
+**The 170 m rung was misread.** The first pass took a wide-x row mean, and
+iso-range contours curve upward toward the frame edges, so a wide window smears
+the step across several rows. Read at a narrow centre column (`x` in [795,
+805), ten pixels wide) instead, the 170 m rung sits at row **~281.3**, confirmed
+three independent ways: a hue-coded range ladder, a hard binary paint that
+saturates rows 279-280 with row 281 as the mixed boundary, and a flat-plane
+inversion fit from this lane's own six committed `rangeM`/`extraPx` pairs (`f` =
+779.4 px, pitch -12 degrees, eye 1.62 m), which predicts 85 m at row 299.5,
+170 m at 291.8, 340 m at 288.0 and the horizon at 284.1. The wide-window 291 was
+within a row of that flat-plane prediction, meaning the row-ladder instrument
+this lane built to replace the flat-plane inversion had, at its load-bearing
+rung, reproduced the flat-plane inversion's own number instead of measuring
+independently of it.
+
+**The whole visible plain past the prop ring is about four and a half rows**
+(281.3 to 276; was fifteen, from 291 to 276) and the 170-to-340 m band -- the
+one the charter is about -- is **about three** (281.3 to 278.5; was twelve and
+a half). `meadowfield.r250` (rows 287-292) is measured coverage, not a straddle
+claim: per-row fractions of the rectangle that fall past the ring (170 m), for
+rows 287 through 292, are **0.290 / 0.259 / 0.231 / 0.204 / 0.181 / 0.168**,
+i.e. **about 22 per cent of the rectangle is past the ring and about 78 per
+cent is inside it**. RN-2478's caveat that the placement is reproducible and
+not a survey is confirmed rather than contradicted. Frame:
+`RN2510_paint_rangeladder_meadowfield.png`.
 
 ### 2.31.4 RN-2512, THE HOLE IN THE PLACEMENT LADDER, FROM SOURCE AND CONFIRMED BY ARM
 
@@ -9545,8 +9564,9 @@ Read off `ScatterTuning` and `Registry` and confirmed against 2.31.2's arms:
 | canopy impostors | `CANOPY_NEAR_M` **550 m** to `canopyReachM` = **1,400 m** at a 1.62 m eye |
 
 **Between 170 m and 550 m the instance tier places nothing but the harvest
-trees**, and 170 m is row 291 while the horizon is row 276. The gap is real, it
-is exactly the mid field, and it is a hard step rather than a fade.
+trees**, and 170 m is row 281.3 (was 291, see 2.31.11) while the horizon is row
+276. The gap is real, it is exactly the mid field, and it is a hard step rather
+than a fade.
 
 ### 2.31.5 RN-2513, THE FIELD THE CHARTER NAMED IS SATURATED AT THIS SITE
 
@@ -9555,10 +9575,14 @@ established". That machinery is `ChunkCanopy.fillCanopyIndex`, which evaluates
 world-gen's `canopyWeight` per terrain vertex and uploads it as `aCanopy`. It
 cannot drive a ground mosaic here, and the reason is measured.
 
-`canopyWeight` is `ramp(stand, STAND_LO, STAND_HI) * groveWeight(grove) *
-(1 - above)`: two hard thresholds, so the realised field is **bimodal**.
-Measured over 64 deterministic sites x a 64x64 lattice at 190 m, 262,144
-samples: **mean 0.308214, sd 0.344924, min 0.012, max 1.000**. It is a
+`canopyWeight` is `max(ramp(stand, STAND_LO, STAND_HI) * groveWeight(grove) *
+(1 - above), CANOPY_FLOOR_W)` (`ScatterTuning.ts:911`; the floor is why the
+measured min is 0.012 and not 0): two hard thresholds plus a floor, so the
+realised field is **bimodal**. Measured over 64 deterministic sites x a 64x64
+lattice at 190 m, 262,144 samples: **mean 0.308214, sd 0.344924, min 0.012, max
+1.000**. **This mean and sd are site-set dependent**: the 64-site list was
+never published, and the verifier's own independent 64-site run read **mean
+0.273283, sd 0.320050**, same min, same max, same emphatic bimodality. It is a
 wood/no-wood decision and it is right to be.
 
 Painted as a three-threshold ladder at the plains pose
@@ -9584,20 +9608,46 @@ range band in, on the file whose stated purpose is that the far ground must not
 revert to the bare palette. It is complete, typechecked, flagged four ways and
 exact under `?coverstand=0`. **It is refused.**
 
-**The numbers, at `midfield`, fresh process per arm, one build:**
+**The arm table originally reported here was headed "fresh process per arm, one
+build"; it was in fact a one-session arm-table trap** (measuring arms against a
+live, uncommitted working tree rather than committed HEAD -- the class this
+file's own catalogue already names under "What actually proves a frozen build
+is HEAD" and "The shared WORKING TREE is a collision surface too, so measure in
+an isolated one"). The control (`?coverstand=0`) and the `meadowfield` endpoint
+**do** reproduce at the recoverable commit `be22fd50`. **The three
+`coverstandv` sweep arms below were taken on an UNCOMMITTED intermediate, the
+mosaic form, and reproduce nowhere.** The verifier re-measured the committed
+cover-layer form's own sweep at `be22fd50`:
 
-| arm | `r250` iqr | `r250` luma |
+| arm | `r250` iqr (as originally reported, mosaic form, uncommitted) | `r250` iqr (committed cover-layer form, `be22fd50`, verifier) |
 |---|---:|---:|
-| `?coverstand=0` | **43.83** | 116.96 |
-| mosaic form, `coverstandv=0.35` | 38.98 | 114.79 |
-| `coverstandv=0.8` | 35.99 | 111.77 |
-| `coverstandv=1.4` | 37.20 | 107.41 |
+| `?coverstand=0` (off) | 43.83 | **43.83** |
+| `coverstandv=0.35` | 38.98 | **36.28** |
+| `coverstandv=0.8` | 35.99 | **42.63** |
+| `coverstandv=1.4` | 37.20 | **42.85** |
 
-**The amplitude ladder moves the rectangle the WRONG WAY, monotonically.** At
-`meadowfield` the final cover-layer form reads `r250` **47.44 -> 40.77** and
+**The committed sweep is NOT monotonic**, unlike the mosaic-form numbers
+originally reported (which read 43.83 -> 38.98 -> 35.99, monotonically the
+wrong way). Every committed arm still reads below the off arm, so **the
+refusal's direction survives** even though the mosaic-form ladder that
+motivated it does not.
+
+**The record does not establish whether these sweep arms predate the
+`TREE_SIN_MIN` discovery in lesson 3 below** (`TerrainTreeline`'s 0.02 rad floor
+binds across the whole mid field at a 1.62 m eye). On either form, the sweep
+numbers may have measured a floored constant rather than the term itself. **The
+load-bearing evidence for the refusal is the eye verdict** (no difference
+visible at 1x, either pose) **plus the corrected about-four-and-a-half-row
+geometry in 2.31.3**, not the sweep amplitude numbers above. A future lane
+resurrecting the term at `be22fd50` must re-derive the sweep on the committed
+form with the floor's state recorded, rather than trust either published
+sweep.
+
+At `meadowfield` the final cover-layer form reads `r250` **47.44 -> 40.77** and
 luma 96.70 -> 93.02: contrast down 6.7 counts. By eye at 1x, in both poses,
-**no difference is visible**, and the crop says why: the mid field is fifteen
-rows and the prop ring's own instances stand in front of most of them.
+**no difference is visible**, and the crop says why: the mid field is about
+four and a half rows (2.31.3, corrected) and the prop ring's own instances
+stand in front of most of them.
 
 **Three things were paid for on the way and all three are reusable.**
 
@@ -9694,8 +9744,9 @@ No pose added, no manifest row edited and no `extra` block touched. Branch
 ### 2.31.10 OWED, AND WHERE THE NEXT LANE SHOULD BE POINTED
 
 1. **THE ITEM AS BRIEFED CANNOT BE DONE IN A TERRAIN MATERIAL, and this is the
-   finding to act on.** The plains mid field is fifteen rows with the near prop
-   ring standing in front of it. What changes it is what has HEIGHT at 200 m to
+   finding to act on.** The plains mid field is about four and a half rows
+   (2.31.3, corrected; was fifteen) with the near prop ring standing in front of
+   it. What changes it is what has HEIGHT at 200 m to
    1 km: the 170-to-550 m placement hole, the near-black uniform silhouette wall
    the far canopy impostors make, and the pepper. All three are the INSTANCE
    tier's, and two of them are partly N3's (`FoliageTone`, `PropSkyAmbient`) and
@@ -9704,12 +9755,88 @@ No pose added, no manifest row edited and no `extra` block touched. Branch
    has therefore never been executable as written. Every lane since
    FIDELITY-GAP has substituted "my own knowledge of what an SE frame looks
    like". Admin's, not a lane's.
-3. **A rectangle for the 170-to-550 m hole.** `meadowfield.r250` straddles the
-   ring at its near edge, so it can never separate "the ring stopped" from "the
-   ground out there is bare". One row on `meadowfield` at rows 278-284 would.
+3. **A rectangle for the 170-to-550 m hole, re-derived from the corrected
+   ladder (2.31.3).** `meadowfield.r250` (rows 287-292) is about 78 per cent
+   inside the ring and about 22 per cent past it, so it can never cleanly
+   separate "the ring stopped" from "the ground out there is bare". On the
+   CORRECTED ladder (170 m at row 281.3, 340 m at row 278.5), rows 278-284 span
+   roughly 340 m at the top to about 150 m at the bottom, a good frame for the
+   170-to-550 m question. On the OLD, uncorrected ladder (170 m misread as row
+   291) that same rectangle would have contained sky above the horizon, the
+   `meadow.hzBand` failure mode. Whoever commits this rectangle must derive its
+   placement from their own corrected centre-column ladder and commit the
+   measured range beside it, not reuse this lane's numbers unverified.
 4. **The term is not lost.** RN-2511 to RN-2515 in this branch's history is a
    complete, typechecked implementation with its own flags and its own drift
    guard, and 2.31.6's three lessons are why it would be cheaper to resurrect
    than to rewrite. It should only be resurrected for a pose whose mid field is
    actually VISIBLE ground -- a raised eye, a slope, or an aerial -- and none of
-   those is the plains hero frame.
+   those is the plains hero frame. **The record does not establish whether the
+   refused term's sweep arms (2.31.6) predate the `TREE_SIN_MIN` discovery**
+   (its 0.02 rad floor binds across the whole mid field at a 1.62 m eye), so the
+   next lane resurrecting this term must re-derive the sweep on the committed
+   form with the floor's state recorded rather than trust either published
+   sweep.
+
+### 2.31.11 Correction pass (2026-08-21, fresh-context verifier, verdict FIX doc-only, applied by mini-lane)
+
+A fresh-context verifier confirmed this lane's refutation of its own charter
+and every headline arm in 2.31.2 exactly, and found one instrument defect in
+the new row-ladder instrument (2.31.3): iso-range contours curve upward at the
+frame edges, so a wide-x row mean smears the step, and the load-bearing 170 m
+rung was misread as a result. The corrections below were routed by that
+verifier and applied here by a correction mini-lane, doc-only, without touching
+code, frames, or any other file.
+
+1. **The 170 m rung is row ~281.3 (was 291).** Confirmed three ways: a
+   narrow-centre-column (`x` in [795, 805)) hue ladder, a hard binary paint
+   (rows 279-280 saturate, row 281 is the mixed boundary), and a flat-plane
+   inversion fit from this lane's own six committed `rangeM`/`extraPx` pairs
+   (`f` = 779.4 px, pitch -12, eye 1.62 m), which predicted 170 m at row 291.8 --
+   within a row of the old, wrong 291, i.e. the row-ladder instrument had
+   reproduced the flat-plane number it was built to replace. Downstream: the
+   section title and 2.31.1's "fifteen frame rows" is corrected to **about four
+   and a half** (281.3 to 276, was fifteen); 2.31.3's "twelve and a half" rows
+   for the 170-to-340 m band is corrected to **about three** (281.3 to 278.5,
+   was twelve and a half); 2.31.4's "170 m is row 291" is corrected to **row
+   281.3**; 2.31.10 item 1's "fifteen rows" is corrected the same way.
+2. **2.31.3's straddle claim** ("`r250` straddles 170 m to about 340 m, so the
+   rectangle IS on the right ground") **is replaced with measured coverage:**
+   about 22 per cent of `meadowfield.r250` is past the ring and about 78 per
+   cent is inside it (per-row fractions past the ring for rows 287-292: 0.290 /
+   0.259 / 0.231 / 0.204 / 0.181 / 0.168).
+3. **2.31.6's arm table, headed "at midfield, fresh process per arm, one
+   build", was a one-session arm-table trap** (measured across a live,
+   uncommitted working tree rather than committed HEAD; the class this file's
+   catalogue already names under "What actually proves a frozen build is HEAD"
+   and "The shared WORKING TREE is a collision surface too, so measure in an
+   isolated one"). The control (43.83 / 116.96) and the `meadowfield` endpoint
+   (40.77 / 93.02) reproduce at the recoverable commit `be22fd50`; the three
+   `coverstandv` sweep arms originally reported (38.98 / 35.99 / 37.20) were
+   taken on an UNCOMMITTED intermediate, the mosaic form, and reproduce
+   nowhere. The committed cover-layer form's own sweep, measured by the
+   verifier at `be22fd50`, is **43.83 off / 36.28 at 0.35 / 42.63 at 0.8 / 42.85
+   at 1.4**, NOT monotonic, though every arm still reads below the off arm, so
+   the refusal's direction survives.
+4. **2.31.6 and 2.31.10 item 4** now state that the record does not establish
+   whether the refused term's sweep arms predate the `TREE_SIN_MIN` discovery
+   (0.02 rad floor, binds across the whole mid field at a 1.62 m eye), so the
+   sweep numbers, on either form, may have measured a floored constant rather
+   than the term; the load-bearing refusal evidence is the eye verdict (no
+   difference visible at 1x) plus the corrected about-four-and-a-half-row
+   geometry, not the sweep amplitude.
+5. **2.31.5's `canopyWeight` mean/sd is marked site-set dependent.** The
+   formula carries a `CANOPY_FLOOR_W` floor (`ScatterTuning.ts:911`, the reason
+   the measured min is 0.012 and not 0), and the published 64-site mean
+   0.308214 / sd 0.344924 was taken on a site list that was never published;
+   the verifier's own independent 64-site run read mean 0.273283 / sd 0.320050,
+   same min, same max, same emphatic bimodality.
+6. **2.31.10 item 3's proposed rectangle (rows 278-284) is re-justified from
+   the corrected ladder:** it spans roughly 340 m at the top to about 150 m at
+   the bottom, a good frame for the 170-to-550 m question; on the OLD,
+   uncorrected ladder it would have contained sky, the `meadow.hzBand` failure
+   mode. Placement must be re-derived from a corrected centre-column ladder by
+   whoever commits it, with the measured range committed beside it.
+7. **Noted, not corrected:** `meadowfield.sky` recorded 16.79 in 2.31.9; the
+   verifier read 16.72 on its own build. Within the sky-rect dither class
+   already catalogued in NUMBERS.md; not retaken.
