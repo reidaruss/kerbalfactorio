@@ -183,8 +183,16 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // because the pair is what makes ?horizoncell=0 a single exact negative
     // control while ?horizoncellan= still sweeps the replacement on its own.
     uniform vec2 uHorizonCell;
-    // RN-2475. THE FAR MACRO PAIR's own amplitude, a multiplier on
-    // uHorizonCell.y. Its own scalar and not a third component of that vector
+    // RN-2475. THE PLAINS MACRO GAIN's own amplitude, a multiplier on
+    // uHorizonCell.y. What it scales is the ONE MULTIPLY the analytic stand-in
+    // carries on the massif gate's own complement,
+    // 1 + HORIZON_AN_PLAINS_GAIN * (1 - hzMsfBand), so a relieved pose is
+    // bit-identical by construction. (CORRECTED at RN-2510: this note used to
+    // say "THE FAR MACRO PAIR", a 640 m / 2560 m octave pair that was built,
+    // swept at 20x, measured at 0.00 counts and thrown away -- rendering.md
+    // 2.30.6. The same stale sentence was in tools/smoke/run.mjs and
+    // TerrainAmpQuery.ts and is corrected in all three.)
+    // Its own scalar and not a third component of that vector
     // for uHorizonEco's reason: it fails in a way neither of those two can. Too
     // strong and the distance is a blotchy watercolour at exactly the range
     // where nothing else is drawing to argue with it, and ?horizonplains=0 has to
