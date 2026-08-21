@@ -138,6 +138,20 @@ const LEGACY_BIAS_UNITS = -0.0006;
  * for shots where the rig is actually on.
  *
  * Absent is the shipped identity. Standing rule 7.
+ *
+ * RN-2306. THE OTHER HALF OF THIS FLAG NOW LIVES IN `CascadeShadow.glsl.ts`,
+ * and until it did this flag was a broken control rather than a control.
+ * Clearing `castShadow` here stops the MAP being rendered; it does not stop
+ * `ofCascadeShadow` READING it, and three binds its default 2-D texture into
+ * the `sampler2DShadow` array when there is no map. On a walk pose that read
+ * is live and the draw takes `GL_INVALID_OPERATION ... texture format and
+ * sampler type` (x256 at `machine` and at `meadow`); on an aerial pose the
+ * read is already past the last split, so the same flag returned a
+ * byte-identical frame and read as a passing control. Both are now fixed in
+ * one place: the lookup compiles out under the same query parameter, so the
+ * sampler leaves the program and the flag means what this block always said
+ * it meant. The line below is unchanged and still the ONLY line here it
+ * touches.
  */
 const SHADOW_CAST_RAW = new URLSearchParams(self.location.search).get('shadowcast');
 export const SHADOW_CAST_OFF = SHADOW_CAST_RAW === '0';
@@ -293,7 +307,37 @@ export class ShadowRig {
       // rule that reads it and every cascade uniform are the shipped ones; the
       // light simply stops writing and sampling a depth map.
       light.castShadow = this.active && !SHADOW_CAST_OFF;
-      if (!this.active) continue;
+      // RN-2307. THE POSITION IS WRITTEN EVEN WHEN THE RIG IS OFF, and this
+      // line is an INSTRUMENT fix as much as a rendering one.
+      //
+      // `Frame.publishSun` derives the post stack's world sun vector from
+      // `cascade0.position - cascade0.target.position`, deliberately, "so it
+      // cannot go stale". It could, because the fit below -- the only place
+      // either vector is ever written -- sat after an early `continue`. Below
+      // the horizon `Systems.ts` hands `on = false`, the loop skipped the
+      // write, and the pair kept pointing at the last sun the rig was fitted
+      // for. Measured at `meadownight` before this: the probe's `upCheck` read
+      // 0.508 where every other shot in the file reads 0.000, and
+      // `sunElevDeg` read +14.83 degrees for a sun the same report pinned at
+      // dot -0.251. `ContactPass` then marched along that vector, its only
+      // guard being `sunWorld.lengthSq() < 0.25`, which a stale UNIT vector
+      // passes.
+      //
+      // The off path aims the pair from the eye and stops there: no ortho fit,
+      // no texel snap, no `publishCascade`, no projection-matrix update, and
+      // no cascade uniform. Two vector writes and two matrix updates on a
+      // light that renders nothing, so the 58 draw calls `Systems.ts` skips
+      // are still skipped and the `visible`/`castShadow` state that decides
+      // three's lights-state hash is untouched. `position - target.position`
+      // is then exactly `sunDir * CASTER_BACKOFF_M`, so what `publishSun`
+      // normalises is the sun the frame was simulated with, at every hour.
+      if (!this.active) {
+        light.target.position.copy(eye);
+        light.position.copy(eye).addScaledVector(sunDir, CASTER_BACKOFF_M);
+        light.target.updateMatrixWorld(true);
+        light.updateMatrixWorld(true);
+        continue;
+      }
       const far = this.splits[i];
       // Centre the cascade a little ahead of the eye: a walking player looks
       // forward, so a box centred on the feet wastes half its texels behind.
