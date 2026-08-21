@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2470 to RN-2474, `lane/n5-station`, **THE STATION EXTERIOR PHOTOGRAPHS, AFTER SIX AUDITS OF INTERIOR.** The cause was never a roll-convention race (that suspect was already falsified by CE-116/R4, section 2.27.5): the vestibule seat `visit:station` boards onto is about 4.0 m from the hull's own local origin while the merged hull's own bounding sphere (`stationDraw.boundM`) is **36.003 m**, so the eye sat roughly 32 m inside solid hull volume and no look direction from there could ever have cleared it. **`eyeLocal`/`eyeLocalOverBound`** (published on every `station` capture, `artframe.js`'s `atCapture`) make this a number instead of a suspicion: `quat^-1 * (cam.posE - stationDraw.posE)` against `stationDraw.boundM`, using ONLY fields already published (`Debug.ts`'s `cam.posE`, `StationView.stats`'s `posE`/`quat`/`boundM`) and the inverse of the SAME quaternion `StationView.sync` composes the drawn transform with, no second convention. Measured at the old seat: ratio **0.120** (inside); magnitude 4.316 m, bit-identical to the independently-published `stationDraw.eyeDistM`, which is the cross-check that the rotation math is right. **THE FIX:** `of.standAboard(lx, ly, lz)` (`DebugSeat.ts`, already-shipped CE-54 debug op) reseats the same boarded rider, at rest in the carrier, to a point in the station's own authored local frame past the bound (`boundM + margin` along local +X, the spine, `standAboard`'s own documented convention), then the look bearing is recomputed as "back toward the hull's own local origin" (rotated into body frame by the hull's live quat, decomposed into the same east/north/up tangent triple the old orbital-bearing solve used) instead of "along the orbit". Ratio after: **1.334** (outside). `RN2470_station_before.png` is the six-audit interior corner (riveted panels, a corridor, no stars); `RN2470_station_after.png` is the hull from outside -- cylindrical body, solar-panel struts, an antenna, against a starred sky -- both committed. Bit-identical across three fresh Chromium processes (`box.luma` 11.64, `iqr` 12.21, `eyeLocal` to four decimals, all three runs). **Two stale docstrings corrected to the post-CE-116 truth** (one writer, the carrier watcher composes the pose; `stationQuat` runs once per boot to build the install-tick offset and is not a second live source): `StationView.ts:144-156` (`place`'s docstring, previously claimed the quaternion was `stationQuat`'s) and `StationMount.ts:16-34` (the "two conventions, neither wrong" framing that predates CE-115/CE-116 and is what sent four audits at the wrong suspect). Full record in section 2.28. THIS LINE IS A POINTER: replace it, never append to it.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2495 to RN-2503, `lane/n3-airview`, **THE WORLD FROM THE AIR, RANK 3, BEHIND FOR FOUR AUDITS: THE CAST IS NOW ATTRIBUTED AND ONE OF THE TWO NAMED SUSPECTS IS EXONERATED BY A FACTOR OF 235.** The project had no instrument for "the crowns read blue-grey" -- `warm` is `meanR - meanB` and is blind to green by construction, `sat` is a max-minus-min a red-and-blue pair satisfies too -- so this lane publishes **green excess `gx = meanG - (meanR + meanB)/2`** on every rectangle and pairs every arm against `?canopy=0` on the SAME rectangle (RN-2275's own instrument, 2.19.4). At `forestair`, box gx, one flag apart: shipped **3.92**, and the treeless clearing **4.80** -- **a closed stand of leaves reads LESS green than the duff under it.** The attribution: `?propsky=0` 3.91 (**PropSkyAmbient's blue fill costs 0.01 counts and is EXONERATED**, and it is a real zero not a vacuous one -- `published: true`, `spliced: 30`, `folPrograms: 15`, `misses: []`, `props:OF_Canopy:canopy` chained); `?foliagetrans=0` 3.91; `?prophaze=0` 4.50; `?foliagetone=0` **6.27** (the canopy desaturation, 2.35); `?crownshadecard=0` 6.59 (2.67); `?crownshadefar=0` **12.85 (8.93)**. **THE FIX: a crown is not a leaf.** RN-2245 copied `leaf`'s `sat 0.62` to `canopy` to the digit, but `leaf`'s number was authored at a standing eye and `canopy` is worn by one object, the `_LOD3` crown impostor, never drawn inside 550 m. Two-stream dense-canopy reflectance on broadleaf optics brackets a crown's LINEAR R/G between 0.417 (one leaf) and 0.265 (dense crown); **the shipped card sat at 0.580, outside the bracket on the unsaturated side.** `sat = 1.08` solves it to the geometric midpoint 0.3324, `val` unchanged at 0.86. **The move is EXACTLY luma-preserving** (the three saturation weights sum to one), measured at 0.03 counts of `box`-luma spread over a 49 per cent chroma change, so **RN-2275's four pairs are protected by algebra**: re-quoted on this build they read **-2.85 / -2.30 / -8.31 / -2.09**, all four still inverted, moved by at most 0.05. Crown rectangle gx **+0.73 -> +2.00**; box crown-minus-clearing flips **-0.88 -> +1.05**; no aerial warm regresses (`flyovernoon` +4.91 -> +4.97, `forestair` -8.07 -> -8.03); four ground poses bit-identical. **A blue-cutting hue axis was built, measured at 0.6 counts of frame warm, and REFUSED** because the same model says the saturation move already overshoots blue downward -- and that refusal is the headline: **the frame's blue-grey is not the card's hue.** **JUDGEMENT SPLIT: the FIELD is MET and the CROWNS are NOT**, and the cause is pictured -- `CanopySelfShadow.updateCanopyCardShade` multiplies the finalised card colour by a single ACHROMATIC scalar, live at **`cardShade` 0.1025**, so a crown is painted at a tenth of any colour authored upstream. `RN2495_crowns_crownshadecard0.png` is that flag off and the crowns are unmistakably green. **ROUTED with the headroom measured: `?crownshadecard=0` keeps three of RN-2275's four pairs and breaks only `flyoverlow` (+1.38), so a partial card shade or a spectrally-selective attenuation at the same luma buys the crowns their colour with all four intact.** Full record in section 2.29. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
 
@@ -9004,3 +9004,262 @@ removed. Three files touched: `web/tools/smoke/probes/artframe.js` (the
 3. **Everything section 2.27.10 already owed** (no new poses, motion
    unmeasured, quality tiers, the fifteen number-only arms) is unmoved by this
    lane, which touched one row.
+
+---
+
+## 2.29 THE WORLD FROM THE AIR: THE CAST, ATTRIBUTED (RN-2495 to RN-2503, 2026-08-21, `lane/n3-airview`)
+
+> World Audit R4's rank 3 (`docs/web/WORLD-AUDIT-R4-2026-08-22.md` sections 3.15
+> and 6, N3), BEHIND in four consecutive audits and never given a lane. Base
+> `origin/main` at `bda72279`. Branch `lane/n3-airview`, pushed, **not merged to
+> main**. Server `127.0.0.1:5495`, `--strictPort`, sentinel
+> `dist/of-sentinel-rn2495.txt` written into this worktree's own `dist` and
+> fetched back over the port before every rebuilt server was trusted (four
+> rebuilds, each re-verified), killed by the PID `netstat -ano` named
+> (PID 26028, confirmed gone, port free). `npx tsc --noEmit`, `npx vite build`
+> and `npm run check` run as SEPARATE steps, each exit status read on its own:
+> 0, 0, **8 of 8**.
+
+### 2.29.1 THE INSTRUMENT HAD TO COME FIRST, AND IT IS ONE LINE OF ARITHMETIC
+
+Four audits have said "the crowns are blue-black confetti" and every number in
+the file has been inside its band the whole time. The reason is that the
+project had no instrument for the claim. `warm` is `meanR - meanB` and is
+**blind to green by construction**; `sat` is a max-minus-min that a red-and-blue
+pair satisfies exactly as well as a green one. So this lane publishes
+
+```
+gx = meanG - (meanR + meanB) / 2        counts, positive is green
+```
+
+on every named rectangle (`rn2495arms.mjs`), and pairs every arm against
+`?canopy=0` **on the same rectangle** -- RN-2275's own instrument (2.19.4)
+reused rather than a new hand-placed crown rectangle, so pose, range, haze, sun
+and substrate are common-mode by construction and nothing is placed by eye.
+
+### 2.29.2 THE CAST, ATTRIBUTED, AND THE AUDIT'S TWO NAMED SUSPECTS SPLIT 235-TO-1
+
+`forestair`, box green excess, one page param apart on the pre-lane build,
+fresh process each. The pre-lane arm reproduces R4's own table to the digit
+(`box` 93.39 / iqr 28.49, `world` 123.53 / warm -8.07 / sat 0.166).
+
+| arm | box gx | what it costs the frame |
+|---|---:|---|
+| shipped, pre-lane | **3.92** | -- |
+| `?canopy=0` (the clearing) | 4.80 | the wood is **LESS green than its own treeless clearing** |
+| `?propsky=0` | 3.91 | **PropSkyAmbient's sky fill: 0.01 counts.** EXONERATED |
+| `?foliagetrans=0` | 3.91 | RN-2205's translucency: 0.01 counts, at the noise floor |
+| `?prophaze=0` | 4.50 | the props' aerial perspective: 0.58, and it is the air |
+| `?foliagetone=0` | 6.27 | **FoliageTone's canopy desaturation: 2.35** |
+| `?crownshadecard=0` | 6.59 | **RN-2275's CARD half: 2.67** |
+| `?crownshadefar=0` | 12.85 | **RN-2275's FAR-PAINT half: 8.93** |
+
+**The audit named two suspects and they differ by a factor of 235.**
+`PropSkyAmbient`'s blue fill on the cards is worth **one hundredth of a count**
+of green excess and 0.00 of warm, and that is a REAL zero rather than a vacuous
+one: `rn2495state.mjs` reads the term's own probe surface at the Forest site
+and finds `published: true`, `spliced: 30`, `folPrograms: 15`, `misses: []`, and
+`props:OF_Canopy:canopy` present in `chained`. The term is installed and live on
+every canopy program and it is simply small, exactly as RN-2201's own record
+already said ("the honest accounting of today's frame is a tenth of a count").
+**`FoliageTone`'s canopy row is the other suspect and it is real.**
+
+**The frame's own warm budget, measured, because the audit's done-when asked
+for it:** `forestair` whole-frame warm is -8.07 shipped and **-5.59 under
+`?canopy=0`**. Removing every tree in the world closes only **2.48** of the
+8.07; the remaining -5.59 is the treeless frame, which L3's own owed item 2
+(2.21.7) already attributed to Forest substrate plus haze at this pose's
+dot 0.55 and routed to the aerosol/substrate lever family. **No canopy change
+of any kind can close more than 2.48 counts here**, and that bound is this
+lane's answer to "close `forestair` toward zero".
+
+### 2.29.3 THE FIX: A CROWN IS NOT A LEAF
+
+`FoliageTone.ts`'s `canopy` row is `{ sat: 0.62, val: 0.86 }`, RN-2245's
+deliberate copy of `leaf` **to the digit**. `leaf`'s 0.62 was authored against
+one measurement named in that file's own header: a near leaf card at a standing
+eye. The `canopy` family is worn by exactly one object, the `_LOD3` crown
+impostor, and it is a WHOLE TREE CROWN never drawn closer than
+`CANOPY_NEAR_M` = 550 m.
+
+Canopy radiative transfer says those are not the same colour: a photon leaving
+the top of a closed stand has interacted with foliage more than once and each
+interaction multiplies the leaf's spectral selectivity, so a canopy is strictly
+MORE saturated than the leaves it is made of. The two-stream dense-canopy limit
+`rInf(w) = (1 - sqrt(1-w)) / (1 + sqrt(1-w))` on broadleaf single-scattering
+albedos (0.27 green, 0.08 red, 0.06 blue) gives, in LINEAR reflectance:
+
+| | R/G | B/G |
+|---|---:|---:|
+| one leaf | 0.417 | 0.333 |
+| dense crown | 0.265 | 0.197 |
+| **the shipped card at sat 0.62** | **0.580** | **0.467** |
+
+**The crown card was less saturated than a single LEAF, outside the bracket on
+the unsaturated side.** `sat = 1.08` is solved to put its linear R/G on the
+bracket's geometric midpoint, 0.3324 -- the midpoint and not the crown end,
+because `rInf` is a semi-infinite limit and our stands are not closed
+everywhere. `val` stays at **0.86 to the digit**: value is the axis RN-2275's
+inversion is measured on, so the one axis this lane does not touch is the one
+that could break it.
+
+**THE MOVE IS EXACTLY LUMA-PRESERVING** and that is the safety argument, not a
+nicety: the saturation term is `l + (c - l) * sat` with `l` the Rec.709 luma and
+the three weights summing to one, so the transformed luma is `l` for every
+`sat`. Measured across a five-point sweep of the constant, `forestair` `box`
+luma reads **93.38 / 93.38 / 93.39 / 93.40 / 93.41** -- 0.03 counts of spread
+over a 49 per cent chroma change. **RN-2275's pass condition is a LUMA condition
+and is therefore protected by algebra rather than by a sweep.**
+
+**A HUE AXIS WAS DRAFTED, MEASURED AND REFUSED, and the refusal is a finding.**
+A luma-preserving blue-reduction term (`chloro`, blue's luminance handed back to
+R and G by scaling the pair, so R:G is exactly invariant) was built and is worth
+**0.6 counts of whole-frame warm** at `forestair`. It is not shipped: the same
+two-stream numbers put a crown's blue at 0.74 of its red, and this row at
+sat 1.08 is already at 0.46, so the saturation move **overshoots** blue downward
+rather than leaving a deficit. Shipping a blue cut the model contradicts would
+be exactly the constant nobody later dares move. **The corollary is the lane's
+headline negative result: the frame's blue-grey is not the card's hue.**
+
+### 2.29.4 THE NUMBERS, one page param apart, fresh process each
+
+`?canopysat=0.62` is the pre-lane build exactly and is the whole change's
+negative control -- one CPU-side constant between the arms, same build, same
+program.
+
+**Crown chroma, the rectangle the score asked for.** A 200x100 patch on the
+dense crown band at `forestair` (px 450,600-650,700, 20,000 px), and the third
+row is the SAME rectangle with `?canopy=0`, i.e. the clearing at identical
+range through identical air:
+
+| arm | meanRGB | gx | warm |
+|---|---|---:|---:|
+| `?canopysat=0.62` (pre-lane) | 65.55, 74.49, 81.98 | **+0.73** | -16.44 |
+| shipped (`sat 1.08`) | 64.92, 75.01, 81.15 | **+2.00** | -16.22 |
+| `?canopy=0` (the clearing) | 74.87, 83.77, 83.40 | +4.45 | -8.53 |
+
+Crown green excess **+174 per cent**, and the crown mass still sits 2.45 counts
+under its own clearing. Whole-rectangle warm does not move, which is 2.29.5.
+
+**The rectangles, `forestair`:** `box` gx **3.92 -> 5.85**, `under` 3.59 ->
+4.15, `hzBand` 5.50 -> 7.00. **Crown-minus-clearing at `box` flips sign,
+-0.88 -> +1.05**, and at `hzBand` +0.12 -> +1.62.
+
+**The aerial table, against R4's own re-take on this base. Nothing regresses:**
+
+| pose | world warm before | after | world sat before | after |
+|---|---:|---:|---:|---:|
+| `forestair` | -8.07 | **-8.03** | 0.166 | **0.171** |
+| `forestairnoon` | -1.67 | **-1.56** | 0.156 | **0.165** |
+| `forestairlow` | +12.17 | +12.15 | 0.176 | 0.176 |
+| `flyover` | -1.77 | -1.77 | 0.196 | **0.199** |
+| `flyovernoon` | +4.91 | **+4.97** | 0.206 | **0.214** |
+| `flyoverlow` | +15.46 | +15.43 | 0.202 | 0.202 |
+
+`flyovernoon` does not fall below +4.91 (the audit's stated floor) and no pose
+moves by more than 0.03 counts in the wrong direction, which is inside each
+pose's own load-to-load spread.
+
+**RN-2275's FOUR PAIRS, re-quoted on THIS build, both arms** (`box` luma, the
+clearing is `?canopy=0` at the same rectangle):
+
+| pose | clearing | wood, pre-lane | wood, shipped | shipped margin |
+|---|---:|---:|---:|---:|
+| `forestairnoon` | 110.48 | 107.65 | 107.63 | **-2.85** |
+| `forestairlow` | 84.24 | 81.94 | 81.94 | **-2.30** |
+| `flyovernoon` | 149.84 | 141.58 | 141.53 | **-8.31** |
+| `flyoverlow` | 107.46 | 105.37 | 105.37 | **-2.09** |
+
+**All four still invert, and this lane moves them by at most 0.05 counts**,
+which is the luma invariance above showing up where it was promised.
+
+**NEGATIVE CONTROLS, ground poses, `?canopysat=0.62` one flag apart.** `box`
+luma / iqr / warm **bit-identical at all four**: `forestfloor` 29.59 / 23.99 /
+8.68, `meadow` 85.12 / 56.36 / 24.85, `vista` 174.54 / 14.33 / 7.79,
+`mtnslope` 126.91 / 89.27 / 25.34. Whole-frame luma differs by 0.09
+(`forestfloor`) and 0.15 (`mtnslope`); three fresh repeats of the SHIPPED arm
+alone spread 42.91 / 42.93 / 42.95 and 114.84 / 114.99 / 114.92, so both
+differences sit inside each pose's own within-arm spread and neither is this
+term. `vista` is bit-identical including whole-frame.
+
+**DETERMINISM.** Three fresh Chrome processes per arm at `forestair`, arms
+interleaved: every committed rectangle **bit-identical to two decimals in every
+repeat, in both arms**.
+
+**COST, WG-189 interleaved, three pairs, same build one flag apart.**
+`forestair` p50 **6.20 / 6.40 / 6.40 ms** shipped against **6.60 / 6.30 /
+6.00 ms** on the control. The within-arm spreads (0.20 and 0.60) swamp the
+0.10 median difference, so there is no separable cost and none was expected:
+the change is one CPU-side constant read once at material build time.
+Triangles, calls and programs identical in every pair.
+
+### 2.29.5 THE JUDGEMENTS, against the SE bar, and one of them is PARTIAL
+
+`docs/screenshots/RN2495_forestair_before.png` and `_after.png`;
+`RN2495_crowns_before.png` and `_after.png` are the crown band at 3x.
+
+**The FIELD: MET.** The mid and far ground at `forestair` and `flyover` reads
+as a forested landscape with clearings rather than as a pale desaturated wash.
+The far treeline paint carries the change with the cards (`SurfaceBind`
+publishes the finalised canopy colour to `TerrainTreeline` in the same
+statement, 2.18.5, so one authority moves both and they cannot disagree), and
+`?treeline=0` measures the paint's share at +1.24 of the +1.93 at `box`.
+
+**The CROWNS: NOT MET, and it is the lane's routed finding rather than an
+opinion.** At 3x the crowns are dark blue-violet specks before and dark
+blue-violet specks after. The cause is measured and pictured:
+`CanopySelfShadow.updateCanopyCardShade` multiplies the finalised card colour --
+`FoliageTone`'s own output -- by a single **ACHROMATIC** scalar, read live at
+`cardShade` **0.1025** at the Forest site. A crown card is painted at a tenth of
+whatever colour is authored upstream before the air is added, so doubling its
+chroma at source moves the crown rectangle by 1.27 counts and can move it by no
+more. `RN2495_crowns_crownshadecard0.png` is the same crop with
+`?crownshadecard=0` and the crowns are unmistakably GREEN, with lit and shaded
+sides from the card's own normals. **That frame is the whole argument.**
+
+### 2.29.6 OWED, ROUTED, with the headroom already measured
+
+1. **THE CARD HALF OF RN-2275 IS THE AERIAL CANOPY'S COLOUR, and there is
+   headroom.** `?crownshadecard=0` on this build keeps the inversion at THREE
+   of the four pairs (`forestairnoon` -1.03, `forestairlow` -0.90,
+   `flyovernoon` -6.05) and breaks the fourth (`flyoverlow` **+1.38**), so the
+   card half cannot go to zero -- but it does not have to. **A partial
+   `crownshadecard` between 1 and 0, or a spectrally-selective attenuation at
+   the same luma, buys the crowns their colour with all four pairs intact.**
+   The physics argues for the second: leaf single-scattering albedo is ~0.27 in
+   the green against ~0.07 in red and blue, so a shaded canopy is a saturated
+   dark GREEN, never a neutral dark grey, and an achromatic Beer-Lambert
+   multiply is the wrong spectral model even where its luma is right. The file
+   is `render/materials/CanopySelfShadow.ts`, which no R4 lane owns; this lane
+   did not take it rather than expand scope silently. It also improves the warm
+   budget on every aerial pose (`forestairnoon` -1.56 -> -0.76, `flyovernoon`
+   +4.97 -> +5.82).
+2. **`forestair`'s remaining -5.59 is not a canopy problem** (2.29.2) and
+   belongs to the substrate/aerosol lever family, as L3's owed item 2 already
+   said. Any future brief that asks a canopy lane to close it is asking for
+   something arithmetically out of reach.
+3. **`PropSkyAmbient`'s two named terms are both at the noise floor on the
+   aerial canopy** (0.01 counts each) and should not be named as a suspect for
+   an aerial colour cast again without a new measurement. If the sky fill is
+   ever WANTED at a visible size, the finding to start from is that
+   `?propsky=20` moves `forestair` `box` by 0.11 counts, i.e. the term is
+   linear and simply small.
+4. **BLOOM WAS NOT TOUCHED.** `post/BloomGlsl.ts` and `PostDefaults.ts`'s bloom
+   rows are unmodified: the audit attached rank 8's night halo to this lane and
+   nothing in the daylight forest diagnosis reached the bloom stage. Rank 8 is
+   still owed by whoever takes it next, undisturbed.
+
+### 2.29.7 Rails
+
+`web/src/render/instancing/FoliageTone.ts` (the `canopy` row, one override, one
+`rowFor` indirection) and one `PAGE_PARAMS` entry in `web/tools/smoke/run.mjs`
+are the only source edits. Two new tools, `web/tools/smoke/rn2495arms.mjs` (the
+green-excess arm sweeper) and `web/tools/smoke/rn2495state.mjs` (reads the two
+probe surfaces this lane's files publish). **`BiomePalette.ts` was NOT touched:
+its only forest row is the GROUND substrate `0x4a4030` and there is no canopy
+row in it at all -- the far treeline's green is read off the canopy MATERIAL
+(2.18.5), which is what this lane moved.** No `Atmosphere*`, no `SkyProbe`, no
+`render/grass`, no `Terrain*`, no `ContactGlsl`/`ContactPass`, no `PostStack`,
+`CompositeGlsl` or `ToneDrive`, no `web/wasm/dist/*`, no `test/expected.json`,
+no `assets/textures/dist` byte. New page param `canopysat`, registered in
+`run.mjs`'s `PAGE_PARAMS` in the same commit that introduces it (RN-152's scar).

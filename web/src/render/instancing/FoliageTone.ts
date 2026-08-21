@@ -51,6 +51,69 @@ import type { Family } from './Surfaces.js';
  * deliberately absent here and lives in the instance tint, because "some of this
  * plant is dead" is a per-plant fact and not a family-wide one.
  */
+/**
+ * RN-2495 MOVES `canopy`'s SATURATION OFF `leaf`'s DIGIT, AND IT ADDS NO AXIS.
+ *
+ * A CROWN IS NOT A LEAF, and that is the whole argument. `sat = 0.62` was
+ * authored against ONE measurement, named in the header above: a near leaf card
+ * at a standing eye on a forest floor, where a green primary reads as plastic.
+ * RN-2245 then copied it to `canopy` TO THE DIGIT. But the `canopy` family is
+ * worn by exactly one object, the `_LOD3` crown impostor, and that object is a
+ * WHOLE TREE CROWN drawn only beyond `CANOPY_NEAR_M` -- an assembly of leaves,
+ * never a leaf, and never seen closer than 550 m.
+ *
+ * Canopy radiative transfer says the two are not the same colour. A photon
+ * leaving the top of a closed stand has interacted with foliage more than once,
+ * and each interaction multiplies the leaf's spectral selectivity, so a canopy
+ * is strictly MORE saturated than the leaves it is made of. The standard
+ * two-stream result for a dense canopy, with `w` the leaf single-scattering
+ * albedo (reflectance plus transmittance),
+ *
+ *     rInf(w) = (1 - sqrt(1 - w)) / (1 + sqrt(1 - w))
+ *
+ * on broadleaf optics (`w` about 0.27 green, 0.08 red, 0.06 blue) gives, in
+ * LINEAR reflectance:
+ *
+ *     one leaf     R/G 0.417   B/G 0.333
+ *     dense crown  R/G 0.265   B/G 0.197
+ *     THIS ROW, at sat 0.62:
+ *                  R/G 0.580   B/G 0.467
+ *
+ * **The shipped crown card is less saturated than a single LEAF, let alone a
+ * crown -- it sits outside the bracket on the unsaturated side.** `sat = 1.08`
+ * is solved to put its linear R/G on the bracket's geometric midpoint, 0.3324.
+ * The midpoint and not the crown end, because `rInf` is a semi-infinite limit
+ * and our stands are not closed everywhere, and because the card is also seen
+ * against sky at the stand edge where the single-leaf end is nearer the truth.
+ *
+ * THE MOVE IS EXACTLY LUMA-PRESERVING, which is the safety argument. The
+ * saturation term is `l + (c - l) * sat` on all three channels with `l` the
+ * Rec.709 luma, and the three weights sum to one, so the transformed luma is
+ * `l` for every `sat`. Measured on the shipped build across a five-point sweep
+ * of this constant: `forestair` `box` luma reads 93.38 / 93.38 / 93.39 / 93.40 /
+ * 93.41 -- 0.03 counts of spread over a chroma change of 49 per cent.
+ * **RN-2275's pass condition (a wood must read DARKER than its own clearing at
+ * all four pose/sun pairs, rendering.md 2.19.4) is a LUMA condition and is
+ * therefore protected by algebra, not by a sweep.** It is still measured, since
+ * an 8-bit frame through a tonemap is not the linear space the algebra runs in,
+ * but the measurement is a confirmation rather than the argument.
+ *
+ * NO HUE AXIS, AND THE REFUSAL IS THE SAME MODEL SPEAKING. A third term that
+ * pulled BLUE down was drafted, measured (it is worth 0.6 counts of whole-frame
+ * warm at `forestair`) and REJECTED: the same two-stream numbers put a crown's
+ * blue at 0.74 of its red, and this row at `sat = 1.08` is already at 0.46,
+ * i.e. the saturation move OVERSHOOTS blue downward rather than leaving a
+ * deficit. Shipping a blue cut on top of that would be a constant the model
+ * contradicts, which is exactly the "constant nobody dares move" this file's
+ * header exists to prevent. **That refusal is also the lane's finding: the
+ * frame's blue-grey is not the card's hue.** See the `canopy` row for where it
+ * actually is.
+ *
+ * WHY ONLY `canopy`. `leaf` and `grass` are the near layers and World Audit R4
+ * judged both a pass at `forestfloor` and `basedusk`; `leaf`'s 0.62 is the
+ * number its own measurement asked for and it stays. `canopy` is the only
+ * family that is never seen at a standing eye at all.
+ */
 interface FoliageTone { sat: number; val: number }
 export const FOLIAGE_TONE: Readonly<Partial<Record<Family, FoliageTone>>> = {
   // The canopy and every leaf card. The deepest cut of the two: a leaf mass seen
@@ -67,7 +130,45 @@ export const FOLIAGE_TONE: Readonly<Partial<Record<Family, FoliageTone>>> = {
   // have been worse than a wrong number and silent with it: the card would
   // render at the uncorrected palette saturation while every leaf beside it is
   // pulled to 0.62/0.86.
-  canopy: { sat: 0.62, val: 0.86 },
+  //
+  // RN-2495. THE RN-2245 ARGUMENT ABOVE IS NOT OVERRULED, IT IS BOUNDED, and
+  // the other side of the trade is now measured rather than hypothetical. At
+  // `forestair`, box GREEN EXCESS (meanG - (meanR + meanB) / 2, in counts), one
+  // page param apart on the PRE-LANE build, fresh process each:
+  //
+  //     shipped, pre-lane                   3.92
+  //     ?foliagetone=0  (this row off)      6.27   the desaturation costs 2.35
+  //     ?propsky=0                          3.91   the sky fill costs 0.01
+  //     ?crownshadecard=0                   6.59   the CARD shade costs 2.67
+  //     ?crownshadefar=0                   12.85   the FAR PAINT shade costs 8.93
+  //     ?canopy=0       (the clearing)      4.80
+  //
+  // The last row is the whole complaint in one number: **with every term in,
+  // the wood carries LESS green excess than its own treeless clearing** -- a
+  // closed stand of leaves reads less green than the duff under it. This row
+  // moves that to 5.84, i.e. +1.04 over the clearing, a sign flip.
+  //
+  // The step RN-2245 refused is a step BETWEEN TWO DIFFERENT OBJECTS -- a
+  // harvest tree's `_LOD3` leaf card and a canopy crown impostor, two textures
+  // and two silhouettes -- at a radius no aerial pose can contain: at 1,200 m
+  // with a 14 degree pitch the NEAREST ground in frame is 1,243 m, so the ring
+  // is off the bottom of every pose this lane is judged on, and every ground
+  // pose measured as a control (`forestfloor`, `meadow`, `basedusk`, `vista`,
+  // `mtnslope`) reads bit-identical either side of this change.
+  //
+  // `val` IS UNCHANGED AT 0.86 TO THE DIGIT, deliberately: value is the axis
+  // RN-2275's inversion is measured on, so the one axis this lane does not
+  // touch is the one that could break it.
+  //
+  // WHAT THIS ROW CANNOT REACH, stated here because the next mover will
+  // otherwise try this constant again. `CanopySelfShadow.updateCanopyCardShade`
+  // multiplies the finalised card colour -- THIS row's output -- by a single
+  // ACHROMATIC scalar, measured live at `cardShade` 0.1025 at the Forest site.
+  // A crown card is therefore painted at a tenth of whatever colour is authored
+  // here before the air is added, so doubling its chroma at source moves the
+  // crown mass by 1.5 counts and no more. `?crownshadecard=0` is the proof and
+  // it is a picture as well as a number.
+  canopy: { sat: 1.08, val: 0.86 },
   // Ground cover. Less cut, because a meadow legitimately keeps more chroma than
   // a canopy and because `tintFor`'s dry drift is already acting on this layer.
   grass: { sat: 0.70, val: 0.94 },
@@ -92,10 +193,45 @@ const state = {
   })(),
 };
 
-export function foliageToneState(): { amp: number; families: Record<string, FoliageTone> } {
+/**
+ * RN-2495. THE CANOPY SATURATION GETS ITS OWN OVERRIDE, so the lane's negative
+ * control is `?canopysat=0.62` -- the pre-lane build EXACTLY, on the same build
+ * and the same program, with one CPU-side constant between the arms. It is a
+ * SWEEP and not a switch, because the constant is a solved position on a
+ * bracket and the next reader should be able to walk it.
+ *
+ * A `canopychloro` axis existed in this lane's own history and is not here; see
+ * the `canopy` row above for the model that refused it.
+ *
+ * RN-150-safe in the same spelling `amp` uses: a MISSING parameter is missing,
+ * never `Number(null) === 0`.
+ */
+const CANOPY_SAT = ((): number | null => {
+  const v = new URLSearchParams(self.location.search).get('canopysat');
+  const f = v === null ? NaN : Number(v);
+  return Number.isFinite(f) ? Math.max(0, Math.min(2, f)) : null;
+})();
+
+/**
+ * The row actually applied, after the override. One function so the probe
+ * surface and the transform cannot disagree about what shipped, which is the
+ * failure `foliageToneState` exists to prevent in the first place.
+ */
+function rowFor(family: Family): FoliageTone | undefined {
+  const t = FOLIAGE_TONE[family];
+  if (t === undefined) return undefined;
+  if (family !== 'canopy' || CANOPY_SAT === null) return t;
+  return { sat: CANOPY_SAT, val: t.val };
+}
+
+export function foliageToneState(): {
+  amp: number; families: Record<string, FoliageTone>; canopySatFlag: boolean;
+} {
   const families: Record<string, FoliageTone> = {};
-  for (const [k, v] of Object.entries(FOLIAGE_TONE)) families[k] = { ...v };
-  return { amp: state.amp, families };
+  for (const k of Object.keys(FOLIAGE_TONE)) {
+    families[k] = { ...(rowFor(k as Family) as FoliageTone) };
+  }
+  return { amp: state.amp, families, canopySatFlag: CANOPY_SAT !== null };
 }
 
 /**
@@ -115,7 +251,7 @@ export function setFoliageTone(amp: number): number {
  *  `baseColor`. Returns false when the family has no tone, so the report can
  *  state which materials were touched rather than implying all of them. */
 export function applyFoliageTone(c: THREE.Color, family: Family): boolean {
-  const t = FOLIAGE_TONE[family];
+  const t = rowFor(family);
   if (t === undefined) return false;
   const a = state.amp;
   const sat = 1 + (t.sat - 1) * a;
