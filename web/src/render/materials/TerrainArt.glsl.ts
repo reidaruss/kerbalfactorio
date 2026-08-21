@@ -41,10 +41,27 @@
 // so one ULP is 2^(19-23) = 0.0625 m. A 4.2 m octave therefore quantises to
 // about 1.5% of its own wavelength, which is invisible; a 0.5 m octave would
 // quantise to 12.5% and would render as visible stair-stepping. SUB-METRE
-// DETAIL IS NOT REACHABLE FROM pM AND IS NOT ATTEMPTED HERE. Reaching it needs
-// a per-chunk phase attribute reduced mod the octave period on the CPU in
-// float64, where it is exact, which is a terrain-chunk format change and
-// therefore world-gen's to make. That is flagged up rather than faked.
+// DETAIL IS NOT REACHABLE FROM pM AND IS NOT ATTEMPTED BY THE TERMS BELOW.
+//
+// THE OWED ITEM THIS HEADER CARRIED FOR A FORTNIGHT IS PAID. It read "reaching
+// it needs a per-chunk phase attribute reduced mod the octave period on the CPU
+// in float64 ... that is flagged up rather than faked", and world-gen shipped
+// exactly that at WG-230: `aPhase` is `frac(anchor / 256)` reduced in float64
+// and stamped per chunk, the vertex adds its own chunk-local `position / 256`,
+// and the varying `vPhase` reaches this shader with a quantum of 30.5 um on any
+// chunk under 256 m of half-extent, against pM's 31.25 mm here. RN-2340's
+// far-ground rungs (TerrainHorizon.glsl.ts) are its first consumer.
+//
+// THE FLAG DOES NOT COME DOWN FOR THE TERMS IN THIS FILE, and that is worth
+// stating so nobody reads the paragraph above as permission. Every octave here
+// is still keyed on `pM`, and moving one to `vPhase` would be a change to a
+// shipped, calibrated term wearing an upgrade's clothes. What WG-230 unlocked is
+// NEW world-locked terms at range, which is what was built on it. The one rule
+// any consumer of `vPhase` must keep is `assertPhasePeriod()` at module load:
+// the coordinate is periodic with period 1, so only INTEGER multiples of it
+// agree across a chunk edge, and a non-dividing tile draws a line along every
+// chunk boundary in the frame -- at range, where the boundaries are far apart
+// and the cause is least obvious.
 //
 // ---------------------------------------------------------------------------
 // TWO INDEPENDENT CONFINEMENTS, ON PURPOSE
@@ -96,6 +113,16 @@ import { TERRAIN_SPLAT, TERRAIN_SPLAT_PARS } from './TerrainSplat.glsl.js';
 // already in scope where it is called, so it needs no defines of its own
 // beyond the three baked rotation constants.
 import { TERRAIN_COVER_FAR, TERRAIN_COVER_FAR_PARS } from './TerrainCoverFar.glsl.js';
+// RN-2340. The ELEVENTH term, the FAR GROUND: the world-locked mid and horizon
+// rungs of the splat plus the sub-massif curvature term, on the same leaf
+// discipline. It is the first term in this material that rides `vPhase` rather
+// than `pM` or `vChunkUv`, and TerrainHorizon.ts states why neither of those
+// could reach past the near field.
+import { TERRAIN_HORIZON_PARS } from './TerrainHorizon.glsl.js';
+// RN-2340. The MASSIF half of the same term, split at the line cap and kept a
+// separate leaf because it is the one surface-art term compiled into BOTH
+// programs: an analytic pM field, where the rungs are vPhase texture reads.
+import { TERRAIN_MASSIF_PARS } from './TerrainMassif.glsl.js';
 
 /**
  * RN-1855. The two PRE-FIX values, kept as named exports rather than typed into
@@ -138,6 +165,10 @@ export { TERRAIN_ART_TEX, TERRAIN_ART_SPEC, TEX_SCALE_GAIN, ROUGH_GRAIN,
 export { TERRAIN_SPLAT, TERRAIN_SPLAT_PARS } from './TerrainSplat.glsl.js';
 // RN-2195. Re-exported for the identical reason.
 export { TERRAIN_COVER_FAR, TERRAIN_COVER_FAR_PARS } from './TerrainCoverFar.glsl.js';
+// RN-2340. Re-exported for the identical reason.
+export { TERRAIN_HORIZON_PARS, TERRAIN_HORIZON_BLOCK } from './TerrainHorizon.glsl.js';
+export { TERRAIN_MASSIF_PARS, TERRAIN_HORIZON_MASSIF, TERRAIN_HORIZON_BUMP }
+  from './TerrainMassif.glsl.js';
 
 // RN-1855. OF_ART_FINE_M and OF_RELIEF_FINE_M are GONE rather than left behind,
 // on RN-1005's rule exactly: they are uniforms now (uArtFineM, uReliefFineM),
@@ -190,4 +221,17 @@ export const TERRAIN_ART_PARS = `#define OF_ART_OCT_FINE ${ART_OCT_FINE.toFixed(
   // GENERATED from TerrainCoverFar.ts exactly as the splat's are, so they sit
   // beside their consumer rather than in the define block above.
   + TERRAIN_COVER_FAR_PARS
-  + TERRAIN_COVER_FAR;
+  + TERRAIN_COVER_FAR
+  // RN-2340. LAST, and the order is load-bearing twice over: `ofHzWarp` calls
+  // `ofArtVnoise2P`, which TERRAIN_ART_FINE declares, and the far-ground BLOCK
+  // spliced into TerrainFragAlbedo calls `ofSplatW`, `ofSplatHue` and the
+  // OF_SPLAT_RB_* defines, all of which arrive with TERRAIN_SPLAT above. GLSL ES
+  // 1.0 requires a function to be declared before use.
+  //
+  // Its defines sit HERE beside their consumer for TERRAIN_SPLAT_PARS's stated
+  // reason: the whole set is GENERATED from TerrainHorizon.ts (the three repeat
+  // counts are literally what `assertPhasePeriod` returned), and keeping a
+  // generator's output beside the code it feeds is what stops a reader
+  // believing those literals were typed.
+  + TERRAIN_HORIZON_PARS
+  + TERRAIN_MASSIF_PARS;

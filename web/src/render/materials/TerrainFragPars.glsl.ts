@@ -161,6 +161,42 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // stay khaki, or fail to meet the carpet at all) and has to be isolable
     // on its own flag (?splatfar=0).
     uniform float uSplatFarAmp;
+    // RN-2340. THE FAR GROUND: (value, chroma, normal-and-roughness, curvature).
+    // FOUR and not one, on uSplatAmp's precedent and for its measured reason:
+    // they fail differently, so a single switch could only ever answer "is the
+    // far ground on". ?horizon=0 kills all four and is the before half of
+    // every pair this lane is judged by; ?horizonval=, ?horizonchroma=,
+    // ?horizonnrm= and ?horizonao= sweep them one at a time.
+    uniform vec4 uHorizonAmp;
+    // RN-2340. The range-aware biome-boundary break's own amplitude, separate
+    // from the four above for uSplatFarAmp's reason exactly: it fails in a way
+    // none of them can (it can dissolve a coastline that is supposed to be
+    // sharp) and has to be isolable on its own flag, ?horizoneco=0. It is a
+    // multiplier on HORIZON_ECO_PX, so 1 is the authored 2.5-pixel band.
+    uniform float uHorizonEco;
+    // RN-2340. THE MASSIF TERM: x the albedo value amplitude, y the bump
+    // amplitude. Two and not one for uFineAmp's reason exactly: too much value
+    // is a blotchy mountain and too much bump is a corrugated one, and a single
+    // switch could only ever answer "is it on". ?horizonmassif=0 removes both
+    // and is the before half of every massif pair.
+    uniform vec2 uMassifAmp;
+    // RN-2340. The massif's two octave WAVELENGTHS IN METRES. Uniforms and not
+    // defines for RN-843's measured reason: which band the distance is missing
+    // is settled by matched frames one uniform apart inside one page, one
+    // camera and one streamed chunk set, and a define can only be swept one
+    // BUILD per rung, which is not a pair. The two footprint fades in the bump
+    // chunk read this SAME vector, so an octave and the fade that protects it
+    // cannot become two numbers that agreed once (RN-1855's whole scar).
+    // ?horizonmassifm=1240,390 sweeps them.
+    uniform vec2 uMassifM;
+    // RN-2340. The massif's DISTANCE fade-out, (start, end) in metres. A
+    // uniform and not a define for RN-843's reason and one of this lane's own:
+    // it is a HANDOVER guard against the near/far scene split, the range of
+    // that split is a property of the depth policy and the streamer rather than
+    // of this material, and the only honest way to find where a distant ridge
+    // actually sits is to sweep the fade and watch which ridge stops moving.
+    // ?horizonmassiffade=a,b sweeps it.
+    uniform vec2 uMassifFade;
     // Six layers, six samplers, and the packing is what makes that affordable:
     // R albedo value, G/B tangent normal xy, A roughness detail, every channel
     // centred on 0.5. Six layers x albedo/normal/ORM would be eighteen units

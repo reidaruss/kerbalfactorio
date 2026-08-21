@@ -37,6 +37,11 @@ import { terrainFragSetup } from './TerrainFragSetup.glsl.js';
 import { TERRAIN_FRAG_ALBEDO } from './TerrainFragAlbedo.glsl.js';
 import { TERRAIN_FRAG_BUMP } from './TerrainFragBump.glsl.js';
 import { TERRAIN_FRAG_LIGHT } from './TerrainFragLight.glsl.js';
+// RN-2340. A SIXTH chunk, and the first one that is not inside the near
+// material's `#ifndef OF_SCALED`: the massif term's normal half reaches the
+// SCALED shell, which is where the ridges past the chunk-depth cutoff are
+// actually drawn. See TerrainHorizon.glsl.ts.
+import { TERRAIN_HORIZON_BUMP } from './TerrainMassif.glsl.js';
 
 // The VERTEX shader and BAYER moved to TerrainVertex.glsl.ts and
 // TerrainDither.glsl.ts at RN-148 (line-cap room; GLSL unchanged to the
@@ -58,6 +63,7 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     + terrainFragSetup(depth)
     + TERRAIN_FRAG_ALBEDO
     + TERRAIN_FRAG_BUMP
+    + TERRAIN_HORIZON_BUMP
     + TERRAIN_FRAG_LIGHT
     + MAIN_CLOSE;
 }

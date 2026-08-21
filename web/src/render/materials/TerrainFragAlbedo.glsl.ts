@@ -14,6 +14,11 @@
 // preprocessor region.
 
 import { TERRAIN_TREELINE_BLOCK } from './TerrainTreeline.glsl.js';
+// RN-2340. The far ground's two world-locked rungs and the range-aware
+// biome-boundary break, on TERRAIN_TREELINE_BLOCK's precedent: the shader half
+// of a term lives beside the term's other half, and this file splices it.
+import { TERRAIN_HORIZON_BLOCK } from './TerrainHorizon.glsl.js';
+import { TERRAIN_HORIZON_MASSIF } from './TerrainMassif.glsl.js';
 
 export const TERRAIN_FRAG_ALBEDO = /* glsl */`
       // GROUND TEXTURE (RN-78): RN-77's tiling fields on the chunk UV at
@@ -332,6 +337,7 @@ export const TERRAIN_FRAG_ALBEDO = /* glsl */`
         vec4 rel = relWa * relA + relWb * relB;
       #endif
 
+${TERRAIN_HORIZON_BLOCK}
 ${TERRAIN_TREELINE_BLOCK}
       // /core's maxRelief is a nominal 6,000 m on Forge but baseHeight peaks
       // above it (6,520 m measured), so the snowline is expressed past 1.0
@@ -390,7 +396,7 @@ ${TERRAIN_TREELINE_BLOCK}
           splatRough = ofSplatRough(tG, tD, tR, tC, tS, tW, splatWA, splatWB);
         }
       #endif
-
+${TERRAIN_HORIZON_MASSIF}
       // WET GROUND (RN-57), after snow and the relief ramp because it is a film
       // ON the finished ground rather than another kind of ground. Compiled out
       // of the scaled scene, where the whole 22 m pond is under one pixel; that

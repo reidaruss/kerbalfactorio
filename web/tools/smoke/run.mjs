@@ -256,6 +256,25 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // the exact pre-lane ground. Registered in the commit that introduces it
   // (RN-152's scar).
   'phaseamp', 'phaserep',
+  // RN-2340. THE FAR GROUND, WG-230's first consumer: the world-locked mid
+  // (32 m) and horizon (128 m) rungs of the splat, the sub-massif curvature
+  // term and the range-aware biome-boundary break. `horizon=0` is the exact
+  // pre-RN-2340 ground and is the negative control every proof in this lane is
+  // taken against; the four per-term flags exist because the four fail
+  // differently (noise, restyle, corrugated iron, outlined ridges) and one
+  // switch could not tell them apart. `horizoneco=0` isolates the boundary
+  // break, which fails in a fifth way none of them can (dissolving a coastline
+  // that is meant to be sharp). Registered in the same commit that introduces
+  // them, per this list's own rule and RN-152's scar.
+  'horizon', 'horizonval', 'horizonchroma', 'horizonnrm', 'horizonao',
+  'horizoneco', 'horizonecoamp',
+  // RN-2340, the MASSIF term: two kilometre-scale octaves on pM that carry the
+  // band past where a 256 m-period texture rung can reach. NOT nested under
+  // `horizon=0`, deliberately: it is a different mechanism on a different
+  // coordinate answering a different range band, and the four-arm measurement
+  // that forced it into existence was taken by isolating the other one.
+  'horizonmassif', 'horizonmassifval', 'horizonmassifbump', 'horizonmassifm',
+  'horizonmassiffade',
   'crownshadefar', 'crownshadecard',
   // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
   // night exactly); `starlightamp=` sweeps it.

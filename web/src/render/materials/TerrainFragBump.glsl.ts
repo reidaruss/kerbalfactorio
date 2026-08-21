@@ -236,4 +236,31 @@ export const TERRAIN_FRAG_BUMP = /* glsl */`
           n = ofSplatFrame(n, vWorld, vChunkUv, splatNxy,
                            uSplatAmp.z * splatFadeN);
         }
+        // RN-2340. THE FAR GROUND'S NORMAL HALF, and it is the one normal term
+        // here that needs neither a height gradient nor a tangent frame.
+        //
+        // WHY IT NEEDS NEITHER. The three bumps above differentiate a HEIGHT in
+        // screen space; the splat orients an authored TANGENT-SPACE normal
+        // through Mikkelsen's cotangent frame. This term's perturbation is
+        // already in WORLD space when it arrives: the three-plane blend swizzles
+        // each plane's tangent xy straight into the two world axes that plane
+        // spans (ofHzRung), so the frame is the projection itself and there is
+        // nothing left to derive. That is also why it is the only normal term in
+        // this material that is correct at range -- it takes no screen
+        // derivative of anything, so nothing it reads can be quantised flat.
+        //
+        // ORDER: LAST, after the splat, for the splat's own stated reason.
+        // Surface-gradient perturbation is not commutative and the physically
+        // meaningful reading is the coarse shape UNDER the near material rather
+        // than over it; at any one fragment at most one of the two has weight
+        // anyway, because uSplatFade.zw is done by 60 m and hzT does not start
+        // until a 0.60 m footprint.
+        //
+        // The branch is not a bare uniform and that is legal HERE for the
+        // treeline block's reason: nothing inside samples a texture and nothing
+        // inside takes a derivative. hzNrm and hzT were both computed in the
+        // albedo chunk inside a bare-uniform branch.
+        if (uHorizonAmp.z > 0.0 && hzT > 0.0) {
+          n = normalize(n + hzNrm * (uHorizonAmp.z * hzT));
+        }
       #endif`;
