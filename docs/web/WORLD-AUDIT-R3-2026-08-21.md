@@ -519,22 +519,27 @@ deliverable is a painted intermediate, not a thirteenth flag.**
 | `?lamp=0` | `meadownight` | frame 2.63 -> **2.03**, `nearG` 5.68 -> 2.35. The night's true floor with no player light in it. |
 | `?canopyshade=1` | `forestfloor` | section 4.4. |
 
-### 4.4 Rank 17's owed frame pair, taken, with an answer
+### 4.4 Rank 17's owed frame pair, taken, with the verifier's dissent and a ruling
 
 `RN2365_forestfloor.png` against `RN2365_forestfloor_canopyshade1.png`. **The arm
 is armed and says so**: `scatter.canopyShade` reads `false` and `true` across the
 pair, which is the arming proof this catalogue demands. Triangles 1,286,315 ->
-**1,240,925** (-45,390), `box` 29.63 -> 30.07, whole frame 43.19 -> 42.25.
+**1,240,925** (-45,390), `box` 29.63 -> 30.07, whole frame 43.19 -> 42.25. **The
+cost figure is endorsed and stands: -45,390 triangles for the same pair.**
 
-**By eye, on this build, the thinned arm is BETTER**, and that reverses
-rendering.md 2.14.7b's own judgement. It opens patches of bare dark ground under
-a closed canopy, which is what a real closed-canopy floor looks like, and it
-removes some of the pale-litter clutter 3.11 complains about. 2.14.7b judged it
-worse and 2.14.7b was measuring a different build: since then the carpet landed
-(RN-2145), the Forest hex was lifted 26 per cent (L3) and the litter changed
-(L5). This is not a defect in that judgement; it is a judgement whose subject
-moved. **Admin's ruling now has its frame pair and a recommendation: turn it on,
-and take 45,390 triangles back.**
+This audit's own first read called the thinned arm BETTER by eye, which would
+reverse rendering.md 2.14.7b's judgement. **The verifier reproduced the
+measurement and dissents from that eye reasoning**: the thinning is spatially
+uniform rather than keyed to any crown actually in frame at this pose (there is
+no crown to attribute it to), and this section's own litter claim contradicts
+3.11, which reports the litter TINT unchanged and the pale-litter clutter still
+present at this same pose. **Admin's ruling: the default STAYS OFF on the look
+criterion.** 2.14.7b's own reasoning is still superseded, since its subject did
+move (the carpet landed at RN-2145, the Forest hex was lifted 26 per cent by
+L3, and the litter changed by L5), but a superseded old judgement is not itself
+grounds to flip to ON; the look question is undecided in ON's favour pending a
+pose where a crown is actually in frame. The triangle saving is real and
+recorded, and is not itself grounds to switch the default.
 
 ---
 
@@ -581,11 +586,22 @@ R2's ruling on the same item and it still holds.
 
 ## 6. THE QUEUE: THE TOP FIVE LANES
 
-Ordered so each one's measurement is available to the next. **File seams are
+Ordered by rank for reference, but **dispatch order departs from the rank
+numbering once: M3 runs before M2**, adopted from the verifier's swap, because
+M3 is fully diagnosed with a measured done-when while M2's first deliverable is
+still a diagnosis, a search, not a fix. Elsewhere each one's measurement stays
+available to the next once M3 and M2 are read in that order. **File seams are
 stated as intra-file partitions, not as a claim of no collision**, which is R2's
 own correction: where two lanes must touch one file, the boundary inside the
 file is named and one owner is named per side (NUMBERS.md's standing rule that a
 shared wiring file is a predictable collision point).
+
+*Corrections below were ordered by the verifier before dispatch, after it
+reproduced every measurement in this document: five wrong file paths, the
+Atmosphere*/SkyProbe.ts overlap and its serialisation, the unclaimed
+TerrainFragLight cascade half, the BiomePalette hard fence, two acceptance
+wordings, the M3-before-M2 order swap, and the CANOPY_SHADE ruling in 4.4. They
+are folded directly into this section rather than kept as a separate erratum.*
 
 ### M1. THE DISTANCE GOES BLUE (rank 1): **sonnet**
 Make aerial perspective shift a distant surface TOWARD the sky in front of it
@@ -596,18 +612,26 @@ warmth that correctly reddens a short high-sun path also paints a 4.7 km ridge
 and a dawn anti-solar sky cream. **The shape of the fix is a tint that varies
 with OPTICAL DEPTH** (Mie-warm at short path, Rayleigh-blue as the path grows),
 which is physically the right law and is why one term can serve both ends.
-**Owns:** `web/src/render/materials/Atmosphere.glsl.ts` and `Atmosphere.ts`
-(the whole file, including `aerosolTint`), and
+**Owns:** `web/src/render/materials/Atmosphere.glsl.ts`,
+`AtmosphereAero.glsl.ts` and `SkyAtmosphere.ts`'s DAYLIGHT aerosol terms (the
+five file paths this brief once carried, corrected: there is no `Atmosphere.ts`,
+these three are the real files), plus `SkyProbe.ts`'s `aerosolTint` read (the
+same tint also lives there, which M5's night branch shares no partition with
+until this correction: M1 owns the daylight terms in all four files, M5 owns
+the night branch, serialised after M1 as well as after M3, see M5), and
 `web/src/render/materials/BiomePalette.ts`'s hue rows.
 **Must not touch:** `Terrain*` geometry, the splat weights or
-`TerrainHorizon*` (M2's), `render/grass/*` (M4's), `render/post/*`.
+`TerrainHorizon*` (M2's), `render/grass/*` (M4's), `render/post/*`, or the
+`Atmosphere*`/`SkyProbe.ts` night branch (M5's).
 **Done when:** `vista.hzBand` warm falls below `skyHz` warm at both `vista` and
 `vistanoon` (today +48.36 against -12.14), `dawnsun.skyUp` returns below zero
 (today +7.19) and `vistadawn.skyR` falls (today +25.58), **and** whole-frame
-`warm` stays at or above zero at `flyovernoon` (+6.62), `flyover` (-0.18) and
-`forestairnoon` (-0.96), with no ground pose crossing sign. Sonnet: the cause is
-stated, the frames and the pass table already exist, and L3's own sweeper
-(`web/tools/smoke/rn2320sweep.mjs`) is the instrument.
+`warm` does not regress below its landed value at `flyovernoon` (+6.62),
+`flyover` (-0.18) and `forestairnoon` (-0.96), and the two negatives close
+toward zero with targets stated, with no ground pose crossing sign in the wrong
+direction. Sonnet: the cause is stated, the frames and the pass table already
+exist, and L3's own sweeper (`web/tools/smoke/rn2320sweep.mjs`) is the
+instrument.
 
 ### M2. THE AERIAL LATTICE (rank 2): **opus**
 Find what paints a world-locked 12 px repeat on the aerial ground and remove it.
@@ -615,10 +639,15 @@ Find what paints a world-locked 12 px repeat on the aerial ground and remove it.
 intermediate, not a thirteenth one-flag control**: seven are already null and
 NUMBERS.md's RN-2305 entry says exactly why adding an eighth cannot help.
 **Owns:** `web/src/render/materials/Terrain*` **excluding** `TerrainCoverFar*`
-(M4's) and the cascade half of `TerrainFragLight.glsl.ts`, plus
-`web/src/world/ChunkBatch`'s attribute upload.
-**Must not touch:** `Atmosphere*` or `BiomePalette` (M1's), `render/grass/*`
-(M4's), `ShadowRig`/`ContactPass`.
+(M4's) and the cascade half of `TerrainFragLight.glsl.ts` (assigned to M3, not
+M2, see M3), plus `web/src/render/geometry/ChunkBatch.ts`'s attribute upload
+(corrected path: not `web/src/world/ChunkBatch`).
+**Must not touch:** `Atmosphere*` (M1's). `BiomePalette` is fenced but not
+hard: the lattice's ancestor was convicted in biome palettes, so if this
+diagnosis lands there, flag it to Admin for a coordination with M1 rather than
+silently editing it or silently stopping at the fence. Also `render/grass/*`
+(M4's), `ShadowRig`/`ContactPass`. Runs after M3 (see the dispatch-order note
+above).
 **Done when:** the patch at `forestair` (900, 620) under `?canopy=0` has no
 autocorrelation local maximum above 0.25 after its own first minimum (today
 0.622 at lag 10) with the patch std held at or above 5.0, i.e. the repeat goes
@@ -631,9 +660,14 @@ returned seven nulls.
 A hot surface must light what is near it. The measured state is that it lights
 nothing: `plate` 2.72 at 0.3 m from coals at `strip` 26.54, and a running
 furnace darkens its own frame below an empty field. **Owns:**
-`web/src/render/instancing/MachineBatch`'s emissive path,
-`web/src/render/materials/PropSkyAmbient.ts`, `web/src/render/Headlamp.ts` and
-`web/src/render/post/*`'s bloom stage.
+`web/src/game/MachineBatch.ts`'s emissive path (corrected path: not
+`web/src/render/instancing/MachineBatch`),
+`web/src/render/materials/PropSkyAmbient.ts`, `web/src/render/Headlamp.ts`,
+`web/src/render/post/*`'s bloom stage, and the cascade half of
+`web/src/render/materials/TerrainFragLight.glsl.ts` (rank 14's dapple/crushed
+shadow sides; M2's brief excludes it and this brief's own title already implies
+it, so it is claimed here explicitly). Runs before M2 (see the dispatch-order
+note above).
 **Must not touch:** terrain materials (M2's), `Atmosphere*`/palettes (M1's),
 grass (M4's).
 **Done when:** at `smelternight` under `?lamp=0`, `plate`, `sunface` and `band`
@@ -671,19 +705,25 @@ Give the night an ambient ladder, a horizon gradient, airglow, a star field with
 magnitude and colour, and a headlamp with a falloff instead of an edge. Runs
 after M3 because M3 changes what else is in a night frame and M5 must not be
 tuned against a world where the only light is the lamp. **Owns:**
-`web/src/render/materials/SkyStars.ts` and the sky's night branch,
-`web/src/render/TerrainAmbient.ts`'s night rungs, and `Headlamp.ts`'s cone
+`web/src/render/materials/StarfieldMaterial.ts` (corrected: not `SkyStars.ts`,
+which does not exist) and the `Atmosphere*`/`SkyAtmosphere.ts` sky's night
+branch, `web/src/render/materials/TerrainAmbient.ts`'s night rungs (corrected
+path: not `web/src/render/TerrainAmbient.ts`), and `Headlamp.ts`'s cone
 shaping. **`Headlamp.ts` is shared with M3, partitioned inside the file: M3
 owns the emissive/lighting registration, M5 owns the cone and falloff
-constants**, and M5 runs after M3 so the two are serialised as well as
-partitioned.
+constants.** **`Atmosphere*`/`SkyAtmosphere.ts` is shared with M1 the same way:
+M1 owns the daylight aerosol terms, M5 owns the night branch.** M5 runs after
+M3 AND after M1, so M5 is serialised behind both as well as partitioned with
+both.
 **Must not touch:** `Atmosphere*`'s daylight terms (M1's), terrain materials
 (M2's).
 **Done when:** `meadownight.skyHi` iqr leaves exactly 0.00 and the sky carries a
 measurable horizon gradient, `meadownight` under `?lamp=0` clears a stated floor
 above today's 2.03 by starlight alone, the lamp's edge is gone by eye, and every
-DAYLIT committed rectangle in this file is bit-identical. Sonnet: the cause is
-stated and every done-when is a named rectangle.
+DAYLIT committed rectangle in this file is bit-identical AGAINST A POST-M3
+BASELINE, not against today's frame, since M3 may legitimately move daylit
+machine rectangles. Sonnet: the cause is stated and every done-when is a named
+rectangle.
 
 **Sixth and behind them, in order:** the far material's layer set and occlusion
 (rank 6); water (rank 7); the canopy confetti residual (rank 8, and it should be
@@ -691,8 +731,10 @@ re-judged AFTER M1 because M1 moves the air the crowns are hazed through);
 mountain mint and snow (ranks 9 and 10); clouds round 2 (rank 11); the litter
 tint and the broadleaf trunk (rank 12); the sun disc (rank 13). **And three that
 are Admin's and not a lane's:** the station's exterior and its unlit interior
-(rank 15); the `CANOPY_SHADE` ruling (rank 20), which now has its frame pair and
-a recommendation; and foliage aliasing in motion (rank 22), which has been
+(rank 15); the `CANOPY_SHADE` ruling (rank 20), which now has its frame pair,
+the verifier's dissent from this audit's own eye reasoning, and Admin's ruling
+that the default STAYS OFF on the look criterion while the cost figure
+(-45,390 triangles) stands (4.4); and foliage aliasing in motion (rank 22), which has been
 UNMEASURED for three audits and needs a moving instrument rather than a lane.
 
 ---

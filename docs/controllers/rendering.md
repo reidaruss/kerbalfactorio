@@ -7280,18 +7280,24 @@ straightening it would pay most; it pays least, everywhere. **The far ridge is
 flat because there is nothing there that survives the air, not because the curve
 flattened it.**
 
-### 2.24.7 RANK 17'S OWED FRAME PAIR, TAKEN, WITH A RECOMMENDATION
+### 2.24.7 RANK 17'S OWED FRAME PAIR, TAKEN, WITH THE VERIFIER'S DISSENT AND A RULING
 
 `RN2365_forestfloor.png` against `RN2365_forestfloor_canopyshade1.png`. The arm
 is armed and says so (`scatter.canopyShade` false / true, which is the arming
 proof this catalogue demands). Triangles 1,286,315 -> **1,240,925** (-45,390),
-`box` 29.63 -> 30.07, whole frame 43.19 -> 42.25. **By eye on this build the
-thinned arm is BETTER**, which reverses 2.14.7b: it opens patches of bare dark
-ground under a closed canopy and it removes some of the pale-litter clutter.
-2.14.7b is not wrong; its subject moved. Since it was written the carpet landed
-(RN-2145), the Forest hex was lifted 26 per cent (RN-2320) and the litter changed
-(RN-2330). **Recommendation to Admin: turn it on, and take 45,390 triangles
-back.**
+`box` 29.63 -> 30.07, whole frame 43.19 -> 42.25. **The cost figure is endorsed
+and stands: -45,390 triangles.** This audit's initial by-eye read called the
+thinned arm BETTER, which would reverse 2.14.7b; the verifier reproduced the
+measurement but dissents from that eye reasoning (the thinning is spatially
+uniform with no crown in frame to attribute it to, and the litter claim
+contradicts 3.11's own report that the litter tint and clutter are unchanged at
+this pose). **Admin's ruling: the default STAYS OFF on the look criterion.**
+2.14.7b's own reasoning is still superseded, since its subject did move (the
+carpet landed at RN-2145, the Forest hex was lifted 26 per cent at RN-2320 and
+the litter changed at RN-2330), but that does not make ON the right default;
+the look question is undecided in ON's favour pending a pose with a crown
+actually in frame. The triangle saving is real and recorded, not itself
+grounds to flip the default.
 
 ### 2.24.8 CORRECTIONS TO THIS FILE'S OWN RECORD, WHICH IS WHAT A FRESH JUDGEMENT IS FOR
 
@@ -7306,22 +7312,34 @@ back.**
    coursing rather than as a tile. What IS real in that frame and in `ruin` is
    the crushed shadow side, which is the same missing sky-fill term as rank 3
    seen in daylight.
-3. **2.14.7b's `CANOPY_SHADE` verdict is superseded**, see 2.24.7.
+3. **2.14.7b's `CANOPY_SHADE` verdict is superseded on its own reasoning** (see
+   2.24.7), **but the default STAYS OFF**: the verifier dissented from this
+   audit's by-eye reversal, so the conclusion does not change even though the
+   reasoning does.
 
 ### 2.24.9 THE TOP FIVE LANES
 
 Full briefs, file seams as intra-file partitions, and done-whens are in section
-6 of the audit document. In order: **M1 THE DISTANCE GOES BLUE** (rank 1,
-sonnet, `Atmosphere*` and `BiomePalette`'s hue rows; an `aerosolTint` that
+6 of the audit document (corrected there 2026-08-21 per the verifier's dispatch
+review: five file-path fixes, the `Atmosphere*`/`SkyProbe.ts` overlap and its
+serialisation, the `TerrainFragLight` cascade half assigned to M3, the
+`BiomePalette` fence softened to a flagged coordination with Admin, two
+acceptance rewordings, and the M3-before-M2 dispatch swap below). **Dispatch
+order swaps M3 ahead of M2**: M3 is fully diagnosed with a measured done-when
+while M2's first deliverable is still a diagnosis. In rank order: **M1 THE
+DISTANCE GOES BLUE** (rank 1, sonnet, `Atmosphere*`'s daylight aerosol terms and
+`SkyProbe.ts`'s tint, plus `BiomePalette`'s hue rows; an `aerosolTint` that
 varies with optical depth rather than a flat bias); **M2 THE AERIAL LATTICE**
 (rank 2, opus, `materials/Terrain*` excluding `TerrainCoverFar*` and the cascade
-half of `TerrainFragLight`, plus `ChunkBatch`'s attribute upload; first
-deliverable a painted intermediate); **M3 EMISSIVES THAT LIGHT SOMETHING**
-(rank 3, opus, `MachineBatch`'s emissive path, `PropSkyAmbient`, `Headlamp` and
-the bloom stage); **M4 THE MID FIELD, NEAR END** (rank 4, sonnet,
-`render/grass/*` and `TerrainCoverFar*`); **M5 THE NIGHT** (rank 5, sonnet, the
-sky's night branch, `TerrainAmbient`'s night rungs and `Headlamp`'s cone, run
-AFTER M3 and partitioned inside `Headlamp.ts` with it).
+half of `TerrainFragLight` (M3's, not M2's), plus `ChunkBatch`'s attribute
+upload; first deliverable a painted intermediate; runs after M3); **M3
+EMISSIVES THAT LIGHT SOMETHING** (rank 3, opus, `MachineBatch`'s emissive path,
+`PropSkyAmbient`, `Headlamp`, the bloom stage, and the `TerrainFragLight`
+cascade half; runs before M2); **M4 THE MID FIELD, NEAR END** (rank 4, sonnet,
+`render/grass/*` and `TerrainCoverFar*`); **M5 THE NIGHT** (rank 5, sonnet,
+`StarfieldMaterial` and the `Atmosphere*` night branch, `TerrainAmbient`'s night
+rungs and `Headlamp`'s cone, run AFTER M3 AND AFTER M1, partitioned inside
+`Headlamp.ts` with M3 and inside `Atmosphere*` with M1).
 
 ### 2.24.10 Rails
 
