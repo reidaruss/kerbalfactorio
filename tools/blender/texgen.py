@@ -5697,7 +5697,7 @@ def _strip_pt(px, py, ax, ay, bx, by):
 # (so |R - B| <= 6 counts when |tint| <= 3/255).
 
 def _grass_strips():
-    """A bundle of 11 tapering blades, each a 2-segment polyline from a root
+    """A bundle of 15 tapering blades, each a 2-segment polyline from a root
     at (or just below) the bottom edge to a tip well clear of the top rows,
     curving slightly via the mid-point offset. Placement is PERIODIC in u:
     even spacing plus a jitter smaller than the pitch, and every distance is
@@ -5710,18 +5710,33 @@ def _grass_strips():
     overlapped and every u column decoded opaque: a "bundle of 11 blades" was
     actually a bottom-anchored mat with a serrated top edge, and no crop of
     any width could show a lateral gap because none existed. Root half-width
-    is now 0.026 to 0.040 (full width 0.052 to 0.080 against the same 0.0909
-    pitch), which leaves a real gap at the nominal spacing and only closes
-    under the jitter's own tail, the way real tufted blades sometimes touch
-    and sometimes do not: measured at the root row, 31.4 percent of columns
-    are now transparent where 0 percent were before. A narrower band (0.020
-    to 0.032) was tried first and measured coverage 0.3138, UNDER the 0.35
-    alpha_test cutoff RN-177/178 fixed on purpose so distant mips converge
-    toward solid rather than dissolving; 0.026 to 0.040 measures 0.3764,
-    which keeps that floor while still opening a real silhouette. Tip
-    half-width 0.012, unchanged: it keeps the tip's 50%-alpha contour at
-    ~4.6 px at 256 (now ~18 px at the 1024 raise), wide enough that mip
-    averaging erodes the tip gracefully instead of deleting it.
+    went to 0.026 to 0.040 (full width 0.052 to 0.080 against the same 0.0909
+    pitch), which measured coverage 0.3764 (0.412 once the field's own noise
+    and per-texel value spread are folded in, the number `texgen.py check`
+    prints against the shipped 1024 field) and opened a real silhouette, but
+    the world audit (docs/web/WORLD-AUDIT-R2-2026-08-21.md 3.5) read the
+    result as "wide flat ribbons... a field of leek or iris leaves" rather
+    than individual blades at 1 to 5 m.
+
+    RN-2330 to RN-2339 (world audit R2, L5): MORE, THINNER BLADES. 11 -> 15
+    (pitch 0.0909 -> 0.0667) and root half-width narrowed to 0.017 to 0.026
+    (full width 0.034 to 0.052 against the new 0.0667 pitch -- roughly the
+    SAME full-width-to-pitch ratio the RN-1500 pass judged right, so the gap
+    fraction at the root row does not collapse back toward the old solid mat
+    even though there are more blades). Tip half-width narrowed 0.012 -> 0.009,
+    a SHARPER taper (a blade now loses 65 percent of its width start to tip,
+    against 54 percent before), which is the "sharper alpha taper" the audit
+    asked for and is also what makes a mip-minified blade thin at the visible
+    end rather than carrying a stub of full width all the way up.
+
+    Measured against the SAME 0.35 alpha_test floor RN-177/178 fixed (mips
+    must converge toward solid, not dissolve): `texgen.py check` on the
+    rebuilt 1024 field reads coverage 0.375, still inside a floor-respecting
+    0.35..0.45 band (a 0.025 margin over the floor) and NOT the 0.412 the
+    wider blade measured, which is exactly the corpus rule (measure, then
+    assert) rather than a guess -- a narrower, more numerous blade trades
+    some coverage for the finer silhouette and the trade is stated rather
+    than hidden.
 
     Values: per-blade base drawn from [0.55, 1.0] (widened from [0.60, 1.0]
     for more value structure now a gap can show a darker blade beside a
@@ -5729,7 +5744,7 @@ def _grass_strips():
     root rising ~10% toward the tip, faint per-texel noise on top, and a
     per-blade warm/cool split of at most +/-6 counts between R and B."""
     strips = []
-    nb = 11
+    nb = 15
     for k in range(nb):
         u0 = (k + 0.5) / nb + (_hash01(k, 3, 6011) - 0.5) * 0.55 / nb
         y_root = 1.0 + 0.012 * _hash01(k, 5, 6011)
@@ -5738,8 +5753,8 @@ def _grass_strips():
         y_mid = y_root - (y_root - y_tip) * 0.5
         u_mid = u0 + lean * 0.38
         u_tip = u0 + lean
-        w_root = 0.026 + 0.014 * _hash01(k, 13, 6011)
-        w_tip = 0.012
+        w_root = 0.017 + 0.009 * _hash01(k, 13, 6011)
+        w_tip = 0.009
         w_mid = (w_root + w_tip) * 0.5
         bk = 0.55 + 0.45 * _hash01(k, 17, 6011)
         tint = (_hash01(k, 19, 6011) - 0.5) * (6.0 / 255.0)

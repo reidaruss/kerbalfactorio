@@ -56,20 +56,27 @@ export const COVER_VALUE = num('grassval', 1);
  *
  * THE NUMBER THE BRIEF ASKS FOR IS BLADES PER SQUARE METRE (50 to 150) AND THIS
  * IS NOT THAT NUMBER, so the conversion is written down rather than left for a
- * reader to reconstruct. `of_grass_a.png` is ELEVEN tapering blades periodic in
- * u over the full texture width (texgen.py `_grass_strips`, pitch 1/11). A near
- * tuft is TUFT_QUADS crossed quads, each taking a u-slice of CARD_U_SPAN, so it
- * carries `TUFT_QUADS * CARD_U_SPAN * 11` painted blades:
+ * reader to reconstruct. `of_grass_a.png` is FIFTEEN tapering blades periodic in
+ * u over the full texture width (texgen.py `_grass_strips`, pitch 1/15; RN-2330
+ * to RN-2339 raised this from ELEVEN and narrowed every blade, the world audit's
+ * "brushed not bladed" fix). A near tuft is TUFT_QUADS crossed quads, each
+ * taking a u-slice of CARD_U_SPAN, so it carries `TUFT_QUADS * CARD_U_SPAN * 15`
+ * painted blades:
  *
- *   2 quads x 0.27 span x 11 blades = 5.94 blades per tuft
- *   32 tufts/m2 x 5.94              = 190 blades per square metre at the eye,
+ *   2 quads x 0.20 span x 15 blades = 6.0 blades per tuft
+ *   32 tufts/m2 x 6.0               = 192 blades per square metre at the eye,
  *                                     falling through the brief's 50 to 150 band
  *                                     between about 2 m and 6 m (see DENS_HALF_M)
  *
  * which is inside the brief's band and near its top, where a meadow wants to
- * be. `?grassdens=` scales it; 0 leaves the layer constructed and empty, which
- * is deliberately NOT the same control as `?grass=0` (one measures the cost of
- * an empty pass, the other removes the pass).
+ * be, and is within a blade of the pre-RN-2330 190: CARD_U_SPAN moved 0.27 ->
+ * 0.20 (11/15 of the old value) FOR EXACTLY THIS REASON, so the painted-blades-
+ * per-card count holds at 3.0 while each of those three blades is individually
+ * the narrower, sharper-tapered shape texgen now paints; the areal density this
+ * comment protects therefore does not move as a side effect of the texture
+ * change. `?grassdens=` scales it; 0 leaves the layer constructed and empty,
+ * which is deliberately NOT the same control as `?grass=0` (one measures the
+ * cost of an empty pass, the other removes the pass).
  */
 export const NEAR_PER_M2 = 32 * num('grassdens', 1);
 
@@ -115,9 +122,18 @@ export const TUFT_QUADS = 2;
  *  shearing it: one segment can only translate the tip, which detaches the card
  *  from its own root line at any visible amplitude. */
 export const TUFT_SEGS = 2;
-/** The u-slice one quad takes out of the 11-blade periodic card. See TUFT_W_M
- *  for why it is three blades and not five. */
-export const CARD_U_SPAN = 0.27;
+/** The u-slice one quad takes out of the periodic card. See TUFT_W_M for why
+ *  it is three blades and not five.
+ *
+ *  RN-2330 to RN-2339: moved 0.27 -> 0.20 when `_grass_strips` went from 11
+ *  painted blades to 15 (thinner, sharper-tapered, the world audit's
+ *  "brushed not bladed" fix): 0.27 * 11/15 = 0.198, rounded to 0.20, holds
+ *  the SAME three-painted-blades-per-quad count the RN-2145 first capture
+ *  chose (a wider span reads as a mip-solid wedge; see the note above this
+ *  constant's old value in git history), so this constant is the reason the
+ *  texture's own blade-count change costs the near tuft nothing in areal
+ *  blade density (see NEAR_PER_M2's arithmetic above). */
+export const CARD_U_SPAN = 0.20;
 
 /**
  * THE FAR RUNG, and it is a different card rather than the near one scaled up.
@@ -125,8 +141,9 @@ export const CARD_U_SPAN = 0.27;
  * Holding COVERAGE constant while density falls means growing the card as the
  * range, and at 90 m that is a 1.3 m "blade", which is a bush. The honest
  * answer is a second rung whose card is WIDE AND SHORT: one quad, two
- * triangles, the full 11-blade u span, sized like a patch of turf rather than
- * like a tuft. It costs a quarter of a near tuft per instance, which is what
+ * triangles, the full blade-set u span (15 since RN-2330 to RN-2339, was 11),
+ * sized like a patch of turf rather than like a tuft. It costs a quarter of a
+ * near tuft per instance, which is what
  * makes covering the 14 m to 92 m annulus affordable at all.
  */
 export const MAT_W_M = 1.10;

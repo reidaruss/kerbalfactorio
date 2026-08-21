@@ -297,6 +297,75 @@ def _cone(r_bot, rz, loc, seg=5, seed=1, jit=0.05, r_mid=None, mid_z=0.52,
             None)
 
 
+# RN-2330 to RN-2339, THE WORLD-AUDIT R2 VEGETATION-ASSET PASS. `_leaf_spray`
+# is the SAME technique build_tree_broadleaf.py's `_spray` already proved on
+# the harvest tree, at RN-284: "there is no longer a solid mass anywhere in
+# this tree ... a closed spheroid of ANY size is still opaque". This file's
+# own LOD2 crowns were the one place that fix never reached, because LOD2 was
+# authored as a closed `hc.lobe`/`_dome` shell rather than as boughs, and
+# LOD2 -- not LOD0 -- is where nearly every canopy tree in a frame actually
+# sits (LOD0 covers only the 78 m WG-17 ring). The world audit's words for the
+# result were literal: "a papercraft ball of flat pentagons at full contrast
+# against the sky" is exactly what a `seg=6` closed lobe under flat shading
+# looks like at a standing eye. Copied rather than imported, because
+# `props_common.py` and `tree_common.py` are shared files this lane's rails
+# keep clear of (NUMBERS.md's shared-wiring-file rule): the two copies are
+# small, deterministic (`hc.rng` only, no new randomness source) and the
+# out-of-file duplication is the cheaper risk against touching a file three
+# other lanes also build from.
+def _leaf_spray(p, centre, radii, count, seed):
+    """`count` leaf CARDS scattered through one crown mass's ellipsoid volume,
+    each lying TANGENT to its own local shell so it always presents area to
+    the viewer, at an independent depth (0.42 to 1.02 of the local radius) so
+    the near and far layers only occasionally line up, and with each of its
+    four corners pushed independently so the card is non-planar and its two
+    triangles catch light differently. Elevation-biased so roughly two thirds
+    of the cards clothe the sunlit upper surface and the rest hang in the
+    mass's own shadow, and role-assigned by the same three elevation
+    thresholds `build_tree_broadleaf.py`'s `_spray` uses, so the harvest tree
+    and its scenery sibling shade by one law rather than two."""
+    nxt = hc.rng(seed)
+    cx, cy, cz = centre
+    rx, ry, rz = radii
+    rm = (rx + ry + rz) / 3.0
+    for ci in range(count):
+        th = 2.0 * math.pi * nxt()
+        ez = -0.62 + 1.56 * nxt()
+        s = math.sqrt(max(0.0, 1.0 - ez * ez))
+        vx, vy, vz = rx * s * math.cos(th), ry * s * math.sin(th), rz * ez
+        vn = max(1e-4, math.sqrt(vx * vx + vy * vy + vz * vz))
+        nx, ny, nz = vx / vn, vy / vn, vz / vn
+        ux, uy = -ny, nx
+        un = math.hypot(ux, uy)
+        if un < 1e-6:
+            ux, uy, un = 1.0, 0.0, 1.0
+        ux, uy = ux / un, uy / un
+        wx, wy, wz_ = -nz * uy, nz * ux, nx * uy - ny * ux
+        fs = 0.42 + 0.60 * nxt()
+        a = rm * (0.085 + 0.075 * nxt())
+        if nxt() < 0.20:
+            a *= 1.55
+        b = a * (0.62 + 0.40 * nxt())
+        px, py, pz = cx + vx * fs, cy + vy * fs, cz + vz * fs
+        verts = []
+        for su, sw in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+            su *= 0.58 + 0.84 * nxt()
+            sw *= 0.58 + 0.84 * nxt()
+            k = (nxt() - 0.5) * 0.30 * rm
+            verts.append((px + ux * a * su + wx * b * sw + nx * k,
+                          py + uy * a * su + wy * b * sw + ny * k,
+                          pz + wz_ * b * sw + nz * k))
+        if ez < -0.10:
+            role = "LeafDeep"
+        elif ez < 0.42:
+            role = "Leaf" if nxt() > 0.45 else "LeafDeep"
+        else:
+            role = "LeafLight" if nxt() > 0.38 else "Leaf"
+        p.add(verts, [(0, 1, 2, 3)], [False], role,
+              uvs=pc.quad_card_uvs(1, seed * 8191 + ci))
+    return p
+
+
 # ---------------------------------------------------------------------------
 # The crown, as BOUGHS. This is the whole RN-271 pass in one function.
 # ---------------------------------------------------------------------------
@@ -659,26 +728,32 @@ def broadleaf():
 
 
 def broadleaf_lod2():
-    """A low dome on a bare trunk, pushed toward 118 degrees so the far tree
-    leans the way the near one does, with a second smaller mass on the light
-    side. Widest below the middle, which is the outline a spreading crown
-    actually has, and off centre, which is the part that has to survive."""
+    """A bare swept trunk carrying two card-sprayed crown masses, pushed
+    toward 118 degrees so the far tree leans the way the near one does, at
+    the SAME centres and radii the old closed shell occupied so the LOD0/LOD2
+    switch does not pop the silhouette.
+
+    RN-2330 to RN-2339. The old LOD2 was one `hc.lobe` mass plus one `_dome`:
+    both closed, faceted, and opaque everywhere, which is what the world audit
+    called "a papercraft ball of flat pentagons at full contrast against the
+    sky" (`RN2285_basedusk.png`, `RN2285_forestfloor.png`, `RN2285_meadow.png`).
+    LOD2 is not a rarely-seen rung: LOD0 covers only the 78 m WG-17 ring and
+    `CANOPY_NEAR_M` holds every canopy tree outside the harvest ring, so LOD2
+    is what a player standing in a field or a stand of these actually looks
+    at. Replaced with `_leaf_spray`, the exact card-cloud technique RN-284
+    already proved on the harvest broadleaf's own crown."""
     p = hc.Parts()
     p.add(*_bands(((0.52, 0.00), (0.40, 2.40), (0.34, 4.90)), seg=4,
                   seed=6801, jit=0.04, roles="Bark", caps=(False, False),
                   offsets=((0.0, 0.0), (0.10, 0.07), (0.17, 0.10))))
-    v, f, sm, roles = hc.lobe(3.95, 3.60, BROAD_H - 5.60,
-                              loc=(2.01, 1.47, 5.60), seg=6, seed=6803,
-                              jit=0.07, rings=((0.0, 0.58), (0.44, 1.00)),
-                              role="Leaf")
-    roles[0] = "LeafDeep"
-    for i in range(len(roles) - 6, len(roles)):
-        roles[i] = "LeafLight"
-    p.add(v, f, sm, roles, uvs=pc.shell_uvs(v, 6803, centre=(2.01, 1.47),
-                                            v_ripple=0.05))
-    p.add(*_dome(1.85, 1.60, 1.90, loc=(-0.71, -0.93, 7.10), seg=5, seed=6807,
-                 jit=0.12, rings=(0.34, 0.76), radii=(0.68, 1.00),
-                 bands=("LeafDeep", "Leaf", "LeafLight")))
+    # Main mass: the old hc.lobe(3.95, 3.60, BROAD_H - 5.60, loc=(2.01, 1.47,
+    # 5.60), ...) standing on a BASE point; its ellipsoid centre and z-radius
+    # are that base plus half its height.
+    _leaf_spray(p, (2.01, 1.47, 5.60 + (BROAD_H - 5.60) * 0.5),
+                (3.95, 3.60, (BROAD_H - 5.60) * 0.5), 56, 6803)
+    # Secondary mass: the old _dome(1.85, 1.60, 1.90, loc=(-0.71, -0.93,
+    # 7.10), ...) already took its loc as the ellipsoid CENTRE.
+    _leaf_spray(p, (-0.71, -0.93, 7.10), (1.85, 1.60, 0.95), 26, 6807)
     return p
 
 

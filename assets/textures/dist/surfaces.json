@@ -338,8 +338,8 @@
     "grass": {
       "albedo": {
         "file": "of_grass_a.png",
-        "bytes": 190117,
-        "sha256": "ce2b7dc63d3702091d4ecaa26538564976d34b811404898f22d7605da2716407"
+        "bytes": 207257,
+        "sha256": "52fad5130ed3a170a4c091f26eafd6160289cc5d039892d238e7c1542cfe4d98"
       },
       "size_px": 1024,
       "uv_space": "unit",
@@ -348,7 +348,7 @@
         "v": "clamp"
       },
       "alpha_test": 0.35,
-      "albedo_mean_linear": 0.4757
+      "albedo_mean_linear": 0.4521
     },
     "leaf": {
       "albedo": {

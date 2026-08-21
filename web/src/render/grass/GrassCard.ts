@@ -41,13 +41,15 @@ export interface CardSpec {
   readonly quads: number;
   /** Height segments per quad. Two lets the wind bend; one only shears. */
   readonly segs: number;
-  /** The u-slice of the 11-blade periodic card one quad takes. */
+  /** The u-slice of the periodic card one quad takes (15 blades since
+   *  RN-2330 to RN-2339, was 11). */
   readonly uSpan: number;
 }
 
 export const TUFT_CARD: CardSpec =
   { quads: TUFT_QUADS, segs: TUFT_SEGS, uSpan: CARD_U_SPAN };
-/** The far rung: ONE quad, ONE segment, the FULL 11 blades. Two triangles. */
+/** The far rung: ONE quad, ONE segment, the FULL blade set (15 since
+ *  RN-2330 to RN-2339, was 11). Two triangles. */
 export const MAT_CARD: CardSpec = { quads: 1, segs: 1, uSpan: 1.0 };
 
 /**

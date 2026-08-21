@@ -166,9 +166,17 @@ def fern():
     # The litter: old fronds down on the floor, reaching further than they
     # rise. 0.014 of lift keeps them off z = 0 so they are not coplanar with
     # whatever terrain they land on.
+    #
+    # RN-2330 to RN-2339 (world audit R2, L5): `twist` added at zero triangle
+    # cost (segs was already 2) and `droop_var` widened. A flat paddle rolled
+    # about its own long axis catches the light on part of its length and not
+    # the rest, which a flat strip cannot, and a wider droop spread means the
+    # litter is not all resting at the same angle, which is what "paper
+    # scraps strewn on dark ground" (the audit's own words) actually named.
     p.extend(pc.tuft(5, 0.30, 0.145, 0.30, 4141, bend=0.46, segs=2,
                      droop=0.94, role="LeafDeep", h_var=0.30, phase=17.0,
-                     loc=(0.0, 0.0, 0.014), kink=0.12, lean_var=0.55))
+                     loc=(0.0, 0.0, 0.014), kink=0.12, lean_var=0.55,
+                     twist=0.30, droop_var=0.05))
     return p
 
 
@@ -339,11 +347,23 @@ def fallen_log():
         p.add(v, f, sm, roles,
               uvs=pc.shell_uvs(v, seed, centre=(loc[0], loc[1])))
 
-    # Leaf litter drifted against the log. Six one-triangle paddles reaching
-    # further out than up, which is what a fallen leaf does.
-    p.extend(pc.tuft(6, 0.16, 0.185, 0.62, 4217, bend=0.34, segs=1,
+    # Leaf litter drifted against the log. Six paddles reaching further out
+    # than up, which is what a fallen leaf does.
+    #
+    # RN-2330 to RN-2339 (world audit R2, L5): segs 1 -> 2 (+2 triangles a
+    # paddle, +12 here). A one-triangle paddle is a flat wedge with a single
+    # facet and nothing `kink` can bend, because `kink`'s t^2 sideways
+    # displacement only has an interior row to act on once there is more
+    # than one segment; at segs 1 the whole "curl" argument in the header
+    # comment was cosmetic. `twist` (new) rolls each paddle about its own
+    # long axis, so a leaf lying curled edge-up beside one lying flat is now
+    # two different shapes rather than two copies of the same wedge at a
+    # different yaw. `droop_var` widened for the same size-and-orientation-
+    # mix reason as the fern's own litter.
+    p.extend(pc.tuft(6, 0.16, 0.185, 0.62, 4217, bend=0.34, segs=2,
                      droop=0.92, role="LeafDry", h_var=0.36, phase=31.0,
-                     loc=(0.10, -0.30, 0.014), kink=0.14, lean_var=0.60))
+                     loc=(0.10, -0.30, 0.014), kink=0.14, lean_var=0.60,
+                     twist=0.40, droop_var=0.06))
     return p
 
 
@@ -415,9 +435,14 @@ def mushroom_cluster():
                        cap=(False, False)))
 
     # The litter the fungi are growing out of. Five paddles lying nearly flat.
-    p.extend(pc.tuft(5, 0.085, 0.115, 0.19, 4237, bend=0.22, segs=1,
+    #
+    # RN-2330 to RN-2339 (world audit R2, L5): segs 1 -> 2 (+2 triangles a
+    # paddle, +10 here) and `twist` added, the same reasoning as
+    # `fallen_log`'s own litter directly above.
+    p.extend(pc.tuft(5, 0.085, 0.115, 0.19, 4237, bend=0.22, segs=2,
                      droop=0.90, role="LeafDry", h_var=0.34, phase=43.0,
-                     loc=(0.0, 0.0, 0.010), kink=0.09, lean_var=0.55))
+                     loc=(0.0, 0.0, 0.010), kink=0.09, lean_var=0.55,
+                     twist=0.30, droop_var=0.04))
     return p
 
 
