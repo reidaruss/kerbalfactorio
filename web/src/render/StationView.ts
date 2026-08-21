@@ -142,13 +142,19 @@ export class StationView {
   }
 
   /**
-   * Where the station is, in the BODY frame, taken once at install.
+   * RN-2471. Where the station is, in the BODY frame, refreshed by
+   * `StationMount.ts`'s carrier watcher every tick since CE-116.
    *
-   * `pos` is the same `stateOf` answer the collision solid was built from and
-   * the quaternion is `stationQuat`'s, so the drawn hull and the boxes a player
-   * stands on are posed from ONE number. Deriving a second pose here, however
-   * obviously correct the derivation looked, is the two-authority trap that put
-   * `orbitdeck.js`'s corridor upside down while every assertion passed.
+   * `pos`/`quat` are `CarrierMount`'s own composed pose: the offset measured
+   * once at install (`local = poseAt(0)^-1 . authored`, `StationMount.ts`)
+   * turned by the carrier's live `poseAt(tick)`. `stationQuat` runs exactly
+   * once per boot, to build `authored` for that one measurement, and is not a
+   * second live source feeding this call. There is exactly one writer
+   * (`StationMount.ts:173`'s `m.watch`, fired at install by `:193`'s
+   * `syncWatchersAt` and again every tick the carrier advances) -- this
+   * docstring used to describe an earlier, second caller that wrote this pose
+   * directly from `stationQuat` before `mountStationOn` ran; CE-116 removed
+   * that caller, and this is now the only path a pose reaches this method by.
    */
   place(pos: readonly [number, number, number], quat: THREE.Quaternion): void {
     this.pos = { x: pos[0], y: pos[1], z: pos[2] };

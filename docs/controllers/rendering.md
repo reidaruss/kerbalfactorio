@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2450 to RN-2456, `lane/world-audit-r4`: **THE WORLD LOOK AUDIT, ROUND 4.** R3's whole top five landed and four of them closed their rank outright; every one of the five reproduces through its own isolator, four of them to the digit (`?aerodepth=0` returns R3's `vista.skyHz` -12.14, `vistadawn.skyR` +25.58 and `dawnsun.skyUp` +7.19 exactly; `?horizoncell=0` returns R3's 0.622-at-lag-10 lattice; `?nightsky=0` returns its flat-black sky at iqr exactly 0.00; `?grasspatch=0` returns r25 29.48 and r55 21.56). **THE DISTANCE GOES BLUE:** `vista.hzBand` warm +48.36 -> **-2.07** against a sky at -19.36, i.e. a 60.5-count OPPOSITE-hue seam became a 17.29-count SAME-hue one. **THE NIGHT EXISTS:** the headlamp is 6.5 per cent of an empty field (R3: 23) and 69.7 per cent beside a furnace (R3: 94), and the sky went from iqr exactly 0.00 to a graded 9.33/14.46/16.88 with a real star field. **A FURNACE NOW BRIGHTENS ITS OWN FRAME** 1.31x above an empty meadow, where R3 measured it DARKER (10.88 against 8.28, R3: 1.81 against 2.03); `firebox` 0.41 -> **21.66** and `?firelight=0` attributes 94 per cent of that to M3's term. **THE NEW BLOCKING FINDING, AND IT IS NOT R3's LATTICE:** a SCREEN-locked 4-pixel cross-hatch lies over bare ground at any low sun, convicted as the CONTACT-SHADOW pass's own ordered dither. Six one-flag terrain arms are null (phaseStd 1.772 to 1.838), `?contact=0` collapses it to **0.602 while the patch's own std RISES 30.2 -> 33.2**, the period-5 control on the same pixels does not move at all, the signal is monotone in sun elevation (1.791 / 0.978 / 0.830 at dot 0.101 / 0.699 / 0.920), a sky patch reads 0.053, and the same armed arm removes NONE of it at a grassed pose because the dither needs bare ground to sit on. `ContactGlsl.ts`'s own header says the apply pass's 5-tap cross resolves a 4-px dither; five taps cover five of sixteen phases and it does not. **THE SECOND NEW FINDING IS A RE-JUDGEMENT OF R3:** every "the far ground has no material" reading in this campaign was taken at the VISTA site, and at the PLAINS site the player actually spawns in it is a flat painted plane past about 130 m -- `meadow.hzBand` iqr **4.06**, unmoved across three audits, with `?aerosol=0` buying 0.79 counts, so unlike the vista site the lever is the GROUND and not the air. It is also the only committed rectangle in the whole shot set that frames that subject. **TWO RETRACTIONS, both against this project's own prior findings:** the orbital terminator seam is NOT creeping (64.27 against R3's 64.27, so 59.39 -> 63.21 -> 64.27 was two points of noise), and the station's five-audit roll-convention suspect was removed by CE-116 -- `StationMount.ts:173` registers the only writer and `:193` fires that same watcher at install, one convention, not two -- with two stale docstrings (`StationMount.ts:16-34`, `StationView.ts:144-156`) the cause of four wasted rounds. **NEW INSTRUMENT:** `web/tools/smoke/rn2450bayer.mjs`, a 4-pixel phase meter with a free period-5 negative control, written because `latmeter.mjs` walks from `minLag = 4` and is structurally blind to a repeat at that period. Next top five: N1 the plains far ground (opus, diagnosis first, plus two new RECTANGLES not poses), N2 the contact dither (sonnet), N3 the world from the air, four audits BEHIND and never given a lane (opus, carries rank 8's bloom), N4 the carpet's LEVEL, 1.96x its substrate (sonnet), N5 the station's one derived probe field (sonnet, an afternoon). Full record in section 2.27; audit in [docs/web/WORLD-AUDIT-R4-2026-08-22.md](../web/WORLD-AUDIT-R4-2026-08-22.md). THIS LINE IS A POINTER: replace it, never append to it.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2470 to RN-2474, `lane/n5-station`, **THE STATION EXTERIOR PHOTOGRAPHS, AFTER SIX AUDITS OF INTERIOR.** The cause was never a roll-convention race (that suspect was already falsified by CE-116/R4, section 2.27.5): the vestibule seat `visit:station` boards onto is about 4.0 m from the hull's own local origin while the merged hull's own bounding sphere (`stationDraw.boundM`) is **36.003 m**, so the eye sat roughly 32 m inside solid hull volume and no look direction from there could ever have cleared it. **`eyeLocal`/`eyeLocalOverBound`** (published on every `station` capture, `artframe.js`'s `atCapture`) make this a number instead of a suspicion: `quat^-1 * (cam.posE - stationDraw.posE)` against `stationDraw.boundM`, using ONLY fields already published (`Debug.ts`'s `cam.posE`, `StationView.stats`'s `posE`/`quat`/`boundM`) and the inverse of the SAME quaternion `StationView.sync` composes the drawn transform with, no second convention. Measured at the old seat: ratio **0.120** (inside); magnitude 4.316 m, bit-identical to the independently-published `stationDraw.eyeDistM`, which is the cross-check that the rotation math is right. **THE FIX:** `of.standAboard(lx, ly, lz)` (`DebugSeat.ts`, already-shipped CE-54 debug op) reseats the same boarded rider, at rest in the carrier, to a point in the station's own authored local frame past the bound (`boundM + margin` along local +X, the spine, `standAboard`'s own documented convention), then the look bearing is recomputed as "back toward the hull's own local origin" (rotated into body frame by the hull's live quat, decomposed into the same east/north/up tangent triple the old orbital-bearing solve used) instead of "along the orbit". Ratio after: **1.334** (outside). `RN2470_station_before.png` is the six-audit interior corner (riveted panels, a corridor, no stars); `RN2470_station_after.png` is the hull from outside -- cylindrical body, solar-panel struts, an antenna, against a starred sky -- both committed. Bit-identical across three fresh Chromium processes (`box.luma` 11.64, `iqr` 12.21, `eyeLocal` to four decimals, all three runs). **Two stale docstrings corrected to the post-CE-116 truth** (one writer, the carrier watcher composes the pose; `stationQuat` runs once per boot to build the install-tick offset and is not a second live source): `StationView.ts:144-156` (`place`'s docstring, previously claimed the quaternion was `stationQuat`'s) and `StationMount.ts:16-34` (the "two conventions, neither wrong" framing that predates CE-115/CE-116 and is what sent four audits at the wrong suspect). Full record in section 2.28. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
 
@@ -10,19 +10,24 @@
 
 
 >
-> *(previous pointer, kept one deep: 2026-08-21, RN-2410 to RN-2419,
-> `lane/m4-midnear`, **THE MID FIELD, NEAR END** (`meadowfield.r55` 21.56 ->
-> 38.93 on `GrassTuning.MAT_PATCH_AMP`, a mean-preserving per-patch value
-> multiplier, with `r100` 55.70 -> 51.51 disclosed and routed; section 2.25),
-> and RN-2385 to RN-2389, `lane/m3-emissive`, **EMISSIVES THAT LIGHT
-> SOMETHING** (the emissive was a hundred times too dim to be light;
-> `FIRE_L_HOT = 40` from a blackbody ratio, six emitters in a compile-time
-> array so `programs` is unchanged, `smelternight` whole frame 1.80 -> 7.12,
-> and the terrain seam routed to M2 and paid at RN-2422; section 2.25).
-> Before those, RN-2365 to RN-2372, `lane/world-audit-r3`, **THE WORLD LOOK
-> AUDIT, ROUND 3**: the frontier moved from SURFACE to LIGHT. Full records in
-> sections 2.24 and 2.25; ranked queue in
-> docs/web/WORLD-AUDIT-R3-2026-08-21.md.)*
+> *(previous pointer, kept one deep: 2026-08-22, RN-2450 to RN-2456,
+> `lane/world-audit-r4`, **THE WORLD LOOK AUDIT, ROUND 4.** R3's whole top five
+> landed and four closed their rank outright, each reproducing through its own
+> isolator to the digit. **THE DISTANCE GOES BLUE:** `vista.hzBand` warm +48.36
+> -> **-2.07** against a sky at -19.36. **THE NIGHT EXISTS:** the headlamp fell
+> to 69.7 per cent beside a furnace (R3: 94) with a real graded star field.
+> **A FURNACE NOW BRIGHTENS ITS OWN FRAME** 1.31x above an empty meadow, where
+> R3 measured it darker. **THE NEW BLOCKING FINDING:** a screen-locked 4-pixel
+> cross-hatch, convicted as the contact-shadow pass's own ordered dither
+> (`?contact=0` collapses phaseStd 1.79 -> 0.60 while the patch's own std
+> RISES). **A RE-JUDGEMENT:** every "far ground has no material" reading in
+> the campaign was taken at the vista site; at the plains site the player
+> spawns in, `meadow.hzBand` iqr is unmoved across three audits and the lever
+> is the ground, not the air. **TWO RETRACTIONS:** the orbital terminator seam
+> is not creeping (two points of noise), and the station's five-audit
+> roll-convention suspect was falsified by CE-116 (paid off at RN-2470, section
+> 2.28). Full record in section 2.27; audit in
+> docs/web/WORLD-AUDIT-R4-2026-08-22.md.)*
 
 ## 1. Mission
 Make surface→orbit→interplanetary→surface look seamless and run fast. Own the "rendering magic" that sells continuous traversal, plus the techniques that let a dense 3D factory render without melting the GPU.
@@ -8849,3 +8854,153 @@ main**.
 4. **Fifteen of the thirty-one arms are published as numbers without a committed
    frame**, because each is a figure rather than a picture; each names its own
    one-line invocation in the audit's section 4.
+
+---
+
+## 2.28 THE STATION EXTERIOR, AND THE DERIVED FIELD THAT SETTLED IT (RN-2470 to RN-2474, 2026-08-22, `lane/n5-station`)
+
+R4 (section 2.27.5, item 2) retracted the five-audit roll-convention suspect:
+CE-116 left exactly one writer on the drawn hull's pose, and the "same camera,
+two scenes" evidence was read on a frame that was never the photographed one.
+What was left was an invocation problem, named but not measured. This section
+is the measurement, the fix, and the two docstrings whose staleness is what
+cost four audits.
+
+### 2.28.1 THE MEASUREMENT: `eyeLocal` AND `eyeLocalOverBound`
+
+`web/tools/smoke/probes/artframe.js`'s `atCapture()` now derives, from fields
+already published and nothing else: `eyeLocal = quat^-1 * (cam.posE -
+stationDraw.posE)`, the near camera's position in the hull's OWN local frame,
+and `eyeLocalOverBound = |eyeLocal| / stationDraw.boundM`. `quat` is
+`stationDraw.quat`, the identical quaternion `StationView.sync`'s
+`this.m.compose(this.p, this.quat, this.one)` composes the drawn transform
+with (its conjugate, since it is a unit quaternion), so this is that
+convention's inverse and not a second one. `cam.posE` is `Debug.ts`'s own
+"the camera that was actually rendered with" (RN-1955), read at the same
+`of.stats()` call as `stationDraw`, so nothing here compares two instants.
+
+Measured at the OLD seat (`visit:station`'s default vestibule arrival, RN-822):
+`eyeLocal` **[~0, 1.62, 4.00]**, magnitude **4.316 m**, bit-identical to the
+independently-published `stationDraw.eyeDistM` -- the cross-check that the
+rotation is right, since magnitude is rotation-invariant and both numbers come
+from independent code paths. Against `boundM` **36.003 m** (the merged hull's
+own bounding sphere, `StationView.build`'s `computeBoundingSphere`):
+`eyeLocalOverBound` **0.120**. The eye was about 32 m inside the hull's own
+volume. No look direction from there could ever have shown the outside of it,
+which is the six-audit interior reading in one number instead of a suspicion.
+
+### 2.28.2 THE FIX: LEAVE THE BOUND BEFORE AIMING AT ANYTHING
+
+The `station` shot already boards through the real `visit:station` press
+(`stationframe.js`'s own path, kept unchanged so the shot still exercises what
+a player presses). After that boarding succeeds (`onDeck === true`), the row
+now calls `of.standAboard(lx, ly, lz)` (`DebugSeat.ts`, CE-54, already shipped
+and already used by `stationride.js`/`stationwalk.js`) to RESEAT the same
+rider, at rest in the carrier (matched velocity, no re-board), at a point in
+the station's own authored local frame: `standAboard`'s own documented
+convention is "+X along the spine, +Y the radial (up), +Z across", and the
+default target is straight out the spine, `boundM + eyeMarginM` (12 m margin),
+`eyeLy`/`eyeLz` at 0 so the hull silhouettes on-centre rather than off to one
+side. All four (`eyeLx`, `eyeLy`, `eyeLz`, `eyeMarginM`) are `--evalargs`
+overridable, named rather than hardcoded, so a later lane can re-sweep without
+editing this file.
+
+The look bearing changes with it: it used to be "along the orbit, offset by
+`yawOff`" (`of.station().axes.along`, the carrier's LVLH along-track axis, a
+reading that has nothing to do with where on the ship you stand). It is now
+"back toward the hull's own local origin": the direction `[-eyeLx, -eyeLy,
+-eyeLz]` (the negative of the point just stood at, since the origin is (0,0,0)
+in that frame) is rotated into body frame by `stationDraw.quat` (the FORWARD
+rotation this time, local-to-world, not `eyeLocal`'s inverse), then decomposed
+into the SAME east/north/up tangent triple the old orbital bearing used, so
+`of.look`'s yaw/pitch convention is untouched. `back`/`yawOff`/`pitchOff` are
+now a framing offset ON TOP of that look-at-hull bearing; `0`/`0`/`0` already
+delivers the MUST-SHOW frame RN-1935 described and the old seat could not
+reach: the full hull, a strut truss and solar panels, against a starred sky.
+
+Measured at the new seat (`eyeLx` 48.003 m): `eyeLocal` **[48.00, 1.62, ~0]**,
+`eyeLocalOverBound` **1.334**. Outside the hull's own bound, by construction
+and confirmed by the same instrument that convicted the old seat.
+
+### 2.28.3 THE FRAMES
+
+`docs/screenshots/RN2470_station_before.png`: the six-audit interior, riveted
+wall panels meeting at a corridor corner, a floor, no stars anywhere in frame.
+`docs/screenshots/RN2470_station_after.png`: the hull FROM OUTSIDE -- a
+cylindrical pressure hull, a docking ring, solar-panel struts extending past
+both frame edges, an antenna, against a starred sky. Both committed. The
+shot's `box` rectangle is re-derived to the hull's own body (`[0.05, 0.08,
+0.95, 0.60]`), clear of both first-person hands (which sit below y 0.62 in
+this frame) and the old rectangle's dependence on a framing this lane
+replaced; `loFrac` 0.848, `hiFrac` 0, no clipped glove skin inside it.
+
+Three fresh Chromium processes, same build, same server: `box.luma` **11.64**,
+`box.iqr` **12.21**, `world.luma` **19.57**, `eyeLocal` to four decimals and
+`eyeLocalOverBound` **1.334** all three times, `valid: true` all three times.
+
+### 2.28.4 THE TWO STALE DOCSTRINGS
+
+`StationView.ts:144-156` (`place`'s docstring) said the quaternion handed to it
+"is `stationQuat`'s" and that it is "taken once at install". Neither has been
+true since CE-116: `place` is now called every tick by `StationMount.ts:173`'s
+carrier watcher, composing the measured install-tick offset onto the carrier's
+LIVE `poseAt`, and `stationQuat` runs exactly once per boot, to build the
+authored pose that offset is measured against. Rewritten to say so, with a
+forward note that this docstring used to describe a second, since-removed
+caller.
+
+`StationMount.ts:16-34` framed `OrbitCarrier.poseAt` and `stationQuat` as "two
+conventions and NEITHER IS WRONG" (CE-30), true when written and never updated
+after CE-115 (settled which convention `stationAxes` reads live) and CE-116
+(removed the drawn hull's second writer) settled which one is LIVE. Rewritten
+to say plainly that `stationQuat` now runs once per boot and nowhere else,
+with forward pointers to the CE-115/CE-116 paragraphs already in the file
+rather than duplicating them.
+
+Both were named by R4 (section 2.27.5, item 2) as the reason three audits
+before it chased the wrong suspect; a fourth read them before this lane did.
+
+### 2.28.5 Rails
+
+Real Windows D3D11 through ANGLE (Chrome, RTX 4060 Ti), 1600x900, HUD-free
+through `of.screenshot()`. `vite preview` on `127.0.0.1:5930`, `--strictPort
+--host 127.0.0.1`, sentinel written into `dist` and fetched back over the wire
+before capture; the port's owner PID was the PID this lane started and is the
+PID killed at teardown. `npx tsc --noEmit`, `npx vite build` and `cd web &&
+npm run check` run as SEPARATE steps with each exit status read on its own: 0,
+0, **8 of 8** (`check:boot` real GPU: `ANGLE (NVIDIA, NVIDIA GeForce RTX 4060
+Ti (0x00002803) Direct3D11 vs_5_0 ps_5_0, D3D11)`). Did not touch
+`web/wasm/dist/*`, `test/expected.json`, any texgen or Blender file, or any
+file outside the three named below. No manifest row and no rect-block outside
+the `station` row's own partition: N1's `midfield`/`meadowfield` rows and
+`artframe.js`'s terrain rectangles are untouched; the only shared function
+(`atCapture`) got exactly the fields this row needed, no unrelated field
+removed. Three files touched: `web/tools/smoke/probes/artframe.js` (the
+`station` row and its `atCapture` block, its own partition),
+`web/src/render/StationView.ts` (docstring only, lines 144-156),
+`web/src/app/StationMount.ts` (docstring only, lines 16-34). Branch
+`lane/n5-station`, pushed, **not merged to main**.
+
+### 2.28.6 Owed
+
+1. **The eye-height offset does not add cleanly to the hull-local "up" axis
+   off-centre.** At the OLD (off-axis) seat, `eyeLocal` read
+   `[~0, 1.62, 4.00]` where the seat's own documented local offset is
+   `[3.47, 0, 1.98]` -- the magnitudes are consistent (both instruments agree
+   the eye is about 4.3 m from the hull's own origin) but the PER-AXIS split
+   does not match a naive "add eye-height along local Y" model. Not chased
+   further here because the new seat is on-centre (`eyeLy = eyeLz = 0`, where
+   the effect is not observable: measured `eyeLocal.z` there is ~0.0002) and
+   the fix does not depend on resolving it, but a caller who wants `eyeLx`/
+   `eyeLy`/`eyeLz` to predict `eyeLocal`'s per-axis split off-centre should not
+   assume a pure translation.
+2. **The frame is dim** (`box.luma` 11.64, `world.luma` 19.57) and by eye reads
+   correctly under-lit rather than broken: `sunBearingDeg` 88.59 at the shipped
+   `timeOfDay: 0.60` puts the sun nearly edge-on to the visible face, and the
+   shot's own why-note asks for exactly this case ("no terrain bounce, no
+   atmosphere, no fill, so the entire read is the direct sun, the IBL and the
+   material"). A brighter framing is a `timeOfDay`/`stationClockS` sweep, not
+   named here as a defect.
+3. **Everything section 2.27.10 already owed** (no new poses, motion
+   unmeasured, quality tiers, the fifteen number-only arms) is unmoved by this
+   lane, which touched one row.

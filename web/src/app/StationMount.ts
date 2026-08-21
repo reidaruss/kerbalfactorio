@@ -13,11 +13,17 @@
 // THE ATTITUDE IS A MEASURED CONSTANT, NOT AN ASSUMPTION THAT THE TWO AGREE.
 // ===========================================================================
 //
-// `OrbitCarrier.poseAt` publishes an LVLH basis derived from the record's own
-// `r x v`. `stationSolid` poses the interior with `stationQuat`, which is
-// nadir-pointing from +Y. These are two conventions and NEITHER IS WRONG; CE-30
-// says so in as many words ("a consumer that wants the station's authored
-// attitude composes its own constant offset rather than this file guessing").
+// RN-2471. `OrbitCarrier.poseAt` publishes an LVLH basis derived from the
+// record's own `r x v`. `stationSolid` was BUILT with `stationQuat`, which is
+// nadir-pointing from +Y. CE-30 called these two conventions with neither
+// wrong, each free to answer a different question ("a consumer that wants
+// the station's authored attitude composes its own constant offset rather
+// than this file guessing").
+// CE-115 (below) and CE-116 (further down, in `mountStationOn`) have since
+// settled that only the carrier's convention is LIVE: `stationAxes` no longer
+// reconstructs `stationQuat`, and the drawn hull no longer gets a second write
+// from it either. `stationQuat` now runs exactly once per boot, to build the
+// AUTHORED pose the offset below is measured against, and nowhere else.
 //
 // Writing the carrier's own quaternion straight onto the solid would have
 // rotated the shipped interior at boot, on a station a player has walked around
