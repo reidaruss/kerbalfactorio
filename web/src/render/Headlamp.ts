@@ -27,6 +27,7 @@ import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 import { stockFloor, STOCK_FLOOR_MODE } from './materials/StockFill.js';
+import { auditSceneLights } from './materials/EmissiveLight.js';
 
 /**
  * Samples taken up the column between the eye and the sky. THIS IS A THICKNESS
@@ -218,6 +219,22 @@ export class Headlamp {
     this.spot.visible = true;
     near.add(this.spot);
     near.add(this.spot.target);
+    // RN-2385. THE REGISTRATION COUNT, TAKEN HERE BECAUSE THIS IS THE FILE
+    // THAT OWNS THE RULE, and taken at the end of the constructor because that
+    // is the instant every light this scene will ever hold exists.
+    //
+    // The rule is the paragraph twelve lines up: three's `projectObject` drops
+    // an invisible light before the lights state, so the light COUNT is part
+    // of the program cache key and a light that appears later costs a full
+    // recompile of the near scene (measured: 441 ms, 30 programs). That is
+    // why the lamp is intensity 0 rather than hidden, and it is also why
+    // world audit R3's rank 3 -- "a hot machine must light what is near it" --
+    // could NOT be answered with a pool of point lights that grows with the
+    // factory. `EmissiveLight.ts` carries that decision and the WebGL2 ceiling
+    // behind it; this line is the CHECK on its central claim, so
+    // `__ofEmit.report().sceneLights` is a reading of the live scene graph and
+    // not a sentence in a comment (NUMBERS.md's own rule about the two).
+    auditSceneLights(near);
   }
 
   /** One press of KeyL. Returns the new state so the caller can report it. */
