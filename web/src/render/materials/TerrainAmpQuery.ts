@@ -279,6 +279,28 @@ export function horizonCellFromQuery(): THREE.Vector2 {
   );
 }
 
+/**
+ * RN-2422. THE GROUND'S half of the emissive irradiance, as its own isolator.
+ *
+ * `?firelight=0` already multiplies the whole model by zero, and it is the
+ * right control for "is the fire's light worth anything". It cannot answer the
+ * question this seam adds, which is a different one: the machine half and the
+ * ground half fail differently -- a shell that is too bright is a material
+ * error and a ground that is too bright is a footprint of light on a surface
+ * with no shadowing in it -- and one switch cannot separate them. So
+ * `?firelightground=0` keeps every program and every machine surface exactly
+ * as M3 shipped them and zeroes the TERRAIN's take alone, which makes the
+ * night-ground pair one FLAG apart on one build instead of one build apart.
+ *
+ * A hard 0 or 1 rather than an amplitude, on `reliefGrad`'s precedent: what it
+ * restores is a previous STATE (the ground that took no emissive light at all)
+ * and an intermediate value would be neither state.
+ */
+export function emitGroundFromQuery(): number {
+  return new URLSearchParams(self.location.search)
+    .get('firelightground') === '0' ? 0 : 1;
+}
+
 export function horizonEcoFromQuery(): number {
   const p = new URLSearchParams(self.location.search);
   if (p.get('horizon') === '0' || p.get('horizoneco') === '0') return 0;

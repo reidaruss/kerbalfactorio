@@ -19,7 +19,8 @@ import { biomeColorArray } from './BiomePalette.js';
 import { GROUND_RELIEF_MAP, GROUND_VALUE_MAP, groundTexture } from './GroundTextures.js';
 import { ART_COARSE_M, ART_FINE_M, FINE_A, FINE_B, FINE_R, FINE_W,
   MID_A_M, MID_B_M, RELIEF_FINE_M } from './TerrainArt.glsl.js';
-import { artAmpFromQuery, fineAmpFromQuery, groundReliefAmpFromQuery,
+import { artAmpFromQuery, emitGroundFromQuery, fineAmpFromQuery,
+  groundReliefAmpFromQuery,
   horizonAmpFromQuery, horizonCellFromQuery, horizonEcoFromQuery, massifAmpFromQuery,
   massifFadeFromQuery, massifMFromQuery,
   splatAmpFromQuery, splatFarAmpFromQuery,
@@ -213,6 +214,10 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     value: horizonAmpFromQuery(),
   };
   const horizonEco: THREE.IUniform<number> = { value: horizonEcoFromQuery() };
+  // RN-2422. The ground's half of the emissive irradiance: 1 shipped, 0 is the
+  // ground that takes no fire light at all, i.e. every machine surface exactly
+  // as M3 shipped it and the terrain back where it was.
+  const emitGround: THREE.IUniform<number> = { value: emitGroundFromQuery() };
   // RN-2421. The cell guard's arming scalar and the analytic stand-in's
   // amplitude, shared by reference into both materials for horizonAmp's reason.
   const horizonCell: THREE.IUniform<THREE.Vector2> = {
@@ -277,7 +282,7 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
-    phaseProbe, horizonAmp, horizonEco, horizonCell,
+    phaseProbe, horizonAmp, horizonEco, horizonCell, emitGround,
     massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,
   };

@@ -214,6 +214,24 @@ const BUNDLE: Record<string, THREE.IUniform> = {
 };
 
 /**
+ * RN-2422. THE SAME BUNDLE, PUBLISHED, for the one consumer that cannot take
+ * `injectEmissiveLight`: the TERRAIN. That splicer anchors on
+ * `#include <lights_fragment_begin>`, and `TerrainShader` has no such include
+ * because it is not a stock program -- it lights itself from `uSunDir` and
+ * reads no three.js light at all (`Headlamp.ts`'s own header says so, and
+ * 2.25.2 records it as the FIRST reason a pool of real point lights was
+ * rejected: "a real point light cannot light the ground a furnace stands on,
+ * which is half the picture the audit asked for").
+ *
+ * So the terrain takes the DECLARATION and the UNIFORMS directly and writes its
+ * own one-line use, and what makes that safe is that both are exported from
+ * HERE: there is one copy of `ofEmitIrradiance`, one copy of the four uniform
+ * holders, and a change to the model reaches the ground and the machine in the
+ * same commit by construction.
+ */
+export const EMIT_UNIFORMS: Record<string, THREE.IUniform> = BUNDLE;
+
+/**
  * `uFireGlow` is NOT in the bundle, on `PropSkyAmbient`'s `uPropHaze`
  * precedent and for the same reason: it belongs to the emissive SURFACE
  * (`MachineFx`) rather than to the irradiance splice, and it has to be bound
@@ -383,6 +401,12 @@ const DECL = /* glsl */`
     return ofEsum * uEmitAmp;
   }
 `;
+
+/**
+ * RN-2422. The declaration, exported for the terrain's own splice. See
+ * EMIT_UNIFORMS for why the terrain cannot use `injectEmissiveLight`.
+ */
+export const EMIT_DECL_GLSL = DECL;
 
 const F_COMMON = '#include <common>';
 const F_LIGHTS = '#include <lights_fragment_begin>';

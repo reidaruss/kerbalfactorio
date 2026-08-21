@@ -17,6 +17,7 @@ import { CASCADE_GLSL } from './CascadeShadow.glsl.js';
 import { BAYER } from './TerrainDither.glsl.js';
 import { TERRAIN_TREELINE_PARS } from './TerrainTreeline.glsl.js';
 import { TERRAIN_PHASE_PARS } from './TerrainPhase.glsl.js';
+import { EMIT_DECL_GLSL, EMIT_INSTALLED } from './EmissiveLight.js';
 import type { DepthPolicy } from '../DepthPolicy.js';
 
 export function terrainFragPars(depth: DepthPolicy): string {
@@ -288,5 +289,13 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // produces is the PRE-SPLICE PROGRAM (2.25.7). Honouring it here keeps the
     // ground's per-fragment cost measurable against the same three-state flag
     // the machine programs are measured against instead of a fourth one.
+    // RN-2422. The GROUND's own isolator, ?firelightground=0. Declared beside
+    // the model rather than with the far-ground uniforms because it belongs to
+    // this seam; see TerrainAmpQuery.emitGroundFromQuery for why the machine
+    // half's flag could not answer for it.
+    uniform float uEmitGround;
+    #ifndef OF_SCALED
+    ${EMIT_INSTALLED ? EMIT_DECL_GLSL : ''}
+    #endif
 `;
 }

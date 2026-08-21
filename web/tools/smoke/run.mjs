@@ -276,6 +276,13 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // Registered in the same commit that introduces them, per this list's own
   // rule and RN-152's scar.
   'horizoncell', 'horizoncellan',
+  // RN-2422. THE GROUND's half of RN-2385's emissive irradiance.
+  // `firelightground=0` keeps every program and every machine surface as M3
+  // shipped them and zeroes the TERRAIN's take alone, which is what makes the
+  // night-ground pair one flag apart on one build. `firelight=0` remains the
+  // control over the WHOLE model. Registered in the same commit that
+  // introduces it, per this list's own rule.
+  'firelightground',
   // RN-2340, the MASSIF term: two kilometre-scale octaves on pM that carry the
   // band past where a 256 m-period texture rung can reach. NOT nested under
   // `horizon=0`, deliberately: it is a different mechanism on a different
