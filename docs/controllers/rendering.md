@@ -1,6 +1,6 @@
 # Rendering & Graphics: Master Controller Context
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2330 to RN-2339, `lane/l5-vegassets`: THE NEAR VEGETATION ASSET PASS, world audit R2's rank 5. Grass blade texture narrowed and multiplied (texgen `_grass_strips` 11 -> 15 blades, root half-width 0.026-0.040 -> 0.017-0.026, tip 0.012 -> 0.009, coverage measured 0.375 against the 0.35 floor, `CARD_U_SPAN` 0.27 -> 0.20 to hold the painted-blades-per-card count and areal density unmoved); `Canopy_Broadleaf_LOD2` (the rung nearly every scatter canopy tree in a frame actually renders at) rebuilt from a closed faceted `hc.lobe`/`_dome` shell -- literally "a papercraft ball of flat pentagons" -- into two `_leaf_spray` card clouds (the same technique RN-284 already proved on the harvest broadleaf), 58 -> 180 triangles; forest-floor litter (`FallenLog`, `MushroomCluster`) raised from one-triangle flat paddles to a curled `segs=2` shape with `twist` and wider `droop_var`, +12/+10 triangles, and the fern's own litter (already segs 2) gained the same `twist`/`droop_var` at zero cost. Two full `texgen.py` rebuilds are byte-identical and only `of_grass_a.png` moved against a 52-file corpus hash. `validate_glb`, `check_shadow_lod`, `check:roles`, `check:proplods`, `check:proxies`, `typecheck`, `check:pose`, `check:limits`, `check:boot` all green (8/8 on `npm run check`). Real-GPU before/after frames at `meadow` and `forestfloor` (ANGLE/D3D11, RTX 4060 Ti): the blade change is real but modest at a 1-3 m standing eye, the litter change is real but not the dominant near-band content at the judged pose. Walk counters 41,300 / 52,139 reproduce unmoved. Full record in section 2.21. THIS LINE IS A POINTER: replace it, never append to it.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2340 to RN-2345, `lane/l1-farground`: THE FAR GROUND, world audit R2's rank 1 and its top blocking row. Two world-locked splat rungs on WG-230's `vPhase` (32 m and 128 m world tiles at repeats 8 and 2 RETURNED by `assertPhasePeriod` at module load, three-plane on one carrier, warped, handed over from the shipped ladder's own `SPLAT_COARSE_FOOT[1]` on a footprint ladder of ratio three); a MASSIF term of two `pM` octaves (1240 m, 390 m) compiled into BOTH programs because the ridges the audit's rectangle measures sit past the chunk-depth cutoff; a curvature read off the geometric normal's screen divergence; and a range-aware biome-boundary break for L2's rank-2 staircase. `?horizon=0` is the exact pre-lane ground and reproduces every committed R2 rectangle to the digit. `vista.hzBand` iqr with `?aerosol=0` **5.49 -> 8.65** against a stated target of 8.0; `vistanoon.hzBand` bare 4.28 -> 7.86; `vistanoon.mid` in air 4.86 -> 8.14; `flyovernoon.under` under `?canopy=0` **6.07 -> 13.78**, the audit's decisive aerial number, x2.27. `limb` and every walk-pose committed rectangle (`meadow`, `forestfloor`, `midfield`, `meadowfield`, `voxelface`, `mtnslope`) identical to the digit. The audit's shipped-air done-when of 3.8 at `vista.hzBand` is NOT met (2.93) and the reason is measured: the air arm is a near-fixed fraction of the bare arm at every amplitude, so that figure is an aerosol measurement rather than a ground one. Four instrument findings recorded in NUMBERS.md RN-2341 to RN-2344 (a rectangle named for one range measuring ground at five times it; a periodic noise at one repeat is a constant; an amplitude cannot rescue wrong units; "the value survives where the derivative does not" is about precision and says nothing about sampling), and RN-2345 flags a vertex-side item to Admin. `npm run check` 8/8. Full record in section 2.22. THIS LINE IS A POINTER: replace it, never append to it.)
 
 
 
@@ -6368,3 +6368,142 @@ worktree's own `web/dist`, fetched back before the first probe), ports 5901
 or `expected.json`. `render/grass/*`'s wiring, `TerrainCoverFar*`, palette hue
 tables, `Terrain*` materials and `ShadowRig` are untouched, per the audit's
 own file-seam partition.
+
+---
+
+## 2.22 THE FAR GROUND (RN-2340 to RN-2345, 2026-08-21, `lane/l1-farground`)
+
+> **Numbers:** RN-2340 to RN-2345 of the RN-2340 to RN-2354 block; RN-2346 to
+> RN-2354 surrendered unused. **Base:** `origin/main` at `cc7e1cb7`.
+> **Charter:** world audit R2's **rank 1**, the top blocking row: "past roughly
+> seventy-five metres the terrain still has no material and no sub-massif
+> relief". **Frames:** `docs/screenshots/RN2340_*`.
+
+### 2.22.1 What shipped, in one paragraph
+
+Four terms and one isolator. **Two world-locked rungs of the splat** on WG-230's
+`vPhase` (32 m and 128 m world tiles, three-plane, one carrier), handed over from
+the shipped ladder's own last boundary on the pixel footprint. **A massif term**
+of two `pM` octaves at 1240 m and 390 m, value and normal, compiled into **both**
+the near and the scaled program. **A curvature read** off the geometric normal's
+screen divergence, which measures the mesh's own relief at whatever scale the
+pixel can resolve. **A range-aware biome-boundary break** that displaces
+`vBiomeColor` along its own screen derivative by a mip-filtered offset measured
+in pixels, which is lane L2's rank-2 staircase seen from this side of the file
+seam. `?horizon=0` restores the exact pre-lane ground and reproduces every
+committed R2 rectangle to the digit.
+
+### 2.22.2 The two coordinates, and why the material now has three
+
+`vChunkUv` is well conditioned and its world scale doubles at every LOD ring.
+`pM` is world-locked and its 62.5 mm quantum destroys a screen derivative in the
+near field. `vPhase` is world-locked AND resolvable, and its quantum is set by
+the CHUNK's extent rather than the BODY's radius (30.5 um under 256 m of
+half-extent, 0.24 mm at 3.7 km, 1.95 mm at 21 km), which is why it is the one
+coordinate that reaches the far band.
+
+It does not reach past its own 256 m period, and that is the whole reason the
+massif term is on `pM` instead. The inversion is worth stating because it reads
+like a regression to what RN-45 banned and is not: RN-45's finding is that `pM`'s
+quantum destroys a derivative **wherever the pixel footprint is comparable to
+it**, which is the near field. The massif term is gated to a 1.8 m footprint and
+up, where the quantum is a twenty-ninth of a pixel and falling. **`vPhase` is
+better everywhere it reaches; it simply does not reach a kilometre.**
+
+### 2.22.3 The owed items paid, and the one flagged up
+
+- `TerrainArt.glsl.ts`'s header owed "a per-chunk phase attribute reduced mod the
+  octave period on the CPU in float64 ... flagged up rather than faked". WG-230
+  shipped it; this lane consumed it. The header now says so, and says explicitly
+  that the flag does NOT come down for the terms in that file.
+- `TerrainSplat.ts`'s UV note owed the same contract, and `SPLAT_COARSE_RATIO`'s
+  note predicted in advance that a third rung on `vChunkUv` would put a scale
+  step in the middle of the band. The prediction held and the note is kept as
+  written rather than rewritten in hindsight.
+- `assertPhasePeriod(tileM, who)` is called at module load for **every** period
+  this lane introduces, and the repeat counts the shader multiplies by are what
+  it RETURNS rather than integers typed beside the tiles.
+- **Flagged to Admin, not fixed (RN-2345):** a true geometric widening of the
+  biome blend is a VERTEX- or CPU-side change. Every per-vertex field in this
+  material is C0 on the coarse-LOD grid, so a fragment cannot low-pass any of
+  them.
+
+### 2.22.4 The numbers, one flag apart on one build, fresh process each
+
+`?horizon=0` is the before arm throughout. Every before figure below is also the
+R2 audit's own committed value, re-read blind, so the control is verified rather
+than asserted.
+
+| rectangle | before | after | note |
+|---|---:|---:|---|
+| `vista.hzBand` iqr, `?aerosol=0` | **5.49** | **8.65** | +58%, against a stated target of 8.0 |
+| `vista.hzBand` iqr, shipped air | 2.07 | 2.93 | +42% |
+| `vistanoon.hzBand` iqr, `?aerosol=0` | 4.28 | 7.86 | +84% |
+| `vistanoon.mid` iqr, shipped air | 4.86 | 8.14 | +67% |
+| `vistanoon.mid` iqr, `?aerosol=0` | 11.36 | 11.79 | +4% |
+| `vista.mid` iqr, `?aerosol=0` | 19.13 | 22.00 | +15% |
+| `flyovernoon.under` iqr, `?canopy=0` | **6.07** | **13.78** | **x2.27**, the audit's decisive aerial number |
+| `flyovernoon.shadowStep` iqr, `?canopy=0` | 47.34 | 45.41 | the staircase, see 2.22.6 |
+| `flyover.box` iqr | 55.35 | 55.85 | |
+| `limb`, every rectangle | | **identical to the digit** | the orbit guard, see 2.22.5 |
+| `meadow`, `forestfloor`, `midfield`, `meadowfield`, `voxelface`, `mtnslope` | | **every committed rectangle identical to the digit** | walk counters unmoved |
+
+**The audit's own done-when is NOT met in the air arm, and that is reported
+rather than argued away.** It asked `vista.hzBand` to clear 3.8 in shipped air;
+it reads 2.93. The reason is measurable and is not the material: the air arm is a
+near-fixed fraction of the bare arm across every amplitude tried (2.07/5.49 =
+0.377, 2.93/8.65 = 0.339, 3.00/10.00 = 0.300), so **the shipped-air figure at
+that range is an aerosol measurement and not a ground measurement**, and clearing
+3.8 would need a bare-air 11 to 13, which costs the middle distance more than it
+buys (see `MASSIF_A_VALUE`'s own sweep table). Routed to Admin as a question for
+L3 and A4 rather than answered here.
+
+### 2.22.5 Why one term is in the SCALED program
+
+The massif block and its normal half are the first surface-art terms compiled
+into both materials. They have to be: the ridges the audit's `hzBand` rectangle
+is actually measuring sit past the chunk-depth cutoff. The only quantity that
+needed correcting for the scaled program is the pixel footprint, because `dist`
+and `pM` are already in metres in both and `footM` is in scene units. `limb`
+reproduces to the digit on every rectangle, guarded by the massif's own distance
+fade rather than by an argument about footprints.
+
+### 2.22.6 The staircase, and what actually broke it
+
+`RN2340_flyovernoon_canopy0_before.png` against `_after.png` is the pair. Before:
+a featureless plate with a hard, regular, square-toothed dark region. After: the
+ground carries material everywhere and the boundary is a soft irregular edge with
+no teeth in it. **Two things did that and only one of them is the term built for
+it:** the mid rung's own texture is most of it (`under` iqr 6.07 -> 13.78 is the
+same change), and the boundary break contributes `shadowStep` 45.06 -> 45.41 at
+1x and 48.56 at 4x. 1x is shipped because 4x fringes the edge with out-of-gamut
+speckle: the displacement is a first-order extrapolation of a linear field and it
+overshoots past the neighbouring biome's colour.
+
+### 2.22.7 Cost, stated
+
+Six texture fetches added to every terrain fragment in the near program, plus two
+3-D value noises and four derivatives; the fetches are unconditional inside a
+bare-uniform branch because a branch on the per-pixel handover would put them in
+non-uniform control flow. **Owed, and recorded rather than pretended away:** the
+one-carrier decision means every material at range is modulated by rock's detail
+rather than its own (the two-carrier version is twelve fetches); and the horizon
+rung's 128 m tile shares the anti-tiling warp's own period, so it is barely bent
+by it and reads as a fine regular lattice on the aerial ground.
+
+### 2.22.8 Rails
+
+Real Windows D3D11 through ANGLE (Chrome), 1600x900, HUD-free through
+`of.screenshot()`, every shot `valid: true` and `poolRefused: 0`. Served from a
+`vite preview` this lane owned on `127.0.0.1:5341`, `--strictPort`, sentinel
+`dist/of-sentinel-rn2340.txt` written into this worktree's own `dist` and fetched
+back over the port before each proof batch, ownership confirmed by
+`Get-NetTCPConnection -LocalPort 5341`, killed by that PID. The WG-230 digest
+tool reruns to `642e0671` byte-identical in three fresh processes, with `divides`
+true at 2 m and 8 m and false at 3 m. C1 and C3 read back off the live build: all
+six hue luminances 1.000000; C4's bands unchanged at 35/75 and 30/60; both splat
+maps 1024 px, not placeholders. `npm run check` 8/8, each gate also run
+separately and its exit status read. Did not touch `web/wasm/dist/*` or
+`expected.json`; `render/grass/*`, `TerrainCoverFar*`, the palette hue tables and
+`ShadowRig`/`ContactPass` are untouched, and `TerrainFragLight.glsl.ts` was
+edited only in its non-cascade half, per the audit's stated file-seam partition.
