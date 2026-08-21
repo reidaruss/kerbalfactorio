@@ -1,6 +1,8 @@
 # Rendering & Graphics: Master Controller Context
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2285 to RN-2290, `lane/world-audit-r2`: THE WORLD LOOK AUDIT ROUND 2, which re-judged the whole world against the D-020 bar from scratch through everything landed since R1. **The first hundred metres is now good, the sky is good, and everything from a hundred metres to the horizon is unbuilt.** Five of R1's seven blocking gaps are closed and the haze is at bar; the two that remain are the far terrain's material AND sub-massif relief (the massif silhouettes themselves read; nothing finer than that does) -- proved by an `?aerosol=0` ceiling of 5.49 on `vista.hzBand` and an `under` iqr of 6.07 at 1,200 m with the vegetation off, so the haze is not what is hiding the mountain -- and the aerial texel staircase, which survives `?shadowcast=0`, `?clouds=0`, `?splat=0` and `?canopy=0` and whose own flag turns out to be a broken control that GL-errors at `machine`. Third new blocking item: the world's whole-frame `warm` is NEGATIVE on all four aerial poses and positive on eleven of the twelve ground poses, the stated exception being `pondside` (whole-frame warm -18.04, a ground pose whose frame is mostly water surface), i.e. it reads as a sea from the air apart from that one water frame. Two new poses, each closing a domain nothing could photograph: `pondside` (the only water surface on Forge, 55 m from spawn) and `meadownight` (sky luma 0.07 at iqr 0.00). Twelve committed rectangles from 2.14 to 2.19 reproduce to the digit. Full record in section 2.20; ranked queue and top five lanes in docs/web/WORLD-AUDIT-R2-2026-08-21.md. THIS LINE IS A POINTER: replace it, never append to it.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2305 to RN-2308, `lane/l2-shadowregion`: **R2's rank 2, "a hard texel-staircase shadow region across the aerial mid-field", IS NOT A SHADOW.** `?shadows=0` -- the rig built at zero cascades with `renderer.shadowMap.enabled` false -- reproduces the frame bit-identical, as do eleven other one-flag arms, and the region is invariant to sun azimuth and elevation. Painting the terrain fragment's own intermediates found it in four builds: `ndl`, `shadow` and `sunT` each render a uniform ground, `albedo` renders the region, and `vBiomeColor` renders it in three flat biome colours with the same staircase edge. It is the **Forest ground palette (`0x41392b`) meeting Hills (`0x6b6650`) across a one-cell barycentric blend on the coarse terrain LOD** -- a 2.7x value step whose teeth are the vertex grid -- so rank 2 and L3's routed "litter-as-clearing-colour" item are ONE defect, and nothing in the shadow files can fix it. What this lane did ship is the two instruments it was told to fix first: `?shadowcast=0` is a working isolator on every pose (the sampling compiles out, and `ViewModelLight` no longer casts with no cascade map to lend, which was the actual source of the x256 `GL_INVALID_OPERATION`), and the post stack's sub-horizon sun is no longer stale (`meadownight` `upCheck` 0.508 -> 0.000). Full record in section 2.21. THIS LINE IS A POINTER: replace it, never append to it.)
+>
+> *(previous pointer, kept one deep: RN-2285 to RN-2290, `lane/world-audit-r2`: THE WORLD LOOK AUDIT ROUND 2, which re-judged the whole world against the D-020 bar from scratch through everything landed since R1. **The first hundred metres is now good, the sky is good, and everything from a hundred metres to the horizon is unbuilt.** Five of R1's seven blocking gaps are closed and the haze is at bar; the two that remain are the far terrain's material AND sub-massif relief (the massif silhouettes themselves read; nothing finer than that does) -- proved by an `?aerosol=0` ceiling of 5.49 on `vista.hzBand` and an `under` iqr of 6.07 at 1,200 m with the vegetation off, so the haze is not what is hiding the mountain -- and the aerial texel staircase, which survives `?shadowcast=0`, `?clouds=0`, `?splat=0` and `?canopy=0` and whose own flag turns out to be a broken control that GL-errors at `machine`. Third new blocking item: the world's whole-frame `warm` is NEGATIVE on all four aerial poses and positive on eleven of the twelve ground poses, the stated exception being `pondside` (whole-frame warm -18.04, a ground pose whose frame is mostly water surface), i.e. it reads as a sea from the air apart from that one water frame. Two new poses, each closing a domain nothing could photograph: `pondside` (the only water surface on Forge, 55 m from spawn) and `meadownight` (sky luma 0.07 at iqr 0.00). Twelve committed rectangles from 2.14 to 2.19 reproduce to the digit. Full record in section 2.20; ranked queue and top five lanes in docs/web/WORLD-AUDIT-R2-2026-08-21.md.)*
 
 
 
@@ -6212,3 +6214,263 @@ scope (narrowed to the band nearest the treeline; range-strip iqr survives
 past 25 m), and rank 1's relief claim (no material and no sub-massif relief,
 not "no relief of any kind"). The lane-sequencing reorder in 2.20.9 (L4 after
 L1, L5 promoted) is the same verifier's recommendation, adopted by Admin.
+
+---
+
+## 2.21 THE AERIAL "SHADOW" REGION IS NOT A SHADOW (RN-2305 to RN-2308, 2026-08-21, `lane/l2-shadowregion`)
+
+> **Chartered as** R2's rank 2, THE AERIAL SHADOW REGION: fix `?shadowcast=0`,
+> fix the below-horizon stale sun, then kill or hide the texel staircase.
+> **Owns** `ShadowRig.ts`, the cascade half of `TerrainFragLight.glsl.ts`,
+> `post/ContactPass.ts` and the `shadowcast` param.
+> **Base** `origin/main` at `e7b8f037`. **Numbers** RN-2305 to RN-2308 used of
+> the RN-2305 to RN-2319 block; RN-2309 to RN-2319 surrendered unused.
+
+### 2.21.1 THE HEADLINE, AND IT REFUTES THE LANE'S OWN NAME
+
+**The staircase is two biome ground albedos meeting on a coarse vertex grid.**
+The Forest palette is `0x41392b` (RN-347's leaf-litter-and-humus colour) and
+Hills is `0x6b6650`; `vBiomeColor` is a per-vertex read of that table
+(`TerrainVertex.glsl`: `int bi = int(aBiome.x + 0.5); vBiomeColor =
+uBiomeColor[bi];`) interpolated barycentrically across ONE mesh cell. At the
+`flyovernoon` pose the ground at the boundary is depth-9 to depth-8 terrain,
+57.8 m and 115.0 m per cell, so a 2.7x step in value is delivered across one
+cell of a quadtree mesh and rasterises as a hard, square-toothed line. Nothing
+in the shadow pipeline is involved, at any hour, at any altitude.
+
+**Rank 2 and rank 3 are therefore ONE defect.** L3's brief already carries "the
+litter-as-clearing-colour palette defect RN-2275 routed"; this is that defect
+seen from 1,200 m instead of from a standing eye. See 2.21.5 for the handover.
+
+### 2.21.2 THE PROOF, in the order it was taken
+
+**Twelve one-flag arms, all identical to the digit** at `flyovernoon` under
+`?canopy=0` (`box` 147.36 / iqr 59.62, `shadowStep` 126.85 / 47.34, `under`
+146.11 / 6.07, `hzBand` 198.39 / 13.15). The decisive one is `?shadows=0`,
+which R2 never ran: it builds the rig with **zero cascades** (`OF_CASCADES` 0,
+so `ofCascadeShadow` is `return 1.0`) and clears
+`renderer.shadowMap.enabled`, and it moves nothing. `?ao=0` and `?contact=0`
+(both armed, `postState` confirms, `contactRan` false in the second) move
+nothing, so it is not the post stack either. `?treeline=0` and `?crownshade=0`
+move nothing and could not: `?canopy=0` drives `canopyReachOutM` to 0 and the
+far-treeline block is guarded by `uTreeline.z > 0.0`, so the paint is already
+off (`treeline.reachM 0`, `self.live false`). `?terrainart=0` and
+`?horizonocc=0` move nothing. **`?cutoff=5` and `?cutoff=7` move the near/far
+scene split from 57/141 chunks to 75/123 and 38/160 and leave every ground
+rectangle identical**, which retires the near-vs-scaled material seam as a
+candidate and is a real positive result about those two materials agreeing.
+
+**It is sun-invariant.** Present unchanged at dot 0.897, 0.55 and 0.20, and --
+the stronger test, because those three differ in elevation as well as bearing
+-- unchanged at `timeOfDay 0.314` against local noon's 0.414, i.e. an hour and
+a half of azimuth. A terminator cannot do that.
+(`RN2305_flyovernoon_time0314.png`.)
+
+**It is world-located, not a ring.** At the same camera position, yaw 120
+instead of 300, there is no artefact anywhere in the frame
+(`RN2305_flyovernoon_yaw120.png`).
+
+**Its teeth are the vertex grid.** `?split=2.8` takes `box` iqr 59.62 -> 39.70
+and `shadowStep` iqr 47.34 -> 35.41 with visibly coarser, fewer teeth;
+`?split=0.7` takes them to 61.20 and 53.41 (`RN2305_flyovernoon_split28.png`).
+At 400 m the same two palettes meet as SOFT dark patches with no staircase at
+all (`RN2305_flyovernoon_alt400.png`), because the cell that carries the blend
+is a smaller fraction of the screen there.
+
+**And then the term was painted rather than argued about.** One line of
+`TerrainFragLight.glsl.ts`, reverted before commit:
+
+```glsl
+gl_FragColor = vec4(lit, 1.0);
+gl_FragColor = vec4(vec3(ndl), 1.0);   // then shadow, then sunT, then albedo
+```
+
+| painted | frame | verdict |
+|---|---|---|
+| `ndl` | `RN2305_term_ndl.png` | uniform white ground, **no region** |
+| `shadow` | `RN2305_term_shadow.png` | uniform white ground, **no region** |
+| `sunT` | `RN2305_term_sunT.png` | uniform white ground, **no region** |
+| `albedo` | `RN2305_term_albedo.png` | **the region, with its staircase** |
+| `vBiomeColor` | `RN2305_term_biomecolor.png` | **the region, in three flat biome colours** |
+
+The photometry agrees with the palette to the arithmetic: with `?aerosol`/atmos
+off (`RN2305_flyovernoon_atmos0.png`) the dark side reads RGB 42.4 / 52.5 /
+35.2 against the pale side's 130.0 / 145.9 / 93.0, a per-channel ratio of 0.326
+/ 0.360 / 0.379 -- a near-flat multiplicative step of about a third, which is
+what two ground palettes of the same hue and a 2.7x value ratio produce, and is
+NOT what a lost `ndl` produces (that would be sun-dependent) or a lost `shadow`
+(refuted above).
+
+**Each of the four diagnostic builds was served from a preview restarted after
+it**, and the bundle hash returning to HEAD's `index-D3UCQCgE.js` after the
+revert is the byte-level proof that nothing of the diagnostic shipped. See
+2.21.6: the first attempt at this measurement was invalid and the reason is a
+new NUMBERS.md entry.
+
+### 2.21.3 THE ISOLATOR (RN-2306), and the GL error was not where anyone looked
+
+`?shadowcast=0` had two behaviours and neither was a measurement: x256
+`GL_INVALID_OPERATION: glDrawElements: Mismatch between texture format and
+sampler type` at `machine` (and, this lane found, at `meadow` -- it is every
+WALK pose, not one shot), and a byte-identical null at `flyovernoon`.
+
+**The error is in `ViewModelLight`, not in the terrain.** RN-1990's view-model
+sun sets `castShadow = true` ONCE and deliberately never toggles it, because
+`castShadow` is a program parameter and toggling it recompiles thirteen
+materials; the night case is handled by driving `shadowIntensity` to 0, which
+is right, because at night cascade 0's map still exists and the binding is
+valid. It is wrong for a map that was **never allocated**: this shadow has
+`autoUpdate` and `needsUpdate` both false so three never creates one of its
+own, and with `?shadowcast=0` there is no cascade map to alias. `sh.map` stays
+null, the light still declares `USE_SHADOWMAP`, three binds its default 2-D
+texture into a `sampler2DShadow`, and every view-model draw errors. That is why
+it is a walk-only symptom: an aerial pose has no view model. It is also latent
+without any flag, for any boot that never sees a daylight cascade.
+
+The fix latches on the map rather than on the flag:
+
+```ts
+const haveMap = c.shadow.map !== null;
+if (s.castShadow !== haveMap) s.castShadow = haveMap;
+```
+
+three does not dispose a shadow map, so `haveMap` goes false -> true once and
+never back: **one recompile at boot, none at dusk**, and the intensity path
+still owns the night exactly as it did.
+
+**The sampling half is a compile-time guard in `CascadeShadow.glsl.ts`**, and
+it is a constant rather than a uniform for a stated reason: `CASCADE_GLSL` is
+spliced into three materials (terrain, grass, water) that each build their own
+uniform map, so a `uniform float` declared here would be declared in all three
+programs and set in none of them, i.e. it would read 0 and switch the shipped
+shadows off. The flag is read once at boot and cannot change, so a preprocessor
+guard is the honest shape, and it takes the sampler out of the program
+entirely. `NUM_DIR_LIGHT_SHADOWS >= OF_CASCADES` was added to the same `#if` as
+the structural half: this function indexes `OF_CASCADES` slots off a quality
+knob three has never heard of, and where the two agree (every shipped tier) the
+compiled program is unchanged.
+
+**Absent is the shipped identity, measured:** `machine` `box` 22.11 / 17.52,
+`forestfloor` 22.82 / 18.78, `smelterhero` 52.07 / 47.57, `basedusk` 62.84 /
+53.20, all to the digit against R2's committed values, before and after.
+
+**Armed, it now moves pixels, which it never did on a ground pose without
+erroring:**
+
+| pose | `box` shipped -> `?shadowcast=0` | whole frame | calls |
+|---|---|---|---|
+| `smelterhero` | 52.07 / 47.57 -> **72.93 / 57.74** | 70.00 -> 87.12 | 100 -> 55 |
+| `machine` | 22.11 / 17.52 -> **26.72 / 18.49** (p95 43.74 -> 74.81) | 42.85 -> 53.38 | 100 -> 55 |
+| `forestfloor` | 22.82 / 18.78 -> 22.82 / 18.78 | 37.30 -> 38.32 | 75 -> 49 |
+| `flyovernoon` | 140.31 / 64.40 -> 140.31 / 64.40 | 152.07 -> 152.07 | 32 -> 23 |
+
+`RN2305_smelterhero_base.png` against `RN2305_smelterhero_shadowcast0.png` is
+the hero pair: the cast shadow across the smelter's own face, the grass shadows
+and the shading on the gloves all leave together. `forestfloor`'s box is
+unmoved because that box is under a closed canopy and is already fully shaded
+(the audit's own rank 16); the frame still moves a count. **`flyovernoon` is
+armed and null, and that is now a reading rather than a broken control:** the
+shadow pass demonstrably stopped running (calls 32 -> 23, triangles 216,457 ->
+184,629) and not one pixel moved, which is the direct measurement that no
+cascade reaches the ground in an aerial frame.
+
+### 2.21.4 THE STALE SUN (RN-2307)
+
+`ShadowRig.update` skipped `light.position` on the inactive path, and
+`Frame.publishSun` derives the post stack's world sun from exactly that pair.
+The off path now aims the pair from the eye -- two vector writes and two matrix
+updates, no ortho fit, no texel snap, no `publishCascade`, so `Systems.ts`'s
+58 skipped draw calls stay skipped and three's lights-state hash is untouched.
+
+`meadownight`: `upCheck` **0.508 -> 0.000**, `sunElevDeg` **+14.83 -> -14.57**
+against an `elevDot` of -0.251 (asin(-0.251) = -14.54, so the reconstruction
+now agrees with the engine to 0.03 degrees). The frame moves with it: `box`
+6.28 / 3.93 -> **5.36 / 3.43**, whole frame 2.87 -> 2.66, and by eye the far
+field loses a faint directional wash it had no business having
+(`RN2305_meadownight_before.png` / `_after.png`). `ContactPass` was not
+touched; it did not need to be, because what was wrong was the vector handed
+to it.
+
+### 2.21.5 THE PASS CONDITION, JUDGED HONESTLY, AND THE HANDOVER
+
+**The brief's pass condition is NOT met and cannot be met from this lane's
+files.** From 400 m and 1,200 m the ground still carries the artefact
+(`RN2305_flyovernoon_canopy0_after.png` is identical to R2's own
+`RN2285_flyovernoon_canopy0.png`), because the artefact is a terrain albedo and
+this lane owns `ShadowRig`, the cascade lookup, `ContactPass` and the
+`shadowcast` flag. The brief's offered fallback -- "fading cascade shadows out
+with altitude" -- would have been theatre: the cascades already contribute
+exactly nothing at those ranges, proved to the pixel by the `flyovernoon`
+`?shadowcast=0` row above. Ground-level reach is unchanged and every ground
+control is bit-identical on its committed box.
+
+**Routed, with the evidence:**
+
+1. **L3 (RN-2320 to RN-2329), the range palette.** This IS L3's routed
+   litter-as-clearing-colour item. The Forest row is 2.7x darker in value than
+   Hills and about 3.5x darker than Plains, and at range that difference is not
+   a wood reading as a wood, it is a hard-edged dark region. Any fix that
+   narrows the Forest-to-Hills value gap narrows the staircase in proportion.
+2. **L1 / world-gen, the far ground.** The second half is that a categorical
+   per-vertex classifier is delivered across ONE mesh cell however wide that
+   cell is, so the boundary hardens with distance while every other term in the
+   material softens. A range-aware blend of the biome colour (widening the
+   transition with `footM`, the same hoisted footprint the art fades already
+   use) would dissolve the teeth without touching the palette. Owner is L1's
+   `TerrainFrag*` albedo half plus `ChunkBatch`'s attribute upload; the
+   classifier itself is world-gen's.
+
+**Also flagged:** `ViewModelLight.ts` was not in any R2 lane's partition and it
+is shadow machinery. This lane took it and says so. `station` could not be
+photographed at all in either arm (`valid:false`, "no installed station"),
+which is the audit's own standing rank-13 problem and not a regression; both
+arms were GL-clean.
+
+### 2.21.6 Rails, determinism, cost, and the instrument that failed first
+
+**The first diagnostic matrix was thrown away.** A backgrounded
+`vite preview` died reporting `exit 127`, another lane's worktree preview took
+the freed port on its next `--strictPort` attempt, and the arms kept passing
+against a build that was not this one. Found by comparing the served bundle
+name with the one on disk; the owner was identified by
+`Get-CimInstance Win32_Process` on the port's PID. Everything above was re-run
+on a preview this lane started, whose PID it recorded, with the sentinel and a
+**served-vs-disk bundle hash** printed before every batch. Two NUMBERS.md
+entries came out of it, plus one for the `sirv` startup snapshot (a rebuild
+under a running preview serves the old page while the sentinel keeps passing)
+and one for painting shader intermediates instead of adding a thirteenth
+one-flag arm.
+
+**Determinism.** `forestfloor` three fresh Chrome processes per arm: `box`
+22.82 / 18.78 in all six, bit-identical. Whole-frame `world` 37.09 / 37.04 /
+37.09 before and 37.30 / 37.28 / 37.19 after, so the 0.21-count move is just
+outside a 0.05-to-0.11 within-arm band on a scene whose own triangle count
+jitters by 24 between repeats in one arm. `basedusk` moves 0.10 on the same
+number. Every committed BOX rectangle in the file is bit-identical across the
+change.
+
+**Cost, WG-189, before/after pairs at eight poses.** p50 moves both directions
+by 1 to 3 ms (`flyovernoon` 6.4 -> 4.9, `smelterhero` 9.5 -> 11.3,
+`forestfloor` 9.0 -> 7.0), which is the harness's own spread that this record
+has warned about repeatedly; there is no separable cost and none is expected,
+since the shipped path gains one boot-time latch and nothing per frame.
+`vramMB` 106.3 in every arm; program counts identical at every pose except
+`forestair` (55 -> 53, a pose whose program count already jittered 41/42 within
+both arms at RN-2275).
+
+**GATES: `npx tsc --noEmit`, `npx vite build` and `cd web && npm run check` run
+as SEPARATE steps with each exit status read on its own; 0, 0 and 8 of 8.**
+`web/wasm/dist/*` and `test/expected.json` untouched; no probe file, no texgen
+file, no Blender file, no `assets/textures/dist` byte. Three source files:
+`web/src/render/ShadowRig.ts`, `web/src/render/materials/CascadeShadow.glsl.ts`,
+`web/src/render/ViewModelLight.ts`. Branch `lane/l2-shadowregion`, pushed,
+**not merged to main**.
+
+### 2.21.7 Owed
+
+1. **A cost arm for the shadow pass.** `?shadowcast=0` now compiles the sample
+   out AND stops the map, so it prices both together. A lane measuring only the
+   pass would want them separable.
+2. **The `?canopyshade=1` frame pair** at `forestfloor` (rank 17) is still
+   owed and is still nobody's.
+3. **`station` is unphotographable** in this shot set. Fourth audit running.
