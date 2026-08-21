@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2435 to RN-2439, `lane/m5-night`: **THE NIGHT.** R3 rank 5, run after M3 and M1 per the corrected queue. The sky had no night term at all (not a dim one: `ofAtmoScatter`'s sun-occlusion test returns bit-for-bit zero once the sun is below the horizon), so `meadownight.skyHi` read iqr EXACTLY 0.00. Fixed with a separate, additive dark-blue-black-zenith-to-warmer-horizon term in `SkyAtmosphere.ts`'s own upward branch, gated to exactly zero above the same sun-elevation band `TerrainAmbient`'s starlight floor already uses (`?nightsky=0` isolates it, reproduces the old flat-black sky to the digit). `skyHi` iqr 0.00 -> **1.79**, `hzBand` luma 0.10 -> **16.88** (brighter toward the horizon, the intended shape). **THE ADJACENT BUG THE BRIEF NAMED, "check both ends of the arc":** the star-fade mask (`daylightFactor`) multiplied its day/night gate by `airDensityAt`'s PHYSICAL Rayleigh-scale-height decay, conflating "thinning air" with "closer to space" -- `flyover`'s own 1,200 m pose was 0.21 scale heights up, so the star field was **~19 per cent visible on an ordinary noon flight**. Replaced with `spaceMaskAt`, linear in the fraction of the 60 km SHELL THICKNESS still overhead (1,200 m reads 2 per cent there), computed and reasoned rather than screenshotted since no shot isolates it. **THE GROUND:** `TerrainAmbient`'s `STARLIGHT` floor raised 1.7x (`meadownight.nearG/mid/shade` 5.68/4.87/2.29 -> **8.29/10.07/5.22** on the shipped build, three fresh-process repeats, bit-identical each time; corrected 2026-08-22 from a first write-up that quoted 12.53/10.46, read off an intermediate build carrying the rejected headlamp candidate below and never re-measured after that candidate was reverted), because the pre-lane floor read as grass crushed to silhouette-black past the lamp's own pool rather than "barely-legible form," this lane's own bar. **THE HEADLAMP CONE:** a flattened-decay candidate (1.45 -> 1.1, candela raised to hold the 6 m calibration point) was tried and REJECTED, measured rather than argued -- it reads well in the open field but BLOWS OUT `smelternight`'s close-range pose worse than before (`firebox` 151 -> 196, five rectangles pinned above 200); `LAMP_CD`/`LAMP_DECAY` ship unchanged. The lever that worked is angular: the SpotLight's own penumbra, 0.6 -> 0.92, since at 0.6 the inner 40 per cent of the half-angle is flat-full and only the outer rim ramps -- a disc with a ramped edge, independent of the radial falloff. At 0.92 there is no flat interior left to have an edge. **ACCEPTANCE:** `meadow`/`vista` (daylit control) and `dawnsun` (the arc's bottom edge) bit-identical to the digit before/after; `setup.upCheck` still 0 on every night pose (A4's fix holds). A disclosed side effect: the added sky term also feeds the night IBL capture, lifting `smelternight`'s own clean-shell negative controls (`hearthL`/`hearthR`) by 2-3 counts under `?lamp=0` -- bounded, and acceptable since night rectangles are judged by eye, not pinned. `npm run check` 8/8. Full record in section 2.26. THIS LINE IS A POINTER: replace it, never append to it.) (Same day: RN-2420 to RN-2422, `lane/m2-lattice`: **THE AERIAL LATTICE, and it is a 2 m rock texture stretched over 128 m.** World audit R3's rank 2, published undiagnosed after seven null one-flag arms, convicted here by painted intermediates: the albedo carries it and `vBiomeColor` does not (std 0.28, so this is NOT R2's biome staircase again and `BiomePalette` was never touched); the horizon rungs carry it and the MID rung alone does not; the carrier fetch alone carries it, and HALVING the tile scale DOUBLES the screen period. **The repeating thing is not the tile, it is the tile over eight:** `terraintex._layer_rock` builds its facets from `_worley(s, s, 8, sd)` terraced flat at weight 0.48 of the height and 0.30 of the value, the shipped asset's own DFT reads a spectral LINE at 1024/6 texels with **peak/median 2565**, and RN-2340's retirement guard is written in pixels per TILE, i.e. eight times too late. THE FIX is that guard in the right unit (`HORIZON_CARRIER_CELLS = 8`, `HORIZON_CELL_PX` [24, 12] read off the audit's own three-height measurement) plus an analytic two-octave stand-in on `pM` (40 m and 160 m) faded in by the guard's complement, because `ofArtVnoise` is broadband and has no line to stamp; `HORIZON_A_ANALYTIC = 1.65` is the ONE fitted number and it is fitted to hold the patch std. **`forestair` `?canopy=0`: autocorrelation 0.621 at lag 10 -> NO LOCAL MAXIMUM, patch std 6.22 -> 6.09** (done-when: no max above 0.25 with std >= 5.0, MET); `flyovernoon` 0.372 at lag 6 -> 0.359 at lag 39, i.e. the short repeat gone and a 42 px octave left. `vista.hzBand` iqr **2.21 -> 3.07** and `meadowfield.r100` **51.51 -> 59.63** (M4's owed regression recovered); `meadow`, `forestfloor`, `mtnslope`, `meadowfield` r4-r55 and `midfield` all BIT-IDENTICAL. **One disclosed regression: `vista.nearG` iqr 19.22 -> 17.14**, the grazing near-ground, where the contrast lost was lattice contrast and nothing finer is resolvable there. `?horizoncell=0` is the exact control. **ALSO M3's ROUTED TERRAIN SEAM (RN-2422):** one line in the lit assembly, `EMIT_DECL_GLSL`/`EMIT_UNIFORMS` newly exported so there is still one copy of the model, no `/ PI` (this material is `lit = albedo * irradiance`), near program only, `?firelightground=0` its own isolator -- the night ground beside a furnace gains **+7.4% and +11.9% of luma, +19% and +27% of RED**, the machine box is bit-identical, daylit `smelterhero` and `machine` boxes are bit-identical, and `?firelight=0` still returns every M3 rectangle to its published control TO THE DIGIT. `npm run check` 8/8. Full record in section 2.26. THIS LINE IS A POINTER: replace it, never append to it.)
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2450 to RN-2456, `lane/world-audit-r4`: **THE WORLD LOOK AUDIT, ROUND 4.** R3's whole top five landed and four of them closed their rank outright; every one of the five reproduces through its own isolator, four of them to the digit (`?aerodepth=0` returns R3's `vista.skyHz` -12.14, `vistadawn.skyR` +25.58 and `dawnsun.skyUp` +7.19 exactly; `?horizoncell=0` returns R3's 0.622-at-lag-10 lattice; `?nightsky=0` returns its flat-black sky at iqr exactly 0.00; `?grasspatch=0` returns r25 29.48 and r55 21.56). **THE DISTANCE GOES BLUE:** `vista.hzBand` warm +48.36 -> **-2.07** against a sky at -19.36, i.e. a 60.5-count OPPOSITE-hue seam became a 17.29-count SAME-hue one. **THE NIGHT EXISTS:** the headlamp is 6.5 per cent of an empty field (R3: 23) and 69.7 per cent beside a furnace (R3: 94), and the sky went from iqr exactly 0.00 to a graded 9.33/14.46/16.88 with a real star field. **A FURNACE NOW BRIGHTENS ITS OWN FRAME** 1.31x above an empty meadow, where R3 measured it DARKER (10.88 against 8.28, R3: 1.81 against 2.03); `firebox` 0.41 -> **21.66** and `?firelight=0` attributes 94 per cent of that to M3's term. **THE NEW BLOCKING FINDING, AND IT IS NOT R3's LATTICE:** a SCREEN-locked 4-pixel cross-hatch lies over bare ground at any low sun, convicted as the CONTACT-SHADOW pass's own ordered dither. Six one-flag terrain arms are null (phaseStd 1.772 to 1.838), `?contact=0` collapses it to **0.602 while the patch's own std RISES 30.2 -> 33.2**, the period-5 control on the same pixels does not move at all, the signal is monotone in sun elevation (1.791 / 0.978 / 0.830 at dot 0.101 / 0.699 / 0.920), a sky patch reads 0.053, and the same armed arm removes NONE of it at a grassed pose because the dither needs bare ground to sit on. `ContactGlsl.ts`'s own header says the apply pass's 5-tap cross resolves a 4-px dither; five taps cover five of sixteen phases and it does not. **THE SECOND NEW FINDING IS A RE-JUDGEMENT OF R3:** every "the far ground has no material" reading in this campaign was taken at the VISTA site, and at the PLAINS site the player actually spawns in it is a flat painted plane past about 130 m -- `meadow.hzBand` iqr **4.06**, unmoved across three audits, with `?aerosol=0` buying 0.79 counts, so unlike the vista site the lever is the GROUND and not the air. It is also the only committed rectangle in the whole shot set that frames that subject. **TWO RETRACTIONS, both against this project's own prior findings:** the orbital terminator seam is NOT creeping (64.27 against R3's 64.27, so 59.39 -> 63.21 -> 64.27 was two points of noise), and the station's five-audit roll-convention suspect was removed by CE-116 -- `StationMount.ts:173` registers the only writer and `:193` fires that same watcher at install, one convention, not two -- with two stale docstrings (`StationMount.ts:16-34`, `StationView.ts:144-156`) the cause of four wasted rounds. **NEW INSTRUMENT:** `web/tools/smoke/rn2450bayer.mjs`, a 4-pixel phase meter with a free period-5 negative control, written because `latmeter.mjs` walks from `minLag = 4` and is structurally blind to a repeat at that period. Next top five: N1 the plains far ground (opus, diagnosis first, plus two new RECTANGLES not poses), N2 the contact dither (sonnet), N3 the world from the air, four audits BEHIND and never given a lane (opus, carries rank 8's bloom), N4 the carpet's LEVEL, 1.96x its substrate (sonnet), N5 the station's one derived probe field (sonnet, an afternoon). Full record in section 2.27; audit in [docs/web/WORLD-AUDIT-R4-2026-08-22.md](../web/WORLD-AUDIT-R4-2026-08-22.md). THIS LINE IS A POINTER: replace it, never append to it.)
 
 
 
@@ -8617,9 +8617,229 @@ registrations), plus the new `web/tools/smoke/latmeter.mjs`. Branch
    null on this instrument (`?horizonnrm=0` moves the lattice metric by 0.02),
    so the guard was deliberately NOT applied to them; if a lighting-angle pose
    ever shows the grid through the normal, the guard is one `mix` away.
+   **FORWARD POINTER, 2026-08-22 (RN-2451, section 2.27.3): a lighting-angle pose
+   DOES show a grid, and it is not this.** `vistadawn` carries a plainly visible
+   rectangular repeat and `?horizonnrm=0` is null on it (phaseStd 1.791 ->
+   1.785); the cause is the contact-shadow pass's own 4-px screen dither. The
+   prediction fired and pointed at the wrong term. **This item stays OPEN on its
+   own terms** and is not evidenced either way by R4.
 4. **A night pose with a fire and open ground** (2.26.5). Every emissive frame
    in the project is a machine filling the viewport.
 5. **`HORIZON_FOOT_OUT`'s doc comment says "8.0 m to 21.3 m"** and the code it
    documents computes 10.67 and 25.6 from `HORIZON_TILE_PX_OUT` = [12, 5].
    Stale prose, not a stale number; left for the file's owner rather than
    silently edited under a different lane's RN.
+
+---
+
+## 2.27 THE WORLD LOOK AUDIT, ROUND 4 (RN-2450 to RN-2456, 2026-08-22, `lane/world-audit-r4`)
+
+Full document: [`docs/web/WORLD-AUDIT-R4-2026-08-22.md`](../web/WORLD-AUDIT-R4-2026-08-22.md).
+Base `origin/main` at `4cb0aff4`. Twenty-six poses re-taken, twenty-six control
+arms, forty-two frames. This section is the domain memory; the audit is the
+argument.
+
+### 2.27.1 THE ONE-LINE ANSWER
+
+R3's whole top five landed and four of them closed their rank outright; the light
+is now largely right and the frontier has gone back to the SURFACE, at a
+different site, plus one screen-space artefact that is now the ugliest thing in a
+hero frame.
+
+### 2.27.2 THE DELTA AGAINST R3'S TOP FIVE, WHICH ALL LANDED
+
+| R3 rank | today |
+|---|---|
+| 1 the distance goes cream | **CLOSED.** `vista.hzBand` warm +48.36 -> **-2.07** against a sky at -19.36: a 60.5-count opposite-hue seam became a 17.29-count same-hue one. `dawnsun.skyUp` +7.19 -> **-4.87**. Residues in 2.27.6. |
+| 2 the world-locked aerial lattice | **CLOSED**, verified independently at R3's own patch with M2's own `latmeter.mjs`: no autocorrelation local maximum where R3 read 0.622 at lag 10, patch std held at 6.08. A DIFFERENT repeat now occupies that rank and it is 2.27.3. |
+| 3 emissives light nothing | **CLOSED.** A furnace's own night frame goes from 1.81 (darker than an empty field's 2.03) to **10.88** against a field's 8.28. `firebox` 0.41 -> 21.66, `plate` 2.72 -> 13.75. |
+| 4 the mid field's plate | **CLOSED ON CONTRAST.** r55 21.56 -> **38.99** against a bare ceiling of 54.66, i.e. 39 -> 71 per cent; `midfield` box iqr 28.50 -> **44.21**. The LEVEL is untouched and is the new rank 4. |
+| 5 the night is one headlamp cone | **CLOSED.** Sky iqr exactly 0.00 -> 1.79 graded; the lamp's share 94 -> **69.7 per cent** beside a furnace and 23 -> **6.5 per cent** in a field. |
+
+**And R3's rank 16 (stars in a blue daylight sky) is closed too**, by M5's
+`spaceMaskAt`, confirmed on a frame at 3x by a hand that did not build it.
+
+### 2.27.3 THE NEW BLOCKING DEFECT: A 4-PIXEL SCREEN-LOCKED CROSS-HATCH, CONVICTED
+
+`RN2450_vistadawn.png` against `RN2450_vistadawn_contact0.png` at (1180, 580)
+400x90, magnified 4x. On bare ground at a low sun the substrate carries a regular
+rectangular grid at a period of exactly four screen pixels.
+
+**It is the contact-shadow pass's own ordered dither.** `ContactGlsl.ts:98`'s
+`dither(vec2 p)` is `floor(mod(p, 4.0))` and its own comment says "Period exactly
+4 px in both axes, so the 4-tap cross in the apply resolves it"; the apply's
+5-tap 1-px cross samples five of sixteen phases and does not resolve it. Line 174
+offsets the march start by it, deliberately, "without it every pixel samples the
+same ring of world distances and a low sun produces concentric banding" -- so the
+dither is correct and its RESOLVE is what is short.
+
+The conviction, at `vistadawn` (1240, 596) 256x96 through the new phase meter:
+
+| arm | phaseStd | patchStd |
+|---|---:|---:|
+| shipped | **1.791** | 30.215 |
+| `?horizonnrm=0` | 1.785 | 30.283 |
+| `?horizon=0` | 1.838 | 31.653 |
+| `?horizoncell=0` | 1.824 | 31.960 |
+| `?splatnrm=0` | 1.785 | 30.329 |
+| `?terrainbump=0` | 1.772 | 30.014 |
+| `?horizonval=0` | 1.791 | 30.215 |
+| **`?contact=0`** | **0.602** | **33.193** |
+
+Five things make it a conviction rather than R3's locator. The defect goes and
+**the patch's own std RISES**. The period-5 control on the same pixels does not
+move (1.198 shipped, 1.403 under the arm). It is monotone in sun elevation on one
+site at one patch (1.791 / 0.978 / 0.830 at dot 0.101 / 0.699 / 0.920), which a
+terrain texture cannot be. A sky patch on the same frame reads 0.053. And the
+arming proof is a NULL in the useful direction: at `meadow`, `?contact=0` moves
+the frame 11.9 counts (`box` 85.12 -> 96.98) and removes **none** of the phase
+signal (0.410 -> 0.465), because the dither needs bare ground to sit on.
+
+**It is not M2's owed item 3.** That item predicted the grid returning through
+the horizon rung's NORMAL half at a lighting-angle pose. A lighting-angle pose
+does show a grid and `?horizonnrm=0` is null on it. The prediction fired and the
+cause is somewhere else; item 3 stays open on its own terms and is not evidence
+for this.
+
+### 2.27.4 THE RE-JUDGEMENT: THE FAR GROUND WAS ONLY EVER MEASURED AT A MOUNTAIN
+
+R3 scored R2's rank 1 "half closed, and the half that closed is the half a player
+looks at", on evidence taken entirely at the vista site. At the plains site the
+player spawns in, past roughly 130 m the ground is a flat, uniform, untextured
+plane meeting the sky at a razor-straight horizon. `meadow.hzBand` iqr **4.06**
+against R3's 3.99, unmoved across three audits, while the same rectangle at the
+vista site quadrupled.
+
+**And the lever there is the opposite of the vista site's.** `?aerosol=0` at
+`meadow` takes that rectangle 4.06 -> **4.85**: removing the entire atmosphere
+buys 0.79 counts, so there is nothing out there for the air to be hiding. R3's
+own section 4.1 concluded "the lever at that range is the air, not the ground"
+for the vista site; at the plains site it is the ground, and that is why the
+receiving lane is a material lane.
+
+**`meadow.hzBand` is the only committed rectangle in the project that frames this
+subject.** `?horizon=0` at `midfield` leaves r18/r27/r35 bit-identical because
+`midfield`'s furthest rectangle is at 35 m. The receiving lane needs two
+RECTANGLES, not a pose.
+
+### 2.27.5 TWO RETRACTIONS AGAINST THIS FILE'S OWN RECORD
+
+1. **The orbital terminator seam is not creeping.** `limb.seam` iqr reads
+   **64.27**, level with R3's 64.27 to the digit. R3 called 59.39 -> 63.21 ->
+   64.27 "creeping the wrong way for a third audit running"; a fourth point at
+   the same value says the middle two were noise. The defect is unchanged and
+   real; the trend was not.
+2. **The station's five-audit suspect is falsified.** `artframe.js`'s `station`
+   row names two authorities on the hull's pose with two roll conventions. There
+   is one: `StationMount.ts:173` registers the only writer and `:193`'s
+   `syncWatchersAt` fires that same watcher at install, and CE-116 says so in as
+   many words at `:177-187`. Two stale docstrings are what sent four audits at it
+   (`StationMount.ts:16-34`, pre-CE-116; `StationView.ts:144-156`, still claiming
+   the quaternion is `stationQuat`'s). The "same camera, two scenes" evidence also
+   does not survive reading: `artframe.js:2635` says `captureDiag` is built BEFORE
+   the capture and `:2611` says its `originF`/`dirF` are body-frame and cannot see
+   the floating origin, so the certificate was read on a frame that is not the
+   photographed one. **One derived field on `photo` -- the eye in the hull's own
+   local frame against `boundM` -- settles it in one capture.**
+
+### 2.27.6 WHAT THE FIVE LANDED LANES STILL OWE, MEASURED
+
+- **M1.** Its own acceptance wording ("`hzBand` warm falls below `skyHz` warm") is
+  NOT met: the ground is 17.29 counts the warmer at `vista`, 12.09 at `vistanoon`
+  and **79 counts** at `forestair` (+29.97 against a `skyBand` at -49.28), the
+  largest opposite-hue gap in the file. And `forestair` whole-frame warm went
+  -7.38 -> **-8.07**, marginally the wrong way.
+- **M2.** Its deltas reproduce on merged main and its LEVELS do not.
+  `?horizoncell=0` at `vista` gives +0.67 / +2.63 / -1.78 on hzBand / mid / nearG
+  against M2's published +0.86 / +2.72 / -2.08 -- same sign, within 0.3 counts --
+  while the absolute levels differ by up to 7.9 because M2's base `4a8ac1bf`
+  carries M1 and M4 and not M5. **The owed `vista.nearG` regression is therefore
+  6.6 per cent on main (26.78 -> 25.00), not the 11 per cent its record states**,
+  and it is still open. Owed items 2 (the rock carrier) and 4 (a night pose with
+  a fire over open ground) are ranked in the audit at 13 and 8.
+- **M3.** The bloom is still absent by eye and the two levers are still global
+  grade constants. And the emissive CLIPS under the headlamp: `peep` hiFrac
+  **0.220** and `strip` **0.288** with the lamp on, against 0.016 and 0.113
+  without, so between a fifth and a third of the fire's pixels read as flat paper
+  white. Rank 8.
+- **M4.** The contrast is fixed and the LEVEL is not: at r55 the carpet reads
+  luma **142.67** against a bare substrate at **72.69**, a 1.96x lift unchanged
+  from R3's 2.0x. And its disclosed `r100` cost is measured here at 4.88 counts
+  (59.62 shipped against 64.50 under `?grasspatch=0`). Rank 4.
+- **M5.** Its judgement that "panel and coal detail hold under the headlamp rather
+  than blowing to a white card" is generous; see M3's clipping figures above, which
+  are the lamp's doing and not the emissive's. The night sky has no airglow, no
+  Milky Way, no moon and one star colour. Rank 19.
+
+### 2.27.7 THE NEW INSTRUMENT, AND WHY A SECOND ONE RATHER THAN A LOWERED FLOOR
+
+`web/tools/smoke/rn2450bayer.mjs`. `latmeter.mjs` walks its autocorrelation from
+`minLag = 4`, so a repeat whose period IS 4 px sits at or below its floor and
+returns "no local maximum" on a frame where the grid is unmissable by eye.
+Lowering that floor would silently change the meaning of every latmeter reading
+this project has published, so the floor was left alone and a purpose-built meter
+written beside it: bin every pixel by `(x mod p, y mod p)` -- the index a
+`mod(gl_FragCoord.xy, 4.0)` dither actually uses -- and report the spread over
+the p*p phase means, with `patchStd` beside it so a fix that removes the pattern
+by removing the material is visible as one. **Its negative control is free and
+runs on the same pixels: `--p=5`.** A genuine 4-px dither has nothing at period
+5, and every reading in the audit publishes that control.
+
+`web/tools/smoke/rn2450crop.mjs` was committed alongside it: nearest-neighbour
+crop and magnify, because FIDELITY-GAP's Option D makes the eye the verdict and
+an eye cannot judge a 4-pixel artefact in a 1600x900 frame. Every audit before
+this one cropped in a scratchpad script the next lane overwrote.
+
+### 2.27.8 THE NEXT TOP FIVE
+
+N1 the plains far ground (**opus**, diagnosis first, painted intermediate first
+arm, plus two new far-band RECTANGLES on `midfield` and `meadowfield`); N2 the
+contact dither (**sonnet**, cause convicted, done-when is a number, temporal
+jitter forbidden so the fix is a resolve or a sequence and not a blur); N3 the
+world from the air (**opus**, BEHIND in four audits and never given a lane, the
+highest-exposure pose in the game, carries rank 8's bloom); N4 the carpet's LEVEL
+(**sonnet**, M4's own owed item 2); N5 the station's one derived probe field and
+two docstring corrections (**sonnet**, an afternoon). File seams, intra-file
+partitions and serialisations are in the audit's section 6 and every path in it
+was checked against the tree.
+
+### 2.27.9 Rails
+
+Real Windows D3D11 through ANGLE (Chrome, RTX 4060 Ti), 1600x900, HUD-free
+through `of.screenshot()`. Every one of the 26 poses and 26 arms came back
+`valid: true`, `poolRefused: 0`, `postState.post === true`; `setup.upCheck` reads
+0.000 on all nine poses that publish it, including both night poses. **A
+correction to R3's own rails paragraph: it claims all 26 poses publish
+`upCheck`; seventeen do not, and the claim is true only where it is measurable.**
+Served from a `vite preview` this lane owned on `127.0.0.1:5921`, `--strictPort
+--host 127.0.0.1`, built with `npm run build` so `sync-wasm` and `sync-assets`
+both ran. One script re-asserted sentinel, served-vs-disk bundle hash and port
+ownership before and between all five batches and printed `match=True
+ownerOk=True` with `servedJs=diskJs=index-N0u3FIKY.js` every time; the port's
+owner was still PID **7940**, the PID this lane started and wrote down, at
+teardown, and that PID is what was killed. Served wasm byte-identical to
+`HEAD:web/wasm/dist/of-core.wasm`; bundle `client expects 26` against
+`OF_ABI_VERSION = 26`. `npx tsc --noEmit`, `npx vite build` and `cd web && npm run
+check` run as SEPARATE steps with each exit status read on its own. Did not touch
+`web/wasm/dist/*`, `test/expected.json`, any texgen or Blender file, or any file
+under `web/src`. Two source files added, both under `web/tools/smoke/`
+(`rn2450bayer.mjs`, `rn2450crop.mjs`); no manifest row and no pose-dispatch edit,
+because no pose was added. Branch `lane/world-audit-r4`, pushed, **not merged to
+main**.
+
+### 2.27.10 Owed
+
+1. **No new poses were taken**, and two shot-set holes are ranked rather than
+   opened: a night pose with a fire over OPEN GROUND (rank 8, which M2 owed and
+   without which `?firelightground=0` has nothing to measure -- it moves the
+   whole `smelternight` frame by 0.02 counts because the machine fills the
+   viewport), and any surface of the Moon (rank 22, the spine's own pre-alpha
+   destination, needing a scenario that lands off Forge).
+2. **Anything in motion is UNMEASURED for the fourth audit running**, and it now
+   has a specific cost: a 4-px screen-locked pattern under a moving camera is a
+   different and possibly worse artefact than the still frame shows.
+3. **Any quality tier but `high`** and **any body but Forge**, fourth audit
+   running.
+4. **Ten of the twenty-six arms are published as numbers without a committed
+   frame**, because each is a figure rather than a picture; each names its own
+   one-line invocation in the audit's section 4.
