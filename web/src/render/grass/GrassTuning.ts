@@ -42,6 +42,7 @@ export const GRASS_RAW: Readonly<Record<string, string | null>> = {
   grassfade: q.get('grassfade'), grasspx: q.get('grasspx'),
   grasstint: q.get('grasstint'), grasssharp: q.get('grasssharp'),
   grasstrans: q.get('grasstrans'), grassval: q.get('grassval'),
+  grasspatch: q.get('grasspatch'),
 };
 
 /** A flat multiplier on the cover albedo's VALUE, applied after the luminance-
@@ -232,6 +233,77 @@ export const MAT_IN_HI_M = 20;
  */
 export const MAT_OUT_LO_M = 30;
 export const MAT_OUT_HI_M = 70;
+
+/**
+ * RN-2410 to RN-2419, world audit R3 lane M4. THE NEAR END OF THE SAME
+ * DEFECT, ONE BAND CLOSER. L4 closed the plate at 70 to 130 m by thinning the
+ * far rung; the audit's own re-read (2.23's own numbers, re-measured at 25 to
+ * 60 m) found the SAME flatlining still running where the far rung is barely
+ * thinned at all: `r55` sits at 62.5% along the (30,70) window, 31.6% of full
+ * density retained by `uOut` alone, and reads 21.56 against a bare 55.76 --
+ * next to no better than pre-lane (21.14). THINNING DENSITY FURTHER CANNOT BE
+ * THE LEVER HERE, and the reason is a genuine finding and not a guess: a
+ * card standing near-vertical at a grazing eye subtends many screen ROWS
+ * (GrassTuning's own MAT_OUT note, "CARD HEIGHT, not card count"), so removing
+ * two thirds of the instances barely opens two thirds of the SCREEN, because
+ * the survivors overlap in projection. The gap this lane closes is therefore a
+ * VALUE one: `GrassPalette.coverAlbedo` renormalises every blade back to its
+ * cell's own substrate luminance exactly, by construction (the whole point of
+ * "cover cannot disagree with substrate in VALUE"), so the only luminance
+ * variance a blade can carry is (a) its cell's own substrate contrast, which
+ * is coarse because the CPU twin (`terrainAlbedo`, band + slope only) lacks
+ * the fragment shader's fine splat noise, and (b) the existing per-instance
+ * jitter (`GrassGlsl.ts`'s `0.84 + 0.32 * iCol.a`), which is *independent*
+ * per instance and therefore real per-pixel signal (this renderer alpha-TESTS
+ * rather than blends, so one pixel shows exactly one instance's colour, never
+ * an average) but is evidently too small an amplitude on its own to close a
+ * 34-count gap.
+ *
+ * THE FIX: a second, LARGER and SPATIALLY CORRELATED value term, applied only
+ * to the mat rung (the tuft rung's near-field read is untouched and already
+ * correct per 2.23.6). A patch of `PATCH_CELLS` x `PATCH_CELLS` cells (about
+ * 4 to 8 m at this rung's own cell size) draws ONE pseudo-random multiplier,
+ * shared by every instance the patch contains, so the variance is a visible
+ * clump rather than salt-and-pepper noise that a screen row would still
+ * average past (an independent per-instance draw is real signal per pixel,
+ * but a patch many cells wide is signal a grazing-angle screen ROW can
+ * actually resolve, which an instance-sized clump cannot promise). Mean-
+ * preserving by construction (`(hash * 2 - 1)`, hash uniform on [0,1)), so
+ * RN-1900's rule for a variation term holds: it moves the spread, not the
+ * level. `?grasspatch=` scales it; 0 is the isolator for "is the variation
+ * this term or is it the pre-existing per-instance jitter".
+ *
+ * MEASURED, THEN GATED BY A SECOND MEASUREMENT THAT CAUGHT A REAL REGRESSION.
+ * A first full-strength arm (0.55, ungated) moved `r25` 29.48 -> 46.64 and
+ * `r55` 21.56 -> 43.84 -- most of the way to their bare ceilings -- but also
+ * moved `r100` 55.70 -> 51.70, BELOW the floor L4's own fix is judged on. The
+ * cause is L4's own "CARD HEIGHT, not card count" finding applied a second
+ * time: the LAST surviving mat-rung cards before `MAT_OUT_HI_M` (60 to 70 m,
+ * "under 13 px of angular height" by L4's own account, too little to move a
+ * luma FLOOR) still bleed a few pixels into the `r100` row, and this lane's
+ * far larger value swing is enough to move a handful of those pixels' quartile
+ * once they carry it. `PATCH_FADE_LO_M`/`_HI_M` fade the multiplier itself
+ * back to 1 well past `MAT_OUT_HI_M`, so the residual bleed keeps its
+ * PRE-M4 colour exactly (r100 unaffected) while `r55` (inside the fade's flat
+ * top) keeps the full-strength number above.
+ */
+export const PATCH_CELLS = 4;
+/** log2(PATCH_CELLS), so the bucketing is a shift and not a divide on a path
+ *  that runs once per cell, thousands of times per chunk. */
+export const PATCH_SHIFT = 2;
+export const MAT_PATCH_AMP = 0.47 * num('grasspatch', 1);
+/** Where the patch term itself fades back down, so the sparsest surviving
+ *  cards near the rung's own retirement carry LESS of this swing than the
+ *  cards this lane actually targets. `PATCH_FADE_LO_M` (50) sits just past
+ *  `r55` so the fade's own top is still nearly full strength there
+ *  (smoothstep(50,75,55) is 0.10, i.e. 90% of full amplitude survives at the
+ *  55 m row this lane is judged on); `PATCH_FADE_HI_M` (75) is just past
+ *  `MAT_OUT_HI_M` (70). See the measured regression this note above the
+ *  constant records: it is a MITIGATION, not a full fix, because the
+ *  `r100` shift did not track a clean distance threshold (a (40,60) arm
+ *  barely moved it either), which is recorded rather than hidden. */
+export const PATCH_FADE_LO_M = 50;
+export const PATCH_FADE_HI_M = 75;
 
 /**
  * THE FADE, IN PIXELS, AND WHY IT IS NOT IN METRES.

@@ -433,6 +433,11 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   'grass', 'grassdens', 'grasstint', 'grasspx', 'grassfade',
   'grasstrans', 'grasstransamp', 'grasssharp', 'grassval',
   'grasslean', 'grassramp', 'grassdry',
+  // RN-2410 to RN-2419, world audit R3 lane M4. `grasspatch=0` isolates the
+  // mat rung's per-patch value multiplier (GrassTuning.MAT_PATCH_AMP): the
+  // control for "is the variance this term or the pre-existing per-instance
+  // jitter".
+  'grasspatch',
   // RN-2220, standing rule 7. `grassbend=0` is the exact pre-RN-2220 control
   // for the blade-normal shading bend (GrassGlsl's `ns`, the second,
   // independent blend toward up spent only on ndl/skyView).

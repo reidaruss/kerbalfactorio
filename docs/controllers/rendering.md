@@ -1,13 +1,17 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2365 to RN-2372, `lane/world-audit-r3`: **THE WORLD LOOK AUDIT, ROUND 3**, the third full judgement of the world against the D-020 bar and the second turn of the audit-to-lanes loop, taken with R2's whole top five landed (L1 far ground, L2 staircase, L3 palette, L4 mid field, L5 near assets). **THE FRONTIER HAS MOVED FROM SURFACE TO LIGHT.** The ground is now a material everywhere the eye stops on it and every remaining large gap is about what lights it and what colour that light is. R2's rank 2 (the aerial texel staircase) is CLOSED and there is not a tooth left in the frame (`shadowStep` under `?canopy=0` 47.34 -> **39.14**); R2's rank 1 is HALF closed, and the half that closed is the half a player looks at (`vistanoon.mid` 4.86 -> **8.07** in shipped air, `flyovernoon.under` under `?canopy=0` 6.07 -> **13.71**, a cream blur become crinkled relief) while the 4.7 km ridge did not move at all (`vista.hzBand` 2.07 -> 2.21). **THE NEW RANK 1 IS THAT THE DISTANCE GOES CREAM INSTEAD OF BLUE, AND L3 BOUGHT IT:** `vista.hzBand` warm +22.46 -> **+48.36** against a `skyHz` at -12.14, and dawn's anti-solar `skyUp` crossed -11.81 -> **+7.19**, so R2's ranks 3, 9 and 10 are ONE item driven by one constant, `aerosolTint`'s flat warm bias. **NEW RANK 2:** a world-locked rectangular lattice on the aerial ground, autocorrelation **0.514 at lag 10 after its own first local minimum** and unmissable at 1x under `?canopy=0`, which survives SEVEN one-flag isolators (`?canopy=0`, `?treeline=0`, `?splat=0`, `?splatfar=0`, `?groundtexamp=0`, `?terrainart=0`, `?horizon=0`) and is world-locked rather than screen-locked (screen period 9.14 px far, 12.80 px mid, none in the sky control) -- RN-2305's situation exactly, so the lane's first arm is a painted shader intermediate and not a thirteenth flag. **NEW RANK 3, and it is the one new pose's whole justification:** `smelternight` (`smelterhero` by spread at `meadownight`'s own dot -0.25) plus `?lamp=0` measures what two audits could only infer -- a running furnace at night puts its own frame at luma **1.81**, BELOW an empty meadow at the same hour (2.03), with `plate` 0.3 m from coals at **2.72** while `strip` glows at 26.54. Emissives light nothing, and 94 per cent of every photon in a night frame is the headlamp. R2's rank 4 MOVED rather than closed (`meadowfield.r100` 16.48 -> 55.70, but r55 reads 21.56 against a `?grass=0` substrate at 55.76). One null published rather than a lane spent: `?curve=0` moves `vistanoon.hzBand` by **0.00** counts while moving `nearG` +3.78, so the ACES shoulder is NOT what flattens the distance. Rank 17's owed `?canopyshade=1` frame pair is TAKEN and recommends ON (-45,390 triangles, and 2.14.7b's 'worse' was judged on a build three lanes ago). L2's two instrument repairs both verified by a hand that did not build them (`?shadowcast=0` moves 21 counts at `smelterhero`; `upCheck` 0.000 on both night poses). `npm run check` 8/8. Full record in section 2.24; ranked queue and top five lanes in docs/web/WORLD-AUDIT-R3-2026-08-21.md. THIS LINE IS A POINTER: replace it, never append to it.)
-
-
-
-
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2410 to RN-2419, `lane/m4-midnear`: **THE MID FIELD, NEAR END.** World audit R3's rank 4, the half L4 did not reach: `meadowfield.r55` read 21.56 against a bare 55.76 one band inside L4's own `(30, 70)` handover, and thinning further could not be the lever (a second confirmation of L4's own "CARD HEIGHT, not card count" finding). The fix is a spatially-correlated per-PATCH value multiplier baked into the mat rung's instance colour (`GrassTuning.MAT_PATCH_AMP`, 4x4-cell patches, mean-preserving), since `GrassPalette.coverAlbedo`'s own constant-luminance rule means a blade can otherwise only vary in hue, never in value, and independent per-instance jitter alone is too weak an amplitude to close a 34-count gap. `r55` **21.56 -> 38.93** (target 38.66, half L4's gap, MET); `r25` 29.48 -> **42.92**; `midfield.r18/r27/r35` all improved, none regressed. **One measured, disclosed, UNRESOLVED regression:** `r100` 55.70 -> **51.51** (not in this lane's SCORE; two distance-keyed fade gates both failed to recover it, arguing the `r55`/`r100` populations are not cleanly separable by world distance, likely terrain relief foreshortening a nearer cell into the far row (2.25.7's first owed item). `npm run check` 8/8. Full record in section 2.25. THIS LINE IS A POINTER: replace it, never append to it.)
 >
-> *(previous pointer, kept one deep: 2026-08-21, R2's whole top five, all merged. **RN-2340 to RN-2345** `lane/l1-farground` plus its fix pass, THE FAR GROUND (two world-locked splat rungs on WG-230's `vPhase`, a two-octave massif term compiled into BOTH programs, a curvature read, a range-aware biome-boundary break; the first ship painted a diamond lattice and 2.22.9 fixed two causes, a warp in register with its own tile and a top rung with no retirement, now retired in PIXELS PER TILE). **RN-2305 to RN-2308** `lane/l2-shadowregion`, THE AERIAL STAIRCASE IS NOT A SHADOW (it is the Forest ground palette meeting Hills across one barycentric cell on the coarse LOD, found by painting `vBiomeColor`; `?shadowcast=0` repaired into a real isolator and the sub-horizon stale post-stack sun fixed). **RN-2320 to RN-2322** `lane/l3-palette`, THE RANGE PALETTE (`aerosolTint` warmed from flat 0.32 to (0.40, 0.31, 0.22) at the same mean, Forest hex `0x41392b` -> `0x4a4030`; closed the aerial warm gap and, R3 finds, bought the cream horizon and the dawn anti-solar crossing with it). **RN-2330 to RN-2339** `lane/l5-vegassets`, THE NEAR VEGETATION ASSETS (blade texture narrowed, `Canopy_Broadleaf_LOD2` rebuilt from a faceted shell into two card sprays, litter paddles curled). **RN-2355 to RN-2364** `lane/l4-midfield`, THE MID FIELD (the carpet WAS the plate: the far rung's `uOut` handover, pinned at 'never' since RN-2145, now runs (30, 70) m). Sections 2.20 to 2.23.)*
+> *(previous pointer, kept one deep: 2026-08-21, RN-2365 to RN-2372,
+> `lane/world-audit-r3`, **THE WORLD LOOK AUDIT, ROUND 3**: the third full
+> judgement of the world against the D-020 bar, taken with R2's whole top five
+> landed. **THE FRONTIER HAS MOVED FROM SURFACE TO LIGHT** -- the ground is now
+> a material everywhere the eye stops on it, and the five largest remaining
+> defects (the air's own hue, an aerial lattice, emissives that light nothing,
+> the mid-field carpet's flatness, and an unbuilt night) are all about what
+> lights the world and what colour that light is. Full record in section 2.24;
+> ranked queue in docs/web/WORLD-AUDIT-R3-2026-08-21.md.)*
 
 ## 1. Mission
 Make surface→orbit→interplanetary→surface look seamless and run fast. Own the "rendering magic" that sells continuous traversal, plus the techniques that let a dense 3D factory render without melting the GPU.
@@ -7376,3 +7380,177 @@ header invocation, and one name added to the pose-dispatch condition). Branch
    committed frame** (section 4 of the audit document names each with its own
    one-line invocation), because each is a null whose value is the figure and
    not the picture.
+
+## 2.25 THE MID FIELD, NEAR END (RN-2410 to RN-2419, 2026-08-21, `lane/m4-midnear`)
+
+> **Charter:** world audit R3's rank 4, the near half L4 did not reach:
+> `meadowfield.r55` reads 21.56 against a `?grass=0` substrate at 55.76, one
+> band closer than the plate L4 already fixed at 70 to 130 m. **Owns:**
+> `web/src/render/grass/*` and `web/src/render/materials/TerrainCoverFar*`
+> (the latter read for composition, not edited: no change was needed there).
+> **Frames:** `docs/screenshots/RN2410_{meadowfield,meadow}_{before,after}.png`
+> plus two zoomed crops of each.
+
+### 2.25.1 The mechanism, and why thinning is not it a second time
+
+`GrassPalette.coverAlbedo` renormalises every blade back to its own cell's
+substrate luminance EXACTLY, by construction (`s = l0 / l * COVER_VALUE`,
+so the final luma is `l0 * COVER_VALUE` regardless of the per-instance dry
+draw): the rule that stops the carpet disagreeing with the ground in VALUE
+also means the only luminance a blade can carry is (a) its own cell's
+substrate contrast, coarse because the CPU twin (`BiomePalette.terrainAlbedo`,
+band and slope only) lacks the fragment shader's fine splat noise, and (b) the
+existing per-instance jitter (`GrassGlsl.ts`'s `0.84 + 0.32 * iCol.a`), which
+is real per-pixel signal (this renderer alpha-TESTS, never blends, so one
+pixel shows exactly one instance's colour) but evidently too small an
+amplitude to close a 34-count gap: `r55` sits at 62.5% along L4's own `(30,
+70)` window, 31.6% of full density retained, and reads within a digit of
+pre-lane (21.14 -> 21.56) despite that thinning.
+
+**Thinning further is not the lever, and this is a second measured instance of
+the same finding L4 already made** ("CARD HEIGHT, not card count"): a card
+standing near-vertical at a grazing eye subtends many screen rows, so removing
+instances barely opens screen area because survivors overlap in projection.
+
+**The fix shipped is candidate (a) widened, not (b) or (c) as separate
+options**: a second, larger, SPATIALLY CORRELATED value multiplier
+(`GrassTuning.MAT_PATCH_AMP`, base 0.47), baked per PATCH of `PATCH_CELLS`
+(4) x 4 cells rather than per instance or per single cell, applied only to
+the mat rung's baked instance colour in `GrassSample.ts` (the tuft rung
+passes `patchAmp: 0`; the near-field read is untouched, per L4's own 2.23.6
+judgement that it is already correct). Mean-preserving by construction
+(`1 + amp * (hash * 2 - 1)`, hash uniform on [0,1)), so RN-1900's rule for a
+variation term holds: it moves the spread, not the level. A patch many cells
+wide is chosen over per-instance noise because an independent per-instance
+draw, however large, is still one degree of freedom per blade and (candidate
+(a) taken alone, undamped) reads as salt-and-pepper up close; a patch is
+signal a grazing screen ROW can actually resolve as a clump, the way a real
+meadow patches. Candidates (b) (an areal-opacity fade) and (c) (as a
+*separate* mechanism) were not shipped: (b) is the same lever as the density
+thinning above and inherits its own finding that thinning alone under-delivers
+at this range; (c) is what the shipped patch multiplier already is, so a
+second, independent patch term would be redundant rather than additive.
+`?grasspatch=` scales it (registered in `run.mjs`'s own page-parameter list,
+RN-698's rule, in this lane's own commit); 0 is the isolator.
+
+### 2.25.2 A measured regression, a partial mitigation, and an honest limit
+
+A first full-strength arm (`amp = 0.55`, no distance gate) moved `r25` 29.48
+-> 46.64 and `r55` 21.56 -> 43.84, most of the way to their bare ceilings, but
+also moved `meadowfield.r100` 55.70 -> **51.70**, below L4's own floor.
+**`r100` is not in this lane's stated SCORE, but the regression is real and is
+recorded rather than hidden.** The cause was chased with the same discipline
+L4 used to find `(30, 70)`: a `(40, 60)` distance-keyed fade-out (patch
+amplitude scaled by `1 - smoothstep`, so the sparsest surviving mat-rung cards
+near their own retirement carry less of the swing) recovered only 0.78 of the
+4.0-count drop (`r100` 52.48), and a `(72, 90)` window recovered nothing at
+all (`r100` unchanged at 51.70). **Both results argue against a clean
+distance separation between what `r55` and `r100` each see**: `r100`'s own
+`footM` (7.641 m, against `r55`'s 2.322 m) means its five-pixel strip spans a
+wide flat-plane range band, and real terrain relief likely lets a nearer,
+still-dense cell foreshorten into that row exactly as it does into `r55`'s,
+so a gate keyed on build-time world distance cannot cleanly separate the two
+readings' populations. **Shipped:** `amp = 0.47` (found by sweeping `0.25 /
+0.5 / 1.0` and interpolating for `r55 >= 38.66`, half of L4's own stated gap)
+with a `(50, 75)` fade-out kept as a real but partial mitigation (it does not
+materially move `r100` either, per the same finding, but it costs nothing and
+is the right SHAPE: full strength through `r55`, tapering past
+`MAT_OUT_HI_M`). `r100` ships at **51.51**, a disclosed, unresolved residual
+for Admin or the next lane, not a regression this lane's own SCORE binds.
+
+### 2.25.3 The numbers, one query flag apart, fresh process each
+
+Two arms on ONE build (`?grasspatch=0` is the isolator, not a second build:
+the mechanism is pure per-instance colour, so a query flag reproduces the
+pre-lane baseline bit-exactly, verified below), five fresh Chrome processes
+via `run.mjs`, `vite preview` sentinel-verified before each batch.
+
+| rectangle | `grasspatch=0` (= pre-lane) | shipped | target / note |
+|---|---:|---:|---|
+| `meadowfield.r55` | 21.56 | **38.93** | target 38.66 (half of the 34.20-count gap to 55.76); **MET** |
+| `meadowfield.r25` | 29.48 | **42.92** | ceiling 51.84; 60% of the gap closed |
+| `meadowfield.r100` | 55.70 | **51.51** | L4's own floor; a disclosed regression, not in this lane's SCORE (2.25.2) |
+| `meadowfield.r4` / `.r10` | 65.27 / 48.27 | bit-identical | outside the mat rung's reach |
+| `meadowfield.box` / `.sky` | 60.06 / 16.40 | bit-identical | committed fractions, untouched |
+| `meadowfield.hz` | 96.84 (L4's own) | 96.90 | small further move, same direction as L4's own fix, corroborating |
+| `midfield.r18` / `.r27` / `.r35` | 35.27 / 28.50 / 25.99 (L4's landed) | **35.36 / 44.20 / 41.70** | no regression below landed values; all three improved |
+| `meadow.box` / `.nearG` / `.shade` | 56.47/85.23, 54.63/80.04, 57.78/84.33 | bit-identical | the committed near-field rectangles, untouched |
+| `meadow.mid` (extra, not committed) | 29.76 | 39.93 | same defect, different pose; expected to move |
+| `meadow` triangles (`meadow` shot) | 2,003,163 | 2,003,163 | no geometry added, under the 2.7e6 ALERT |
+| `frameMs.p50` (`meadowfield`, WG-189 one pair) | 15.5 ms | 17.6 / 22.8 ms across two repeats of the SAME config | see 2.25.4: attributed to harness noise, not this change |
+
+### 2.25.4 Cost, and why the timing pair is not read as a regression
+
+Two back-to-back runs of the identical shipped config measured `frameMs.p50`
+at 17.6 ms and then 22.8 ms with the PIXEL statistics bit-identical between
+them (`r25`/`r55`/`r100` to the digit both times). Since the mechanism adds no
+draw call, no triangle, and no per-frame shader work (the patch multiplier is
+baked into `col[]` once at chunk BUILD time, not evaluated per frame), a
+timing swing this large between two runs of one config is the harness's own
+documented spread (this file has recorded 1-3 ms swings from scene jitter
+alone many times) and not an attributable cost of this lane's change. Draw
+calls (74), triangle count and program count are unmoved from the pre-lane
+build in every capture.
+
+### 2.25.5 Two judgements
+
+**`meadowfield`**, the r100-to-r25 band at 6x (`RN2410_meadowfield_{before,
+after}_crop2.png`, x400-1360, y292-342): before is a fairly uniform mid-green
+wash with only faint texture; after shows visible darker and lighter mottled
+patches breaking the wash up, closer in character (though not in magnitude)
+to real meadow dappling than to the flat plate L4's own charter described.
+**The frame reads more alive without reading as noise.**
+
+**`meadow`** (A1's hero pose): the committed `box`/`nearG`/`shade` rectangles
+are bit-identical pixel statistics, confirming the near-field subject this
+pose is judged on is untouched, exactly as L4 found for its own fix. The
+`mid` rectangle (not committed, but visibly the same defect from a different
+bearing) shows the same mottling gain at 3x
+(`RN2410_meadow_{before,after}_mid.png`). **Meadow's near-field look is
+unharmed.**
+
+### 2.25.6 Rails
+
+Real Windows D3D11 through ANGLE (Chrome), 1600x900, HUD visible in the raw
+captures (cropped out of the judgement crops), every shot `valid: true`, `no
+console errors, no failed requests`. Five `vite preview` servers over the
+course of this lane (ports 5471 through 5475), each `--strictPort`, each with
+its own sentinel file written into this worktree's own `dist` and fetched
+back over the port (served-vs-disk match confirmed each time) before the
+first probe, ownership confirmed by `Get-NetTCPConnection -LocalPort <port>
+-State Listen`, killed by that PID before the next build (never by name).
+`npx tsc --noEmit`, `npx vite build` and `node tools/check-all.mjs` (`cd web
+&& npm run check`'s own entry point) run as SEPARATE steps, each exit status
+read on its own: 0, 0, and **8 of 8**, with every one of the eight sub-checks'
+own name and exit code printed individually. `assertFarCoverMatchesGrass`
+(TerrainCoverFar's own twin-constant check) ran at module load in every build
+with no thrown error throughout, unaffected because this lane touched no
+constant it cross-checks. Terrain `chunksBuilt` (569) and `pool` occupancy
+identical between the `?grasspatch=0` and shipped captures in every HUD frame
+compared, confirming the walk/streaming counters this lane could have
+disturbed did not move. Did not touch `web/wasm/dist/*` or `test/expected.json`.
+Four source files: `web/src/render/grass/GrassTuning.ts` (the new constants),
+`web/src/render/grass/GrassSample.ts` (the patch multiplier and its gate),
+`web/src/render/grass/GrassCover.ts` (`patchAmp` wired per rung), and
+`web/tools/smoke/run.mjs` (one page-parameter registered, RN-698's own rule,
+required to make `?grasspatch=` reachable through the harness at all). No
+`TerrainCoverFar*` edit (2.25.1: composition already held, checked the same
+way L4 checked it in 2.23.5 -- the far-field convergence rotation runs on a
+biome-mean rotation strength that this lane's per-instance colour change does
+not touch). Branch `lane/m4-midnear`, pushed, **not merged to main**.
+
+### 2.25.7 Owed
+
+1. **`meadowfield.r100`'s regression (55.70 -> 51.51) is unresolved.** 2.25.2
+   records two distance-keyed gates that failed to recover it and the reason
+   the next lane should not retry a THIRD distance window without first
+   settling whether terrain relief really does let a `r55`-range cell
+   foreshorten into the `r100` row (an `?wireframe=1`-style pose or a debug
+   colour-by-build-distance overlay would settle it directly rather than by
+   inference).
+2. **The CPU-side substrate sample's own coarseness** (2.25.1: band and slope
+   only, no fine splat noise) is the deeper cause this lane worked around
+   rather than closed. A `terrainAlbedo` twin that also samples the noise
+   term TerrainMaterial's fragment shader carries would let the carpet inherit
+   the ground's REAL contrast rather than an approximation of it, which is
+   candidate (b) done properly rather than as a range-gated opacity fade.

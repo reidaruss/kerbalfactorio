@@ -24,7 +24,16 @@ import {
 } from '../../world/ScatterTuning.js';
 import { biomeColorArray, terrainAlbedo } from '../materials/BiomePalette.js';
 import { coverAlbedo, coverOf } from './GrassPalette.js';
-import { BUILD_LEAD, MIN_SLOPE_COS } from './GrassTuning.js';
+import {
+  BUILD_LEAD, MIN_SLOPE_COS, PATCH_FADE_HI_M, PATCH_FADE_LO_M, PATCH_SHIFT,
+} from './GrassTuning.js';
+
+/** GLSL's own smoothstep, on the CPU: `dist` is a build-time quantity here,
+ *  never a per-frame one, so there is nothing to keep in a vertex shader. */
+function smoothstep(lo: number, hi: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - lo) / (hi - lo)));
+  return t * t * (3 - 2 * t);
+}
 
 /** Per cell, per rung. Bounds a pathological cell rather than an intended one:
  *  the near rung asks for 46 at the eye, so 96 is headroom and not a target,
@@ -50,6 +59,12 @@ export interface RungSpec {
    *  the same curve the shader evaluates, or supply and demand disagree and the
    *  carpet either thins or wastes. */
   readonly densityAt: (d: number) => number;
+  /** RN-2410 to RN-2419. Half-amplitude of a per-PATCH value multiplier baked
+   *  into the instance colour at build time (see the loop below), 0 disables
+   *  it entirely. The near tuft passes 0: its near-field read is untouched and
+   *  already correct (world audit R3, 2.23.6), and this term exists for the
+   *  mat rung's flat mid-field only. */
+  readonly patchAmp: number;
 }
 
 export interface Sampled {
@@ -175,6 +190,35 @@ export function sampleGrass(
       const band = hgt[cy * DIM + cx] / (d.maxReliefM || 1);
       terrainAlbedo(biomeCol, Math.max(0, Math.min(1, slopeCos)), band, SUB);
 
+      // THE PATCH MULTIPLIER (RN-2410 to RN-2419, GrassTuning's own note beside
+      // `MAT_PATCH_AMP`). Computed ONCE PER CELL, not per instance: a patch is
+      // `PATCH_CELLS` cells wide, so every instance in a `PATCH_CELLS` x
+      // `PATCH_CELLS` block shares the same draw, which is what makes the
+      // variance a visible clump a grazing screen row can resolve rather than
+      // noise it averages past. Hashed off `(py, px)`, the COARSE patch
+      // coordinate, not `(cy, cx)`, and with a seed distinct from both the
+      // per-cell mix just below (`cy * CELLS + cx` against 0x1b873593) and
+      // Scatter's own (0x27d4eb2f): sharing either would correlate the patch
+      // lattice with the cell lattice or the scatter's own, and the whole
+      // point is an independent field. Mean-preserving (`* 2 - 1` about a
+      // uniform draw), so the carpet's own LEVEL does not move, only its
+      // spread (RN-1900's rule).
+      // FADED BACK TO NOTHING PAST `PATCH_FADE_LO_M`/`_HI_M`, well beyond
+      // `MAT_OUT_HI_M` -- GrassTuning's own note beside those two constants
+      // records the measured reason: a few pixels of card-height bleed
+      // past the density window still reach the `r100` row (L4's own "CARD
+      // HEIGHT, not card count" finding, a second time), and a swing this
+      // much larger than the pre-existing per-instance jitter was enough to
+      // move that row's floor once it reached those pixels too.
+      const py = cy >> PATCH_SHIFT, px = cx >> PATCH_SHIFT;
+      const patchGate = rung.patchAmp > 0
+        ? 1 - smoothstep(PATCH_FADE_LO_M, PATCH_FADE_HI_M, dist) : 0;
+      const patchMul = patchGate > 0
+        ? 1 + rung.patchAmp * patchGate * (frac(hash32(
+          (keyBase ^ Math.imul(rung.salt, 0x2f6f2c47)) >>> 0, py * 4096 + px,
+        )) * 2 - 1)
+        : 1;
+
       const i10 = i00 + 3, i01 = i00 + DIM * 3, i11 = i01 + 3;
       const seed = (keyBase ^ Math.imul(cy * CELLS + cx, 0x1b873593)
         ^ rung.salt) >>> 0;
@@ -190,7 +234,11 @@ export function sampleGrass(
         // (the ground does not change inside 1.8 m), so the terrain sample
         // above stays hoisted and only the rotation runs here.
         coverAlbedo(SUB, v.biome, COV, frac(hash32(seed, k * 8 + 5)));
-        const cr = enc(COV.r), cg = enc(COV.g), cb = enc(COV.b);
+        // patchMul is the cell's own patch draw (see above); 1 when this
+        // rung's patchAmp is 0, so the tuft rung's bytes are bit-identical to
+        // before this lane.
+        const cr = enc(COV.r * patchMul), cg = enc(COV.g * patchMul),
+          cb = enc(COV.b * patchMul);
         local[n * 3] = bilerp(pos, i00, i10, i01, i11, 0, u, w);
         local[n * 3 + 1] = bilerp(pos, i00, i10, i01, i11, 1, u, w);
         local[n * 3 + 2] = bilerp(pos, i00, i10, i01, i11, 2, u, w);
