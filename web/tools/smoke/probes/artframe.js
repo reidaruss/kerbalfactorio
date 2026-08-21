@@ -931,6 +931,27 @@
         treeInA: [0.2000, 0.5746, 0.8000, 0.5923],
         treeOutA: [0.2000, 0.5569, 0.8000, 0.5746],
         treeOutB: [0.2000, 0.5392, 0.8000, 0.5569],
+        // RN-2495. THE CROWN MASS ITSELF, and it is COMMITTED rather than
+        // passed as an `--evalargs` override because RN-1727 refuses overrides
+        // for exactly this: "an override is not a pose, it is a rumour about
+        // one", and a verifier has to be able to reproduce a judged rectangle
+        // from the repository alone.
+        //
+        // Every other rectangle on this shot is a BAND across the frame and
+        // therefore averages crowns together with the clearings between them.
+        // That is the right instrument for "is the wood darker than its
+        // clearing" (RN-2275's four pairs read `box`) and the WRONG one for
+        // "what colour is a crown", which is what four audits have actually
+        // been complaining about: at `box` the far treeline PAINT carries
+        // 1.86 of this lane's 1.93-count move and the CARDS carry 0.07, so a
+        // band rectangle is nearly blind to the cards.
+        //
+        // 0.28125, 0.6667 -> 0.40625, 0.7778 is 450,600-650,700 at 1600x900,
+        // 20,000 px, placed on the dense card band in the lower-left third
+        // where the impostors are largest. It is read against the SAME
+        // rectangle under `?canopy=0`, which is the clearing at identical
+        // range through identical air, so nothing about it is hand-balanced.
+        crowns: [0.28125, 0.666667, 0.40625, 0.777778],
       },
       why: 'the MID-ALTITUDE FLIGHT VIEW at 1,200 m over FOREST, not the spawn',
     },

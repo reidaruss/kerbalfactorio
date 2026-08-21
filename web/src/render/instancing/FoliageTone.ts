@@ -79,6 +79,16 @@ import type { Family } from './Surfaces.js';
  *     THIS ROW, at sat 0.62:
  *                  R/G 0.580   B/G 0.467
  *
+ * **THE TWO ROWS COME FROM DIFFERENT HALVES OF THE SAME LEAF DATA AND A READER
+ * RECOMPUTING ONE FROM THE OTHER'S NUMBERS GETS THE WRONG ANSWER.** The crown
+ * row is `rInf` on the `w` triple above. The `one leaf` row is the leaf's own
+ * REFLECTANCE triple, `r` about (0.05 red, 0.12 green, 0.04 blue), which is
+ * what a camera sees off a single leaf; `w` adds transmittance to it and is
+ * the right input for the canopy limit and the wrong one for a leaf's colour
+ * (`rInf` on `w` alone would give 0.296 / 0.222 and a bracket that has almost
+ * collapsed). Both are ordinary broadleaf values and both are stated so the
+ * bracket is reproducible rather than merely cited.
+ *
  * **The shipped crown card is less saturated than a single LEAF, let alone a
  * crown -- it sits outside the bracket on the unsaturated side.** `sat = 1.08`
  * is solved to put its linear R/G on the bracket's geometric midpoint, 0.3324.
@@ -134,19 +144,24 @@ export const FOLIAGE_TONE: Readonly<Partial<Record<Family, FoliageTone>>> = {
   // RN-2495. THE RN-2245 ARGUMENT ABOVE IS NOT OVERRULED, IT IS BOUNDED, and
   // the other side of the trade is now measured rather than hypothetical. At
   // `forestair`, box GREEN EXCESS (meanG - (meanR + meanB) / 2, in counts), one
-  // page param apart on the PRE-LANE build, fresh process each:
+  // page param apart, EVERY ROW FROM THE `?canopysat=0.62` BASELINE IN ONE
+  // SESSION, fresh process each (an earlier draft of this table mixed rows
+  // taken against mid-search candidate constants; see rendering.md 2.29.8):
   //
-  //     shipped, pre-lane                   3.92
-  //     ?foliagetone=0  (this row off)      6.27   the desaturation costs 2.35
+  //     baseline, ?canopysat=0.62           3.92
   //     ?propsky=0                          3.91   the sky fill costs 0.01
-  //     ?crownshadecard=0                   6.59   the CARD shade costs 2.67
-  //     ?crownshadefar=0                   12.85   the FAR PAINT shade costs 8.93
+  //     ?prophaze=0                         4.50   the props' own haze,  0.58
+  //     ?crownshadecard=0                   4.80   the CARD shade costs  0.88
+  //     ?foliagetone=0  (this row off)      6.27   the desaturation,     2.35
+  //     ?crownshadefar=0                    9.31   the FAR PAINT shade,  5.39
   //     ?canopy=0       (the clearing)      4.80
   //
   // The last row is the whole complaint in one number: **with every term in,
   // the wood carries LESS green excess than its own treeless clearing** -- a
   // closed stand of leaves reads less green than the duff under it. This row
-  // moves that to 5.84, i.e. +1.04 over the clearing, a sign flip.
+  // moves that to 5.85, i.e. +1.05 over the clearing, a sign flip. **THIS ROW
+  // IS THE SECOND-LARGEST TERM IN THE FRAME and is 2.7x the card shade**,
+  // which is why it is worth moving at all.
   //
   // The step RN-2245 refused is a step BETWEEN TWO DIFFERENT OBJECTS -- a
   // harvest tree's `_LOD3` leaf card and a canopy crown impostor, two textures
@@ -166,8 +181,9 @@ export const FOLIAGE_TONE: Readonly<Partial<Record<Family, FoliageTone>>> = {
   // ACHROMATIC scalar, measured live at `cardShade` 0.1025 at the Forest site.
   // A crown card is therefore painted at a tenth of whatever colour is authored
   // here before the air is added, so doubling its chroma at source moves the
-  // crown mass by 1.5 counts and no more. `?crownshadecard=0` is the proof and
-  // it is a picture as well as a number.
+  // committed `crowns` rectangle by 1.19 counts (0.70 -> 1.89 against a
+  // clearing at 4.61) and no more. `?crownshadecard=0` is the proof and it is
+  // a picture as well as a number.
   canopy: { sat: 1.08, val: 0.86 },
   // Ground cover. Less cut, because a meadow legitimately keeps more chroma than
   // a canopy and because `tintFor`'s dry drift is already acting on this layer.
