@@ -46,7 +46,33 @@
 // frame must equal the previous one: FrameDiff's second difference, wires.js
 // requiring five identical draw-call reads). So the dither is a pure function of
 // gl_FragCoord with a period of exactly 4 px, and the resolve is SPATIAL, folded
-// into the multiply pass as a 5-tap cross rather than bought as a third pass.
+// into the multiply pass as a 4x4 box rather than bought as a third pass.
+//
+// RN-2490. The box used to be a 5-tap 1-px cross, which samples 5 of the
+// dither's 16 phases and leaves the other 11 unresolved: a screen-locked 4-px
+// cross-hatch on every low-sun bare-ground frame, convicted by
+// `rn2450bayer.mjs` (`?contact=0` collapses phaseStd 1.791 -> 0.602 while
+// patchStd RISES 30.215 -> 33.193, monotone in sun elevation, null on six
+// terrain-material arms and on the period-5 control). AoGlsl's own
+// `rotationOffset` has the identical period-4 construction (in fact the exact
+// same `mod(7cy+5cx,16)/16` bijection over one 4x4 tile) and shows no such
+// artefact, and the reason is `AO_BLUR_FS`'s 4x4 box: four CONSECUTIVE integer
+// pixel offsets in one axis cover all four residues of `mod(p, 4.0)` exactly
+// once regardless of where the box starts, so summing over a 4x4 window drives
+// the dither's own contribution to an exact CONSTANT rather than sampling a
+// biased subset of its 16 phases. A smaller, partial-coverage kernel was tried
+// and measured first (a 3x3, 9-tap box): it left phaseStd at 1.014, still
+// above the 0.70 done-when, because any window narrower than one full period
+// necessarily excludes some residues and the excluded set changes with the
+// pixel's own phase -- there is no smaller kernel that cancels this bijection
+// exactly. THE ONE COST, MEASURED RATHER THAN ASSUMED: the full box also
+// averages away some of the real sub-4px occlusion detail the 5-tap cross
+// left in by accident (patchStd 30.215 shipped -> 29.499 after, against a
+// 33.193 contact-off ceiling with no darkening at all), which is the same
+// trade AO's own box already makes and the reason its four-neighbour edge term
+// exists to protect a silhouette rather than the flat field this pass reads.
+// The march (`CONTACT_FS`, the occlusion itself) is untouched by this fix;
+// only the resolve widened to match.
 //
 // WHY EVERY FETCH IS textureLod: the loop has a data-dependent exit, and an
 // implicit-derivative fetch inside one is ANGLE's X3595, which the smoke runner
@@ -209,11 +235,19 @@ void main() {
 `;
 
 /**
- * The multiply pass. Reads the contact buffer with a 5-tap cross whose arms are
- * 1 px, which is exactly the resolve for a 4-px-period dither, and multiplies
- * the result into the scene colour through a blend state rather than a texture
+ * The multiply pass. RN-2490: reads the contact buffer with a 4x4 box (16
+ * taps at 1-px spacing, matching AoGlsl's own `AO_BLUR_FS`), which is the
+ * exact resolve for a 4-px-period dither because four consecutive integer
+ * offsets in each axis span all four phases of `mod(p, 4.0)` regardless of
+ * where the box starts. The previous 5-tap 1-px cross sampled only 5 of the
+ * dither's 16 phases and left a screen-locked 4-px cross-hatch on bare ground
+ * at low sun (`rn2450bayer.mjs`, phaseStd 1.791 shipped). Then multiplies the
+ * result into the scene colour through a blend state rather than a texture
  * read, so it never samples an attachment of the framebuffer it writes to
- * (RN-11).
+ * (RN-11). Unweighted (unlike AO's depth-weighted box): the march already
+ * fades this term to nothing past `uLengthM` and dampens it near thin edges
+ * (RN-2220), so a plain box costs no new uniforms and no new depth read in
+ * this pass.
  */
 export const CONTACT_APPLY_FS = /* glsl */`
 precision highp float;
@@ -223,12 +257,13 @@ uniform vec2 uTexel;
 uniform float uStrength;
 
 void main() {
-  float s = textureLod(tContact, vUv, 0.0).x;
-  s += textureLod(tContact, vUv + vec2(uTexel.x, 0.0), 0.0).x;
-  s += textureLod(tContact, vUv - vec2(uTexel.x, 0.0), 0.0).x;
-  s += textureLod(tContact, vUv + vec2(0.0, uTexel.y), 0.0).x;
-  s += textureLod(tContact, vUv - vec2(0.0, uTexel.y), 0.0).x;
-  s *= 0.2;
+  float s = 0.0;
+  for (int y = -2; y <= 1; ++y) {
+    for (int x = -2; x <= 1; ++x) {
+      s += textureLod(tContact, vUv + (vec2(float(x), float(y)) + 0.5) * uTexel, 0.0).x;
+    }
+  }
+  s *= 1.0 / 16.0;
   gl_FragColor = vec4(vec3(mix(1.0, clamp(s, 0.0, 1.0), uStrength)), 1.0);
 }
 `;
