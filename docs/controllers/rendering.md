@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2525 to RN-2539, `lane/n6-crownshade`, **THE CROWN SHADE GOES SPECTRAL: N3's routed follow-up, taken.** N3 found `CanopySelfShadow.updateCanopyCardShade` and the far treeline paint both multiplying the finalised canopy colour by ONE achromatic scalar (`cardShade` 0.1025), which is why a crown reads dark blue-violet rather than dark green. This lane replaces the scalar with a per-channel triple, `shade_c = S^k_c`, `k_c` derived from FoliageTone.ts's own leaf optics (transmittance `t = w - r` = 0.03 red / 0.15 green / 0.02 blue, exponents normalised to their geometric mean: **1.493802 red, 0.298760 green, 2.240702 blue**, product 1.000000), applied to BOTH halves through the one `CanopySelfShadow`/`SurfaceBind` seam. **THE PIN, STATED PRECISELY:** the Rec.709-weighted mean of the shade triple collapses algebraically to `S` for every `S` (confirmed live: `cardShadeRGB` (0.014397, 0.171380, 0.003062) against `cardShade` 0.125853, weighted sum 0.125853 to the digit) -- but **that is not the same as the rendered pixel's luma being unchanged**, since the base colour is not neutral; measured drift is small (+0.004 linear at the Forest site) and reported rather than hidden. `?crownspectral=0` is the exact pre-lane achromatic frame by the same identity (`k_c = 1` for all three), registered in `run.mjs`. **THE SCORE, committed `crowns` rectangle:** gx **+1.87 -> +3.64** against a clearing at +4.56, **65.8 per cent of the shortfall closed**; luma moves **+0.66**, honestly NOT the digit-identical hold hoped for, explained in 2.32.3/2.32.4 rather than tuned away. **THE GUARD, RE-MEASURED rather than trusted to algebra:** RN-2275's four clearing/wood pairs all still invert (`forestairnoon` -1.76, `forestairlow` -1.99, `flyovernoon` -7.31, `flyoverlow` -1.83 against a pre-lane -2.80/-2.28/-8.07/-2.05 on this SAME build's `?crownspectral=0` arm); margins shrink by 0.10 to 1.04 counts and none comes close to flipping. Four ground poses bit-identical; aerial `world` warm/sat shifts 0.10 to 0.29 counts at every pose, same class as the guard. **`warm` (R-B) moves the "wrong" way** (-16.32 -> -16.66 at `crowns`) because both red's and blue's exponents exceed the achromatic 1 (blue's more), which is explained arithmetic rather than a regression: `warm` is blind to green by construction (RN-2495's own finding) and is not this fix's instrument. **EYE VERDICT: still PARTIAL, not MET, closer than before.** At 1x the frame is close to indistinguishable from N3's own shipped frame; at 3x the crowns read a shade less blue-violet but do not read as "unmistakably green" the way `?crownshadecard=0` (shade fully OFF) does. Determinism and every number reproduced to the digit across a full clean rebuild. Full record in section 2.32; frames `docs/screenshots/RN2525_*`.) THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2525 to RN-2539, `lane/n6-crownshade`, **THE CROWN SHADE GOES SPECTRAL: N3's routed follow-up, taken.** N3 found `CanopySelfShadow.updateCanopyCardShade` and the far treeline paint both multiplying the finalised canopy colour by ONE achromatic scalar (`cardShade` 0.1025), which is why a crown reads dark blue-violet rather than dark green. This lane replaces the scalar with a per-channel triple, `shade_c = S^k_c`, `k_c` **A DELIBERATE STYLISATION, NOT A DERIVATION -- corrected by a fresh-context verifier after an earlier draft of this line said "derived":** shipped exponents **1.493802 red, 0.298760 green, 2.240702 blue** are `1/t_c`-proportional, not the Beer-Lambert `tau_c = -ln(t_c)` relation (honest Beer-Lambert would be 1.183283/0.640180/1.320107, two-stream 1.035589/0.922476/1.046785); the DIRECTION matches the leaf optics, the MAGNITUDE is 2.71x more aggressive than Beer-Lambert and kept on purpose (the honest exponents close only 40.9 per cent of the gx shortfall against the shipped 65.8, section 2.32.9), applied to BOTH halves through the one `CanopySelfShadow`/`SurfaceBind` seam. **THE PIN, STATED PRECISELY:** the Rec.709-weighted mean of the shade triple collapses algebraically to `S` for every `S` (confirmed live: `cardShadeRGB` (0.014397, 0.171380, 0.003062) against `cardShade` 0.125853, weighted sum 0.125853 to the digit) -- but **that is not the same as the rendered pixel's luma being unchanged**, since the base colour is not neutral; measured drift is small (+0.004 linear at the Forest site) and reported rather than hidden. `?crownspectral=0` is the exact pre-lane achromatic frame by the same identity (`k_c = 1` for all three), registered in `run.mjs`. **THE SCORE, committed `crowns` rectangle:** gx **+1.87 -> +3.64** against a clearing at +4.56, **65.8 per cent of the shortfall closed**; luma moves **+0.66**, honestly NOT the digit-identical hold hoped for, explained in 2.32.3/2.32.4 rather than tuned away. **THE GUARD, RE-MEASURED rather than trusted to algebra:** RN-2275's four clearing/wood pairs all still invert (`forestairnoon` -1.76, `forestairlow` -1.99, `flyovernoon` -7.31, `flyoverlow` -1.83 against a pre-lane -2.80/-2.28/-8.07/-2.05 on this SAME build's `?crownspectral=0` arm); margins shrink by 0.10 to 1.04 counts and none comes close to flipping. Four ground poses bit-identical; aerial `world` warm/sat shifts 0.10 to 0.29 counts at every pose, same class as the guard. **`warm` (R-B) moves the "wrong" way** (-16.32 -> -16.66 at `crowns`) because both red's and blue's exponents exceed the achromatic 1 (blue's more), which is explained arithmetic rather than a regression: `warm` is blind to green by construction (RN-2495's own finding) and is not this fix's instrument. **EYE VERDICT: still PARTIAL, not MET, closer than before.** At 1x the frame is close to indistinguishable from N3's own shipped frame; at 3x the crowns read a shade less blue-violet but do not read as "unmistakably green" the way `?crownshadecard=0` (shade fully OFF) does. Determinism and every number reproduced to the digit across a full clean rebuild. Full record in section 2.32; frames `docs/screenshots/RN2525_*`.) THIS LINE IS A POINTER: replace it, never append to it.
 
 
 
@@ -9836,25 +9836,54 @@ M       = LUMA . (shade_red, shade_green, shade_blue)   (Rec.709 weights)
 shade_c(final) = S * shade_c / M
 ```
 
-**THE EXPONENTS, derived from FoliageTone.ts's own leaf optics rather than
-picked.** That file documents the leaf's REFLECTANCE triple `r` (0.05 red,
-0.12 green, 0.04 blue) and single-scattering ALBEDO triple `w` (0.08 red,
-0.27 green, 0.06 blue); the TRANSMITTANCE this term needs is neither, it is
-`t = w - r` -- how much of the light entering one leaf keeps going:
+**THE EXPONENTS ARE A DELIBERATE STYLISATION FOR VISIBLE EFFECT, NOT A
+PHYSICAL DERIVATION -- this section originally said "derived rather than
+picked", and that claim was wrong, caught by a fresh-context verifier.**
+FoliageTone.ts documents the leaf's REFLECTANCE triple `r` (0.05 red, 0.12
+green, 0.04 blue) and single-scattering ALBEDO triple `w` (0.08 red, 0.27
+green, 0.06 blue); transmittance `t = w - r` = 0.03 red / 0.15 green / 0.02
+blue was carried through the WRONG relation. Beer-Lambert optical depth is
+`tau = -ln(T)`, not `1/T`, and the shipped exponents are proportional to
+`1/t_c`, not to `tau_c`:
 
 ```
-t_red = 0.03    t_green = 0.15    t_blue = 0.02
-k_c = cbrt(t_red * t_green * t_blue) / t_c
-    = 1.493802 red,  0.298760 green,  2.240702 blue     (product 1.000000)
+shipped (WAS chosen, not derived):
+  k_c = cbrt(t_red * t_green * t_blue) / t_c
+      = 1.493802 red,  0.298760 green,  2.240702 blue
+
+honest Beer-Lambert (tau_c = -ln(t_c), same geometric-mean normalisation):
+  = 1.183283 red,  0.640180 green,  1.320107 blue
+
+two-stream (k(w) = 2*sqrt(1-w_c), FoliageTone.ts's own rInf model, same
+normalisation):
+  = 1.035589 red,  0.922476 green,  1.046785 blue
 ```
 
-Normalised to their own geometric mean rather than to any one channel, the
-same geometric-midpoint choice `FoliageTone.ts`'s own `sat = 1.08` makes
-rather than picking a bracket endpoint. Green's exponent is BELOW one (a
-shaded crown's green channel decays slower than the achromatic law it
-replaces); red and blue's are above one, blue's by the most, so both are
-crushed toward the floor faster than green is -- a shaded crown reddens and
-blues toward nothing while its green holds.
+The DIRECTION every reference agrees on (green below one, red and blue
+above it) is what the leaf optics support; the shipped MAGNITUDE is 2.71x
+more aggressive than Beer-Lambert and about 15x more than two-stream, and
+that magnitude is an art choice wearing a physics costume. **KEPT ON
+PURPOSE, MEASURED RATHER THAN ASSUMED:** the verifier built, measured and
+reverted the honest Beer-Lambert alternative -- it closes only 40.9 per cent
+of the `crowns` gx shortfall against the shipped 65.8 (2.32.4), and buys
+back only 0.47 counts of RN-2275's tightest guard margin (`forestairnoon`,
+-1.76 shipped -> -2.23 Beer-Lambert). The eye verdict is already PARTIAL at
+the stronger, shipped setting (2.32.7), so weakening it would not flip
+anything. The fix here is to the LABEL, not the constant.
+
+**WHAT THE GEOMETRIC-MEAN NORMALISATION ACTUALLY BUYS, since "product
+1.000000" is not the check an earlier draft called it.** Dividing any three
+positive numbers by their own geometric mean always gives a product of
+exactly one, by definition, so that identity validates nothing about `t_c`;
+it only confirms the division happened. The non-trivial property is
+different: the pinned `shade_c` (2.32.3) is EXACTLY invariant under an
+ADDITIVE shift of all three `k_c` by the same constant, so WHERE the triple
+is centred is a free gauge and buys no correctness. What the geometric-mean
+choice actually sets is the absolute SCALE the triple's SPREAD sits at (the
+"aggressiveness knob"): dividing by a smaller reference would have scaled
+every `k_c` up together and crushed red and blue harder at every `S`. It
+does not enforce the pin -- the pin holds unconditionally for any three
+exponents, by the `/ M` step alone.
 
 ### 2.32.3 THE PIN, STATED PRECISELY, BECAUSE THE LOOSE VERSION IS A CLAIM THIS LANE DOES NOT MAKE
 
@@ -10033,3 +10062,51 @@ file, no height-field or world-gen file, `web/wasm/dist` and `test/
 expected.json` untouched, `assets/textures/dist` untouched, no em dash
 anywhere. `check:limits` (531 files, all <= 400 code lines) confirms
 `CanopySelfShadow.ts` stayed inside the cap despite the added derivation.
+
+### 2.32.9 Correction pass (2026-08-21, fresh-context verifier, verdict FIX doc-only) and owed items
+
+**A fresh-context verifier reproduced every MEASUREMENT this lane published**
+(the identity claim held at pixel level below the same-build noise floor,
+`pinResidual` literally 0, all four guard margins to the digit, the 65.8 per
+cent closure exact, scatter proven two orders of magnitude below the
+tightest -1.76 margin) **and found the DERIVATION CLAIM wrong.** 2.32.2's
+"derived from FoliageTone.ts's own leaf optics rather than picked" carried
+the leaf transmittance triple through `k_c` proportional to `1/t_c`; Beer-
+Lambert optical depth is `tau = -ln(T)`, not `1/T`. Carried through the
+correct relation the honest exponents are 1.183283/0.640180/1.320107
+(Beer-Lambert) or 1.035589/0.922476/1.046785 (two-stream, `FoliageTone.ts`'s
+own `rInf` model), against the shipped 1.493802/0.298760/2.240702 -- the
+shipped magnitude is 2.71x more aggressive than Beer-Lambert. **THE
+EXPONENTS ARE KEPT**: the verifier measured the honest alternative (patched,
+built, measured, reverted) and it closes only 40.9 per cent of the shortfall
+against the shipped 65.8, buying back 0.47 counts of guard margin the eye
+verdict (already PARTIAL at the stronger setting) does not need. The fix is
+to the LABEL: 2.32.2 and `CanopySelfShadow.ts`'s header now call the
+exponents a deliberate stylisation with the physical references named
+beside them, not a derivation. The "product 1.000000" line was also wrong as
+a validation claim (a geometric-mean divide always gives that product, by
+definition); the real property is that the pinned output is invariant under
+an ADDITIVE shift of the whole `k_c` triple, which is why the geometric mean
+sets the split's aggressiveness rather than its correctness. **The NUMBERS
+RN-2525 row's "derived rather than picked" is corrected the same way.**
+
+**OWED, from the verifier, added here so they are not lost:**
+
+1. **THE RESIDUAL IS AN ADDITIVE BLUE FLOOR THIS SEAM CANNOT REACH.** With
+   the shade fully OFF (`?crownshade=0`), crown blue moves only +2.27 counts
+   while green moves +15.73 -- the shaded crown's blue channel gets 0.3 per
+   cent of its value from the base albedo this lane's multiply acts on, yet
+   blue is the crown PIXEL's largest channel. The blue-violet residual is
+   therefore not a multiplicative term at all: it is additive, most likely
+   the aerial in-scatter and/or the blue-dominant ambient daylight floor
+   (`TerrainAmbient`'s `AMBIENT_NOON` (0.030, 0.034, 0.045)). **The next
+   crown-colour lane must target the ADDITIVE term, a different owner
+   (aerial perspective / ambient fill), because no multiply on the canopy's
+   own albedo can reach a floor that is added after it.**
+2. **RN-2275'S PASS CONDITION IS A SIGN TEST WITH NO BUDGET.** "The wood
+   must read darker than its own clearing" has no stated margin floor, and
+   this lane alone spent 37 per cent of the `forestairnoon` margin in one
+   pass (-2.80 pre-lane to -1.76 shipped, 2.32.5). A sign test with no
+   budget will eventually flip under enough small, individually-justified
+   moves; a stated minimum margin is owed before the next lane bites this
+   guard again.

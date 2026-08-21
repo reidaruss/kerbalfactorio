@@ -283,37 +283,67 @@ export const CROWN_SELF_GLSL = /* glsl */`
  * self-shadowed crown should read as a SATURATED DARK GREEN, never a neutral
  * dark grey.
  *
- * THE EXPONENTS, DERIVED FROM THE SAME LEAF OPTICS FoliageTone.ts's `canopy`
- * ROW DOCUMENTS, and named here rather than re-derived so a reader has one
- * place to recompute them. That file's own header gives, in LINEAR units,
- * the leaf's REFLECTANCE triple `r` (0.05 red, 0.12 green, 0.04 blue -- what
- * a camera sees off a single leaf) and its single-scattering ALBEDO triple
- * `w` (0.08 red, 0.27 green, 0.06 blue -- reflectance plus transmittance,
- * the two-stream input). The channel this term needs is neither: it is how
- * much of the light ENTERING one leaf keeps going, i.e. the leaf's own
- * TRANSMITTANCE, `t = w - r`:
+ * THE EXPONENTS ARE A DELIBERATE STYLISATION FOR VISIBLE EFFECT, NOT A
+ * PHYSICAL DERIVATION, AND AN EARLIER DRAFT OF THIS COMMENT CLAIMED
+ * OTHERWISE. A fresh-context verifier caught it: this file's own leaf optics
+ * (FoliageTone.ts's `canopy` row header gives, in LINEAR units, the leaf's
+ * REFLECTANCE triple `r` (0.05 red, 0.12 green, 0.04 blue) and single-
+ * scattering ALBEDO triple `w` (0.08 red, 0.27 green, 0.06 blue); transmittance
+ * `t = w - r` = 0.03 red / 0.15 green / 0.02 blue) were carried through the
+ * WRONG relation. Beer-Lambert optical depth is `tau = -ln(T)`, not `1/T`,
+ * and this term's shipped exponents are proportional to `1/t_c` rather than
+ * to `tau_c`. Carried through the correct relation and normalised to their
+ * own geometric mean the same way (`k_c = tau_c / cbrt(tau_r tau_g tau_b)`),
+ * the honest Beer-Lambert exponents are **1.183283 red, 0.640180 green,
+ * 1.320107 blue** -- and the two-stream extinction FoliageTone.ts's own
+ * `rInf(w)` model implies (`k(w) = 2*sqrt(1-w)`, same geometric-mean
+ * normalisation) gives **1.035589 red, 0.922476 green, 1.046785 blue**. The
+ * DIRECTION both references agree on (green's exponent below one, red and
+ * blue's above it) is what the leaf optics support; the MAGNITUDE shipped
+ * here is 2.71x more aggressive than Beer-Lambert and about 15x more than
+ * two-stream, and that magnitude is an ART CHOICE wearing a physics costume.
  *
- *   t_red = 0.08 - 0.05 = 0.03    t_green = 0.27 - 0.12 = 0.15
- *   t_blue = 0.06 - 0.04 = 0.02
- *
- * Beer-Lambert makes optical depth per leaf layer inversely proportional to
- * how much of a channel gets through ONE layer, so the achromatic law's own
- * `S = exp(-K mu / sinSun)` generalises to a PER-CHANNEL exponent on the same
- * `S`: `shade_c = S ^ k_c`, with `k_c` inversely proportional to `t_c`. The
- * three are normalised to their own GEOMETRIC MEAN rather than to any one
- * channel, so no channel is privileged as "the" reference -- the same
- * geometric-midpoint choice FoliageTone.ts's own `sat = 1.08` makes rather
- * than picking an endpoint of its bracket:
+ * THE SHIPPED (1/t-proportional) EXPONENTS ARE KEPT ON PURPOSE, MEASURED
+ * RATHER THAN ASSUMED. The verifier built, measured and reverted the honest
+ * Beer-Lambert alternative: it closes only 40.9 per cent of the `crowns`
+ * rectangle's gx shortfall to the clearing (against this file's shipped
+ * 65.8 per cent) and buys back only 0.47 counts of RN-2275's tightest guard
+ * margin (`forestairnoon`, -1.76 shipped -> -2.23 Beer-Lambert). The eye
+ * verdict is already PARTIAL at the STRONGER setting (rendering.md 2.32.7),
+ * so weakening it to the physically honest exponents would not flip
+ * anything and would only shrink the one number this lane can show for
+ * itself. The fix this correction makes is to the LABEL, not the constant:
  *
  *   k_c = cbrt(t_red * t_green * t_blue) / t_c
- *       = 1.493802 red,  0.298760 green,  2.240702 blue
+ *       = 1.493802 red,  0.298760 green,  2.240702 blue   (WAS chosen, not derived)
  *
- * (product 1.000000 to the digit, which is the normalisation's own check).
  * Green's exponent is BELOW one -- a shaded crown's green channel decays
  * SLOWER than the achromatic law it replaces -- and red and blue's are
  * above one and decay faster, which is the whole shape: a crown reddens and
- * blues toward nothing while its green holds, exactly the leaf optics say it
- * should.
+ * blues toward nothing while its green holds, in the DIRECTION the leaf
+ * optics support and at a MAGNITUDE this file chose rather than computed.
+ *
+ * WHAT THE GEOMETRIC-MEAN NORMALISATION ACTUALLY DOES, since "the three
+ * exponents' product is 1.000000" is not the check an earlier draft called
+ * it -- dividing any three positive numbers by their own geometric mean
+ * ALWAYS gives a product of exactly one, by definition, so that identity
+ * validates nothing about `t_c` or the physics; it only confirms the
+ * division was performed. The non-trivial property is different: `shade_c`
+ * below is EXACTLY invariant under an ADDITIVE shift of all three `k_c` by
+ * the same constant (`S^{k+d}` factors as `S^d * S^k` in both the numerator
+ * and `M`, so the `S^d` cancels), which means WHERE the triple is centred is
+ * a free gauge and the geometric-mean choice buys no correctness at all. The
+ * SPREAD between the three `k_c` (their differences, not their centre) is
+ * the only thing that changes the rendered result, and that spread is set
+ * by which underlying quantity (`1/t_c` here, `tau_c` for Beer-Lambert,
+ * `2*sqrt(1-w_c)` for two-stream) the exponents are proportional to before
+ * any normalisation is applied. The geometric mean is therefore the
+ * AGGRESSIVENESS KNOB in one specific, narrower sense: dividing by it fixes
+ * the absolute SCALE the spread sits at (order one rather than order ten),
+ * and a smaller divisor would have scaled every `k_c` up together and
+ * crushed red and blue harder at every `S`. It does not enforce the pin --
+ * the pin is enforced unconditionally by the `/ M` in `crownSpectralSplit`
+ * below, for ANY three exponents, including ones nobody chose for a reason.
  *
  * THE PIN, STATED PRECISELY, BECAUSE THE IMPRECISE VERSION IS A CLAIM THIS
  * FILE DOES NOT MAKE. Raising `S` to three different powers and averaging the
@@ -359,6 +389,18 @@ export const CROWN_SELF_GLSL = /* glsl */`
  * channels, `M = S * (LUMA_R + LUMA_G + LUMA_B) = S` (the weights sum to
  * one), and `shade_c = S * S / S = S` -- the exact pre-lane achromatic
  * frame, algebraically and not by a second code path.
+ *
+ * OWED: THE LEAF OPTICS ARE DUPLICATED, NOT SHARED. `r` and `w` below are
+ * hand-typed literals; FoliageTone.ts carries the SAME two triples only in
+ * PROSE (its `canopy` row's own docstring), not as an exported constant a
+ * second file could import. Two files independently typing the same four
+ * numbers is exactly the shape RN-2249's palette-hex precedent exists to
+ * avoid ("an identical hex makes the frame's mean green provably unmoved"),
+ * and it did not bite this lane only because nobody has yet changed one
+ * copy without the other. Routed rather than fixed here: exporting
+ * `LEAF_REFLECT_RGB`/`LEAF_ALBEDO_RGB` (or their FoliageTone.ts source) from
+ * one file and importing it in the other is a consolidation, not a colour
+ * change, and this lane's own scope was the shade, not the optics table.
  */
 const LEAF_REFLECT_RGB: readonly [number, number, number] = [0.05, 0.12, 0.04];
 const LEAF_ALBEDO_RGB: readonly [number, number, number] = [0.08, 0.27, 0.06];
