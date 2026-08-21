@@ -14,6 +14,13 @@
 > single-material card, the pool ceiling, the crown asset, the far aerial ground
 > and inter-crown self-shadowing. Section 5 is the ranked list, section 6 the
 > top five lanes, section 7 the delta against R1.
+>
+> **Correction note, 2026-08-21:** a fresh-context verifier that never touched
+> this lane re-checked its own measurements and found five wording issues
+> (stray em dashes, the five-lane "no collision" claim, the pondside warm
+> exception, rank 4's uniform-plate scope, and rank 1's relief claim); this
+> pass applies all five, plus the verifier's own lane-sequencing reorder in
+> section 6, adopted by Admin.
 
 ---
 
@@ -26,17 +33,17 @@ hundred, and the boundary has moved rather than dissolved. Five of R1's seven
 blocking gaps are genuinely closed and one of them (the haze) is now at the
 bar. What is left is not a residue of those five, it is one large gap and two
 smaller ones that were always behind them: **past roughly seventy-five metres
-the terrain still has no material and no relief of any kind**, and the proof is
-no longer an argument about haze — with the aerosol term switched off entirely,
+the terrain still has no material and no sub-massif relief**, and the proof is
+no longer an argument about haze: with the aerosol term switched off entirely,
 the 4.7 km ridge carries an interquartile range of **5.49 counts** against the
 near ground's 25, and from 1,200 m with the vegetation removed the ground
 directly below the camera reads **6.07** and `?splat=0` moves it by 0.06.
 Beside that sit **a hard texel-staircase shadow region that survives every
 isolator this build ships** and **a colour composition that turns the world
 blue the moment the eye leaves the ground**: the whole-frame `warm` is negative
-on all four aerial poses and positive on all twelve ground poses. Nothing in
-the top five needs WebGPU or a native client. One thing in the top five needs
-world-gen.
+on all four aerial poses and positive on eleven of the twelve ground poses,
+the stated exception being `pondside` (section 3.11). Nothing in the top five
+needs WebGPU or a native client. One thing in the top five needs world-gen.
 
 ---
 
@@ -162,16 +169,16 @@ what a Space Engineers landscape frame looks like, judged by eye with the
 evidence frame named. The instruments are rails; the eye is the verdict
 (FIDELITY-GAP section 3, Option D).
 
-### 3.1 The atmosphere's architecture — **AT BAR**
+### 3.1 The atmosphere's architecture: **AT BAR**
 One analytic Rayleigh/Mie integral with the uniform record shared BY REFERENCE
 between the sky material, both terrain materials, the carpet and now the props,
 so nothing in the frame can disagree with anything else about the air. R1 called
 this at bar and it has since absorbed a Chapman sun path, a frame-wide boundary
 layer, a sky ray that carries the aerosol, and a nine-direction CPU sky probe
-driving the ambient — and it is still one authority. Nothing to fix.
+driving the ambient, and it is still one authority. Nothing to fix.
 *Evidence: every frame in section 2.1.*
 
-### 3.2 The limb from orbit — **AT BAR**
+### 3.2 The limb from orbit: **AT BAR**
 `RN2285_limb.png`. `ring` luma 92.43, iqr 95.87, sat 0.607 over a `space` box
 at 0.09, at 52,913 triangles and 21 calls. A blue-white limb, a warm terminator
 gradient, a real star field, and the aerosol cut A4 made did not cost it
@@ -179,10 +186,10 @@ anything measurable (R1 read 93.27 / 101.39 / 0.626). This is still the best
 frame the project has. Two reservations, both small and both R1's: the
 terminator carries **stepped LOD ribbons with visible chromatic fringes**
 (`seam` iqr 59.39 at R1, **63.21** today, so marginally worse), and the sunlit
-disc is a featureless pale ball — no continent, no biome, no colour, which is a
+disc is a featureless pale ball (no continent, no biome, no colour), which is a
 different gap from the ribbons and belongs with rank 1.
 
-### 3.3 Aerial perspective and the haze — **AT BAR**
+### 3.3 Aerial perspective and the haze: **AT BAR**
 This is R1's number one gap and it is closed. A4 took sigma from 4.5e-4 to
 1.4e-4, a Koschmieder visual range of 8.7 km to 27.9 km, and the flyover's
 all-ground `box` from iqr 31.71 to 51.05 against a 56.47 ceiling. Today the
@@ -192,7 +199,7 @@ What the haze is now doing is EXPOSING two things it used to hide, which is
 ranks 1 and 2 and is a compliment to this term rather than a complaint about
 it. *Evidence: `RN2285_flyover.png`, `RN2285_vista.png`.*
 
-### 3.4 The sky and its clouds — **ACCEPTABLE**
+### 3.4 The sky and its clouds: **ACCEPTABLE**
 `RN2285_vista.png`, `RN2285_meadow.png`. A deep blue zenith, a broken deck with
 real convergence toward the horizon, a day arc that carries 79.96 counts of
 `skyHz.warm` where R1 measured 14.83. Against the bar this is now a plausible
@@ -205,7 +212,7 @@ horizon band is still a cream wall** at every hour: `vista.hzBand` warm +22.46
 against a `skyHz` at -23.45, i.e. the sky and the ground meet in a seam of
 opposite hue rather than converging. Rank 9.
 
-### 3.5 Ground cover in the near field, 0 to 25 m — **ACCEPTABLE**
+### 3.5 Ground cover in the near field, 0 to 25 m: **ACCEPTABLE**
 `RN2285_meadow.png`. This is the largest single change since R1 and the
 charter's difference 1 is closed at this range: the ground IS grass, the
 "billiard table with tufts on it" read is gone, the colour comes off the
@@ -217,7 +224,7 @@ frame at a standing eye reads as a field of leek or iris leaves rather than
 grass, and the near two metres reads as legible individual cards. That is rank
 5, and it is an authoring change rather than a shader one.
 
-### 3.6 The terrain material in the near field, 0 to 75 m — **ACCEPTABLE**
+### 3.6 The terrain material in the near field, 0 to 75 m: **ACCEPTABLE**
 `RN2285_mtnslope.png`, `RN2285_voxelface.png`. Six splat layers blended by the
 shipped slope and altitude selectors, two rungs, a convergence rule that is
 asserted rather than argued, and a far-cover term that stops the khaki band.
@@ -227,10 +234,11 @@ rung's mottle is visibly soft at a grazing eye; and the **voxel cut face has no
 material at all** (`RN2285_voxelface.png`: the dug pit is a smooth beige blur),
 which is the one surface in the game the terrain material does not reach.
 
-### 3.7 The terrain material and relief past 75 m — **BLOCKING**
+### 3.7 The terrain material and relief past 75 m: **BLOCKING**
 `RN2285_vistanoon.png` is the frame. The distant mountains are **flat cream
 paper**: one uniform interior, no rock, no scree, no strata, no large-scale
-occlusion, no geometric relief, and the ridge tops merge into the sky. This is
+occlusion, and no sub-massif relief (the massif silhouettes themselves read;
+nothing finer than that does), and the ridge tops merge into the sky. This is
 R1's gap 3 and it has not moved, because A3's two shipped rungs both retire
 inside the near field by construction (RN-2166's mip finding) and A3 phase 2
 was never run. **It is now the single largest gap in the world and it is the
@@ -243,17 +251,19 @@ there is nothing to hide**. From the air the same statement is starker: at
 `flyovernoon` with the vegetation removed (`?canopy=0`) the ground below the
 camera reads iqr **6.07**, and `?splat=0` moves it by 0.06 counts.
 
-### 3.8 The mid field at a standing eye, 25 m to the treeline — **BLOCKING**
+### 3.8 The mid field at a standing eye, 25 m to the treeline: **BLOCKING**
 `RN2285_midfield.png` and `RN2285_meadowfield.png`. Past the carpet's fade the
-ground becomes a **completely uniform green plate** running to a hard treeline,
-with no texture, no undulation, no shading and no variation of any kind, and it
-occupies the middle third of every frame a walking player takes. It is 3.7 seen
-from two metres instead of from a ridge, and it is listed separately because
-the fix is a different file: the carpet's own far rung and `TerrainCoverFar`,
-not the splat. `meadowfield.r55` iqr 26.15 falling to `meadow.hzBand` 3.86 is
-the ramp, and there is nothing between them.
+ground becomes a **completely uniform green plate in the band nearest the
+treeline**, with no texture, no undulation and no shading there. That band is
+narrower than the whole middle third: blade structure survives well past 25 m
+(range-strip iqr 38.78 / 32.27 / 31.28 at r18/r27/r35), so the featureless
+plate is the strip closest to the treeline rather than the whole middle third
+of a walking frame. It is 3.7 seen from two metres instead of from a ridge, and
+it is listed separately because the fix is a different file: the carpet's own
+far rung and `TerrainCoverFar`, not the splat. `meadowfield.r55` iqr 26.15
+falling to `meadow.hzBand` 3.86 is the ramp, and there is nothing between them.
 
-### 3.9 Shadows — **BLOCKING**
+### 3.9 Shadows: **BLOCKING**
 `RN2285_flyovernoon_canopy0.png` is the frame and it is the ugliest in the set:
 a large **hard-edged, regular, square-toothed texel staircase** across the
 aerial ground, present at dot 0.20, 0.55 and 0.897, and once the vegetation is
@@ -266,7 +276,7 @@ good where they land (`RN2285_basedusk.png`'s tree shadows on the base wall,
 has **no dappled canopy light at all** (`RN2285_forestfloor.png`: a dot-0.70
 sun over a closed canopy and a uniformly shaded floor).
 
-### 3.10 Vegetation from the air — **BEHIND**
+### 3.10 Vegetation from the air: **BEHIND**
 `RN2285_forestairnoon.png`, `RN2285_flyovernoon.png`. R1's gap 2 was an
 ABSENCE and that is closed absolutely: 46,575 canopy trees at `flyover`, 77,998
 at `forestair`, a material treeline behind them to the horizon, a fade with no
@@ -281,20 +291,23 @@ aerial world casts no shadow at all (`RN2285_flyoverlow.png`, dot 0.20, and the
 canopy-does-not-cast theorem is why), so from the air the world has no light
 direction at any hour.
 
-### 3.11 Colour composition at range — **BEHIND, and it is ranked as blocking**
+### 3.11 Colour composition at range: **BEHIND, and it is ranked as blocking**
 Three independent readings of one thing. **(a) From the air the world is a
 sea.** Whole-frame `warm` is negative at `flyover` (-10.55), `flyovernoon`
-(-3.26), `forestair` (-18.72) and `forestairnoon` (-13.44) and positive at all
-twelve ground poses; `forestair`'s distance is at sat 0.056; and by eye
-`RN2285_forestairnoon.png` reads as hazy shallow water with dark reefs, not as
-forested land. **(b) On the mountain the understorey is mint.** `RN2285_mtnslope.png`
-puts pale seafoam-green spikes on a cream substrate beside near-black rock
-slabs — three palettes that do not belong together, and the plants read as
-glass. **(c) The wood is bluer than its clearing and the clearing is
-under-canopy litter.** RN-2275's own owed item 3 names the deeper half of this
-and it is confirmed in the frames.
+(-3.26), `forestair` (-18.72) and `forestairnoon` (-13.44) and positive at
+eleven of the twelve ground poses. **The stated exception is `pondside`, at
+whole-frame warm -18.04**, a ground pose: the frame is mostly water surface,
+so its negative reading is the water and not a repeat of the aerial finding.
+`forestair`'s distance is at sat 0.056; and by eye `RN2285_forestairnoon.png`
+reads as hazy shallow water with dark reefs, not as forested land. **(b) On
+the mountain the understorey is mint.** `RN2285_mtnslope.png` puts pale
+seafoam-green spikes on a cream substrate beside near-black rock slabs (three
+palettes that do not belong together), and the plants read as glass. **(c) The
+wood is bluer than its clearing and the clearing is under-canopy litter.**
+RN-2275's own owed item 3 names the deeper half of this and it is confirmed
+in the frames.
 
-### 3.12 Vegetation assets, near — **BEHIND**
+### 3.12 Vegetation assets, near: **BEHIND**
 `RN2285_basedusk.png`, `RN2285_forestfloor.png`, `RN2285_meadow.png`. The
 charter's difference 5 is partly paid (soft normals shipped at RN-1766, a
 translucency term at RN-2205, a segment on the plains tufts at RN-2206) and the
@@ -304,7 +317,7 @@ green triangles; the forest floor's dead-blade litter is **pale cream and
 hard-edged and reads as paper scraps strewn on dark ground**; and the blades
 are the wide flat ribbons of 3.5. None of this is a lighting problem.
 
-### 3.13 Water — **BEHIND**
+### 3.13 Water: **BEHIND**
 `RN2285_pondside.png`, and getting it into the file is half this score. As
 composition it is the best frame in the project: water, a wooded bank, a
 distant hill and a good sky in one image, and it is 55 m from where the player
@@ -312,23 +325,24 @@ starts. As a surface it is not at the bar. **The water is a saturated cyan that
 belongs to no other object in the frame** (`box` warm **-50.32** against a sky
 at -17.52 and a bank at +23.37, i.e. the pond is bluer than the sky it is
 supposed to be reflecting); the wave field is a **regular parallel banding**
-that reads as corrugation; **nothing is reflected in it** — not the trees, not
-the bank, not the clouds; there is no depth cue from shore to middle; and the
+that reads as corrugation; **nothing is reflected in it** (not the trees, not
+the bank, not the clouds); there is no depth cue from shore to middle; and the
 foam at the sand bar renders as **hard-edged flat polygons**. Beyond the pond,
 the Ocean biome is still coloured ground and there is no other water anywhere.
 
-### 3.14 The night — **BEHIND**
+### 3.14 The night: **BEHIND**
 `RN2285_meadownight.png`, and this is the first night frame the project has.
-The sky reads **luma 0.07 with an interquartile range of exactly 0.00** — not
-dark, uniform black, with no horizon gradient, no airglow and no moon in frame
-— under a sparse star field with no magnitude or colour variation. The whole
+The sky reads **luma 0.07 with an interquartile range of exactly 0.00**: not
+dark, uniform black, with no horizon gradient, no airglow and no moon in
+frame, under a sparse star field with no magnitude or colour variation. The
+whole
 frame is at luma 2.85 and the brightest thing a player can see unaided is at
 6.4. The headlamp is a **hard-edged ellipse of lurid yellow-green** dropped on
 the grass with no falloff structure and no light on the ground at the player's
 own feet. The storyline puts the player outdoors on foot through the first
 night and nothing about that hour has ever been looked at.
 
-### 3.15 Snow, rock and scree as materials — **BEHIND**
+### 3.15 Snow, rock and scree as materials: **BEHIND**
 Unchanged since R1 and confirmed at three poses. `RN2285_vista.png`,
 `RN2285_vistanoon.png` and `RN2285_mtnslope.png` all carry **flat white
 polygons with hard straight edges** where snow should be; at dawn they simply
@@ -336,15 +350,15 @@ become flat pale-blue polygons (`RN2285_vistadawn.png`). A3 gave snow a normal
 and a roughness and left the flat white albedo `mix` in place on purpose, so
 R1's gap 10 is half closed and the visible half is the half that is open.
 
-### 3.16 The sun disc — **BEHIND**
+### 3.16 The sun disc: **BEHIND**
 `RN2285_dawnsun.png`. R1 could not measure this because no frame contained the
 sun; A4 added the pose and found a dark speck. Today, looking straight into a
 5.85 degree sun, `sunCore` reads luma **204.62** against `glareIn` 204.53 and
-`glareOut` 202.99 — **the brightest object in the world is 1.6 counts above the
+`glareOut` 202.99: **the brightest object in the world is 1.6 counts above the
 sky beside it**, and by eye there is no disc at all. The aureole is real and
 physical and correctly restrained; the thing it is an aureole of is missing.
 
-### 3.17 Structures, masonry and machines — **ACCEPTABLE**
+### 3.17 Structures, masonry and machines: **ACCEPTABLE**
 `RN2285_smelterhero.png` is the best asset frame in the game: plated steel, a
 hot hearth, stone columns, real cast shadow across the face. `RN2285_ruin.png`
 is the best-composed ground frame: a subject, a mid ground, a treeline and a
@@ -354,13 +368,13 @@ term and no bloom, in both machine frames. And the masonry reads as a visible
 repeating tile grid at `RN2285_ruinwall.png` with shadow sides crushed toward
 black.
 
-### 3.18 The station interior — **BLOCKING for the storyline, out of scope here**
+### 3.18 The station interior: **BLOCKING for the storyline, out of scope here**
 `RN2285_station.png` is INTERIOR for the fourth audit running and the interior
 is **nearly unlit**: `world` luma 18.90, everything read by rim highlights on
 black plate. The pre-alpha spine ends here. Re-flagged to Admin, not
 re-diagnosed; it is not a world-graphics question.
 
-### 3.19 Frame cost — **ACCEPTABLE**
+### 3.19 Frame cost: **ACCEPTABLE**
 R1 ranked this blocking on a plains standing eye at 2,759,465 triangles, over
 `StatsProbe`'s 2.7e6 ALERT. Today `meadow` at the same site is **2,003,313**
 and it is the most expensive frame in the file; the aerials are 216k to 264k
@@ -396,9 +410,9 @@ shadow-map signature and matches R1's own description of gap 5 to the word.
 exculpatory.** RN-1954 documents that flag as "the light simply stops writing
 and sampling a depth map". If the region were the map's CONTENTS it would have
 gone. It did not move by one count. So the region is painted by a branch that
-never reads the map — the cascade-shadow function's out-of-range behaviour at a
+never reads the map: the cascade-shadow function's out-of-range behaviour at a
 range where no cascade covers the ground (the furthest split is 300 m; every
-pixel in this frame is past 1,243 m) — and the boundary of the last cascade's
+pixel in this frame is past 1,243 m), and the boundary of the last cascade's
 snapped ortho box is what makes the teeth.
 
 **3. `?shadowcast=0` IS ITSELF BROKEN, and no lane should trust it until it is
@@ -455,10 +469,10 @@ than re-derived**, and each says where it came from.
 
 | # | Gap | Evidence | Severity | Class |
 |---|---|---|---|---|
-| **1** | **The far ground has no material and no relief past ~75 m.** Distant mountains are cream paper at every hour; from the air a 38 km view is featureless. R1 gap 3, unmoved, and this is also the vista far-relief question answered: the relief is missing as well as the material. | `RN2285_vistanoon.png`, `RN2285_flyovernoon_canopy0.png`. `vista.hzBand` iqr 2.07 with a `?aerosol=0` ceiling of 5.49; `flyovernoon.under` iqr 6.07 with vegetation off; `?splat=0` moves it 0.06 | **BLOCKING** | (b) for a normal/detail term and a far rung; **(c) only** if real geometric displacement is wanted, and that question should be re-asked after the (b) version |
+| **1** | **The far ground has no material and no sub-massif relief past ~75 m** (the massif silhouettes themselves read; nothing finer than that does). Distant mountains are cream paper at every hour; from the air a 38 km view is featureless. R1 gap 3, unmoved, and this is also the vista far-relief question answered: the sub-massif relief is missing as well as the material. | `RN2285_vistanoon.png`, `RN2285_flyovernoon_canopy0.png`. `vista.hzBand` iqr 2.07 with a `?aerosol=0` ceiling of 5.49; `flyovernoon.under` iqr 6.07 with vegetation off; `?splat=0` moves it 0.06 | **BLOCKING** | (b) for a normal/detail term and a far rung; **(c) only** if real geometric displacement is wanted, and that question should be re-asked after the (b) version |
 | **2** | **A hard texel-staircase shadow region across the aerial mid-field**, at three sun elevations, which no shipped isolator removes and whose only isolator is broken. R1 gap 5. | section 4; `RN2285_flyovernoon_canopy0.png` | **BLOCKING** | (b) |
 | **3** | **Colour composition at range.** The world is warm-negative from the air and warm-positive from the ground; the mountain understorey is mint; the wood is bluer than the clearing and the clearing is under-canopy litter. RN-2275 owed item 3 plus this audit's own `warm` column. | section 3.11; the `warm` column in 2.1; `RN2285_mtnslope.png`, `RN2285_forestairnoon.png` | **BLOCKING** | (a) throughout |
-| **4** | **The mid field at a standing eye is a uniform plate** from the carpet's fade to the treeline, in the middle third of every walking frame. | `RN2285_midfield.png`, `RN2285_meadowfield.png` | **BLOCKING** | (b) |
+| **4** | **The mid field at a standing eye is a uniform plate in the band nearest the treeline**, narrower than the whole middle third: blade structure survives well past 25 m (range-strip iqr 38.78 / 32.27 / 31.28 at r18/r27/r35). | `RN2285_midfield.png`, `RN2285_meadowfield.png` | **BLOCKING** | (b) |
 | **5** | **Vegetation assets: brushed-not-bladed blades, chunky near trees, paper litter.** A3's own owed item and A5's own judgement, both carried forward. | `RN2285_meadow.png`, `RN2285_basedusk.png`, `RN2285_forestfloor.png` | CLEARLY BEHIND | (a), authoring |
 | **6** | **The night is unbuilt**, plus the stale post-stack sun below the horizon. | `RN2285_meadownight.png`; section 4's last paragraph | CLEARLY BEHIND | (a) for the sky and the ladder, (b) for the headlamp and the stale sun |
 | **7** | **Water is one pond, over-cyan, banded, unreflective, and its foam is polygons**; the Ocean biome is still coloured ground. R1 gap 11. | `RN2285_pondside.png`; `box` warm -50.32 against a sky at -17.52 | CLEARLY BEHIND | (a) for the palette and the wave field, (b) for a reflection and for ocean surfaces |
@@ -485,21 +499,34 @@ the same item and it still holds.
 
 ## 6. THE QUEUE: THE TOP FIVE LANES
 
-Ordered so each one's measurement is available to the next, and **the file
-seams are stated so Admin can dispatch all five concurrently without a
-collision** (NUMBERS.md standing rule: a shared wiring file is a predictable
-collision point, so name one owner or serialise).
+Ordered so each one's measurement is available to the next. **The file seams
+are stated as intra-file partitions, not a claim of no collision**: three
+files are dual-owned and split by a named boundary within the file itself
+(`TerrainFragLight.glsl.ts`: L1 owns the non-cascade albedo/bump/light terms,
+L2 owns the cascade half; `TerrainSplat.ts`: L1 owns geometry and weights, L3
+owns the layer hue table; `GrassCard.ts`: L4 owns the file, L5 owns its
+geometry constants), and L1's `materials/Terrain*` glob explicitly excludes
+`TerrainCoverFar*`, which stays L4's (NUMBERS.md standing rule: a shared
+wiring file is a predictable collision point, so name one owner or partition
+and state the boundary).
 
-### L1. THE FAR GROUND (rank 1) — **opus**
+**Sequencing, the verifier's reorder, adopted by Admin:** L4 runs after L1
+rather than concurrently with it, since L1's far-band material addresses part
+of the same 25 m-to-treeline gap; L5 is promoted into the concurrent slot L4
+vacates.
+
+### L1. THE FAR GROUND (rank 1): **opus**
 Give the terrain a material and a relief term from 75 m to the horizon: a third
 splat rung on a world-locked coordinate, a normal-only detail displacement at
-range, and a far term for the scaled shell. **Owns:** `web/src/render/materials/Terrain*`
-(`TerrainSplat`, `TerrainSplatHandle`, `TerrainArt.glsl`, `TerrainFragAlbedo/Bump/Light.glsl`,
-`TerrainProgram`) and `web/src/world/ChunkBatch`'s attribute upload.
+range, and a far term for the scaled shell. **Owns:** `web/src/render/materials/Terrain*`, **excluding `TerrainCoverFar*`**
+(which stays L4's) (`TerrainSplat`, `TerrainSplatHandle`, `TerrainArt.glsl`,
+`TerrainFragAlbedo/Bump/Light.glsl`, `TerrainProgram`; the cascade half of
+`TerrainFragLight.glsl.ts` is L2's, and `TerrainSplat.ts`'s layer hue table is
+L3's) and `web/src/world/ChunkBatch`'s attribute upload.
 **Must not touch:** `render/grass/*` (L4), `render/post/*` and the biome hue
 tables (L3), `Atmosphere*` (L3), `ShadowRig`/cascade code (L2).
 **Cross-domain:** this needs **world-gen's per-chunk phase attribute reduced
-mod the tile period on the CPU in float64** — RN-2160's own phase-2 owed item,
+mod the tile period on the CPU in float64**: RN-2160's own phase-2 owed item,
 named in `TerrainArt.glsl.ts`'s header and already assigned to world-gen. Flag
 it to Admin before dispatch. **Done when:** `vista.hzBand` iqr clears half its
 own `?aerosol=0` ceiling (2.07 -> at least 3.8 of 5.49) and `vistanoon.mid`
@@ -508,7 +535,7 @@ by a stated factor, and every walk-pose committed rectangle inside a stated
 band. Opus because the mip self-retirement that killed A3's first rung
 (RN-2166) will recur at every new rung and the first job is to sweep for it.
 
-### L2. THE AERIAL SHADOW REGION (rank 2) — **opus**
+### L2. THE AERIAL SHADOW REGION (rank 2): **opus**
 Diagnose and remove the texel staircase, and **ship a working isolator with
 it**, because `?shadowcast=0` errors on a ground pose and nulls on an aerial one
 (section 4). **Owns:** `web/src/render/ShadowRig.ts`, the cascade half of
@@ -520,7 +547,7 @@ reproduces today's frame to the digit as its own positive check, and
 `?shadowcast=0` no longer produces a GL error at `machine`. Opus because its
 first job is a diagnosis against an instrument that does not currently work.
 
-### L3. THE RANGE PALETTE (rank 3, and ranks 8 and 10 come with it) — **sonnet**
+### L3. THE RANGE PALETTE (rank 3, and ranks 8 and 10 come with it): **sonnet**
 Make the world warm-positive from the air, kill the mint understorey on
 Mountains, give the snow band a material rather than a flat white `mix`, and
 reach the anti-solar bearing at dawn. **Owns:** `web/src/render/materials/BiomeMaterial.ts`
@@ -533,7 +560,7 @@ splat weights (L1), shadows (L2), grass geometry (L4).
 glass by eye, and no ground-pose committed rectangle moves more than a stated
 band. Sonnet: the cause is stated, the work is tuning against named frames.
 
-### L4. THE MID FIELD AT A STANDING EYE (rank 4) — **sonnet**
+### L4. THE MID FIELD AT A STANDING EYE (rank 4): **sonnet**
 Put structure between the carpet's fade and the treeline: a third, coarse
 carpet rung or a far-field cover texture, handed over on the same single
 boundary constant `TerrainCoverFar` already owns. **Owns:**
@@ -544,7 +571,7 @@ iqr clears a stated floor, `RN2285_midfield.png`'s plate carries visible
 structure by eye, and the frame cost stays under the 2.7e6 ALERT at `meadow`.
 Sonnet: the cause is stated and the mechanism already exists one rung in.
 
-### L5. THE VEGETATION ASSET PASS (rank 5) — **sonnet**
+### L5. THE VEGETATION ASSET PASS (rank 5): **sonnet**
 Re-author the grass blade (narrower, more value spread, less uniform width),
 the broadleaf crown (it is a papercraft ball), and the dead-blade litter tint
 (pale cream paper on a dark floor). **Owns:** `tools/blender/build_props_*.py`,
