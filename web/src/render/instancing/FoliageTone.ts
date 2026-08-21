@@ -184,6 +184,15 @@ export const FOLIAGE_TONE: Readonly<Partial<Record<Family, FoliageTone>>> = {
   // committed `crowns` rectangle by 1.19 counts (0.70 -> 1.89 against a
   // clearing at 4.61) and no more. `?crownshadecard=0` is the proof and it is
   // a picture as well as a number.
+  //
+  // RN-2525 (rendering.md 2.32): the achromatic multiply described above is
+  // superseded. `CanopySelfShadow.crownSpectralSplit` now takes the same
+  // scalar and splits it into a per-channel triple derived from THIS file's
+  // own leaf-optics triples (the `w` and `r` above), with the Rec.709-weighted
+  // mean pinned at the scalar so RN-2275's luma condition still holds. This
+  // row's `sat`/`val` are untouched by that lane; it is named here only so a
+  // reader chasing "a tenth of whatever colour is authored here" finds the
+  // current mechanism rather than the retired one.
   canopy: { sat: 1.08, val: 0.86 },
   // Ground cover. Less cut, because a meadow legitimately keeps more chroma than
   // a canopy and because `tintFor`'s dry drift is already acting on this layer.

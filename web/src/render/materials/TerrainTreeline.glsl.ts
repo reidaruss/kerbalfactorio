@@ -9,10 +9,12 @@ import {
 } from './TerrainTreeline.js';
 // RN-2275. The self-shadow law travels WITH the term that consumes it, on this
 // file's own precedent: one authority, in TypeScript, emitting its own GLSL.
-import { CROWN_SELF_GLSL } from './CanopySelfShadow.js';
+// RN-2525 adds the spectral split beside it, same precedent, same file.
+import { CROWN_SELF_GLSL, CROWN_SPECTRAL_GLSL } from './CanopySelfShadow.js';
 
 export const TERRAIN_TREELINE_PARS = /* glsl */`
   ${CROWN_SELF_GLSL}
+  ${CROWN_SPECTRAL_GLSL}
   #define OF_TREE_NEAR_M ${TREE_NEAR_M.toFixed(1)}
   #define OF_TREE_EDGE_W ${TREE_EDGE_W.toFixed(5)}
   #define OF_TREE_CROWN_M ${TREE_CROWN_M.toFixed(2)}
@@ -153,8 +155,20 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
             // take the same local index and reach the same factor. That is the
             // near/far agreement, and it is why the card half can be one
             // scalar rather than a second curve.
+            //
+            // RN-2525. ofCrownSelfShade still returns the ONE achromatic
+            // scalar the law always has; ofCrownSpectralSplit turns it into
+            // the per-channel triple CanopySelfShadow.ts derives from the
+            // leaf optics, with the TRIPLE'S OWN Rec.709-weighted mean pinned
+            // at the scalar it was given (an exact identity -- see that
+            // file's header). That is NOT the same as this line's rendered
+            // luma being unchanged: uTreelineTone is not neutral, so the
+            // result runs a small measured amount brighter than the
+            // achromatic law's own prediction. See CanopySelfShadow.ts for the
+            // measured size of that drift and for why RN-2275's four pairs
+            // were RE-MEASURED rather than assumed protected by algebra alone.
             vec3 treeTone = uTreelineTone
-              * ofCrownSelfShade(vCanopy, treeSun, uCrownShade);
+              * ofCrownSpectralSplit(ofCrownSelfShade(vCanopy, treeSun, uCrownShade));
             albedo = mix(albedo,
                          treeTone * (1.0 + uTreeline.y * treeM), treeK);
           }

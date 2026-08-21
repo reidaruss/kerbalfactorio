@@ -1,6 +1,20 @@
 // RN-2275 to RN-2279. INTER-CROWN SELF-SHADOWING: the one law, held in one
 // place, applied to BOTH halves of the canopy.
 //
+// RN-2525 to RN-2539 (2026-08-21, lane N6, `lane/n6-crownshade`). THE LAW
+// ABOVE STAYS AN ACHROMATIC SCALAR, and that is deliberate: rendering.md
+// 2.31.5 found that scalar multiplied onto the finalised, already-coloured
+// canopy tone, which is the defect. A crown deep in its own shadow does not
+// dim toward black; chlorophyll absorbs red and blue far more strongly than
+// green, so a shaded crown reddens toward NOTHING and greens toward its own
+// saturated hue. `crownSpectralSplit` below takes the scalar `S` this law
+// already produces and splits it into a per-channel triple derived from the
+// SAME leaf optics FoliageTone.ts's `canopy` row documents, with the
+// Rec.709-weighted mean of that triple PINNED at `S` by construction -- see
+// that function's own header for the algebra. `?crownspectral=0` restores
+// today's achromatic shade exactly (three channels, one scalar), registered
+// in the commit that introduces it (RN-152's scar).
+//
 // THE DEFECT, named independently by the crown-asset verifier and the
 // far-ground verifier and written down as owed item 1 of rendering.md 2.18.10:
 // a canopy's low albedo is mostly crowns shadowing EACH OTHER, and nothing in
@@ -255,6 +269,163 @@ export const CROWN_SELF_GLSL = /* glsl */`
 `;
 
 /**
+ * RN-2525. THE SPECTRAL SPLIT.
+ *
+ * `crownSelfShade` above returns one scalar `S`, and both halves multiplied
+ * their finalised, ALREADY-COLOURED canopy tone by it. That is the defect
+ * rendering.md 2.31.5 measured: `cardShade` 0.1025 at the Forest site, so a
+ * crown was painted at a tenth of whatever colour was authored upstream, and
+ * a tenth of any colour is dark blue-violet on this engine's own tonemap
+ * before it is anything else. An achromatic Beer-Lambert multiply is the
+ * wrong spectral model for a leaf mass in the first place: chlorophyll
+ * absorbs red and blue light far more strongly than green, so a photon
+ * surviving several leaf layers is disproportionately a green one, and a
+ * self-shadowed crown should read as a SATURATED DARK GREEN, never a neutral
+ * dark grey.
+ *
+ * THE EXPONENTS, DERIVED FROM THE SAME LEAF OPTICS FoliageTone.ts's `canopy`
+ * ROW DOCUMENTS, and named here rather than re-derived so a reader has one
+ * place to recompute them. That file's own header gives, in LINEAR units,
+ * the leaf's REFLECTANCE triple `r` (0.05 red, 0.12 green, 0.04 blue -- what
+ * a camera sees off a single leaf) and its single-scattering ALBEDO triple
+ * `w` (0.08 red, 0.27 green, 0.06 blue -- reflectance plus transmittance,
+ * the two-stream input). The channel this term needs is neither: it is how
+ * much of the light ENTERING one leaf keeps going, i.e. the leaf's own
+ * TRANSMITTANCE, `t = w - r`:
+ *
+ *   t_red = 0.08 - 0.05 = 0.03    t_green = 0.27 - 0.12 = 0.15
+ *   t_blue = 0.06 - 0.04 = 0.02
+ *
+ * Beer-Lambert makes optical depth per leaf layer inversely proportional to
+ * how much of a channel gets through ONE layer, so the achromatic law's own
+ * `S = exp(-K mu / sinSun)` generalises to a PER-CHANNEL exponent on the same
+ * `S`: `shade_c = S ^ k_c`, with `k_c` inversely proportional to `t_c`. The
+ * three are normalised to their own GEOMETRIC MEAN rather than to any one
+ * channel, so no channel is privileged as "the" reference -- the same
+ * geometric-midpoint choice FoliageTone.ts's own `sat = 1.08` makes rather
+ * than picking an endpoint of its bracket:
+ *
+ *   k_c = cbrt(t_red * t_green * t_blue) / t_c
+ *       = 1.493802 red,  0.298760 green,  2.240702 blue
+ *
+ * (product 1.000000 to the digit, which is the normalisation's own check).
+ * Green's exponent is BELOW one -- a shaded crown's green channel decays
+ * SLOWER than the achromatic law it replaces -- and red and blue's are
+ * above one and decay faster, which is the whole shape: a crown reddens and
+ * blues toward nothing while its green holds, exactly the leaf optics say it
+ * should.
+ *
+ * THE PIN, STATED PRECISELY, BECAUSE THE IMPRECISE VERSION IS A CLAIM THIS
+ * FILE DOES NOT MAKE. Raising `S` to three different powers and averaging the
+ * results does NOT reproduce `S`; the fix is the same divide-and-recombine
+ * FoliageTone.ts's saturation term uses, generalised from a sum of weights
+ * that total one to a RATIO that cancels exactly:
+ *
+ *   u_c = S ^ k_c
+ *   M   = LUMA_R * u_red + LUMA_G * u_green + LUMA_B * u_blue
+ *   shade_c = S * u_c / M
+ *
+ * `LUMA_*` is the same Rec.709 triple `applyFoliageTone` reads (0.2126,
+ * 0.7152, 0.0722), so `LUMA_R*shade_red + LUMA_G*shade_green +
+ * LUMA_B*shade_blue` collapses algebraically to `S * M / M = S` FOR EVERY
+ * VALUE OF S -- not measured, not swept, an identity, and CONFIRMED live at
+ * the Forest site (`forestairnoon`): `cardShadeRGB` (0.014397, 0.171380,
+ * 0.003062) against `cardShade` 0.125853, and 0.2126*0.014397 +
+ * 0.7152*0.171380 + 0.0722*0.003062 = 0.125853 to the digit.
+ *
+ * WHAT THIS DOES NOT CLAIM, and an earlier draft of this comment did: it is
+ * NOT true that the rendered PIXEL's luma is unchanged, because the pin is on
+ * the SHADE TRIPLE's own weighted mean, not on `base_c * shade_c`'s. A crown's
+ * base colour is not neutral (green is its largest channel), and green is the
+ * channel this term attenuates LEAST, so the rendered luma runs slightly
+ * BRIGHTER than the achromatic law's own prediction: measured at the same
+ * site, `base . shadeRGB` luma is 0.02101 against `base_luma * S` = 0.01704,
+ * about +0.004 linear. What the pin actually buys is that this drift is
+ * SMALL and bounded (the achromatic law's own calibration is never lost
+ * wholesale), not that it is zero. RN-2275's four clearing/wood pairs were
+ * RE-MEASURED on this build rather than assumed protected by algebra alone,
+ * and they hold with margin (rendering.md 2.32): the shipped-versus-
+ * `?crownspectral=0` shift is +0.2 to +1.0 luma counts at each of the four
+ * sites, always in the direction that makes the wood LIGHTER, and none of the
+ * four margins (which run 1.76 to 7.31 counts) comes remotely close to
+ * closing.
+ *
+ * `S` is bounded below by `CROWN_SELF_FLOOR` (0.08), so `S` is never
+ * zero and `M` cannot vanish; at `S = 1` (no shading at all) every `u_c` is
+ * 1, `M` is 1, and `shade_c` is 1 for all three channels, i.e. the identity
+ * multiply an unshaded crown always had.
+ *
+ * `?crownspectral=0` sets every `k_c` to 1: `u_c = S` for all three
+ * channels, `M = S * (LUMA_R + LUMA_G + LUMA_B) = S` (the weights sum to
+ * one), and `shade_c = S * S / S = S` -- the exact pre-lane achromatic
+ * frame, algebraically and not by a second code path.
+ */
+const LEAF_REFLECT_RGB: readonly [number, number, number] = [0.05, 0.12, 0.04];
+const LEAF_ALBEDO_RGB: readonly [number, number, number] = [0.08, 0.27, 0.06];
+const LEAF_TRANS_RGB: readonly [number, number, number] = [
+  LEAF_ALBEDO_RGB[0] - LEAF_REFLECT_RGB[0],
+  LEAF_ALBEDO_RGB[1] - LEAF_REFLECT_RGB[1],
+  LEAF_ALBEDO_RGB[2] - LEAF_REFLECT_RGB[2],
+];
+const CROWN_SPECTRAL_K_PHYSICAL: readonly [number, number, number] = ((): [number, number, number] => {
+  const t = LEAF_TRANS_RGB;
+  const geo = Math.cbrt(t[0] * t[1] * t[2]);
+  return [geo / t[0], geo / t[1], geo / t[2]];
+})();
+
+/** Rec.709 luma weights, the same triple `FoliageTone.applyFoliageTone` reads. */
+const CROWN_LUMA_W: readonly [number, number, number] = [0.2126, 0.7152, 0.0722];
+
+/** `?crownspectral=0` is the exact pre-lane achromatic frame; see the header
+ *  above for why `k_c = 1` degenerates to it algebraically. */
+const SPECTRAL_ON = new URLSearchParams(self.location.search).get('crownspectral') !== '0';
+export const CROWN_SPECTRAL_K: readonly [number, number, number] =
+  SPECTRAL_ON ? CROWN_SPECTRAL_K_PHYSICAL : [1, 1, 1];
+
+/**
+ * Splits the achromatic law's own `S` into the per-channel triple. Called by
+ * `updateCanopyCardShade` for the near half and interpolated as GLSL
+ * (`CROWN_SPECTRAL_GLSL` below) for the far paint -- ONE derivation, taken
+ * through both halves via the same seam `crownSelfShade` already used.
+ */
+export function crownSpectralSplit(s: number): readonly [number, number, number] {
+  const k = CROWN_SPECTRAL_K;
+  const uR = s ** k[0];
+  const uG = s ** k[1];
+  const uB = s ** k[2];
+  const m = CROWN_LUMA_W[0] * uR + CROWN_LUMA_W[1] * uG + CROWN_LUMA_W[2] * uB;
+  return [s * uR / m, s * uG / m, s * uB / m];
+}
+
+/**
+ * The GLSL half of `crownSpectralSplit`, spliced beside `CROWN_SELF_GLSL`
+ * (`TerrainTreeline.glsl.ts` splices both). Every constant is interpolated
+ * from this module's own exports, so there is no second copy of any of them,
+ * and the body is `crownSpectralSplit` above character for character in the
+ * other language.
+ */
+export const CROWN_SPECTRAL_GLSL = /* glsl */`
+  #define OF_CROWN_KR ${CROWN_SPECTRAL_K[0].toFixed(6)}
+  #define OF_CROWN_KG ${CROWN_SPECTRAL_K[1].toFixed(6)}
+  #define OF_CROWN_KB ${CROWN_SPECTRAL_K[2].toFixed(6)}
+  #define OF_CROWN_LUMA_R ${CROWN_LUMA_W[0].toFixed(4)}
+  #define OF_CROWN_LUMA_G ${CROWN_LUMA_W[1].toFixed(4)}
+  #define OF_CROWN_LUMA_B ${CROWN_LUMA_W[2].toFixed(4)}
+
+  // RN-2525. THE SPECTRAL SPLIT. See CanopySelfShadow.ts for the derivation
+  // of OF_CROWN_K* from FoliageTone.ts's leaf optics and for why the
+  // Rec.709-weighted mean of the return value is s for every s, which is
+  // what keeps RN-2275's four clearing/wood pairs judged on an unchanged luma.
+  vec3 ofCrownSpectralSplit(float s) {
+    float uR = pow(s, OF_CROWN_KR);
+    float uG = pow(s, OF_CROWN_KG);
+    float uB = pow(s, OF_CROWN_KB);
+    float m = OF_CROWN_LUMA_R * uR + OF_CROWN_LUMA_G * uG + OF_CROWN_LUMA_B * uB;
+    return vec3(s * uR, s * uG, s * uB) / m;
+  }
+`;
+
+/**
  * THE CARD HALF.
  *
  * The canopy impostor's batch material is ONE shared `MeshStandardMaterial`
@@ -275,7 +446,11 @@ export const CROWN_SELF_GLSL = /* glsl */`
 const card: {
   live: THREE.Color | null; base: { r: number; g: number; b: number };
   mu: number; sinSun: number; shade: number;
-} = { live: null, base: { r: 0, g: 0, b: 0 }, mu: 0, sinSun: 0, shade: 1 };
+  shadeRGB: readonly [number, number, number];
+} = {
+  live: null, base: { r: 0, g: 0, b: 0 }, mu: 0, sinSun: 0, shade: 1,
+  shadeRGB: [1, 1, 1],
+};
 
 /** The one live `(amp, K, floor)`. The terrain uniform takes it with the FAR
  *  half's isolator folded into the amp; the card updater takes it with the
@@ -322,15 +497,26 @@ export function publishCanopyCardBase(c: THREE.Color): void {
  * paint's varies per vertex, so a card in an unusually dense pocket is lit by
  * the neighbourhood's average rather than its own. Bounded, signed, measured at
  * the handover, and routed as owed.
+ *
+ * RN-2525. `s` -- the achromatic law's own scalar -- is still computed and
+ * still published as `card.shade` UNCHANGED, so a probe recomputing the law
+ * from `amp`/`k`/`floor`/`mu`/`sinSun` still finds the same number it always
+ * did: nothing about `crownSelfShade` moved. What changed is what gets
+ * MULTIPLIED onto the card's colour -- `crownSpectralSplit(s)`'s per-channel
+ * triple in place of `s` three times over -- which is the near half of the
+ * one seam this lane took through (the far half is `TerrainTreeline.glsl.ts`,
+ * spliced with the same `ofCrownSpectralSplit`).
  */
 export function updateCanopyCardShade(biome: number, sinSun: number): void {
   const mu = (BIOME_CANOPY_MU[biome] ?? 0) > 0 ? residentCanopyMu() : 0;
   const s = crownSelfShade(mu, sinSun, SHADE_CARD);
+  const rgb = crownSpectralSplit(s);
   card.mu = mu;
   card.sinSun = sinSun;
   card.shade = s;
+  card.shadeRGB = rgb;
   if (card.live !== null) {
-    card.live.setRGB(card.base.r * s, card.base.g * s, card.base.b * s);
+    card.live.setRGB(card.base.r * rgb[0], card.base.g * rgb[1], card.base.b * rgb[2]);
   }
 }
 
@@ -344,15 +530,21 @@ export function updateCanopyCardShade(biome: number, sinSun: number): void {
  * It publishes the INPUTS as well as the output so a probe can recompute the
  * law from `amp` / `k` / `floor` / `mu` / `sinSun` and compare against `shade`,
  * which is the check that the GLSL and the TypeScript are still the same three
- * lines.
+ * lines. RN-2525 adds `cardShadeRGB` (the triple actually multiplied onto the
+ * card) and `spectral` (whether `?crownspectral=0` degenerated it back to
+ * `[cardShade, cardShade, cardShade]`), so a probe can check the split as well
+ * as the law: `LUMA . cardShadeRGB` must equal `cardShade` to within float
+ * error for EVERY frame, spectral on or off, which is the pin's own identity.
  */
 export function canopySelfNow(): {
   amp: number; k: number; floor: number;
   cardMu: number; sinSun: number; cardShade: number; live: boolean;
+  cardShadeRGB: readonly [number, number, number]; spectral: boolean;
 } {
   return {
     amp: SHADE_CARD[0], k: SHADE_CARD[1], floor: SHADE_CARD[2],
     cardMu: card.mu, sinSun: card.sinSun, cardShade: card.shade,
     live: card.live !== null,
+    cardShadeRGB: card.shadeRGB, spectral: SPECTRAL_ON,
   };
 }
