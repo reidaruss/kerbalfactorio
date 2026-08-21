@@ -115,12 +115,44 @@ const CAVE_ENV = 0.07;
  * intensity / distance^decay: 46 at decay 1.45 puts roughly 1.0 of irradiance
  * on a wall 6 m away and 0.28 at 15 m, which reads as a real hand torch rather
  * than as a second sun.
+ *
+ * RN-2445 (lane M5, THE NIGHT). A FLATTER-DECAY CANDIDATE WAS TRIED AND
+ * REJECTED, MEASURED RATHER THAN ARGUED, and the number is kept here so the
+ * next lane does not re-walk it. Lowering `LAMP_DECAY` to 1.1 and raising
+ * `LAMP_CD` to 86 (holding the 6 m calibration point fixed at `6^0.35` =
+ * 1.87x) was meant to spread the pool's dynamic range out instead of
+ * collapsing it near the source. It does that at `meadownight` range (3 to
+ * 8 m, open field) but FAILS at close range against a large flat surface:
+ * `smelternight`'s own pose stands a few metres from the smelter's face, and
+ * the flatter falloff keeps near-source intensity high over a much WIDER
+ * area rather than a smaller one, so `firebox` rose 151 -> 196 and `plate`
+ * 62 -> 90 with five rectangles pinned near the frame's own ceiling (`peep`,
+ * `strip`, `band`, `bandShade`, `box` all above 200) -- a bigger, brighter
+ * blown-out disc, the opposite of the fix. THE CANDELA/DECAY PAIR THEREFORE
+ * SHIPS UNCHANGED; the fix below is angular, not radial.
  */
 const LAMP_CD = 46;
 const LAMP_DECAY = 1.45;
 const LAMP_RANGE_M = 34;
 /** Half-angle. 0.44 rad is a 25 degree cone: a 5.5 m pool of light at 12 m. */
 const LAMP_ANGLE = 0.44;
+/**
+ * RN-2445. THE SOFT EDGE, AND THE LEVER THAT ACTUALLY WORKED. Three's own
+ * penumbra fraction: 0.6 already ramps the outer 60% of the cone's angular
+ * radius from full to zero, but World Audit R3 3.12 still read the shipped
+ * cone as "a hard-edged circular pool with a blown-out interior" -- the
+ * radial falloff (unchanged, see `LAMP_CD`'s own note above) already gives a
+ * true gradient with distance, so the remaining hard edge is ANGULAR: at any
+ * fixed distance, everything inside 40% of the half-angle is at full
+ * intensity and everything past 100% is zero, i.e. a genuinely flat disc
+ * with a ramped rim rather than a graduated cone. 0.6 -> 0.92 starts the ramp
+ * at 8% of the half-angle instead of 40%, so there is no flat-full interior
+ * left for an edge to appear at the boundary of; verified on `meadownight`
+ * (`docs/screenshots/RN2445_meadownight_final.png`), where the lit patch now
+ * reads as a lamp's cone fading outward rather than a disc with a rim, at
+ * the SAME candela and decay the cone always shipped at.
+ */
+const LAMP_PENUMBRA = 0.92;
 /**
  * Mounted off-axis, like a helmet lamp and like the rig's own `socket_lamp`
  * would be. A light exactly at the eye casts no visible gradient on anything it
@@ -204,7 +236,7 @@ export class Headlamp {
     this.vmHemi.name = 'viewModelAmbient';
     viewModel.add(this.vmHemi);
 
-    this.spot = new THREE.SpotLight(0xffe4b5, 0, LAMP_RANGE_M, LAMP_ANGLE, 0.6, LAMP_DECAY);
+    this.spot = new THREE.SpotLight(0xffe4b5, 0, LAMP_RANGE_M, LAMP_ANGLE, LAMP_PENUMBRA, LAMP_DECAY);
     this.spot.name = 'headlamp';
     // No shadow map. A second shadowed light would double the 48 MB the cascades
     // already cost and buy nothing in a corridor two metres wide.

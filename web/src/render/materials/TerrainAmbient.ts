@@ -165,8 +165,25 @@ const AMBIENT_BASE = TERRAIN_AMBIENT.clone();
  *
  * `?starlight=0` removes it (standing rule 7); `?starlightamp=` sweeps it.
  * Both parse with the RN-150-safe pattern: a missing param is MISSING, not 0.
+ *
+ * RN-2445 (lane M5, THE NIGHT). RAISED, AND MEASURED RATHER THAN GUESSED.
+ * `meadownight`'s own `nearG`/`mid`/`shade` rectangles read luma 5.68 / 4.87 /
+ * 2.29 at the RN-152 level, which by eye (`docs/screenshots/
+ * RN2445_meadownight_after.png`, taken before this constant moved) is grass
+ * silhouetted flat black past the headlamp's own pool with no readable blade
+ * structure at all -- closer to "crushed" than to "a starlit floor holds
+ * barely-legible form", the bar this lane's brief sets. 1.7x (chosen from a
+ * three-point look-check, not derived) lifts the same three rectangles to
+ * 12.53 / 10.46 / 5.22 (`docs/screenshots/RN2445_meadownight_final.png`,
+ * taken after this AND the headlamp's own falloff correction below, so the
+ * rise is somewhat more than 1.7x on these particular rectangles: they sit
+ * partly inside the widened cone too): blade silhouettes read against the
+ * sky and against each other at the tree line, and the frame is still
+ * unmistakably night -- `world` stays under 10 with the lamp in frame,
+ * against `meadow`'s own daylit 118. The colour ratio (STARLIGHT's own blue
+ * bias, RN-152) is unchanged; only the level moved.
  */
-const STARLIGHT = new THREE.Color(0.055, 0.065, 0.095);
+const STARLIGHT = new THREE.Color(0.055, 0.065, 0.095).multiplyScalar(1.7);
 
 const STARLIGHT_AMP = ((): number => {
   const p = new URLSearchParams(self.location.search);
