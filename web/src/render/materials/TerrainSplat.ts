@@ -86,13 +86,23 @@
 //
 // The honest cost is the one the bump chunk already records: the UV normalises
 // over the quad, so a coarser LOD ring draws these layers at double the world
-// scale. C4's bands are what keep that outside the term. THE REAL FIX IS NOT A
-// SHADER CHANGE and it is already named by TerrainArt.glsl's header: a
-// per-chunk phase attribute reduced mod the tile period on the CPU in float64.
-// That is a terrain-chunk format change and therefore world-gen's to make, and
-// it is what would let a splat layer be world-locked at a fixed metre scale all
-// the way out. Phase 2's far-field band needs exactly that, so it is flagged as
-// a cross-domain contract rather than worked around here.
+// scale. C4's bands are what keep that outside the term.
+//
+// RN-2340: THE CROSS-DOMAIN CONTRACT THIS NOTE FLAGGED IS SETTLED AND CONSUMED.
+// It read "the real fix is not a shader change ... a per-chunk phase attribute
+// reduced mod the tile period on the CPU in float64 ... flagged as a
+// cross-domain contract rather than worked around here". World-gen shipped it at
+// WG-230 as `aPhase` / `vPhase` on a published 256 m period with a divisibility
+// rule and a throw (`assertPhasePeriod`), and phase 2 consumed it: the far-field
+// rungs are in TerrainHorizon.ts and they are world-LOCKED, so they carry no LOD
+// scale step at all. NOTHING IN THIS FILE MOVED FOR IT. The two rungs below
+// still ride `vChunkUv` and still retire inside the near field, deliberately:
+// they are the rungs whose 2 mm and 8 mm texels a player's face is close enough
+// to see, and the chunk UV is the better-conditioned coordinate there (one
+// uint16 step is 0.883 mm) as well as the cheaper one. The handover between the
+// two coordinates is a footprint cross-fade and not a swap, and its lower edge
+// is SPLAT_COARSE_FOOT[1], imported by TerrainHorizon.ts rather than
+// transcribed, so the two ends of it cannot drift.
 
 import * as THREE from 'three';
 import { FINE_CHUNK_M } from './TerrainFine.glsl.js';
@@ -237,12 +247,14 @@ function build(): SplatLayer[] {
  * against the 512 texels/m ASSET-SPECS 2.8 asks for at first-person range, and
  * the near field is where a player's face is. Two rungs keep both ends.
  *
- * WHY NOT A THIRD RUNG NOW. That IS phase 2 (the audit's 75 to 600 m hole),
- * and it wants a different coordinate as well as a different scale: past the
- * max-depth ring the chunk UV's world size doubles per LOD step, so the far
- * rung needs world-gen's per-chunk float64 phase attribute. Adding a third
- * rung on the chunk UV would put a scale step in the exact band phase 2 has to
- * make seamless.
+ * WHY NOT A THIRD RUNG ON THIS COORDINATE, EVER. It was written here as "that
+ * IS phase 2", and phase 2 has now run (RN-2340): the third and fourth rungs
+ * exist, and they are in TerrainHorizon.ts on `vPhase` rather than in this file
+ * on `vChunkUv`, for exactly the reason this paragraph gave in advance. Past the
+ * max-depth ring the chunk UV's world size doubles per LOD step, so a third rung
+ * here would have put a scale step in the middle of the 75-to-600 m band that
+ * lane exists to make seamless. The prediction held and the note is kept as
+ * written rather than rewritten in hindsight.
  */
 export const SPLAT_COARSE_RATIO = 4;
 

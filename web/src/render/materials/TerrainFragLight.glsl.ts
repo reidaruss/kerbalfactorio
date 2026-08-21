@@ -184,6 +184,14 @@ export const TERRAIN_FRAG_LIGHT = /* glsl */`
           // about the surface exactly as it is above.
           #ifndef OF_SCALED
             rough = mix(rough, splatRough, uSplatAmp.z * splatFadeN);
+            // RN-2340. The far ground's roughness, on the splat's own argument
+            // one rung further out: past the near fade the biome table is again
+            // the only answer to "how rough is this", and it has one row for a
+            // meadow and the crag above it. A MIX and not a multiply, for the
+            // splat's reason (multiplying compounds two claims into a floor
+            // neither states), and on the SAME weight the normal rides, because
+            // roughness and normal are one claim about a facet.
+            rough = mix(rough, hzRough, uHorizonAmp.z * hzT);
             rough = clamp(mix(rough, 0.10, wetF), 0.15, 1.0);
           #endif
           vec3 vd = -rd;                  // rd runs camera -> fragment

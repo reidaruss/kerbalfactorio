@@ -15,6 +15,9 @@ import type { TerrainWaterBand } from './TerrainMaterialTypes.js';
 import { SPLAT_A_VALUE, SPLAT_A_CHROMA, SPLAT_A_NORMAL }
   from './TerrainSplat.js';
 import { SPLAT_A_FAR } from './TerrainCoverFar.js';
+import { HORIZON_A_AO, HORIZON_A_CHROMA, HORIZON_A_NORMAL, HORIZON_A_VALUE,
+  MASSIF_A_BUMP, MASSIF_A_M, MASSIF_A_VALUE, MASSIF_B_M, MASSIF_FADE_M }
+  from './TerrainHorizon.js';
 
 /**
  * SURFACE ART amplitudes (RN-45): macro colour variation, detail bump, rock
@@ -163,6 +166,96 @@ export function splatFarAmpFromQuery(): number {
   const p = new URLSearchParams(self.location.search);
   if (p.get('splatfar') === '0') return 0;
   return ampParam(p, 'splatfaramp', SPLAT_A_FAR);
+}
+
+/**
+ * RN-2340. THE FAR GROUND's four amplitudes, on `splatAmpFromQuery`'s pattern
+ * exactly, including RN-150's dead-default guard (`ampParam`, not
+ * `Number(p.get(...))`, because `Number(null)` is 0 and 0 is finite, which is
+ * how the RN-78 ground texture once shipped switched off and how the wet-sand
+ * band did the same).
+ *
+ * `?horizon=0` is the WHOLE-TERM isolator and is the before half of every pair
+ * this lane is judged by -- and unlike `?splat=0` at range, it is a control that
+ * actually moves something, which is the entire finding the lane was opened on
+ * (the audit measured `?splat=0` at `flyovernoon` moving the ground below the
+ * camera by 0.06 counts).
+ */
+export function horizonAmpFromQuery(): THREE.Vector4 {
+  const p = new URLSearchParams(self.location.search);
+  const all = p.get('horizon') === '0' ? 0 : 1;
+  return new THREE.Vector4(
+    all * ampParam(p, 'horizonval', HORIZON_A_VALUE),
+    all * ampParam(p, 'horizonchroma', HORIZON_A_CHROMA),
+    all * ampParam(p, 'horizonnrm', HORIZON_A_NORMAL),
+    all * ampParam(p, 'horizonao', HORIZON_A_AO),
+  );
+}
+
+/**
+ * RN-2340. The range-aware biome-boundary break's own amplitude, separate from
+ * the four above for `splatFarAmpFromQuery`'s reason: it fails in a way none of
+ * them can, so it needs its own isolator. `?horizoneco=0` is the whole-term
+ * control and `?horizonecoamp=` sweeps it; both are also killed by `?horizon=0`,
+ * because the field the break rides is fetched by the rung itself.
+ */
+/**
+ * RN-2340. THE MASSIF TERM's two amplitudes, on `fineAmpFromQuery`'s pattern
+ * and with RN-150's dead-default guard. `?horizonmassif=0` is the whole-term
+ * isolator; `?horizonmassifval=` and `?horizonmassifbump=` isolate the halves,
+ * because a blotchy mountain and a corrugated one are different failures.
+ *
+ * IT IS NESTED UNDER `?horizon=0`, which is therefore the ONE flag that
+ * restores the exact pre-RN-2340 ground. It shipped un-nested for one arm on
+ * the argument that the two are different mechanisms on different coordinates
+ * (`vPhase` texture rungs against `pM` octaves) answering different range
+ * bands, which is true and is not a reason: what a lane's before/after pair
+ * needs is a SINGLE negative control, and an un-nested second term made every
+ * "before" arm in this lane silently a half-before. It was caught by a
+ * committed rectangle that moved in the control arm (`vista.box` iqr read 18.71
+ * against the audit's 16.35 with `?horizon=0` alone). `?horizonmassif=0` is
+ * still the sub-isolator for this half on its own.
+ */
+export function massifAmpFromQuery(): THREE.Vector2 {
+  const p = new URLSearchParams(self.location.search);
+  const all = (p.get('horizon') === '0' || p.get('horizonmassif') === '0')
+    ? 0 : 1;
+  return new THREE.Vector2(
+    all * ampParam(p, 'horizonmassifval', MASSIF_A_VALUE),
+    all * ampParam(p, 'horizonmassifbump', MASSIF_A_BUMP),
+  );
+}
+
+/**
+ * RN-2340. The massif's two octave wavelengths in METRES. A malformed or
+ * non-positive pair takes the boot default rather than being clamped into a
+ * state nothing documents, which is `midM`'s own rule.
+ */
+export function massifMFromQuery(): THREE.Vector2 {
+  const v = new URLSearchParams(self.location.search).get('horizonmassifm');
+  const n = (v ?? '').split(',').map(Number);
+  return (n.length === 2 && n.every((x) => Number.isFinite(x) && x > 0))
+    ? new THREE.Vector2(n[0], n[1]) : new THREE.Vector2(MASSIF_A_M, MASSIF_B_M);
+}
+
+/**
+ * RN-2340. The massif's distance fade-out, (start, end) in metres. A malformed
+ * or non-positive pair takes the boot default rather than being clamped into a
+ * state nothing documents, which is `midM`'s own rule.
+ */
+export function massifFadeFromQuery(): THREE.Vector2 {
+  const v = new URLSearchParams(self.location.search).get('horizonmassiffade');
+  const n = (v ?? '').split(',').map(Number);
+  return (n.length === 2 && n.every((x) => Number.isFinite(x) && x > 0)
+    && n[1] > n[0])
+    ? new THREE.Vector2(n[0], n[1])
+    : new THREE.Vector2(MASSIF_FADE_M[0], MASSIF_FADE_M[1]);
+}
+
+export function horizonEcoFromQuery(): number {
+  const p = new URLSearchParams(self.location.search);
+  if (p.get('horizon') === '0' || p.get('horizoneco') === '0') return 0;
+  return ampParam(p, 'horizonecoamp', 1);
 }
 
 export function groundTexAmpFromQuery(): number {

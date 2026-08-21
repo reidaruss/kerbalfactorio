@@ -20,6 +20,7 @@ import { GROUND_RELIEF_MAP, GROUND_VALUE_MAP, groundTexture } from './GroundText
 import { ART_COARSE_M, ART_FINE_M, FINE_A, FINE_B, FINE_R, FINE_W,
   MID_A_M, MID_B_M, RELIEF_FINE_M } from './TerrainArt.glsl.js';
 import { artAmpFromQuery, fineAmpFromQuery, groundReliefAmpFromQuery,
+  horizonAmpFromQuery, horizonEcoFromQuery, massifAmpFromQuery, massifFadeFromQuery, massifMFromQuery,
   splatAmpFromQuery, splatFarAmpFromQuery,
   groundTexAmpFromQuery, midAmpFromQuery, specAmpFromQuery, wetBandFromQuery }
   from './TerrainAmpQuery.js';
@@ -201,6 +202,25 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
   // toggle that reached the near material and not the far one would be a
   // second opinion about what colour the ground converges to past the fade.
   const splatFarAmp: THREE.IUniform<number> = { value: splatFarAmpFromQuery() };
+  // RN-2340. THE FAR GROUND: (value, chroma, normal-and-roughness, curvature)
+  // and the biome-boundary break's own scalar, both shared by reference into
+  // both materials for the one-authority reason artAmp is. The far material
+  // compiles the whole term out (`#ifndef OF_SCALED`), so the share is belt and
+  // braces there and the reason to keep it is that the pattern must not have an
+  // exception.
+  const horizonAmp: THREE.IUniform<THREE.Vector4> = {
+    value: horizonAmpFromQuery(),
+  };
+  const horizonEco: THREE.IUniform<number> = { value: horizonEcoFromQuery() };
+  // RN-2340. The MASSIF term's two amplitudes and its two octave wavelengths,
+  // shared by reference for the same one-authority reason.
+  const massifAmp: THREE.IUniform<THREE.Vector2> = {
+    value: massifAmpFromQuery(),
+  };
+  const massifM: THREE.IUniform<THREE.Vector2> = { value: massifMFromQuery() };
+  const massifFade: THREE.IUniform<THREE.Vector2> = {
+    value: massifFadeFromQuery(),
+  };
   // Six maps, ONE shared IUniform each out of GroundTextures' cache, and it
   // must be the holder rather than a fresh { value } wrapper for that file's
   // own stated reason: the texture arrives asynchronously and the loader
@@ -251,7 +271,7 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
-    phaseProbe,
+    phaseProbe, horizonAmp, horizonEco, massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,
   };
 }

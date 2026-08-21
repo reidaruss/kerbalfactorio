@@ -38,7 +38,7 @@ export function makeTerrainMaterial(
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
     horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
-    phaseProbe,
+    phaseProbe, horizonAmp, horizonEco, massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff,
     splatScree, splatSnow } = s;
   // UniformsLib.lights is MANDATORY for a lights:true ShaderMaterial: three
@@ -118,6 +118,14 @@ export function makeTerrainMaterial(
     // WG-230. The world-locked phase probe, (amplitude, checker repeats),
     // already an IUniform holder, so passed through rather than re-wrapped.
     uPhaseProbe: phaseProbe,
+    // RN-2340. The far ground's four amplitudes and the biome-boundary break.
+    // Already IUniform holders, so passed through rather than re-wrapped, which
+    // is what makes the runtime handle and both materials one object.
+    uHorizonAmp: horizonAmp,
+    uHorizonEco: horizonEco,
+    uMassifAmp: massifAmp,
+    uMassifM: massifM,
+    uMassifFade: massifFade,
     uSplatGrass: splatGrass,
     uSplatDirt: splatDirt,
     uSplatRock: splatRock,
