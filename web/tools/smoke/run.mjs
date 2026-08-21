@@ -276,13 +276,33 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // Registered in the same commit that introduces them, per this list's own
   // rule and RN-152's scar.
   'horizoncell', 'horizoncellan',
-  // RN-2475. THE FAR MACRO PAIR, the stand-in's 640 m and 2560 m octaves.
+  // RN-2475. THE PLAINS MACRO GAIN, one multiply on the analytic stand-in's
+  // amplitude: `1 + HORIZON_AN_PLAINS_GAIN * (1 - hzMsfBand)`, i.e. the macro
+  // headroom the massif's own relief gate is withholding, handed over on that
+  // gate's OWN complement so a relieved pose is bit-identical by construction.
+  // (CORRECTED at RN-2510: this note used to describe a FAR MACRO PAIR, "the
+  // stand-in's 640 m and 2560 m octaves". That design was built, swept at 20x,
+  // measured at 0.00 counts and thrown away -- rendering.md 2.30.6 -- and what
+  // shipped is the one multiply above. The same stale sentence was in
+  // TerrainFragPars.glsl.ts and TerrainAmpQuery.ts and is corrected in all
+  // three.)
   // `horizonplains=0` is the exact pre-RN-2475 frame with the cell guard and the
   // stand-in both still ARMED, which is what `horizoncell=0` cannot be: that
   // flag zeroes the guard and the stand-in together on purpose, so it is the
   // before of RN-2421 and not of this. Registered in the same commit that
   // introduces the term, per this list's own rule and RN-152's scar.
   'horizonplains',
+  // RN-2512. THE MID FIELD'S GROUND COVER. `coverstand=0` is the exact
+  // pre-RN-2512 frame and is the negative control every proof in this lane is
+  // taken against; `coverstandamp=` scales the whole term, `coverstandm=` the
+  // stand-field mosaic, `coverstandv=` how much darker the cover layer is than
+  // the substrate and `coverstandc=` the carpet rotation applied to it. Four
+  // flags and not one because they fail differently: too much mosaic is a
+  // blotchy plain, too much value is a bruise under the horizon and too much
+  // chroma is a paint chart, and one switch could only ever answer "is it on".
+  // Registered in the same commit that introduces the term, per this list's
+  // own rule and RN-152's scar.
+  'coverstand', 'coverstandamp', 'coverstandm', 'coverstandv', 'coverstandc',
   // RN-2422. THE GROUND's half of RN-2385's emissive irradiance.
   // `firelightground=0` keeps every program and every machine surface as M3
   // shipped them and zeroes the TERRAIN's take alone, which is what makes the

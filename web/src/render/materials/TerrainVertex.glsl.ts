@@ -33,6 +33,13 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     // aFadeT0's precedent, because a BatchedMesh draws every resident chunk in
     // one multi-draw and a uniform cannot vary per chunk inside one.
     attribute vec3 aPhase;
+    // RN-2511. THE GROUND-COVER FIELD, one float per vertex, written on the CPU
+    // in the SAME loop as aCanopy from the SAME two world-gen noise samples
+    // (ChunkCanopy.coverField). A ninth section and a fourth attribute the
+    // client writes rather than /core, for aCanopy's reason exactly: the field
+    // varies WITHIN a chunk at 165 m and it is an integer-lattice hash, which
+    // GLSL ES 1.00 has no integer type to express.
+    attribute float aCover;
     uniform vec3 uBiomeColor[${BIOME_COUNT}];
     uniform vec4 uBiomeMat[${BIOME_COUNT}];
     uniform vec4 uBiomeRelief[${BIOME_COUNT}];
@@ -41,6 +48,10 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     // fragment budget is varyings and the tables are naturally paired.
     uniform vec4 uBiomeGrain[${BIOME_COUNT}];
     uniform vec4 uBiomeTint[${BIOME_COUNT}];
+    // RN-2511. The per-biome GROUND-COVER AREA INDEX: crown-equivalent plan
+    // area per unit ground of everything the 170 m prop ring places, derived
+    // live from Registry.BIOME_PROPS. See TerrainCoverFarStand.ts.
+    uniform float uBiomeCoverMu[${BIOME_COUNT}];
     uniform float uTime;
     uniform float uFadeDur;
     varying vec3 vBiomeColor;
@@ -55,6 +66,9 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     varying float vViewZ;
     varying vec2 vChunkUv;
     varying float vCanopy;
+    // RN-2511. x: this biome's ground-cover area index. y: world-gen's own
+    // stand and grove octaves at this vertex, in [0,1].
+    varying vec2 vCoverStand;
     varying vec3 vPhase;
 
     void main() {
@@ -101,6 +115,21 @@ export function terrainVertexShader(depth: DepthPolicy): string {
       // the horizon. The area index is the linear quantity, so it is the one
       // that may be interpolated.
       vCanopy = aCanopy;
+      // RN-2511. THE MID FIELD'S GROUND COVER, paired with the per-biome index
+      // that scales it. The index is per-BIOME and the field is per-VERTEX, so
+      // they are multiplied in the fragment shader rather than here: the
+      // Beer-Lambert law the fragment applies is nonlinear in the product and
+      // interpolating a cover FRACTION across a triangle that spans hundreds of
+      // metres of depression angle would be wrong, which is the argument
+      // vCanopy's own comment two lines up already makes for the canopy.
+      //
+      // The field is world-gen's own stand and grove octaves BEFORE
+      // canopyWeight's thresholds. ChunkCanopy.coverField's header has the
+      // measurement that forced the raw pair rather than the thresholded
+      // product: canopyWeight is bimodal and is SATURATED across the whole mid
+      // field at the plains art pose, so a term referenced to it has nothing to
+      // say exactly where this one exists to speak.
+      vCoverStand = vec2(uBiomeCoverMu[bi], aCover);
       // WG-230. THE WORLD-LOCKED COORDINATE, in units of the phase period.
       // Both terms are small -- the phase is in [0,1) and position is the
       // vertex's offset from the chunk's own float64 anchor -- so the sum is

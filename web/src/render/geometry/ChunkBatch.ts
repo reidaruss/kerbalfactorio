@@ -41,7 +41,7 @@ interface BatchedPrivate {
 }
 
 const ATTRS = ['position', 'normal', 'uv', 'aBiome', 'aHeight', 'aFadeT0',
-  'aCanopy', 'aPhase'] as const;
+  'aCanopy', 'aPhase', 'aCover'] as const;
 
 /** The pooled attribute set, allocated once as the template every slot copies. */
 function templateGeometry(verts: number, index: SharedIndex): THREE.BufferGeometry {
@@ -65,6 +65,14 @@ function templateGeometry(verts: number, index: SharedIndex): THREE.BufferGeomet
   // carries. It is three floats and not six because a tiling TEXTURE fetch
   // consumes only the fractional part; see ChunkPhase.ts's WG-230 note.
   g.setAttribute('aPhase', new THREE.BufferAttribute(new Float32Array(verts * 3), 3));
+  // RN-2511. The ground-cover field, a NINTH section and the third the client
+  // writes rather than /core. It is world-gen's two stand octaves at the
+  // vertex's own world position, filled in the same pass and from the same two
+  // noise samples as aCanopy, so the cost is one array write per vertex and no
+  // extra field evaluation wherever the canopy pass already runs. Unlike
+  // aFadeT0/aCanopy/aPhase it is NOT a per-chunk constant: it varies within a
+  // chunk at 165 m, which is what it is for.
+  g.setAttribute('aCover', new THREE.BufferAttribute(new Float32Array(verts), 1));
   // Passing the REAL index means addGeometry's own copy loop writes the correct
   // vertexStart-offset triangles for every slot, so a chunk that does not need
   // the mirrored winding never touches the index buffer again.
@@ -117,12 +125,13 @@ export class ChunkBatch extends THREE.BatchedMesh {
   /**
    * Bytes this batch holds on the GPU: vertex sections plus its index buffer.
    *
-   * 48 and not 32 since WG-230: position 12 + normal 3-padded-to-4 + uv 4 +
-   * aBiome 4 + aHeight 4 + aFadeT0 4 + aCanopy 4 is 36, plus aPhase's three
-   * floats. THE 12 BYTES ARE NOT FREE and are not reported as if they were:
-   * 1,217 verts x 12 B x 128 slots x two batches is 3.74 MB against the pool's
-   * own 12.6 MB of retained blobs, a 30 per cent rise in pooled vertex memory
-   * for one attribute.
+   * 52 and not 32: position 12 + normal 3-padded-to-4 + uv 4 + aBiome 4 +
+   * aHeight 4 + aFadeT0 4 + aCanopy 4 is 36, plus aPhase's three floats
+   * (WG-230) and aCover's one (RN-2511). NEITHER IS FREE and neither is
+   * reported as if it were: aPhase's 12 B is 1,217 verts x 12 B x 128 slots x
+   * two batches = 3.74 MB against the pool's own 12.6 MB of retained blobs, a
+   * 30 per cent rise for one attribute, and aCover's 4 B is a further 1.25 MB
+   * on the same arithmetic, i.e. a tenth of the retained blobs again.
    *
    * OWED, AND NAMED HERE BECAUSE THIS IS WHERE IT IS VISIBLE: aFadeT0 (4 B),
    * aCanopy (4 B) and aPhase (12 B) are all PER-CHUNK CONSTANTS replicated
@@ -133,7 +142,7 @@ export class ChunkBatch extends THREE.BatchedMesh {
    * to land one new one.
    */
   get bytes(): number {
-    return this.capacity * (this.verts * 48 + this.index.indexCount * 4);
+    return this.capacity * (this.verts * 52 + this.index.indexCount * 4);
   }
 
   /**
@@ -270,13 +279,20 @@ export class ChunkBatch extends THREE.BatchedMesh {
   private fillCanopy(slot: number, position: Float32Array, height: Float32Array,
     biome: Uint8Array): void {
     const a = this.geometry.getAttribute('aCanopy') as THREE.BufferAttribute;
+    // RN-2511. The cover field rides the SAME call: two consumers, one pass,
+    // one pair of noise samples per vertex. Filling it separately would double
+    // the only expensive part of this loop.
+    const c = this.geometry.getAttribute('aCover') as THREE.BufferAttribute;
     const off = this.info[slot].vertexStart;
     const dst = (a.array as Float32Array).subarray(off, off + this.verts);
-    fillCanopyIndex(dst, position, height, biome, this.verts,
+    const cov = (c.array as Float32Array).subarray(off, off + this.verts);
+    fillCanopyIndex(dst, cov, position, height, biome, this.verts,
       this.anchors[slot * 3], this.anchors[slot * 3 + 1],
       this.anchors[slot * 3 + 2]);
     a.needsUpdate = true;
     a.addUpdateRange(off, this.verts);
+    c.needsUpdate = true;
+    c.addUpdateRange(off, this.verts);
   }
 
   /** Draw-range indices for one slot, for the agent-facing chunk dump. */

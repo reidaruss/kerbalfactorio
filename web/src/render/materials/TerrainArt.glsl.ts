@@ -113,6 +113,7 @@ import { TERRAIN_SPLAT, TERRAIN_SPLAT_PARS } from './TerrainSplat.glsl.js';
 // already in scope where it is called, so it needs no defines of its own
 // beyond the three baked rotation constants.
 import { TERRAIN_COVER_FAR, TERRAIN_COVER_FAR_PARS } from './TerrainCoverFar.glsl.js';
+import { TERRAIN_COVER_STAND_PARS } from './TerrainCoverFarStand.glsl.js';
 // RN-2340. The ELEVENTH term, the FAR GROUND: the world-locked mid and horizon
 // rungs of the splat plus the sub-massif curvature term, on the same leaf
 // discipline. It is the first term in this material that rides `vPhase` rather
@@ -222,6 +223,11 @@ export const TERRAIN_ART_PARS = `#define OF_ART_OCT_FINE ${ART_OCT_FINE.toFixed(
   // beside their consumer rather than in the define block above.
   + TERRAIN_COVER_FAR_PARS
   + TERRAIN_COVER_FAR
+  // RN-2512. AFTER the far cover and for the same reason it is after the
+  // splat: `ofCoverStand` has no callee of its own, but the BLOCK spliced into
+  // TerrainFragAlbedo calls `ofFarCoverRotate` immediately above, and GLSL ES
+  // 1.0 requires a function to be declared before use.
+  + TERRAIN_COVER_STAND_PARS
   // RN-2340. LAST, and the order is load-bearing twice over: `ofHzWarp` calls
   // `ofArtVnoise2P`, which TERRAIN_ART_FINE declares, and the far-ground BLOCK
   // spliced into TerrainFragAlbedo calls `ofSplatW`, `ofSplatHue` and the

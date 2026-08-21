@@ -281,18 +281,33 @@ export function horizonCellFromQuery(): THREE.Vector2 {
 }
 
 /**
- * RN-2475. THE FAR MACRO PAIR's amplitude, as a multiplier on the stand-in's.
+ * RN-2475. THE PLAINS MACRO GAIN's amplitude, as a multiplier on the
+ * stand-in's.
+ *
+ * CORRECTED AT RN-2510, and the correction is the whole reason to read this
+ * paragraph. This docstring used to describe "THE FAR MACRO PAIR", two coarser
+ * octaves at 640 m and 2560 m, and it named a flag `?horizonfar=0` that does
+ * not exist anywhere in the tree. That design WAS built and it was thrown away:
+ * `?horizonfar=20` moved `midfield.r250` by 0.00 counts, because it had been
+ * sized against the shot manifest's flat-plane `footM` (48.6 m at 250 m) while
+ * the SHADER's own `footM` there is between 1.8 and 8.0 m. The whole record is
+ * rendering.md 2.30.6. What SHIPPED is one multiply,
+ * `1 + HORIZON_AN_PLAINS_GAIN * (1 - hzMsfBand)`: the analytic stand-in is
+ * given the macro headroom the massif's relief gate is withholding, on that
+ * gate's OWN complement, so a relieved pose is bit-identical by construction
+ * rather than by tuning.
  *
  * NESTED UNDER BOTH `?horizon=0` AND `?horizoncell=0`, and the second nesting is
- * the one worth stating: this pair rides `uHorizonCell.y` and hands over on the
+ * the one worth stating: this gain rides `uHorizonCell.y` and hands over on the
  * stand-in's own 160 m fade, so with the stand-in off it is not a term this
  * material has ever shipped. An un-nested third term makes every "before" arm a
  * half-before, which is the scar `massifAmpFromQuery` and `horizonCellFromQuery`
  * both already carry.
  *
- * `?horizonfar=0` is therefore the EXACT pre-RN-2475 frame with the guard and
- * the stand-in both still armed, which is the control every number in
- * rendering.md 2.28 is read against.
+ * `?horizonplains=0` -- the flag this function actually reads, one line down --
+ * is therefore the EXACT pre-RN-2475 frame with the guard and the stand-in both
+ * still armed, and it is the control every number in rendering.md 2.30 is read
+ * against.
  */
 export function horizonPlainsFromQuery(): number {
   const p = new URLSearchParams(self.location.search);
