@@ -26,9 +26,9 @@ import { sampleGrass, type GrassSampleDeps, type RungSpec } from './GrassSample.
 import { coverPaletteState } from './GrassPalette.js';
 import {
   BUILDS_PER_UPDATE, DENS_HALF_M, GRASS_ON, GRASS_RAW, MAT_CAP, MAT_H_M,
-  MAT_IN_HI_M, MAT_IN_LO_M, MAT_OUT_HI_M, MAT_OUT_LO_M, MAT_PER_M2, MAT_W_M,
-  NEAR_PER_M2, REACH_M, TUFT_CAP, TUFT_H_M, TUFT_REACH_M, TUFT_W_M, bandOf,
-  tuftDensity,
+  MAT_IN_HI_M, MAT_IN_LO_M, MAT_OUT_HI_M, MAT_OUT_LO_M, MAT_PATCH_AMP,
+  MAT_PER_M2, MAT_W_M, NEAR_PER_M2, REACH_M, TUFT_CAP, TUFT_H_M, TUFT_REACH_M,
+  TUFT_W_M, bandOf, tuftDensity,
 } from './GrassTuning.js';
 
 export interface GrassCoverOptions {
@@ -120,6 +120,9 @@ export class GrassCover {
         spec: {
           salt: 0x5e11a1, reachM: TUFT_REACH_M,
           widthM: TUFT_W_M, heightM: TUFT_H_M, densityAt: tuftDensity,
+          // RN-2410 to RN-2419. Zero: the near-field read is already correct
+          // (world audit R3, 2.23.6) and this term is the mat rung's fix.
+          patchAmp: 0,
         },
         pool: new GrassPool(buildCardGeometry(TUFT_CARD), tuft.material,
           TUFT_CAP, cardTriangles(TUFT_CARD), 'GrassCover(tuft)'),
@@ -129,6 +132,9 @@ export class GrassCover {
         spec: {
           salt: 0x3c0ffe, reachM: REACH_M,
           widthM: MAT_W_M, heightM: MAT_H_M, densityAt: (): number => MAT_PER_M2,
+          // RN-2410 to RN-2419. See GrassTuning.MAT_PATCH_AMP's own note: the
+          // value term that closes the near end of world audit R3's rank 4.
+          patchAmp: MAT_PATCH_AMP,
         },
         pool: new GrassPool(buildCardGeometry(MAT_CARD), mat.material,
           MAT_CAP, cardTriangles(MAT_CARD), 'GrassCover(mat)'),
