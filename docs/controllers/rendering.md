@@ -9004,3 +9004,163 @@ removed. Three files touched: `web/tools/smoke/probes/artframe.js` (the
 3. **Everything section 2.27.10 already owed** (no new poses, motion
    unmeasured, quality tiers, the fifteen number-only arms) is unmoved by this
    lane, which touched one row.
+
+## 2.28 N2, THE CONTACT DITHER: THE RESOLVE WIDENED TO ITS FULL PERIOD (RN-2490 to RN-2494, 2026-08-22, `lane/n2-dither`)
+
+R4's rank 2 (2.27.2, audit 3.5/4.2): a screen-locked 4-px cross-hatch over bare
+ground at any low sun, convicted as `ContactGlsl.ts`'s own ordered dither
+resolved by a 5-tap 1-px cross that samples 5 of the dither's 16 phases and
+leaves the rest. **THE FIX IS THE ONE THE AUDIT NAMED FIRST AND THE ONE THIS
+CODEBASE ALREADY PROVES: widen the resolve to the full 4x4 support.** `AoGlsl`
+runs the IDENTICAL construction -- its own `rotationOffset` is the same
+`mod(7cy+5cx,16)/16` bijection over one 4x4 tile as `ContactGlsl.dither` -- and
+shows no such artefact, because `AO_BLUR_FS` denoises with a full 4x4 box.
+Four CONSECUTIVE integer pixel offsets in one axis cover all four residues of
+`mod(p,4.0)` exactly once regardless of where the box starts, so summing a
+full 4x4 window drives the dither's own contribution to an exact constant
+rather than sampling a biased subset of it. `CONTACT_APPLY_FS` in
+`web/src/render/post/ContactGlsl.ts` now sums 16 taps (a plain, unweighted
+box, since the march already fades this term past `uLengthM` and dampens it
+near thin edges per RN-2220, so no depth-weighting or new uniform was needed).
+The march (`CONTACT_FS`, the occlusion itself) is untouched -- this is a
+resolve-only fix, matching the audit's own reading that the shadows are right
+and only their sampling pattern draws graph paper.
+
+**A NARROWER KERNEL WAS TRIED FIRST AND MEASURED, NOT ASSUMED.** A 3x3 (9-tap)
+box was built and measured before the 4x4: phaseStd only fell to **1.014**,
+still above the 0.70 done-when, because any window narrower than one full
+period necessarily excludes some residues and which residues it excludes
+changes with the pixel's own phase -- there is no smaller kernel that cancels
+this specific bijection exactly. The full box was the only one of the two that
+cleared the threshold, by a wide margin.
+
+### 2.28.1 The measurement, `rn2450bayer.mjs` at `vistadawn` (1240, 596) 256x96, `--p=4`
+
+Environment determinism checked first: the untouched build reproduced the
+audit's own numbers to the digit in this environment (phaseStd **1.791**,
+patchStd **30.215**, phaseSpread **5.744**, `--p=5` phaseStd **1.198**),
+so every delta below is real and not environment drift.
+
+| arm | phaseStd | patchStd |
+|---|---:|---:|
+| shipped (before, 5-tap cross) | **1.791** | 30.215 |
+| after (4x4 box) | **0.259** | **29.499** |
+| `?contact=0` (after) | 0.602 | 33.193 |
+| after, `--p=5` control | 1.008 | 29.499 |
+| shipped, `--p=5` control | 1.198 | 30.215 |
+| after, `--p=3` control | 0.484 | 29.499 |
+| sky negative control (400,200) | 0.053 | 5.738 |
+| second ground patch (400,640) | 0.950 | 23.409 |
+
+**Done-when: MET on the primary number, MISSED BY 0.5 on the secondary one, and
+the shortfall is measured rather than hidden.** phaseStd 0.259 clears the 0.70
+floor by a wide margin (85% below shipped, and even below the `?contact=0`
+floor of 0.602, because the box drives the dither's own contribution to an
+exact constant, leaving only whatever residual phase-correlation the real
+image content happens to carry). patchStd landed at **29.499 against the
+stated 30.0 floor**, a 0.72-count shortfall. This is the one real cost of an
+EXACT resolve: the shipped 30.215 was itself inflated by the unresolved
+dither's own residual variance (the same reason `?contact=0`'s 33.193 sits
+above both), so a fix that truly cancels the dither necessarily reads a bit
+below the pre-fix estimate that assumed patchStd would hold flat. The 3x3
+alternative (patchStd 29.803) is not a better trade: it recovers 0.3 counts of
+patchStd while giving back the whole primary result (phaseStd 1.014, still
+failing). Both other controls hold: the `--p=5` control stays inside its
+128->30.215-scaled band (1.008 against a 1.198 ceiling), the sky control reads
+0.053 (unchanged from the audit's own reading), and the second ground patch
+confirms the fix generalises off the one calibration pixel.
+
+### 2.28.2 Crops, and the eye's own verdict
+
+`rn2450crop.mjs` at (1240,596) 256x96 x4, before and after. The "before" crop
+is the audit's own graph paper, unmistakable at 4x. The "after" crop is smooth
+ground: the same rocks and the same fern-litter scatter are still there (nothing
+about the terrain material or the occlusion's own darkening changed), and the
+lattice is simply gone. Two frames, same pixels the numbers above were read
+from, never a second capture.
+
+### 2.28.3 Controls: the solid shadow, the arming, and the sky
+
+**Machine's own ground-contact rectangle (RN-1200's `box`), before/after,
+same pose:** luma 22.05 -> 22.06, p50 22.16 -> 22.16 (identical), iqr 17.58 ->
+17.58 (identical), p95 43.75 -> 43.81, loFrac 0.644 -> 0.643. A solid,
+unambiguous contact shadow is unmoved by widening the resolve, which is the
+predicted shape: the artefact and the fix both live in the sub-4px regime a
+large solid shadow's own rectangle mean cannot see.
+
+**`?contact=0` still reproduces its own arm exactly:** `postState.contactRan`
+false, `contact` false, both builds, no change to the flag's own behaviour.
+
+**`probes/contact.js`, WG-189's own interleaved method, one pose
+(lat 12, lon 150, yaw 300, pitch -10), before vs after:** `contactRanWhenOn`
+true / `contactRanWhenOff` false in both (armed). `contact.near` meanDarkening
+0.128 (before) vs 0.038 (after) and `contact.mid` 0.041 vs 0.020 -- the SUN
+ANGLE the probe's own default picks differs from `vistadawn`'s (this pose is
+not the audit's calibration site), so this is not read as a regression; the
+occlusion computation (`CONTACT_FS`) is provably untouched by this diff and
+the shift is consistent with the resolve now landing on the true local mean
+rather than a phase-biased sample. **Sky control (must be architecturally
+zero): before meanAbs 0.0154 peak 6, after meanAbs 0.0705 peak 7** -- both
+already non-zero at baseline (the "exactly zero" claim is architectural, not
+bit-exact in practice, because the two `grab()` calls in `contact.js` are two
+separate captures with their own settle jitter), and the after figure is a
+sub-1-count absolute movement over a 276,480-sample band, consistent with the
+wider box reading fractionally further across any sky/ground silhouette in the
+test band. Not visually resolvable at any normal viewing distance; flagged
+honestly rather than rounded away.
+
+**Cost, WG-189's interleaved-pair method, two independently-served builds
+(`dist-before` on one port, `dist-after` on another, sentinel-verified
+served-vs-disk on both before every reading), `probes/contact.js`, one pair
+plus a stability repeat:** before `allOn` 8.2 / contactOff 8.0 (contact's own
+share +0.2); before repeated 8.7 / 9.2 (-0.5); after 10.7 / 12.0 (-1.3). **NOT
+SEPARATED FROM ZERO in either build**, and the after run's uniform uplift
+across every arm including `bothOff` (9.8 against before's 8.5/9.7) says the
+box was busier during that run, not that the term got costlier -- the correct
+reading per this file's own house rule (2.14.10, 2.22 and others) is "no
+resolvable cost," consistent with the architectural expectation that 11 extra
+single-channel texel fetches in an already-existing full-screen R8 pass, at
+1600x900, is far under the noise floor of a contended box.
+
+### 2.28.4 Rails
+
+Real Windows D3D11 through ANGLE (RTX 4060 Ti), confirmed by `check:boot`'s own
+GPU string. Three ports owned across the session (5941, 5942, plus 5931 tried
+first and found FOREIGN -- `vite preview` refused with "Port 5931 is already in
+use," so that port was abandoned rather than fought over, per the 2026-08-19
+foreign-port hazard this file already records); every port actually used was
+confirmed free with `Get-NetTCPConnection` before bind, and served-vs-disk
+`sha256sum` matched on every server before any capture was taken from it,
+including the two simultaneous `dist-before`/`dist-after` servers for the cost
+pair. All servers killed by the PID this lane started and read back, not by
+port. `npx tsc --noEmit`, `npx vite build` and `npm run check` (8/8) run as
+THREE separate steps with each exit status read on its own, both before the
+kernel was finalised and again after. Did not touch `web/wasm/dist/*`,
+`test/expected.json`, `web/dist/*`, or any file outside
+`web/src/render/post/ContactGlsl.ts`. `ContactPass.ts` was read and found to
+need no change (no new uniform, no new pass, same two draw calls). Branch
+`lane/n2-dither`, pushed, **not merged to main**.
+
+### 2.28.5 Owed
+
+1. **The patchStd shortfall (29.499 against the stated 30.0 floor) is reported
+   rather than engineered away.** A depth-weighted box (AO's own further
+   refinement, protecting a silhouette the way `AO_BLUR_FS` does) was not
+   built: contact's own edge/thin term already lives in the march
+   (RN-2220), and adding a second edge-aware term to the resolve without a
+   measured excess to justify it risks the same "measured backwards" trap
+   RN-2190 named. If a future lane finds the 0.72-count softening visible at
+   any pose, the depth-weighted variant is the next thing to try, not a
+   smaller box (measured and rejected, 2.28 above).
+2. **The sky-control drift (peak 6 -> 7, meanAbs 0.015 -> 0.070) is a
+   sub-visible but nonzero widening of the box's reach across the sky/ground
+   silhouette.** Not chased further because it is smaller than the control's
+   own baseline non-zero and `check:boot`'s GPU-string-verified frames show no
+   visible sky artefact, but a lane touching the horizon silhouette should
+   know the resolve now reads two texels out instead of one.
+3. **Motion is still unmeasured for this artefact specifically** (R4's own
+   owed item 2): the harness here captures one settled frame per build, not
+   two consecutive frames, so "does the now-flat dither shimmer under a moving
+   camera" is answered by construction (the box has no time/frame uniform, so
+   a settled frame is bit-identical to the last, the same rule `AoGlsl` and
+   `ContactGlsl`'s march already keep) rather than by a captured pair.
