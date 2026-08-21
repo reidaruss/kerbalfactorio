@@ -458,6 +458,17 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // value control (same program, term multiplied by zero) and it is the arm
   // that shows why a distant instanced forest without it reads as pepper.
   'prophaze',
+  // RN-2385, standing rule 7, and TWO flags because the change makes two
+  // claims. World audit R3's rank 3: a running furnace at night put its own
+  // frame BELOW an empty meadow, because every emissive in the game was a
+  // self-illuminated albedo constant that reached nothing. `firelight=off`
+  // removes the irradiance splice entirely (the pre-RN-2385 programs exactly,
+  // which is what the per-fragment cost is measured against), `firelight=0`
+  // keeps the program and multiplies the term by zero (the value control), and
+  // a number sweeps it. `fireglow=` is the separate scale on the FIRE's own
+  // radiance, i.e. how bright it looks rather than what it lights, so an audit
+  // that finds one right and the other wrong can say which.
+  'firelight', 'fireglow',
 
   // RN-2204, standing rule 7. `propcullbiome=0` narrows per-instance frustum
   // culling back to the understorey batches, which is the pre-widening build

@@ -3505,6 +3505,21 @@
       return h === undefined || typeof h.phaseState !== 'function'
         ? null : h.phaseState();
     })(),
+    // RN-2385. THE EMISSIVE LIGHT'S ARMING PROOF, read off the live page on
+    // the photographed frame. `spliced` is how many programs actually took the
+    // term (zero with a nonzero `amp` is the vacuous green: configured and in
+    // no shader); `selected` is how many fires this frame's uniform array
+    // actually holds and `emitters` is what is in it, so a lane can show the
+    // light is where the machine is rather than assert it; `dropped` is the
+    // count that lost the WebGL2 budget, which is the number that says whether
+    // `EMIT_MAX` is real in play; and `sceneLights` is the near scene's own
+    // three.js light count, which is this change's central claim (it adds
+    // none) taken as a reading rather than as a sentence.
+    emit: (() => {
+      const h = window.__ofEmit;
+      return h === undefined || typeof h.report !== 'function'
+        ? null : h.report();
+    })(),
     render: { triangles: s.draw.triangles, calls: s.draw.calls,
       programs: s.draw.programs, vramMB: s.vramEstimateMB,
       frameMs: { p50: r2(s.frameMs.p50), p95: r2(s.frameMs.p95),
