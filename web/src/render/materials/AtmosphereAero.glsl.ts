@@ -175,15 +175,23 @@ export const ATMOSPHERE_LAYER = /* glsl */`
    * ENTRY POINTS, and the asymmetry has the SAME justification ofAeroPhase's
    * two floors already have two screens down: the ground entry's col is a
    * lit terrain albedo that dilutes any small tint shift, so it can run at
-   * floor 0 (pure threshold, protecting the flyover family's own nearer
-   * ground per the note in Atmosphere.glsl.ts); the sky entry's col is
-   * ITSELF scattered light of the same order as the haze, so even a ray whose
-   * own boundary-layer optical depth is nearly zero (an elevated dawn sky ray
-   * well off the horizon, RN-2400's own dawnsun.skyUp and vistadawn.skyR)
-   * still shows a real hue shift from a small tint blend, which the K = 2.4
-   * first attempt (a smooth exponent, never exactly zero) reproduced and a
-   * hard threshold cannot, by construction, at od this small. Measured rather
-   * than reasoned: see rendering.md 2.25 for the floor this lane shipped.
+   * floor 0, a PURE THRESHOLD with no floor-driven blend BELOW uAeroTintOd.x.
+   * That is NOT "the ground entry is protected at ground ranges": ABOVE the
+   * threshold the ground entry blends exactly as far as the sky entry does,
+   * and any ground ray whose own optical depth clears it moves, not only the
+   * flyover family's. meadow's own horizon band clears od 1.0 too (whole-
+   * frame warm 20.22 -> 17.40, hzBand 32.13 -> 25.48) and so does mtnslope
+   * (24.08 -> 22.62, GLSL ground entry, by eye the SAME improvement: the
+   * cream treeline bar recedes and goes cool). Floor 0 only says the ground
+   * entry has no SEPARATE low-od exception the way the sky entry does. The
+   * sky entry's col is ITSELF scattered light of the same order as the haze,
+   * so even a ray whose own boundary-layer optical depth is nearly zero (an
+   * elevated dawn sky ray well off the horizon, RN-2400's own dawnsun.skyUp
+   * and vistadawn.skyR) still shows a real hue shift from a small tint
+   * blend, which the K = 2.4 first attempt (a smooth exponent, never exactly
+   * zero) reproduced and a hard threshold cannot, by construction, at od
+   * this small. Measured rather than reasoned: see rendering.md 2.25 for the
+   * floor this lane shipped.
    *
    * uAeroTintOn < 0.5 restores the flat RN-2320 blend exactly: uAeroTint
    * whatever od is. ?aerodepth=0.

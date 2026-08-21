@@ -7438,10 +7438,13 @@ five-point sweep (od0 = 0.55, 0.85, 1.0, 1.15, 1.5) found: `vista`'s own ray
 sits at roughly 1.5 to 1.6 of optical depth (od0 = 0.85 and od0 = 0.55 give
 IDENTICAL vista numbers, both fully saturating the ramp; od0 = 1.5 nearly
 undoes the seam fix, `vista.hzBand` back to 42.66, because the threshold now
-sits just below vista's own value). **od0 = 1.0, span = 0.35 is what shipped**,
-closing vista's seam 60.52 -> 10.41 and vistanoon's 49.87 -> 2.88 (both
-inside the audit's stated single-digit-tens target) at a bounded aerial cost
-(below, 2.25.4).
+sits just below vista's own value). **od0 = 1.0, span = 0.35 is what
+shipped.** The ramp ALONE (sky floor 0) closes vista's seam 60.52 -> 10.41
+and vistanoon's 49.87 -> 2.88; the SKY FLOOR added next (2.25.2 below, for
+the dawn fix) cools the sky rectangles further, so the SHIPPED seam with
+both terms in is vista 60.53 -> **17.42** and vistanoon 49.88 -> **12.23**,
+both still inside the audit's stated single-digit-tens target, at a bounded
+aerial cost (below, 2.25.4).
 
 **A second structural finding, caught by the same sweep and requiring a
 second correction.** At EVERY od0 tested, including 0.15, `dawnsun.skyUp`
@@ -7508,6 +7511,38 @@ magnitude smaller than the unmitigated first attempt (`flyover` -11.21 at
 K = 2.4, -18.93 at K = 9.0). The two negatives move AWAY from zero rather
 than closing toward it as the audit's stated target asked; this is flagged
 to Admin as an open item rather than papered over (2.25.6).
+
+**A fresh-context verifier's own eyes ruled this trade decisively better, and
+found two wins this section did not headline.** `flyovernoon`'s whole-frame
+slip is an AVERAGE dragged down by its own horizon strip genuinely
+IMPROVING, not by a broad cooling of the frame: `hzBand` moves 38.98 ->
+**3.80**. `flyover`'s own `hzBand` moves the same way, 41.74 -> **1.96**.
+Both are the seam fix working exactly as intended on THESE poses' own far
+ridge, the same mechanism as `vista.hzBand`; the whole-frame number reported
+above is real but it nets a genuine improvement at the horizon against a
+small cost spread over the rest of the frame, and the improvement was not
+in the record until this correction. By eye, the vista massif now recedes
+as real aerial perspective rather than sitting at one flat cream value.
+
+**Two GROUND poses also move, through the same GLSL ground entry, and were
+missing from this table entirely.**
+
+| pose | before | after (shipped) |
+|---|---:|---:|
+| `meadow` whole-frame warm | 20.22 | **17.40** |
+| `meadow` `hzBand` warm | 32.13 | **25.48** |
+| `mtnslope` whole-frame warm | 24.08 | **22.62** |
+
+`meadow`'s own horizon band clears `od >= 1.0` (a standing eye's sightline to
+its own tree line is a long enough path), so the ground entry's ramp engages
+there exactly as it does on the flyover family and on `vista.hzBand` -- this
+was omitted from the cost table above, which the corrected note on
+`ofAeroTintAt` (`AtmosphereAero.glsl.ts`) now states plainly: floor 0 is NOT
+"the ground entry is protected at ground ranges," it is a pure threshold,
+and ABOVE that threshold every ground ray moves, standing-eye poses
+included. By eye this is the SAME improvement as the aerial cases: the cream
+treeline bar at the back of `meadow` and `mtnslope` goes cool and recedes
+instead of sitting at one flat warm value against the sky.
 
 ### 2.25.5 THE DAWN SIDE EFFECT, quoted per the brief's own instruction
 

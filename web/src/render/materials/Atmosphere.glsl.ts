@@ -292,13 +292,21 @@ export function forgeAtmosphere(planetRadiusM: number): AtmosphereParams {
     // single threshold cannot dissolve**: the flyover family's own far pixels
     // are optically the same object as vista's ridge, so any threshold that
     // fully saturates one partially saturates the other. od0 = 1.0 is the
-    // point this lane ships, closing vista's seam 60.52 -> 10.41 counts and
-    // vistanoon's 49.87 -> 2.88 (both inside the audit's stated single-digit-
-    // tens target) at a real but bounded aerial cost (`flyover` -0.18 ->
-    // -1.75, `flyovernoon` +6.62 -> +5.19, `forestair`/`forestairnoon` under
-    // 0.4 counts each). Reported as a genuine trade-off rather than papered
-    // over: see rendering.md 2.25 and this lane's own report for the honest
-    // reading against the acceptance wording's "does not regress anywhere".
+    // point this lane ships. THE RAMP ALONE (floor 0 on both entries) closed
+    // vista's seam 60.52 -> 10.41 counts and vistanoon's 49.87 -> 2.88; the
+    // SKY FLOOR added below (0.3, for the dawn fix) cools the sky rectangles
+    // further, so the SHIPPED seam with both terms in is vista 60.53 -> 17.42
+    // and vistanoon 49.88 -> 12.23 -- both STILL inside the audit's stated
+    // single-digit-tens target, at a real but bounded aerial cost (`flyover`
+    // -0.18 -> -1.99, `flyovernoon` +6.62 -> +4.84, `forestair`/
+    // `forestairnoon` under 0.6 counts each). Verifier's own eyes ruled the
+    // trade decisively better by look: `flyovernoon`'s whole-frame slip is an
+    // average dragged by its OWN horizon strip IMPROVING (`hzBand` 38.98 ->
+    // 3.80), and `flyover`'s hzBand moves 41.74 -> 1.96 the same way -- wins
+    // inside the whole-frame number that the number alone does not show.
+    // Reported as a genuine trade-off rather than papered over: see
+    // rendering.md 2.25 and this lane's own report for the honest reading
+    // against the acceptance wording's "does not regress anywhere".
     //
     // A SEPARATE FINDING THE SAME SWEEP SURFACED: at every od0 tested, INCLUDING
     // 0.15, `dawnsun.skyUp` and `vistadawn.skyR` never moved AT ALL (7.13 and
