@@ -14,6 +14,12 @@ export interface OracleProbeRequest {
   bodyId: BodyId;
   seedLo: number;
   seedHi: number;
+  /** WG-275. Scale on the lowland swell, part of the FIELD's identity and so
+   *  part of what has to cross with the seed. This probe's whole job is a
+   *  bitwise main-thread-versus-worker height comparison, so omitting it under
+   *  `?horizonswell=0` would not go unnoticed: it would report every sample as
+   *  a mismatch. That makes the probe the guard on this plumbing. */
+  swellScale?: number;
   dirs: Float64Array;
 }
 
@@ -51,7 +57,8 @@ ctx.onmessage = async (e: MessageEvent<OracleProbeRequest>) => {
   const msg = e.data;
   if (msg.type !== 'probe') return;
   const mod = await core();
-  const body = createBodyHandle(mod, msg.bodyId, msg.seedLo, msg.seedHi);
+  const body = createBodyHandle(mod, msg.bodyId, msg.seedLo, msg.seedHi,
+                                msg.swellScale);
   const n = msg.dirs.length / 3;
   const heights = new Float64Array(n);
   const biomes = new Int32Array(n);

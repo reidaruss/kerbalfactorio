@@ -30,10 +30,24 @@ export type BodyId = 0 | 1;
  */
 export function createBodyHandle(
   M: OfCoreModule, bodyId: BodyId, seedLo: number, seedHi: number,
+  swellScale?: number,
 ): number {
-  return bodyId === 1
+  const h = bodyId === 1
     ? M._of_body_create_cinder(seedLo >>> 0, seedHi >>> 0)
     : M._of_body_create_forge(seedLo >>> 0, seedHi >>> 0);
+  // WG-275. `swellScale` UNDEFINED MEANS "leave /core's own default alone", and
+  // that asymmetry is deliberate. /core defaults `BodyParams::lowlandSwellCoef`
+  // to the shipped 0.050, so a heap that never learned about the flag streams
+  // the SHIPPED planet rather than a silently flattened one. The failure mode
+  // of a forgotten plumb is therefore a contaminated OFF arm, which the arm's
+  // own fixture catches (it must reproduce the pre-swell rectangles exactly),
+  // and not RN-150's "the feature shipped off and every probe was green".
+  //
+  // It also has to be undefined-by-default because THREE heaps build their own
+  // handle here (main thread, terrain.worker, oracle.worker) and each learns
+  // the flag through a different message.
+  if (h > 0 && swellScale !== undefined) M._of_body_set_swell_scale(h, swellScale);
+  return h;
 }
 
 export class PlanetBody {
@@ -101,13 +115,29 @@ export class PlanetBody {
 
   /** Build whichever body the config chose. The two named factories below are
    *  now shorthands for this, so there is one construction path, not three. */
-  static create(M: OfCoreModule, bodyId: BodyId, seedLo: number, seedHi: number): PlanetBody {
+  static create(M: OfCoreModule, bodyId: BodyId, seedLo: number, seedHi: number,
+                swellScale?: number): PlanetBody {
     return new PlanetBody(
-      M, createBodyHandle(M, bodyId, seedLo, seedHi),
+      M, createBodyHandle(M, bodyId, seedLo, seedHi, swellScale),
       bodyId === 1 ? 'Cinder' : 'Forge', bodyId,
     );
   }
 
+  /**
+   * WG-275, A LATENT TRAP NAMED RATHER THAN LEFT: these two shorthands take no
+   * `swellScale` and have ZERO callers in `web/src` today (`Boot`,
+   * `WorldSession`, `CelestialBake` all call `create` directly). They are
+   * deliberately NOT plumbed, because plumbing a parameter through a function
+   * nothing calls is untested code, and their omission is SAFE in the shipped
+   * direction: `undefined` leaves /core's own default, so a caller of
+   * `PlanetBody.forge` gets the SHIPPED planet.
+   *
+   * What it would cost is a wrong NEGATIVE CONTROL, not a wrong game. The first
+   * consumer that reaches for one of these under `?horizonswell=0` gets a body
+   * carrying the swell while the terrain worker's does not, and the two would
+   * silently disagree about the ground. If either gains a caller, give it the
+   * fifth argument in the same commit, or delete it in favour of `create`.
+   */
   static forge(M: OfCoreModule, seedLo: number, seedHi: number): PlanetBody {
     return PlanetBody.create(M, 0, seedLo, seedHi);
   }

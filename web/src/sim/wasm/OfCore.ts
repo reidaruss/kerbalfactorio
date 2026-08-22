@@ -123,7 +123,15 @@ import { HandleLedger } from './HandleLedger.js';
 // shut, with the three limits published beside the three measurements),
 // `of_dk_capture` and `of_dk_release`. NOTHING EXISTING CHANGED: `DockRig`'s
 // latch flag defaults on, so every ABI 25 caller gets the rig it had.
-export const OF_ABI_VERSION = 26;
+// ABI 27 (2026-08-21, WG-275): THE PLANET'S GROUND MOVED. One additive export,
+// `of_body_set_swell_scale`, but the bump is mostly about the other half:
+// `sampleHeightFieldPlanet` gained the lowland swell, so every height, biome,
+// voxel solidity and chunk vertex on Forge differs from ABI 26's. An export
+// add alone would not have needed a bump; a FIELD change does, because an
+// ABI 26 client would otherwise have bound happily to this binary and walked a
+// planet whose ground had moved under its saved edits. The handshake is the
+// only thing standing between those two worlds, so it has to move.
+export const OF_ABI_VERSION = 27;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

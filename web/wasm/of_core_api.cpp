@@ -496,7 +496,23 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       NOTHING EXISTING CHANGED SIGNATURE OR MEANING. `DockRig::latch`
 //       defaults true, so every ABI 25 caller of `of_fl_dock_*` gets the rig it
 //       already had. The bump is for the five new symbols only.
-OF_API int of_abi_version(void) { return 26; }
+// ABI 27 (2026-08-21): ONE new export, `of_body_set_swell_scale` (WG-275), and
+//       the FIELD ITSELF MOVED, which is the part a version number cannot
+//       express and this note has to. `sampleHeightFieldPlanet` gained the
+//       lowland swell, so every planet height, every biome that reads one,
+//       every voxel solidity and every chunk vertex on Forge is different from
+//       ABI 26's. The bump is therefore doing two jobs: it names the new symbol
+//       AND it refuses to let an ABI 26 client bind to this binary, which
+//       matters more here than for a pure export add, because an old client
+//       would have booted happily onto a planet whose ground had moved under
+//       its saved edits.
+//         of_body_set_swell_scale scales `BodyParams::lowlandSwellCoef` on a
+//                                 live handle. It exists for `?horizonswell=0`,
+//                                 the one-build negative control the WG-275
+//                                 re-baseline is measured against; the DEFAULT
+//                                 is already the shipped 0.050, so a caller
+//                                 that never invokes this gets the feature.
+OF_API int of_abi_version(void) { return 27; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -529,6 +545,33 @@ OF_API int of_body_create(uint32_t bodyId, uint32_t seedLo, uint32_t seedHi,
   return g_bodies.add(b);
 }
 OF_API void of_body_destroy(int body) { g_bodies.remove(body); }
+
+// WG-275 (ABI 27). THE LOWLAND SWELL's amplitude on a live handle, and the ONLY
+// reason it is writable is that the swell moves every plains rectangle in the
+// shot manifest at once. A re-baseline needs its before arm from the SAME
+// binary in the SAME session (NUMBERS.md, "AN ARM TABLE'S HEADER NAMES ONE
+// BUILD"), and a height-field constant is otherwise only switchable by
+// rebuilding.
+//
+// Call it BEFORE anything samples the body. Nothing memoises a height against a
+// handle inside /core, but the JS side does (chunk caches, the oracle worker's
+// results), so changing this mid-session is a client bug and not a supported
+// mode. `?horizonswell=0` sets it once at handle creation and never again.
+// IT TAKES A SCALE, NOT AN AMPLITUDE, and that is the difference between one
+// authority and two. The shipped amplitude is `wg::kLowlandSwellCoef` in
+// cubed_sphere.h; a client passing an absolute coefficient would have to
+// transcribe 0.050 into TypeScript, where it would sit until somebody retuned
+// the header and the negative control quietly became a SWEEP of an old value.
+// `scale` 0 is off, 1 is shipped, and the multiply happens on this side of the
+// boundary where the constant lives.
+//
+// A scale above about 1.1 leaves the range the fixtures are proven over
+// (world-gen.md 6.12.8 item 3, the `worstUp` pin at 0.0625): it is a
+// diagnostic, never a shippable value.
+OF_API void of_body_set_swell_scale(int body, double scale) {
+  wg::BodyParams* b = g_bodies.get(body);
+  if (b) b->lowlandSwellCoef = wg::kLowlandSwellCoef * scale;
+}
 
 OF_API double of_body_radius(int body) {
   const wg::BodyParams* b = g_bodies.get(body);

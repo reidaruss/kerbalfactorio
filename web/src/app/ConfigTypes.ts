@@ -94,6 +94,18 @@ export interface Config {
   readonly maxDepth: number;
   /** TerrainStreamer splitRatio (DW-19). Higher = coarser far field. */
   readonly splitRatio: number;
+  /**
+   * WG-275. Scale on the height field's lowland swell: 0 removes the term and
+   * restores the pre-WG-275 planet exactly, 1 is shipped. `undefined` means
+   * "say nothing to /core", which is what a bare URL produces, so the DEFAULT
+   * path never touches the body at all.
+   *
+   * It is a HEIGHT FIELD flag and therefore unlike every other flag in this
+   * file: it changes the ground, the collision, the biomes and the scatter
+   * hashes together, because all of them read one oracle. Nothing here caches
+   * across it; `?horizonswell=0` is a boot-time arm, not a live toggle.
+   */
+  readonly swellScale: number | undefined;
   /** Draw the skirt index range as well as the interior. ?skirts=1 enables. */
   readonly skirts: boolean;
   /** StreamConfig.skirtFraction override; 0 keeps the default. */

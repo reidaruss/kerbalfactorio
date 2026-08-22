@@ -60,7 +60,8 @@ export async function probeWorkerOracle(
       // body to build over there while comparing the answer against THIS body's
       // radius is a comparison whose two sides have different authorities.
       type: 'probe', bodyId: body.bodyId,
-      seedLo: cfg.seedLo, seedHi: cfg.seedHi, dirs: dirs.slice(),
+      seedLo: cfg.seedLo, seedHi: cfg.seedHi, swellScale: cfg.swellScale,
+      dirs: dirs.slice(),
     };
     worker.postMessage(req, [req.dirs.buffer]);
   });

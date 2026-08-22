@@ -11,6 +11,14 @@ export interface TerrainInitMsg {
   bodyId: BodyId;
   seedLo: number;
   seedHi: number;
+  /** WG-275. Scale on the lowland swell (`?horizonswell=`). OPTIONAL and
+   *  omitted on the shipped path: the worker's own handle then keeps /core's
+   *  default, so a message that predates this field streams the shipped planet
+   *  rather than a flattened one. It rides beside `seedLo`/`seedHi` because it
+   *  is the same kind of thing, an input to the FIELD, and the worker must
+   *  agree with the main thread about it for exactly the reason CE-22's note
+   *  below gives about `bodyId`. */
+  swellScale?: number;
   splitRatio: number;
   mergeHysteresis: number;
   maxDepth: number;

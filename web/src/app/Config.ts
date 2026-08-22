@@ -168,6 +168,17 @@ export function parseConfig(search: string): Config {
     // and the whole set collapses to 108 chunks at depth 4. Measured cliff, not
     // a guess: see ARCHITECTURE.md 15.2.
     splitRatio: Math.min(4, Math.max(0.25, num(p, 'split', 1.4))),
+    // WG-275. `?horizonswell=0` is the exact pre-swell planet and `=1` is the
+    // shipped one; anything between sweeps the amplitude. ABSENT means absent:
+    // it resolves to `undefined` rather than to 1, so the shipped path makes no
+    // call into /core at all and the shipped amplitude has exactly one home,
+    // `wg::kLowlandSwellCoef`. `Number(null)` is 0 and that is precisely how
+    // RN-150 shipped two finished features switched off, so this is a null
+    // check and not a `num(p, 'horizonswell', 1)`.
+    swellScale: p.get('horizonswell') === null || p.get('horizonswell') === ''
+      ? undefined
+      : (Number.isFinite(Number(p.get('horizonswell')))
+          ? Number(p.get('horizonswell')) : undefined),
     // OFF by default at W1. of::TerrainStreamer sizes the skirt apron in
     // proportion to the chunk, so even at skirtFraction 0.02 the rings render as
     // ribbons and shelves lying across the landscape rather than as hidden

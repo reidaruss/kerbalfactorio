@@ -56,7 +56,8 @@ async function phaseEngine(s: EngineIn): Promise<EngineOut> {
   const core = await loadOfCore();
   const wasmLoadMs = performance.now() - tWasm;
 
-  const body = PlanetBody.create(core, cfg.bodyId, cfg.seedLo, cfg.seedHi);
+  const body = PlanetBody.create(core, cfg.bodyId, cfg.seedLo, cfg.seedHi,
+                                 cfg.swellScale);
   const oracle = new SurfaceOracle(core, body);
   const oracleTiming = benchOracle(core, body.handle, 3000);
   return { t0, events, quality, core, wasmLoadMs, body, oracle, oracleTiming };

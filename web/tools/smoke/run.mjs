@@ -292,6 +292,21 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // before of RN-2421 and not of this. Registered in the same commit that
   // introduces the term, per this list's own rule and RN-152's scar.
   'horizonplains',
+  // WG-275, THE LOWLAND SWELL, and it is the only flag in this list that
+  // switches the HEIGHT FIELD rather than a material. `horizonswell=0` is the
+  // exact pre-WG-275 planet: the term is removed inside
+  // `sampleHeightFieldPlanet`, so the ground, the collision, the biomes and
+  // every scatter hash that reads the one oracle all go back together, and the
+  // arm's own fixture is that every plains rectangle returns to its pre-swell
+  // reading. Values between sweep the amplitude (1 = shipped 0.050), which is
+  // how the re-baseline ladder was taken from ONE binary in ONE session rather
+  // than from a second build (NUMBERS.md, "AN ARM TABLE'S HEADER NAMES ONE
+  // BUILD"). Registered in the same commit that introduces the term.
+  //
+  // ABSENT is not 0 and not 1: the client resolves a missing flag to
+  // `undefined` and never calls into /core, so the shipped amplitude has one
+  // home and `Number(null)` cannot ship the planet flat (RN-150).
+  'horizonswell',
   // RN-2512's `coverstand` family was registered here and is REMOVED again in
   // the same lane: the term it switched -- the mid field's material ground
   // cover -- was built, measured and refused on its own numbers (rendering.md
