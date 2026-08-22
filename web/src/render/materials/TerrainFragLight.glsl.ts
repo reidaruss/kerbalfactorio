@@ -245,9 +245,17 @@ export const TERRAIN_FRAG_LIGHT = /* glsl */`
 
       // Aerial perspective. Same function, same parameters as the sky quad, so a
       // mountain at 40 km goes blue and MATCHES the horizon behind it exactly.
+      //
+      // RN-2540. THE TWO DIAGNOSTIC KNOBS, and both are algebraic identities at
+      // their shipped values, so this is the same one program it always was.
+      // uApPaint zeroes the SOURCE radiance before the two calls, leaving the
+      // fragment as the additive floor alone; uApAmp mixes back to that source
+      // afterwards, which is ?prophaze= 's own form on the terrain side (the
+      // terrain had no isolator at all before this lane; see AerialDiag.ts).
+      vec3 apSrc = mix(lit, vec3(0.0), uApPaint);
       vec3 apTrans;
       vec3 apIn = ofAtmoScatter(camM, rd, dist, OF_AP_VIEW, OF_AP_LIGHT, apTrans);
-      lit = lit * apTrans + apIn;
+      lit = apSrc * apTrans + apIn;
 
       // BOUNDARY-LAYER AEROSOL, and this is the ONLY call site of it in the
       // project. It is what gives the ground aerial perspective over the 200 m
@@ -257,6 +265,8 @@ export const TERRAIN_FRAG_LIGHT = /* glsl */`
       // pass 1.0e9 into a different function, so neither can pick this up. See
       // Atmosphere.glsl's note for the sky control that the first attempt failed.
       lit = ofAtmoAerial(lit, camM, rd, dist, sunT);
+      // RN-2540. uApAmp at 1 makes this lit, exactly.
+      lit = mix(apSrc, lit, uApAmp);
 
       gl_FragColor = vec4(lit, 1.0);
       #include <tonemapping_fragment>

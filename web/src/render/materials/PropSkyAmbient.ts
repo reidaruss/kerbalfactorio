@@ -105,6 +105,7 @@ import * as THREE from 'three';
 import { ATMOSPHERE_PARS } from './Atmosphere.glsl.js';
 import { TERRAIN_SKY_AMBIENT } from './TerrainAmbient.js';
 import { injectEmissiveLight } from './EmissiveLight.js';
+import { aerialDiagAmp, uPropPaint } from './AerialDiag.js';
 
 /**
  * THREE STATES, on `StockFill`'s and RN-1201's precedent, because the two
@@ -214,6 +215,8 @@ export function publishPropSkyAmbient(
   }
   BUNDLE.uPropSky = uPropSky;
   BUNDLE.uPropHaze = uPropHaze;   // RN-2232, see the BUNDLE note above.
+  BUNDLE.uPropPaint = uPropPaint; // RN-2540, the same.
+  BUNDLE.uPropSpec = uPropSpec;   // RN-2540, the same.
   published = true;
 }
 
@@ -226,6 +229,8 @@ const DECL = /* glsl */`
   uniform float uPropSky;
   uniform vec2  uFolTrans;
   uniform float uPropHaze;
+  uniform float uPropPaint;
+  uniform float uPropSpec;
 `;
 
 /**
@@ -342,6 +347,35 @@ const uPropHaze: THREE.IUniform<number> = {
 
 const F_FOG = '#include <fog_fragment>';
 
+/**
+ * RN-2540. THE PROPS' SPECULAR ISOLATOR, and it exists because the crown's own
+ * radiance could not otherwise be attributed.
+ *
+ * `totalSpecular` is the ONE radiance in three's stock physical program that is
+ * not multiplied by the albedo: `RE_Direct_Physical` and `RE_IndirectSpecular`
+ * both write a sun-coloured and a sky-coloured lobe straight into
+ * `reflectedLight`, and the sky-coloured one is BLUE. Every other term on a
+ * canopy card rides `irradiance`, i.e. rides `BRDF_Lambert(diffuseColor)`, and
+ * the card's diffuse blue is multiplied by `cardShadeRGB.b` = 0.0017 (RN-2526),
+ * so a measurable blue in the card's un-hazed pixel can only be specular or
+ * post. Before this lane there was no way to say which: `?terrainspec=` is the
+ * TERRAIN's own knob and reaches no prop, and there is no page parameter for
+ * `envMapIntensity` anywhere. RN-952's lesson is that a term with no switch is
+ * the one candidate no experiment can eliminate, so it gets one.
+ *
+ * A REPLACE OF THREE'S OWN LINE, not a new term: at `onBeforeCompile` the
+ * material's `fragmentShader` is `meshphysical.glsl.js` verbatim with only the
+ * `#include` lines unresolved, so this line is present and is the single point
+ * where both specular lobes join the frame. `uPropSpec` at 1 leaves it
+ * algebraically unchanged, so the pair is one uniform apart on one program, and
+ * a three upgrade that rewrites the line reports a MISS below rather than
+ * silently dropping the control.
+ */
+const F_OUT = 'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;';
+const OUT_SPEC =
+  'vec3 outgoingLight = totalDiffuse + totalSpecular * uPropSpec + totalEmissiveRadiance;';
+const uPropSpec: THREE.IUniform<number> = { value: aerialDiagAmp('propspec', 1) };
+
 const AERIAL = /* glsl */`
   {
     vec3 ofApPm = cameraPosition - uBodyCenter;
@@ -352,9 +386,14 @@ const AERIAL = /* glsl */`
       ? ofAtmoSunTransmittance(ofApPm, normalize(uSunDir), 3) : vec3(1.0);
     vec3 ofApTrans;
     vec3 ofApIn = ofAtmoScatter(ofApPm, ofApRd, ofApD, 4, 2, ofApTrans);
-    vec3 ofApLit = gl_FragColor.rgb * ofApTrans + ofApIn;
+    // RN-2540. THE PAINT ARM. 0 is the shipped frame exactly (mix(c, 0, 0) is
+    // c); 1 zeroes the surface radiance before the two calls below, so the card
+    // renders its own additive floor ALONE. An amplitude cannot do this:
+    // ?prophaze= moves col*T and Lin together. See AerialDiag.ts.
+    vec3 ofApSrc = mix(gl_FragColor.rgb, vec3(0.0), uPropPaint);
+    vec3 ofApLit = ofApSrc * ofApTrans + ofApIn;
     ofApLit = ofAtmoAerial(ofApLit, ofApPm, ofApRd, ofApD, ofApSunT);
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, ofApLit, uPropHaze);
+    gl_FragColor.rgb = mix(ofApSrc, ofApLit, uPropHaze);
   }
 `;
 
@@ -404,6 +443,9 @@ export function injectPropSkyAmbient(shader: Splicable,
   // which is a silently absent haze rather than a loud one, exactly the
   // failure the bundle's inert-defaults comment exists to prevent.
   shader.uniforms.uPropHaze = uPropHaze;
+  // RN-2540. Unconditional for uPropHaze's own reason, one line above.
+  shader.uniforms.uPropPaint = uPropPaint;
+  shader.uniforms.uPropSpec = uPropSpec;
   // RN-2385. THE OTHER HALF OF "A HOT SURFACE LIGHTS WHAT IS NEAR IT", and it
   // rides this splice rather than getting a hook of its own for this file's
   // own stated reason: a material holds ONE `onBeforeCompile`, and every prop,
@@ -418,13 +460,17 @@ export function injectPropSkyAmbient(shader: Splicable,
   shader.fragmentShader = shader.fragmentShader
     .replace(F_COMMON, `${F_COMMON}\n${ATMOSPHERE_PARS}\n${DECL}`)
     .replace(F_LIGHTS, `${F_LIGHTS}\n${TERM}${foliage ? TRANS : ''}`)
-    .replace(F_FOG, `${AERIAL}\n${F_FOG}`);
+    .replace(F_FOG, `${AERIAL}\n${F_FOG}`)
+    .replace(F_OUT, OUT_SPEC);
   if (shader.fragmentShader === before) { misses.push('both anchors'); return; }
   if (!shader.fragmentShader.includes('ofSkyAmb')) misses.push(F_LIGHTS);
   if (!shader.fragmentShader.includes('ofAtmoScatter')) misses.push(F_COMMON);
   // RN-2232. The third anchor gets its own miss row, so a three upgrade that
   // renames the fog chunk reports a lost haze rather than silently dropping it.
   if (!shader.fragmentShader.includes('ofApLit')) misses.push(F_FOG);
+  // RN-2540. The fourth anchor, three's OWN line rather than a chunk name, so a
+  // three upgrade that rewrites it reports a lost specular control.
+  if (!shader.fragmentShader.includes('uPropSpec')) misses.push('outgoingLight');
   spliced++;
 }
 

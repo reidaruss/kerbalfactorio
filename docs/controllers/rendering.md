@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2525 to RN-2539, `lane/n6-crownshade`, **THE CROWN SHADE GOES SPECTRAL: N3's routed follow-up, taken.** N3 found `CanopySelfShadow.updateCanopyCardShade` and the far treeline paint both multiplying the finalised canopy colour by ONE achromatic scalar (`cardShade` 0.1025), which is why a crown reads dark blue-violet rather than dark green. This lane replaces the scalar with a per-channel triple, `shade_c = S^k_c`, `k_c` **A DELIBERATE STYLISATION, NOT A DERIVATION -- corrected by a fresh-context verifier after an earlier draft of this line said "derived":** shipped exponents **1.493802 red, 0.298760 green, 2.240702 blue** are `1/t_c`-proportional, not the Beer-Lambert `tau_c = -ln(t_c)` relation (honest Beer-Lambert would be 1.183283/0.640180/1.320107, two-stream 1.035589/0.922476/1.046785); the DIRECTION matches the leaf optics, the MAGNITUDE is 2.71x more aggressive than Beer-Lambert and kept on purpose (the honest exponents close only 40.9 per cent of the gx shortfall against the shipped 65.8, section 2.33.9), applied to BOTH halves through the one `CanopySelfShadow`/`SurfaceBind` seam. **THE PIN, STATED PRECISELY:** the Rec.709-weighted mean of the shade triple collapses algebraically to `S` for every `S` (confirmed live: `cardShadeRGB` (0.014397, 0.171380, 0.003062) against `cardShade` 0.125853, weighted sum 0.125853 to the digit) -- but **that is not the same as the rendered pixel's luma being unchanged**, since the base colour is not neutral; measured drift is small (+0.004 linear at the Forest site) and reported rather than hidden. `?crownspectral=0` is the exact pre-lane achromatic frame by the same identity (`k_c = 1` for all three), registered in `run.mjs`. **THE SCORE, committed `crowns` rectangle:** gx **+1.87 -> +3.64** against a clearing at +4.56, **65.8 per cent of the shortfall closed**; luma moves **+0.66**, honestly NOT the digit-identical hold hoped for, explained in 2.33.3/2.33.4 rather than tuned away. **THE GUARD, RE-MEASURED rather than trusted to algebra:** RN-2275's four clearing/wood pairs all still invert (`forestairnoon` -1.76, `forestairlow` -1.99, `flyovernoon` -7.31, `flyoverlow` -1.83 against a pre-lane -2.80/-2.28/-8.07/-2.05 on this SAME build's `?crownspectral=0` arm); margins shrink by 0.10 to 1.04 counts and none comes close to flipping. Four ground poses bit-identical; aerial `world` warm/sat shifts 0.10 to 0.29 counts at every pose, same class as the guard. **`warm` (R-B) moves the "wrong" way** (-16.32 -> -16.66 at `crowns`) because both red's and blue's exponents exceed the achromatic 1 (blue's more), which is explained arithmetic rather than a regression: `warm` is blind to green by construction (RN-2495's own finding) and is not this fix's instrument. **EYE VERDICT: still PARTIAL, not MET, closer than before.** At 1x the frame is close to indistinguishable from N3's own shipped frame; at 3x the crowns read a shade less blue-violet but do not read as "unmistakably green" the way `?crownshadecard=0` (shade fully OFF) does. Determinism and every number reproduced to the digit across a full clean rebuild. Full record in section 2.33; frames `docs/screenshots/RN2525_*`.) (Same day: `lane/n4-midobjects` section 2.32; `lane/wg-fixtures` world-gen.md 6.12; earlier same-day sections 2.28 to 2.31.) THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2540 to RN-2549, `lane/n7-bluefloor`, **THE ADDITIVE BLUE FLOOR IS THE AIR, AND THE CROWN IS THIRTY TIMES TOO DIM TO SURVIVE IT.** N6's routed item 1 (2.33.9), diagnosed. **THIS LANE SHIPS NO PIXEL CHANGE:** every committed rectangle at every measured pose is bit-identical between a from-scratch build of the pre-lane source and the lane build, proved by a real pair rather than argued from the algebra (section 2.34.7). **THE ANSWER:** at the committed `crowns` rect at `forestair`, **91.9 per cent of the crown card's own blue is AERIAL IN-SCATTER added over it and 0.03 per cent is its albedo** -- the card's whole diffuse contribution to a 32.05-count blue pixel is **0.01 counts** against the floor's **29.44**, and its green is **1.00 against 20.76**. Turning BOTH aerial terms off takes the whole rectangle's blue **80.67 -> 13.86**. **THE CHARTER'S NAMED SUSPECT IS REFUTED:** `TerrainAmbient`'s blue-dominant `AMBIENT_NOON` costs the crown's blue **0.69 counts of 80.67**, and the whole ambient family (`ambientfill` 0.69, `terrainfloor` 0.33, `skyirr` 0.39, `propsky` 0.00) is under a count and a half; `bloom` 0.00, terrain sky specular 1.24, prop specular 2.92. **AND IT IS RAYLEIGH'S BLUE, NOT M1's AEROSOL:** `?aerosol=0` costs **30.14 counts of RED and 5.05 of blue** (the boundary layer is what makes the frame warm) and `?aerodepth=0` moves the rect by **0.00**, so the od-dependent depth-blue tint has not even engaged at crown range. **THE FLOOR IS NOT OVER-STRENGTH:** the crowns sit at 2,278 to 2,850 m slant, the model's own constants give od ~0.19 blue and an airlight share of ~0.17, and the measured airlight there is 0.15 to 0.22 of the horizon band's equilibrium radiance, i.e. Koschmieder-correct; the two surfaces' per-pixel floors agree within 8 per cent, so nothing is imbalanced. **THE BLUE IS PHYSICALLY RIGHT AND THE CROWNS NEED MORE GREEN LIGHT, AND RN-2275's SIGN TEST FORBIDS IT:** sweeping `?crownshadefloor=` 0.08 -> 0.16 -> 0.30 moves the `forestairnoon` margin -1.76 -> -0.27 -> **+2.14 FLIPPED** while the crown's blue moves **80.67 -> 80.79, 0.12 counts across the whole sweep**; the affordable half-margin buys gx +0.8 of N3's 2.69-count gap. The guard is not a haze artefact (un-hazed margins -1.67/-2.74/-10.93/-3.04, same size or larger), and the crown's diffuse sits **34x** below the ground's where a real canopy is 2 to 3x, so what is owed next is a RATIO BAND to replace the sign test, which is Admin's call. **FOUR NEW ISOLATORS, two of them RN-952's lesson:** `?terrainhaze=` (the terrain's aerial perspective had NO switch but the global `?atmos=0`), `?terrainpaint=1` / `?proppaint=1` (paint the additive floor alone, which an amplitude cannot do because it moves `col*T` and `Lin` together), and `?propspec=` (three's `totalSpecular` on props had no control of any kind and turns out to be **99.7 per cent of the crown's own blue**). All four registered in `run.mjs` in the same commit and readable back live via `rn2540state.mjs`. **EYE: CROWNS STILL NOT MET**, and the diagnostic crops say why in one look -- the floor painted alone is a flat structureless blue-slate sheet, and the card painted alone is unmistakably dark green. Gates 0, 0, **8 of 8**. Full record in section 2.34; frames `docs/screenshots/RN2540_*`.) (Same day: `lane/n6-crownshade` section 2.33; `lane/n4-midobjects` section 2.32; `lane/n3-airview` section 2.31.) THIS LINE IS A POINTER: replace it, never append to it.
 
 
 
@@ -10,7 +10,7 @@
 
 
 >
-> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (correction pass, `lane/n4-midobjects`, applied by a doc-only mini-lane: section 2.32's headline finding stands, **THE MID FIELD IS ABOUT FOUR AND A HALF ROWS, NOT FIFTEEN,** and the prop ring still stands in front of it, so R4 item N4 remains refuted rather than closed and the lane still ships no pixel change. A fresh-context verifier confirmed the refutation and every headline arm exactly, and found that the lane's row-ladder instrument misread its load-bearing 170 m rung as row 291 when a wide-x row mean smeared a step that curves upward at the frame edges; read at a narrow centre column the 170 m rung is row **~281.3**, confirmed three ways (hue ladder, hard binary paint, flat-plane inversion fit). Downstream: the 170-to-340 m band is **about three rows**, not twelve and a half; `meadowfield.r250` is **about 78 per cent inside the ring, 22 per cent past it**, not a clean straddle; and 2.32.6's refused-term arm table mixed a committed control with three sweep arms measured on an uncommitted intermediate, a one-session arm-table trap, whose committed re-measurement (43.83 off / 36.28 / 42.63 / 42.85) is not monotonic but stays below the off arm, so the refusal's direction survives. Full corrected record, and the "was X" trail for every number that moved, in section 2.32 and its new 2.32.11. Full record in section 2.32. (Same day: `lane/n3-airview` section 2.31; `lane/n1-plains` section 2.30; `lane/n2-dither` section 2.29; `lane/n5-station` section 2.28.) THIS LINE IS A POINTER: replace it, never append to it.)
+> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2525 to RN-2539, `lane/n6-crownshade`, **THE CROWN SHADE GOES SPECTRAL: N3's routed follow-up, taken.** N3 found `CanopySelfShadow.updateCanopyCardShade` and the far treeline paint both multiplying the finalised canopy colour by ONE achromatic scalar (`cardShade` 0.1025), which is why a crown reads dark blue-violet rather than dark green. This lane replaces the scalar with a per-channel triple, `shade_c = S^k_c`, `k_c` **A DELIBERATE STYLISATION, NOT A DERIVATION -- corrected by a fresh-context verifier after an earlier draft of this line said "derived":** shipped exponents **1.493802 red, 0.298760 green, 2.240702 blue** are `1/t_c`-proportional, not the Beer-Lambert `tau_c = -ln(t_c)` relation (honest Beer-Lambert would be 1.183283/0.640180/1.320107, two-stream 1.035589/0.922476/1.046785); the DIRECTION matches the leaf optics, the MAGNITUDE is 2.71x more aggressive than Beer-Lambert and kept on purpose (the honest exponents close only 40.9 per cent of the gx shortfall against the shipped 65.8, section 2.33.9), applied to BOTH halves through the one `CanopySelfShadow`/`SurfaceBind` seam. **THE PIN, STATED PRECISELY:** the Rec.709-weighted mean of the shade triple collapses algebraically to `S` for every `S` (confirmed live: `cardShadeRGB` (0.014397, 0.171380, 0.003062) against `cardShade` 0.125853, weighted sum 0.125853 to the digit) -- but **that is not the same as the rendered pixel's luma being unchanged**, since the base colour is not neutral; measured drift is small (+0.004 linear at the Forest site) and reported rather than hidden. `?crownspectral=0` is the exact pre-lane achromatic frame by the same identity (`k_c = 1` for all three), registered in `run.mjs`. **THE SCORE, committed `crowns` rectangle:** gx **+1.87 -> +3.64** against a clearing at +4.56, **65.8 per cent of the shortfall closed**; luma moves **+0.66**, honestly NOT the digit-identical hold hoped for, explained in 2.33.3/2.33.4 rather than tuned away. **THE GUARD, RE-MEASURED rather than trusted to algebra:** RN-2275's four clearing/wood pairs all still invert (`forestairnoon` -1.76, `forestairlow` -1.99, `flyovernoon` -7.31, `flyoverlow` -1.83 against a pre-lane -2.80/-2.28/-8.07/-2.05 on this SAME build's `?crownspectral=0` arm); margins shrink by 0.10 to 1.04 counts and none comes close to flipping. Four ground poses bit-identical; aerial `world` warm/sat shifts 0.10 to 0.29 counts at every pose, same class as the guard. **`warm` (R-B) moves the "wrong" way** (-16.32 -> -16.66 at `crowns`) because both red's and blue's exponents exceed the achromatic 1 (blue's more), which is explained arithmetic rather than a regression: `warm` is blind to green by construction (RN-2495's own finding) and is not this fix's instrument. **EYE VERDICT: still PARTIAL, not MET, closer than before.** At 1x the frame is close to indistinguishable from N3's own shipped frame; at 3x the crowns read a shade less blue-violet but do not read as "unmistakably green" the way `?crownshadecard=0` (shade fully OFF) does. Determinism and every number reproduced to the digit across a full clean rebuild. Full record in section 2.33; frames `docs/screenshots/RN2525_*`.) (Same day: `lane/n4-midobjects` section 2.32; `lane/wg-fixtures` world-gen.md 6.12; earlier same-day sections 2.28 to 2.31.) THIS LINE IS A POINTER: replace it, never append to it.
 
 ## 1. Mission
 Make surface→orbit→interplanetary→surface look seamless and run fast. Own the "rendering magic" that sells continuous traversal, plus the techniques that let a dense 3D factory render without melting the GPU.
@@ -10470,3 +10470,388 @@ RN-2525 row's "derived rather than picked" is corrected the same way.**
    budget will eventually flip under enough small, individually-justified
    moves; a stated minimum margin is owed before the next lane bites this
    guard again.
+
+## 2.34 THE ADDITIVE BLUE FLOOR IS THE AIR, AND THE CROWN IS THIRTY TIMES TOO DIM TO SURVIVE IT (RN-2540 to RN-2549, 2026-08-21, `lane/n7-bluefloor`)
+
+> N6's routed follow-up (2.33.9 item 1). Base `origin/main` at `8e19d294`.
+> Branch `lane/n7-bluefloor`, pushed, **not merged to main**. Server
+> `127.0.0.1:5540`, `--strictPort`, sentinel `dist/of-sentinel-rn2540.txt`
+> written into this worktree's own `dist` and fetched back over the port before
+> any server was trusted (five builds, each re-verified with a distinct token,
+> each killed by the PID `netstat -ano` named: 25004, 24292, 27056, 23196,
+> 13688, all confirmed gone). `npx tsc --noEmit`, `npx vite build` and
+> `cd web && npm run check` run as SEPARATE steps, each exit status read on its
+> own: 0, 0, **8 of 8**.
+>
+> **THIS LANE SHIPS NO PIXEL CHANGE.** Every committed rectangle at every
+> measured pose is bit-identical between a from-scratch build of the pre-lane
+> source and the lane build, proved by the pair in 2.34.7 rather than argued
+> from the algebra. What it ships is FOUR NEW ISOLATORS and a diagnosis.
+
+### 2.34.1 THE ONE-LINE ANSWER
+
+At the committed `crowns` rectangle at `forestair`, **91.9 per cent of the
+crown card's own blue is AERIAL IN-SCATTER added over it, and 0.03 per cent is
+its albedo.** The card's whole diffuse contribution to a 32.05-count blue pixel
+is **0.01 counts**; the aerial floor's is **29.44**. The floor is applied to the
+crown and to the ground it stands on by the SAME model at the SAME range and
+their per-pixel floors agree to within 8 per cent, so nothing is imbalanced
+between the two surfaces. The floor's colour is Rayleigh's own and its magnitude
+is what this atmosphere's own published constants require at 2.3 to 2.9 km.
+**THE BLUE IS PHYSICALLY RIGHT AND THE CROWNS NEED MORE GREEN LIGHT**, and
+2.34.6 prices exactly how much of that light RN-2275's guard can afford: not
+enough, by a factor of several.
+
+**THE CHARTER'S OWN NAMED SUSPECT IS REFUTED.** `TerrainAmbient`'s blue-dominant
+daylight floor (`AMBIENT_NOON` (0.048, 0.058, 0.084), blue/green 1.448) costs
+the crown's blue **0.69 counts of 80.67**, and the whole ambient family
+(`?ambientfill=0` 0.69, `?terrainfloor=0` 0.33, `?skyirr=0` 0.39, `?propsky=0`
+0.00) is under a count and a half between them.
+
+### 2.34.2 THE INSTRUMENTS HAD TO COME FIRST, AND TWO OF THE FOUR ARE RN-952's LESSON
+
+Three things had to exist before an attribution was possible, and their absence
+is why the routed finding was a suspicion rather than a number.
+
+**1. A PER-CHANNEL READOUT.** `rn2495arms.mjs` publishes green excess, which is
+the right instrument for "is the crown green" and cannot see an ADDITIVE term:
+`gx`, `warm` and `luma` have already collapsed the three channels into
+differences. `web/tools/smoke/rn2540arms.mjs` prints the probe's own raw triple
+beside them, on the same runner, the same committed `artframe.js` rectangles and
+the same fresh-process-per-call-site rule, so a row from it and a row from
+`rn2495arms.mjs` are on one scale.
+
+**2. AN ISOLATOR FOR THE TERRAIN'S HALF OF EVERY CROWN RECTANGLE.** The props'
+aerial perspective had `?prophaze=`. The TERRAIN's copy of the same two calls
+(`TerrainFragLight.glsl.ts`, the same arguments in the same order) had NOTHING
+except the global `?atmos=0`, which deletes the sky with it and is the
+contaminated control A4's verifier already threw out (2.12.2). Since the far
+treeline PAINT rides the terrain fragment and the cards ride the prop one, half
+of every crown rectangle in this project could be neither charged nor
+exonerated. `?terrainhaze=` is that isolator, `mix`-shaped exactly like
+`?prophaze=` so 1 is the shipped frame by algebra.
+
+**3. A PAINT ARM, BECAUSE AN AMPLITUDE CANNOT SPLIT `col * T + Lin`.** Turning
+haze off removes the extinction AND the in-scatter together, so `?prophaze=0`
+prices both halves at once and cannot say which one carries a channel.
+`?terrainpaint=1` and `?proppaint=1` set the SOURCE RADIANCE to zero and leave
+the identical two calls in place, so the fragment renders exactly `Lin` on the
+real geometry at the real range through the real phase function. Two arms and
+one subtraction then split the term with no model in between.
+
+**4. AND THE ONE THE LADDER ITSELF SURFACED.** With the terrain painted black
+and the props' haze off, the card's own un-hazed pixel still read blue
+(2.31, 4.11, **3.10**) -- and the card's diffuse blue cannot do that, because
+`cardShadeRGB.b` is **0.0017** (read live, 2.34.4). The only radiance on a stock
+physical program that is NOT multiplied by the albedo is `totalSpecular`,
+three's own sun lobe plus the sky PMREM lobe, and **it had no switch of any
+kind**: `?terrainspec=` is the terrain's and reaches no prop, and
+`envMapIntensity` has no page parameter anywhere in the project. RN-952's lesson
+is that a term with no switch is the one candidate no experiment can eliminate,
+so `?propspec=` was built before the conclusion was written. It replaces three's
+own `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;`
+line with the same line times one uniform, and reports a MISS on its own anchor
+if a three upgrade ever rewrites it.
+
+All four are registered in `run.mjs`'s `PAGE_PARAMS` **in the commit that
+introduces them** and all four are readable back live through
+`web/tools/smoke/rn2540state.mjs`, which is RN-2268's scar: a flag that never
+reaches a uniform reports the default and the table describes the default as the
+request. Read at the arm: `terrainHaze 0 / terrainPaint 1 / propPaint 1 /
+propSpec 0` with all four `flags` true, `propsky.spliced 30`, `folPrograms 15`,
+`misses []`, `props:OF_Canopy:canopy` in `chained`.
+
+### 2.34.3 THE LADDER, one page param apart, EVERY ROW FROM ONE BUILD IN ONE SESSION
+
+`forestair`, the committed `crowns` rectangle (`artframe.js`'s own `forestair`
+row, 450,600-650,700, RN-1727, N3's own rectangle reused rather than a new one
+placed by eye). Server `127.0.0.1:5540`, sentinel `RN2540-FINAL`, fresh process
+per row. Every row below was ALSO taken on the previous build in a previous
+session and reproduces to the digit, which is a determinism check across a full
+rebuild as well as an identity check on the `propspec` splice.
+
+| arm | r | g | b | luma | gx |
+|---|---:|---:|---:|---:|---:|
+| **SHIPPED** | 64.01 | 75.98 | **80.67** | 73.77 | +3.64 |
+| `?canopy=0` (the clearing) | 74.73 | 83.60 | 83.34 | 81.70 | +4.56 |
+| `?crownshade=0` (N6's own arm) | 73.69 | 91.71 | 82.94 | 87.24 | +13.39 |
+| `?prophaze=0` (the CARDS' aerial off) | 45.13 | 55.00 | 52.19 | 52.70 | +6.34 |
+| `?terrainhaze=0` (the GROUND's aerial off) | 35.40 | 47.09 | 41.99 | 44.23 | +8.40 |
+| both haze arms off | 17.03 | 26.82 | **13.86** | 23.80 | +11.38 |
+| `?proppaint=1` | 59.95 | 70.63 | 77.71 | 68.87 | +1.80 |
+| `?terrainpaint=1` | 47.75 | 55.88 | 74.82 | 55.52 | -5.40 |
+| both paint arms (THE FLOOR ALONE) | 44.32 | 51.37 | **72.22** | 51.38 | -6.90 |
+| `?ambientfill=0` | 63.54 | 74.75 | 79.98 | 72.74 | +2.99 |
+| `?terrainfloor=0` | 63.63 | 75.22 | 80.34 | 73.13 | +3.23 |
+| `?skyirr=0` | 63.85 | 75.27 | 80.28 | 73.20 | +3.20 |
+| `?propsky=0` | 64.00 | 75.93 | 80.67 | 73.74 | +3.59 |
+| `?bloom=0` | 64.01 | 75.98 | 80.67 | 73.77 | +3.64 |
+| `?terrainspec=0` | 61.91 | 74.20 | 79.43 | 71.97 | +3.53 |
+| `?propspec=0` | 60.29 | 72.40 | 77.75 | 70.21 | +3.38 |
+| `?aerosol=0` | 33.87 | 58.24 | 75.62 | 54.31 | +3.49 |
+| `?aerodepth=0` | 64.02 | 75.98 | 80.67 | 73.78 | +3.64 |
+| `?skyaero=0` | 63.99 | 75.97 | 80.68 | 73.76 | +3.63 |
+| `?aerobase=0` | 64.48 | 76.30 | 80.76 | 74.11 | +3.68 |
+
+**THE BLUE COLUMN IS THE WHOLE FINDING.** Turning off BOTH aerial-perspective
+terms takes the crown rectangle's blue from **80.67 to 13.86**: the air carries
+**66.81 of 80.67 counts, 82.8 per cent of the rectangle** and (2.34.4) 91.9 per
+cent of the CARD half of it. Everything the charter named as a suspect, and
+everything else in the chain, is in the noise beside it: the ambient family 0.33
+to 0.69, `propsky` 0.00, `bloom` 0.00, the terrain's sky specular 1.24, the
+props' specular 2.92.
+
+**THE BLUE IS RAYLEIGH'S AND NOT THE AEROSOL'S,** which matters because the
+aerosol is the term M1 tuned and the one a fix would be tempted to reach for.
+`?aerosol=0` costs the crown **30.14 counts of RED and 5.05 of blue**: the
+boundary layer is what makes the frame WARM, and removing it makes the crowns
+MORE blue-dominant, not less. `?aerodepth=0` moves the rectangle by 0.00, so the
+od-dependent warm-to-cool tint ramp (`ofAeroTintAt`) has not even engaged at
+crown range -- the crowns sit below `uAeroTintOd.x` = 1.0 and wear the WARM
+`uAeroTint` (0.40, 0.31, 0.22), not the blue `uAeroTintFar`. **The M1 depth-blue
+term the charter named first is exonerated by its own switch.**
+
+### 2.34.4 THE CROWN PIXEL, DECOMPOSED, AND THE ALBEDO IS 0.03 PER CENT OF IT
+
+The two paint arms compose into a complete split of the rectangle, because a
+card pixel is either card or ground (the cards are alpha-tested, so there is no
+partial coverage to smear the mean). `?terrainpaint=1+terrainhaze=0` renders the
+terrain EXACTLY black, leaving `f x card`; `?proppaint=1+prophaze=0` renders the
+cards exactly black, leaving `(1-f) x ground`. Both are coverage-weighted and
+neither needs `f` to be known.
+
+**THE CLOSURE CHECK FIRST, because the split is worthless if it does not
+close:** the two complementary arms sum to (63.51, 75.33, 80.32) against the
+shipped rectangle's (64.01, 75.98, 80.67), i.e. **within 0.65 counts on every
+channel**, 0.4 per cent. The residual is alpha-tested edge pixels plus the post
+chain's neighbourhood operators, and it is quoted rather than assumed away.
+
+| | r | g | b |
+|---|---:|---:|---:|
+| **CARD half** (`terrainpaint=1+terrainhaze=0`) | 21.36 | 25.50 | **32.05** |
+| its aerial floor alone (`+proppaint=1`) | 17.78 | 20.76 | **29.44** |
+| its own radiance (`+prophaze=0`) | 2.31 | 4.11 | 3.10 |
+| its own DIFFUSE alone (`+prophaze=0+propspec=0`) | **0.01** | **1.00** | **0.01** |
+| **GROUND half** (`proppaint=1+prophaze=0`) | 42.15 | 49.83 | 48.27 |
+| its aerial floor alone (`+terrainpaint=1`) | 26.56 | 30.61 | 42.79 |
+| its own radiance (`+terrainhaze=0`) | 14.13 | 21.68 | 10.11 |
+
+**THE CARD'S SHARE OF ITS OWN PIXEL: blue 29.44 of 32.05 is the floor (91.9 per
+cent), green 20.76 of 25.50 (81.4 per cent), red 17.78 of 21.36 (83.2 per
+cent).** The crown's DIFFUSE ALBEDO -- the thing every crown-colour lane in this
+file has multiplied -- contributes **one count of green and one hundredth of a
+count of blue** to that pixel. That is the cap, and it is arithmetic: a term
+that reaches 3 per cent of a pixel cannot decide its hue, whatever colour it is.
+It also explains N6's PARTIAL exactly: `cardShadeRGB` is read live at
+(0.009231, 0.140415, **0.001684**), so the card is already almost perfectly
+blue-free by construction and could make no difference to the pixel's blue.
+
+**THE TWO SURFACES ARE NOT IMBALANCED, and that is a measurement rather than a
+reading of the source.** Dividing each half by its own coverage (from the same
+arms: `f` = 0.404 to 0.436 across the three channels, mean 0.420, the 0.03
+spread being ground pixels in the gaps that neighbouring crowns shade) gives a
+per-pixel floor of **(42.3, 49.4, 70.1)** on the cards against **(45.8, 52.8,
+73.8)** on the ground. **Within 8 per cent, and in the right direction** -- the
+cards stand in front of the ground they are drawn on, so they collect slightly
+less air. The prop splice's own comment claims it is "the SAME TWO CALLS in the
+same order with the same arguments" as `TerrainFragLight.glsl.ts:198-210`; this
+is that claim measured, and it holds.
+
+### 2.34.5 IS THE FLOOR TOO BRIGHT? NO, AND THE MODEL'S OWN CONSTANTS SAY SO
+
+The obvious next move is to accuse the aerial term of being over-strength, and
+it is wrong. Three independent readings agree.
+
+**THE OPTICAL DEPTH.** The `crowns` rectangle is solved from the pose the way
+RN-2265 solves its handover bands: a 1,200 m eye, 60 degree vertical field,
+14 degree pitch, so rows 600 and 700 look down at 24.90 and 31.79 degrees and
+hit ground at **2,585 m and 1,936 m, slant 2,850 m and 2,278 m**. Against
+`aerosolSigma` 1.4e-4 (RN-2175's own note calls it "a Koschmieder visual range
+of 27.9 km") and Earth's `betaR` (5.8e-6, 13.5e-6, 33.1e-6), the optical depth
+over that slant is about **0.19 blue and 0.16 green**, i.e. a transmittance of
+about 0.83 and an airlight share `1 - T` of about **0.17**.
+
+**THE MEASURED SHARE.** `?terrainpaint=1` renders the airlight at every range in
+one frame. At `hzBand` -- the near-horizon band, where the path is long enough
+that `T` has gone and the airlight IS the equilibrium radiance -- it reads
+(178.45, 166.49, 150.08) against the shipped ground's (180.13, 173.86, 150.63),
+i.e. the far ground is **99 per cent airlight**, which is what an infinite path
+must give. At `crowns` the ground half's per-pixel floor is 73.8 blue against
+that 150.08: **0.49 in 8-bit, and 0.15 to 0.22 once the sRGB encode is undone**
+(ACES compresses the bright end, so the true linear ratio is at the bottom of
+that range). **That is `1 - T` at 2.5 km, to the precision an 8-bit frame can
+carry.** The model is doing Koschmieder correctly.
+
+**THE FLOOR'S HUE.** `betaR`'s own blue-to-green ratio is 2.45; the measured
+per-pixel floor's is 1.42 in 8-bit, which is 2.45 seen through the tone curve.
+It is Rayleigh's colour because it is Rayleigh.
+
+**SO NO FIX BELONGS ON THE AERIAL TERM.** It is the M1 horizon dissolve, it is
+calibrated to a clear day rather than a hazy one, and at the crowns it is
+delivering the physically-required 15-to-20 per cent veil. What is wrong is on
+the other side of the addition.
+
+### 2.34.6 WHAT THE GUARD CAN AFFORD, PRICED, AND IT IS NOT ENOUGH
+
+If the crown needs more green light, the question is how much RN-2275's sign
+test will allow. `?crownshadefloor=` sweeps `CROWN_SELF_FLOOR` (shipped 0.08),
+which is the knob the shade is actually limited by at high sun -- RN-2275's own
+header says the exponential is 0.016 at K = 3.2, so a closed wood at noon is
+FLOOR-limited, not K-limited. Same build, same session; the `?canopy=0` clearing
+at `forestairnoon` reads 110.27 at every floor value, to the digit.
+
+| `crownshadefloor` | `forestairnoon` wood - clearing | `crowns` gx | `crowns` blue |
+|---|---:|---:|---:|
+| **0.08 (shipped)** | **-1.76** | +3.64 | 80.67 |
+| 0.16 | **-0.27** | +5.39 | 80.70 |
+| 0.30 | **+2.14, FLIPPED** | +7.94 | 80.79 |
+
+**THE GUARD FLIPS BETWEEN 2x AND 3.75x, AND THE CROWN'S BLUE MOVES 0.12 COUNTS
+ACROSS THE WHOLE SWEEP.** That is the cap stated as an experiment rather than as
+arithmetic: you can spend RN-2275's entire remaining margin, break the guard,
+brighten the crown by nearly four times, and the thing the eye is complaining
+about does not move. Holding a margin of about -1.0 (half of what is left) buys
+`crownshadefloor` about 0.115 and **gx +0.8 of N3's 2.69-count gap to the
+clearing, under a third of it.**
+
+Two facts make it worse for the "just brighten the crown" route. First, the
+margin is not an artefact of the haze: measured with BOTH aerial terms off, the
+same four pairs read **-1.67 / -2.74 / -10.93 / -3.04** against the shipped
+**-1.76 / -1.99 / -7.31 / -1.83**, so the un-hazed frame's margins are the same
+size or LARGER and the guard has real signal in it. It is genuinely thin at
+`forestairnoon`, for RN-2275's own stated reason. Second, the crown is not
+mis-tuned by a little: its diffuse radiance is about **34x below** the ground's
+at the same pose (per-pixel, sRGB-decoded with the toe), where a real canopy
+against a real meadow is 2 to 3x. Closing that would need an order of magnitude,
+and the guard affords a factor of about 1.4.
+
+### 2.34.7 GUARDS: THE LANE IS PIXEL-IDENTICAL, PROVED BY A FROM-SCRATCH PRE-LANE BUILD
+
+Not argued from `mix(x, y, 1) == y`. The lane's source was stashed, the tree
+rebuilt from scratch (`sync-wasm`, `sync-assets`, `vite build`, new sentinel
+token `RN2540-PRELANE`, new server, new PID), the whole guard set measured, the
+source restored and the tree rebuilt again.
+
+**Every named rectangle, bit-identical to the digit, pre-lane against lane:**
+`forestair` `crowns` (64.01, 75.98, 80.67), `box` (87.19, 96.53, 90.01),
+`hzBand` (180.13, 173.86, 150.63), `skyBand` (125.23, 160.04, 174.50), `under`
+(51.62, 60.90, 60.68); `forestfloor` box 29.63; `meadow` box 85.32; `vista` box
+174.54; `mtnslope` box 127.06; `vistadawn` box 167.73 and `hzBand` 203.58 (the
+M1 horizon-seam pose, the aerosol's own charter); `meadownight` box 8.85, so
+NIGHT is measured rather than assumed untouched.
+
+**RN-2275's four clearing/wood pairs, both builds, every channel identical:**
+`forestairnoon` 108.51 against 110.27 = **-1.76**, `forestairlow` 82.19 against
+84.18 = **-1.99**, `flyovernoon` 141.89 against 149.20 = **-7.31**, `flyoverlow`
+105.49 against 107.32 = **-1.83**. Identical to N6's shipped row to the digit.
+**THIS LANE SPENDS NOTHING OF THE MARGIN BUDGET**, which is the honest answer to
+the brief's "state what you spend".
+
+**One honest non-identity, reported rather than smoothed:** whole-frame `world`
+luma on the three WALK poses differs by up to 0.40 counts between the builds
+(`forestfloor` 42.86 / 42.96, `meadow` 118.78 / 118.62, `mtnslope` 114.74 /
+115.14). Three fresh-process repeats of `forestfloor` on ONE build read 42.76 /
+42.76 / 42.82 while its `box` is bit-identical every time, so `world` on a
+streamed walk pose carries a few tenths of run-to-run scatter and does not
+separate the arms. Every SURFACE pose's `world` IS identical across the builds
+(`forestair` 123.84, `vistadawn` 132.12, `meadownight` 8.86).
+
+### 2.34.8 THE EYE, AND IT AGREES WITH THE LADDER FOR ONCE
+
+`docs/screenshots/RN2540_crowns_shipped_3x.png` against
+`RN2525_crowns_after_3x.png` (N6's shipped frame, same committed rect, same
+`rn2450crop.mjs` 3x): **indistinguishable, which is the point** -- this lane
+changes no pixel. **2.31.5/2.33.7's "CROWNS: NOT MET" STANDS, NOT MET.**
+
+The three diagnostic crops are the finding made visible, and they are the reason
+to believe the table:
+
+- `RN2540_crowns_floorAlone_3x.png` (both paint arms): a **completely flat,
+  structureless blue-slate sheet**. It has no crowns in it, no ground in it and
+  no texture of any kind, and it is exactly the colour the crowns wear. The
+  thing four audits photographed and called a crown colour is a picture of the
+  air.
+- `RN2540_crowns_cardRaw_3x.png` (terrain black, cards with no aerial term):
+  the crowns alone, and they are **unmistakably DARK GREEN**. Not blue, not
+  slate, not violet. The crown is the right colour and is roughly black.
+- `RN2540_crowns_floor030_3x.png` (`crownshadefloor=0.30`, the arm that FLIPS
+  RN-2275's guard): green now shows on the sunlit edges of individual crowns
+  and the mass is still slate. A 3.75x brightening, bought by breaking the
+  guard, buys crown EDGES.
+
+`RN2540_crowns_cardOnly_3x.png` and `RN2540_crowns_cardDiffuse_3x.png` complete
+the set, and the 1x frames every crop comes from are committed beside them as
+`RN2540_forestair_*.png`.
+
+**FIDELITY-GAP section 1, item by item.** Item 3 ("their sky is a participant;
+ours is a backdrop") is the one this lane speaks to and it is **NEITHER closed
+nor untouched: it is re-aimed.** Our sky is not failing to light the mid
+distance -- it is lighting it so completely that it is the only thing in it.
+Item 1 (the grass carpet), item 2 (terrain materials), item 4 (grading) and item
+6 (water) are **untouched**. Item 5 (vegetation asset fidelity) is **untouched
+as an asset question and sharpened as a lighting one**: this lane's numbers say
+a better crown MESH would change nothing at this range until the crown's
+radiance changes, because its albedo reaches 3 per cent of its own pixel.
+
+### 2.34.9 Rails and boundaries held
+
+`web/src/render/materials/AerialDiag.ts` (new: the four knobs, the shared
+RN-150-safe parser, the probe surface),
+`web/src/render/materials/TerrainFragLight.glsl.ts` (the two `mix` identities
+around the existing two calls, GLSL otherwise unchanged),
+`web/src/render/materials/TerrainFragPars.glsl.ts` (two uniform declarations),
+`web/src/render/materials/TerrainProgram.ts` (two bindings, taken straight from
+the owning module on `EMIT_UNIFORMS`' precedent),
+`web/src/render/materials/PropSkyAmbient.ts` (the paint arm inside the existing
+`AERIAL` block, the `outgoingLight` replace and its fourth miss row, two
+uniforms), `web/tools/smoke/run.mjs` (four `PAGE_PARAMS`, same commit), and two
+new probe files, `web/tools/smoke/rn2540arms.mjs` and
+`web/tools/smoke/rn2540state.mjs` (new names, no existing file overwritten,
+which is NUMBERS.md's own "a probe file has no registry" scar).
+
+**NOT TOUCHED:** `CanopySelfShadow.ts` (no edit at all -- the spectral split,
+`CROWN_SELF_K`, `CROWN_SELF_FLOOR` and `SHADE` are read by 2.34.6's sweep
+through the EXISTING `?crownshadefloor=` flag and not modified),
+`FoliageTone.ts`, `ScatterTuning.ts` / `ScatterSample.ts` (lane WG-midhole owns
+them), any height-field or world-gen file, `web/wasm/dist`,
+`test/expected.json`, `assets/textures/dist`. No pose row and no manifest row
+edited: the `crowns` rectangle used throughout is N3's committed one. No em dash
+anywhere.
+
+### 2.34.10 OWED, ROUTED, with the sizes measured
+
+1. **THE CROWN NEEDS AN ORDER OF MAGNITUDE MORE LIGHT AND RN-2275's SIGN TEST
+   FORBIDS IT. THE GUARD IS THE NEXT LANE, NOT THE CROWN.** The pass condition
+   "the wood must read darker than its own clearing" is satisfied at
+   `forestairnoon` by 1.76 counts of `box` LUMA, and 2.34.6 shows the whole
+   remaining margin buys under a third of N3's chroma gap. But a real wood is
+   darker than a real meadow by 2 to 3x and ours is darker by 34x, so the SIGN
+   is being satisfied at ten times the correct MAGNITUDE. The lane that fixes
+   the crowns has to replace the sign test with a RATIO BAND (a wood between
+   roughly 0.3 and 0.6 of its own clearing) before it can raise the crown's
+   radiance, and that is a change to what "correct" means, which is Admin's call
+   and not a rendering lane's. N6's owed item 2 asked for a margin floor; this
+   is the same guard and the ask is now bigger than a floor.
+2. **THE CANOPY IMPOSTOR IS A SPECULAR REFLECTOR AND SHOULD NOT BE.** Of the
+   card's own un-hazed radiance (2.31, 4.11, 3.10), `?propspec=0` shows
+   (2.30, 3.11, 3.09) is `totalSpecular` -- **three's stock sun lobe and sky
+   PMREM lobe are 99.7 per cent of the crown's own BLUE and 76 per cent of its
+   own green.** A flat billboard standing in for a whole crown reflects the sky
+   coherently off a single normal, which a leaf mass does not do. It is small in
+   the frame (2.92 counts of the `crowns` rectangle's blue) and it is wrong;
+   removing it outright makes the crown DARKER and slightly less green
+   (gx 3.64 -> 3.38), so the right move is a roughness or intensity correction
+   on the `canopy` surface role PAIRED WITH item 1, not a deletion. The switch
+   now exists either way.
+3. **A LINEAR-SPACE RECTANGLE READOUT WOULD SETTLE 2.34.5 EXACTLY.** Every
+   number in this file is 8-bit post-ACES-post-grade, so the Koschmieder check
+   above had to be done by bounding the sRGB inverse rather than by dividing two
+   radiances. A probe that reads the scene render target before the composite
+   (it is a HalfFloat RT already) would make "is the airlight the right fraction
+   of the equilibrium radiance" a one-line division at every range, and several
+   lanes in this file have wanted it.
+4. **`?iblground=0` RETURNS AN ALL-ZERO `crowns` RECTANGLE AT `forestair`**
+   (r = g = b = 0.00 with `world` still at 85.26), which is either a real black
+   mid-field or an instrument fault, and this lane did not chase it. Noted here
+   because a rectangle that reads exactly zero on three channels is the shape of
+   a bug and the next reader should not spend an arm rediscovering it.

@@ -11,6 +11,7 @@ import { TERRAIN_AMBIENT, TERRAIN_SKY_AMBIENT } from './TerrainAmbient.js';
 import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 import { FAR_SCALE } from '../Scenes.js';
 import { EMIT_UNIFORMS } from './EmissiveLight.js';
+import { uApAmp, uApPaint } from './AerialDiag.js';
 import type { TerrainMaterialOptions } from './TerrainMaterialTypes.js';
 import type { TerrainUniformState } from './TerrainUniformState.js';
 
@@ -93,6 +94,11 @@ export function makeTerrainMaterial(
     uReliefCellNoise: reliefCellNoise,
     uHorizonOcc: horizonOcc,
     uBounceLit: bounceLit,
+    // RN-2540. Taken straight from the module that owns them, on EMIT_UNIFORMS'
+    // own precedent: they are one authority for both terrain materials already,
+    // so routing them through the uniform-state phase would only add a hop.
+    uApAmp,
+    uApPaint,
     // RN-2160. The splat. The two vectors are wrapped; the six samplers are
     // passed THROUGH as the shared holders, exactly as uGroundTex is, so a map
     // that finishes loading after the material is built reaches the near

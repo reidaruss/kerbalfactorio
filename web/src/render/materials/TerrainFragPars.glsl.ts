@@ -105,6 +105,11 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // pre-RN-841 form where a fragment's own shadow extinguished the light
     // bouncing off the sunlit ground beside it. ?bouncelit=0 is the control.
     uniform float uBounceLit;
+    // RN-2540. The terrain's aerial-perspective isolator (1 = shipped) and its
+    // paint arm (0 = shipped). See AerialDiag.ts for why the terrain half of
+    // every crown rectangle needed a switch of its own.
+    uniform float uApAmp;
+    uniform float uApPaint;
     // RN-57. x water level (metres above datum), y shoreline radius m, z the
     // height in metres over which the wet band dries out, w amplitude.
     uniform vec4 uWetBand;
