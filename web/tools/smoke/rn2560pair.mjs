@@ -15,6 +15,15 @@
 // as in `rn2540arms.mjs`. `--repeats` re-runs each arm in its own fresh
 // process (WG-189's rule); a value that differs between repeats is printed
 // with both, never averaged.
+//
+// USE `--repeats=3` AT MINIMUM, and the reason is measured rather than
+// cautious: RN-2560's verifier found a once-in-nine CORRELATED whole-frame
+// capture artifact that moves `world`, `box`, `skyBand` and `under` together by
+// 0.01 counts in one direction and never reproduces. A single capture per arm
+// cannot tell that from a faint term that touches everything, which is exactly
+// what a no-pixel-change pair is for. The default stays 1 because a stage map
+// does not need three, and the tool prints every repeat rather than a mean
+// precisely so a disagreement is visible instead of averaged away.
 
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
