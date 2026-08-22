@@ -1226,6 +1226,137 @@
         + 'band spans tens of rows instead of the half a pixel a standing eye '
         + 'sees (rendering.md 2.36.4/2.36.11 item 2)',
     },
+    // RN-2622 (WORLD AUDIT R5). THE POSE THAT STANDS ON A BEACH, and the shot
+    // set has never had one.
+    //
+    // WHY IT IS ADDED. `world-gen.md` 6.15.3 item 5 owes it in as many words:
+    // WG-285 gave Beach a canopy table (`Registry.CANOPY_BEACH`, a copy of
+    // Plains') to close `forestair`'s dead stage-1 band, and then said "no pose
+    // in the shot set stands ON Beach ground, so the NEAR-field look of these
+    // new trees is unmeasured" -- `forestair`'s own band is 4.2 to 13.0 km out,
+    // past the instance tier's realised reach, so what moved there was the
+    // terrain material's far treeline and not one placed tree. Beach is 2.54
+    // per cent of Forge by WG-285's own census and its bands are kilometres
+    // wide, so this is a class of ground a player walks through and no frame
+    // has ever contained.
+    //
+    // AND THERE IS A SPECIFIC CONTRADICTION TO PHOTOGRAPH, which is why this is
+    // a pose and not a curiosity. The two tree tables disagree about this
+    // biome. `game/TreeTuning.ts`'s `TREE_DENSITY_KM2[Beach]` is **0**, with the
+    // ruling written beside it ("the desert stays the desert ... no trees
+    // ever"), and that table owns the harvest ring out to `RADIUS_M` = 170 m.
+    // WG-285's `CANOPY_BEACH` owns everything beyond it. So the prediction this
+    // pose exists to test is a RING: bare sand from the feet to 170 m, and
+    // whatever the canopy tier places beyond it. Nothing in the file can see
+    // that today.
+    //
+    // THE SITE IS SURVEYED, NOT GUESSED. `tools/smoke/wg285field.ts`, built and
+    // run at this lat/lon (its `--lat/--lon` override exists for exactly this),
+    // reports designed ground **12.6 m** and, over a 3 km plan, **73.6 per cent
+    // Beach / 26.2 per cent Forest / 0.2 per cent Ocean** -- a real beach
+    // swathe with a real forest edge, not a sliver.
+    //
+    // THE YAW IS SOLVED THE SAME WAY. Transects on the eight principal bearings
+    // give the unbroken Beach run from the eye as 500 m east, 2,250 m west and
+    // **4,250 m south**, with Forest beyond each. Yaw 180 is chosen because it
+    // is the widest: the whole of this pose's near and mid field is Beach, and
+    // the Forest boundary sits at 4,250 m, which is past this eye's own horizon
+    // (1,394 m, below) and therefore cannot contaminate a single rectangle. A
+    // narrower bearing would have measured a boundary while claiming to measure
+    // a beach.
+    //
+    // THE EYE, PITCH AND SUN ARE `meadow`'s TO THE DIGIT, DELIBERATELY: same
+    // standing eye, same pitch -8, same dot 0.55. This pose's whole value is a
+    // LIKE-FOR-LIKE against the plains hero frame -- one biome changed and
+    // nothing else -- so every rectangle below is readable against `meadow`'s
+    // without an argument about framing.
+    //
+    // THE ROWS ARE SOLVED FROM THE CURVATURE-CORRECT FORMULA, NOT FROM
+    // `rangeRects`, for 2.37's reason (`rangeRects`' `rangeAtRow` inverts a flat
+    // plane with no `R` term, which 2.32.3 measured an order of magnitude out
+    // past 100 m at grazing incidence). At eye height h = 1.62 m on Forge
+    // (R = 6e5 m) the depression to ground at range s is `s/(2R) + h/s` radians,
+    // the horizon's own dip is `sqrt(2h/R)` = 0.133144 degrees and the horizon
+    // is `R * dip` = **1,394 m**. Rows come from `of.look`'s own convention
+    // (`forestair`'s comment: a pixel at vertical NDC v looks down at
+    // `pitch - atan(v tan 30)`, v = 1 - 2*yFrac), inverted per rung:
+    //
+    //     1,394 m (horizon)  row 342.3     30 m  row 383.1
+    //       170 m (ring)     row 348.2     15 m  row 425.4
+    //        60 m            row 361.9      8 m  row 499.1
+    //
+    // Note what that ladder says and why the rectangles are shaped as they are:
+    // at a standing eye the whole 170 m-to-horizon world is **six rows**, which
+    // is 2.36.4's half-pixel finding at this pitch. So no rectangle here tries
+    // to measure far GROUND. What IS visible at range is object HEIGHT, solved
+    // on the same formula with the tree's top substituted for the ground
+    // (`s/(2R) + (h - H)/s`, H = 12 m, the canopy asset's own height class):
+    //
+    //     a 12 m tree at  170 m  spans rows 291.6 to 348.2
+    //     a 12 m tree at  500 m  spans rows 324.2 to 345
+    //     a 12 m tree at 1,394 m (the horizon) spans rows ~337 to 343
+    //
+    // So ANY tree standing on this beach inside the eye's own horizon puts
+    // crown into rows 292-332, and nothing else can: that span is above the
+    // horizon plane, so no ground of any range reaches it.
+    //
+    // THE NAMES ASSERT GEOMETRY AND NOT CONTENT, which is `mtnslope`'s own rule
+    // in this file ("a rectangle whose name asserts a subject it does not
+    // contain is the shape of defect section 2.1's notes keep finding").
+    // `standHi` is the band a stand WOULD occupy; whether anything stands in it
+    // is the measurement, not the premise.
+    //
+    // PROVEN, NOT TRUSTED, AND THE PROOF CHANGED THE RECTANGLES. RN-2623 read
+    // the first placement back with a centre-column (x [795, 805)) ladder
+    // through `tools/smoke/rn2510rows.mjs` -- 2.32.11's own correction applied
+    // here, because a wide-x row mean SMEARS a rung and misread the 170 m
+    // boundary by ten rows the one time it was used. Three things came back:
+    //
+    //   1. the horizon is measured at row 343 against 342.3 predicted, so the
+    //      curvature-correct inversion above is right to within one row;
+    //   2. rows 286-331 are SKY, smooth at about -1 luma per row with no step
+    //      anywhere (one thin cloud at rows 294-297 is the only excursion);
+    //   3. rows 332-343 carry a hard tree wall (dLuma -10.58, -16.26, -12.68,
+    //      **-26.16**, -17.14) and rows 343-344 jump back up (+57.00, +33.77)
+    //      into bright ground.
+    //
+    // That wall is the FOREST at 4,250 m (the transects above), not a beach
+    // tree, and it sits beyond this eye's horizon. A single 292-348 rectangle
+    // would therefore have averaged the beach's own emptiness together with a
+    // distant forest and reported a number that means neither. So the band is
+    // SPLIT on the ladder's own boundary: `standHi` (292-332) is the span only
+    // a tree standing on THIS beach can reach, and `hzTree` (332-348) is the
+    // Forest edge, kept as a rectangle rather than discarded so the thing that
+    // would otherwise contaminate the first one is measured instead.
+    //
+    // ADDITIVE ONLY: a new key, nothing above it moved, and it takes the WALK
+    // dispatch branch the way `meadow` and `pondside` do.
+    beachground: {
+      scenario: 'walk', needsSandbox: false,
+      lat: -19.4907, lon: -72.1274, yaw: 180, pitch: -8,
+      sunDot: 0.55, sunTol: 0.05,
+      // 30 m to 8 m: the near beach substrate, the surface no frame in this
+      // project has ever contained.
+      box: [0.2000, 0.425667, 0.8000, 0.554556],
+      extra: {
+        // 170 m to 30 m: the harvest ring's own ground, where
+        // `TREE_DENSITY_KM2[Beach] = 0` predicts that nothing stands.
+        ring: [0.2000, 0.386889, 0.8000, 0.425667],
+        // rows 292 to 332: the span ONLY a tree standing on this beach inside
+        // the 1,394 m horizon can reach. Reads sky if the beach is empty.
+        standHi: [0.2000, 0.324444, 0.8000, 0.368889],
+        // rows 332 to 348: the Forest edge at 4,250 m, measured rather than
+        // left to contaminate `standHi`.
+        hzTree: [0.2000, 0.368889, 0.8000, 0.386889],
+        // the sky immediately above the horizon, for `meadow`'s own
+        // sky-to-ground balance reading.
+        skyHz: [0.4000, 0.2200, 0.6000, 0.2800],
+      },
+      why: 'the BEACH at a standing eye, `meadow`\'s pose and sun on Beach '
+        + 'ground: the near-field surface WG-285 6.15.3 item 5 owes a frame, '
+        + 'and the ring where TREE_DENSITY_KM2[Beach]=0 and CANOPY_BEACH '
+        + 'disagree',
+    },
     limb: {
       scenario: 'orbit', needsSandbox: false, fly: true,
       // 120 km is 20 km INSIDE the ORBIT band (`Regime.ts` puts the boundary
@@ -2154,9 +2285,14 @@
   // it needs beyond this branch (a proof that the water was actually DRAWN) is
   // asserted immediately after it rather than inside it, so this shared setup
   // stays one sequence for every shot that takes it.
+  // RN-2622. `beachground` joins this branch and is LISTED here as well as in
+  // `SHOTS`, which is what the capitalised paragraph above demands. It is
+  // `meadow`'s camera and sun at a different site, exactly as `pondside` is, so
+  // it needs nothing this branch does not already do.
   if (name === 'vista' || name === 'vistadawn' || name === 'vistanoon'
       || name === 'meadow' || name === 'mtnslope' || name === 'dawnsun'
-      || name === 'pondside' || name === 'meadownight') {
+      || name === 'pondside' || name === 'meadownight'
+      || name === 'beachground') {
     posed = true;
     const w0 = of.world();
     of.teleport(A.lat ?? S.lat, A.lon ?? S.lon, 2.0);

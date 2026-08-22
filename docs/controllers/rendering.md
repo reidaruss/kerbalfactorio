@@ -13813,3 +13813,141 @@ tuft-shading change would produce (RN-62's own reading of that split).
 exit 0. Each run as its own step with its own exit status read, never chained
 into an aggregate (NUMBERS: "in an `&&`-chained aggregate, where you put a gate
 decides whether it IS a gate").
+
+## 2.40 THE WORLD LOOK AUDIT, ROUND 5 (RN-2620 to RN-2626, 2026-08-22, `audit/r5`)
+
+Full document: [`docs/web/WORLD-AUDIT-R5-2026-08-22.md`](../web/WORLD-AUDIT-R5-2026-08-22.md).
+Frames `docs/screenshots/R5_*`. Base `origin/main` at `e670c637`. Read-only
+apart from one additive pose; **no `web/src/` file was touched.**
+
+### 2.40.1 THE ONE-LINE ANSWER
+
+**The week's five crown lanes all reproduce and the aerial frame is unchanged to
+the eye, because the aerial defect was never the crown: it is that tree
+instances cover about NINE PER CENT of the visible ground depth at both aerial
+poses and the far treeline paint meant to carry the other ninety-one moves most
+of it by under one count.**
+
+### 2.40.2 THE FIVE, RANKED
+
+1. **The aerial world is 9 to 16 per cent forest by depth and the paint is
+   inert over most of the rest.** `flyover` instances reach **3,427 m** measured
+   (centre-column cliff of -43.58 counts at row 535) against its own
+   `treeline.reachM` readback of 3,500 and a **37,947 m** horizon, **9.2 per
+   cent** of visible ground depth; `forestaircanopy` reaches **1,400 m** of a
+   690-to-8,485 m band, which computed the same way (reach over full horizon)
+   is **16.5 per cent**, not the same fraction as flyover (the two poses do not
+   corroborate each other; both numbers are stated). A 12 m crown at 1,400 m
+   projects to **row 443.6** predicted against **row 444** measured. `?treeline=0`
+   moves the rows this ladder actually sampled, **3.4 to 15.5 km** (corrected
+   from a first printing's "4 km to 20 km"; the band above 15.5 km, out to the
+   37,947 m horizon, was never sampled), by **under one count** outside a
+   three-row ring where it spends -7.01 / -8.22 / -14.65, EXCEPT rows 399 and
+   509 (-4.28, -2.33 counts), restored here after being dropped from a first
+   printing of the table. Three-arm separation at `forestaircanopy`: instances
+   **24.78** counts of band contrast, paint **4.45**. `chunksCapped` **4** at
+   `forestair`, **1** at `flyover` (own readback). BLOCKING, class (b).
+2. **A 900 m treeless disc follows the player on any beach.** New pose
+   `beachground`. `?beachcanopy=0` leaves `box` **151.17 / 62.83 / +54.82** and
+   `ring` **124.78 / 59.75 / +46.37** BIT-IDENTICAL while collapsing `hzTree`
+   iqr **87.50 -> 10.20**. Cause: `TREE_DENSITY_KM2[Beach] = 0`
+   (`TreeTuning.ts:115`, "no trees ever") owns 0 to 170 m, `CANOPY_BEACH` owns
+   690 m out, nothing fills between. **This is WG-285's own owed item 5,
+   measured, and it is a defect.** BLOCKING, class (a), but it needs Reid's
+   ruling first (audit section 7.4).
+3. **The dry sea is a chroma boundary, and that is the "shallow water" read.**
+   At `forestair` row 372, 260 px apart: dry-Ocean plate warm **+13.55** at luma
+   157.81, Beach cream warm **+28.18** at 162.87 -- a **14.63-count hue step at
+   5.06 counts of luma**, across Ocean 44.43 + Beach 2.54 = **46.97 per cent of
+   Forge**. **The plate is not violet in its pixels; it is low-warm inside a
+   high-warm field**, so the fix is the RELATIONSHIP in `BiomePalette.ts`'s two
+   rows, not one constant. Re-diagnosis of R4 rank 3. BLOCKING, class (a).
+4. **The two tree tiers abut without matching.** At `forestaircanopy` rows
+   429-443 have zero instance contribution (`?treeline=0` equals `?canopy=0` to
+   the digit) and rows 477-491 zero paint contribution (shipped equals
+   `?treeline=0` to 0.02); the wall's leading edge falls **65.85 -> 35.66 across
+   five rows (457-462)**. Density either side differs six-fold (**420** harvest against
+   **2,520** canopy at Plains) because WG-222's x6 never reached
+   `TREE_DENSITY_KM2`, whose inline `x6` comment refers to an earlier multiply.
+   **RN-2228's constant-density claim has been false since WG-222.** Sequence
+   AFTER RN-2605.
+5. **The carpet still lifts its own ground, by less than R4 measured.**
+   `?grass=0` at `meadowfield`: 55 m lift **1.54x** against R4's 1.96x, 25 m
+   1.68x, gone by 250 m (1.01x). Improved by lanes aimed elsewhere; nobody
+   claimed it.
+
+### 2.40.3 WHAT REPRODUCES, AND TWO OF THEM RETIRE A PRIOR HEADLINE
+
+- **`?crownnormal=0` returns `forestaircanopy.box` to 82.91**, the exact figure
+  the R5 brief carried as this pose's baseline, against merged main's **79.89**.
+  So that baseline is the PRE-N12 value and the 3.02-count difference is N12's,
+  attributed to the digit; `ctrl690` is bit-identical on both arms (45.10 /
+  10.29), which scopes it to the far band.
+- **`?horizonswell=0` returns `meadow.hzBand` iqr 155.55 -> 4.21**, WG-275's own
+  OFF-arm value. **R4's rank 1 rested on that rectangle reading 4.06 "unmoved
+  across three audits"; 4.06 is what it reads with the swell OFF.** The row is
+  retired as a standing defect and recorded as a closure.
+- `vista` box **174.53 / 14.48** and `hzBand` **3.28 / -2.07**, bit-identical to
+  R4 through fourteen merges. `vistadawn.hzBand` 203.58 / 3.00 / 34.04;
+  `meadownight.skyHi` 9.33 / 1.79 and `skyHz` 14.46 / 1.00, all R4's to the
+  digit.
+- `limb.seam` iqr **64.27 -> 61.02**, a 3.25-count improvement nobody claimed.
+- `check:guard` **exit 0**, and it **partially discharges 2.39.12 item 5**: N12's
+  four `rho` values reproduce on merged main within **0.0006** (0.1019 / 0.3747
+  / 0.2974 / 0.5130), and Admin's predicted WG-285 effect on `forestairlow`
+  boxSurf, **0.7704**, is exact. Pins still not adopted.
+
+### 2.40.4 THE POSE ADDED, AND ITS RECTANGLES WERE CHANGED BY THEIR OWN LADDER
+
+`beachground` (lat -19.4907, lon -72.1274, yaw 180, pitch -8, dot 0.55), which
+is `meadow`'s eye, pitch and sun on Beach ground so the two are like-for-like.
+Site surveyed with `wg285field.ts` (ground **12.6 m**; 3 km plan **73.6 per cent
+Beach / 26.2 Forest / 0.2 Ocean**); yaw **solved** from eight transects (beach
+run 500 m E, 2,250 m W, **4,250 m S** -- 180 taken because the Forest boundary
+then sits past the eye's 1,394 m horizon and cannot enter a rectangle). Rows
+from the curvature-correct eye-frame inversion, then **proven with a
+centre-column ladder and corrected by it**: horizon predicted row 342.3,
+measured **343**; rows 286-331 smooth sky; a hard wall at 332-343. The first
+placement's single 292-348 band would have averaged the empty beach with a
+distant Forest edge, so it was **split into `standHi` (292-332) and `hzTree`
+(332-348) before any number was read from it.** Three fresh-process repeats gave
+box 151.17 / 62.83 to the digit. Registered in the pose-dispatch chain per that
+file's own capitalised warning.
+
+### 2.40.5 THE `+dirty` STAMP WAS MET AND CROSS-CHECKED
+
+Adding a pose to `artframe.js` makes it a modified tracked file under `web/`, so
+the rebuild stamped `+dirty` and the entry chunk changed
+(`index-DwCmLVCk.js` -> `index-B-tPqCWd.js`) with no rendering source touched.
+Rather than pool two builds silently, `meadowfield` was re-taken on the second:
+**box 102.15 / 56.42, identical to the digit.** Every arm PAIR in the audit is
+taken within one build and the two rows from the second build say so.
+
+### 2.40.6 WHAT NEEDS REID (audit section 7)
+
+The water ruling (WG-45..49) -- now blocking a BLOCKING rank, because rank 3 is a
+dry sea painted the colour of deep water; **the SE reference board, still absent
+five audits in**, so every judgement including this one is one person's memory
+of the bar; Polyhaven and the missing terrain PBR layer set, which is ranks 8,
+9 and 10 wearing three names; **is a beach a desert or a shore**, which is
+rank 2's cause and is two written intentions in conflict, not a bug; and the
+`crownflank=12` + `crownshadefloor=0.30` trade, parked, which reaches the band
+but drives the wood brighter than its clearing (1.0287 / 1.0327).
+
+### 2.40.7 GATES, RAILS AND FILES
+
+**TOUCHED:** `web/tools/smoke/probes/artframe.js` (the `beachground` manifest
+row plus its dispatch registration, additive; no existing pose, rectangle or
+dispatch behaviour changed), `docs/web/WORLD-AUDIT-R5-2026-08-22.md` (new),
+`docs/web/NUMBERS.md` (the RN-2620 row), this file.
+**NOT TOUCHED:** any file under `web/src/`, any wasm, any asset, any other
+probe, any instrument.
+
+`npx tsc --noEmit` exit 0; `npm run build` exit 0; `cd web && npm run check`
+**9 of 9, 0 failed**; `node tools/smoke/check-guard.mjs` exit **0** (PASS, 4 of
+4 poses judged, 1 outside CORE, the pre-existing `forestairnoon` standing
+violation). Each run as its own step with its own exit status read and no pipe.
+Servers `127.0.0.1:5946` and `:5947`, `--strictPort`, sentinel-verified on
+CONTENT over the wire plus served bundle name plus owning PID before every
+batch; PIDs **27740** and **29828**, both killed by PID after confirming the
+port's owner was this lane's.
