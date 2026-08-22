@@ -39,7 +39,8 @@ export function makeTerrainMaterial(
     fineFreq, fineW, fineLum, reliefGrad, reliefGradUv, artFineM, reliefFineM,
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
     horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
-    splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
+    splatAmp, splatFade, splatFarAmp, treeline, treelineTone, treelinePaint,
+    treelineFar, crownShade,
     phaseProbe, horizonAmp, horizonEco, horizonCell, horizonPlains, emitGround,
     massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff,
@@ -119,6 +120,14 @@ export function makeTerrainMaterial(
     // canopy card's own mean rendered albedo. Both shared by reference.
     uTreeline: treeline,
     uTreelineTone: treelineTone,
+    // RN-2560. The painted arm's mode, 0 in the shipped frame. Bound into BOTH
+    // programs deliberately: the scaled one is where the term is compiled out,
+    // and a paint that could not reach it could not photograph that.
+    uTreelinePaint: treelinePaint,
+    // RN-2560. `?treelinefar=1`, the SCALED shell's participation. Bound into
+    // both programs; the near one's copy is stripped at link time because the
+    // near shell factor is a compile-time literal.
+    uTreelineFar: treelineFar,
     // RN-2275. Inter-crown self-shadowing, (amp, K, floor). Shared by
     // reference like every other holder here, and holding the SAME three
     // numbers the canopy card's per-frame colour update reads.

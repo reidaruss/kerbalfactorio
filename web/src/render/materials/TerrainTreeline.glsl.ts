@@ -70,6 +70,30 @@ export const TERRAIN_TREELINE_PARS = /* glsl */`
   float ofTreeCover(float mu, float w, float sinDep) {
     return 1.0 - exp(-mu * (1.0 - w) / max(sinDep, OF_TREE_SIN_MIN));
   }
+
+  // RN-2560. THE STAGE PAINT, and it is a categorical map rather than a level:
+  // the question it answers is "how far into this term did this fragment get",
+  // which has five discrete answers and no in-between. Every colour is under
+  // 0.25 because the shipped grade is an ACES fit that compresses the top of
+  // the range to nine counts (NUMBERS.md, RN-2479), and they are separated by
+  // HUE rather than by level so the lighting multiply cannot merge two rungs.
+  //
+  //   0 RED    the SCALED program drew this fragment, so the whole term is
+  //            compiled out of it by the #ifndef OF_SCALED below
+  //   1 BLUE   near program, the outer gate refused: amp 0, reach 0 (the
+  //            canopy tier is not running) or vCanopy 0 (no canopy biome, or
+  //            past the treeline altitude)
+  //   2 AMBER  gate passed and treeW == 1, i.e. inside OF_TREE_NEAR_M: the
+  //            harvest ring, where the term is zero BY DESIGN
+  //   3 GREEN  Beer-Lambert evaluated and returned effectively nothing
+  //   4 WHITE  evaluated and contributing: the term is LIVE here
+  vec3 ofTreelineStagePaint(float s) {
+    if (s < 0.5) return vec3(0.20, 0.00, 0.00);
+    if (s < 1.5) return vec3(0.00, 0.00, 0.20);
+    if (s < 2.5) return vec3(0.20, 0.20, 0.00);
+    if (s < 3.5) return vec3(0.00, 0.20, 0.00);
+    return vec3(0.20, 0.20, 0.20);
+  }
 `;
 
 /**
@@ -100,8 +124,38 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
       // condition RN-78 and RN-1733 had to hoist their own work out of, and it
       // is met rather than assumed. ofArtMid's own header makes the same
       // argument for the same reason.
-      #ifndef OF_SCALED
+      // RN-2560. THE STAGE, declared OUTSIDE the guard on purpose: 0 is "the
+      // scaled program drew me", and only a variable that exists in both
+      // programs can carry that answer. It is written by the branches below
+      // and read by exactly one bare-uniform line at the end of this block, so
+      // in the shipped frame (uTreelinePaint 0) nothing reads it at all.
+      float treeStage = 0.0;
+      float treeKOut = 0.0;
+      // RN-2560. THE SCALED SHELL'S PARTICIPATION, and this is where a
+      // #ifndef OF_SCALED used to sit with no reason written beside it.
+      //
+      // WHAT THE PAINT FOUND. The term's own charter is the ground past the
+      // impostor tier, and the near program stops at the ~15 km chunk-depth
+      // handover, so the band from there to the 37,947 m horizon is drawn by
+      // the SCALED program and the compile-time guard removed the term from
+      // exactly that band. Measured with ?treelinepaint=3 (stage 0): 1.46
+      // per cent of the terrain pixels at forestair, 0.74 at flyover.
+      //
+      // IT IS A UNIFORM AND NOT A DEFINE, so the pair is one flag inside one
+      // build on one program set (RN-843/RN-1000's rule). It DEFAULTS OFF,
+      // which is the pre-RN-2560 frame exactly, because turning it on makes a
+      // term newly live on a band nothing has ever measured and that is a
+      // visual lane rather than a diagnosis. ?treelinefar=1 is the priced
+      // arm; rendering.md 2.36 carries what it costs.
+      #ifdef OF_SCALED
+        float treeShell = uTreelineFar;
+      #else
+        float treeShell = 1.0;
+      #endif
+      if (treeShell > 0.0) {
+        treeStage = 1.0;
         if (uTreeline.x > 0.0 && uTreeline.z > 0.0 && vCanopy > 0.0) {
+          treeStage = 2.0;
           // GROUND distance, the frame canopyDistanceWeight is written in.
           // RN-2228 is the scar: a 3-D eye distance compared against a radius
           // that means ground switched the whole tier off from the air.
@@ -122,8 +176,15 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
             // the wavelength, fully out at a third against a fold at a half).
             // Without it a closed canopy at the horizon is a flat green plate,
             // which is the defect one range band further out.
+            // RN-2560. footM IS IN vWorld UNITS AND THE COMPARISON IS IN
+            // METRES, which is one multiply in the near program (uMetresPerUnit
+            // is exactly 1 there, so this is bit-identical) and a factor of 1e5
+            // in the scaled one. Without it the mottle would come back at FULL
+            // amplitude at the horizon the moment the shell participates, which
+            // is the opposite of what its own Nyquist retirement is for.
             float treeF = 1.0 - smoothstep(OF_TREE_CROWN_M * 0.125,
-                                           OF_TREE_CROWN_M * 0.333, footM);
+                                           OF_TREE_CROWN_M * 0.333,
+                                           footM * uMetresPerUnit);
             float treeM = treeF > 0.0
               ? (ofArtVnoise(pM / OF_TREE_CROWN_M + 91.3) - 0.5) * treeF : 0.0;
             // RN-2275. INTER-CROWN SELF-SHADOWING, and the sun direction it
@@ -171,7 +232,33 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
               * ofCrownSpectralSplit(ofCrownSelfShade(vCanopy, treeSun, uCrownShade));
             albedo = mix(albedo,
                          treeTone * (1.0 + uTreeline.y * treeM), treeK);
+            // RN-2560. 0.002 of coverage is a quarter of a count on a 255 axis
+            // at this term's own contrast, i.e. below anything a rectangle can
+            // report, so the two rungs are "evaluated and invisible" against
+            // "evaluated and LIVE" rather than an arbitrary threshold.
+            treeStage = treeK > 0.002 ? 4.0 : 3.0;
+            treeKOut = treeK;
           }
         }
-      #endif
+      }
+      // RN-2560. THE PAINTED ARM. A bare-uniform branch, false in every shipped
+      // frame, so this line costs the default program a compare against a
+      // uniform and changes nothing; the no-pixel-change claim is nonetheless
+      // MEASURED rather than argued from that (rendering.md 2.36).
+      if (uTreelinePaint > 0.5) {
+        if (uTreelinePaint < 1.5) {
+          albedo = ofTreelineStagePaint(treeStage);
+        } else if (uTreelinePaint < 2.5) {
+          albedo = vec3(clamp(treeKOut, 0.0, 1.0) * 0.22);
+        } else {
+          // THE ISOLATE ARMS, 3 + stage. One stage is painted 0.20 and every
+          // other fragment is painted EXACTLY BLACK, which is the one value a
+          // painted scalar carries through an ACES grade unambiguously, so a
+          // rectangle's mean over this arm is a direct reading of how much of
+          // that rectangle sat at that stage. Five arms, one flag apart, on
+          // one build.
+          albedo = abs(uTreelinePaint - 3.0 - treeStage) < 0.5
+            ? vec3(0.20) : vec3(0.0);
+        }
+      }
 `;

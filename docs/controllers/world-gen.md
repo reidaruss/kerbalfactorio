@@ -2766,6 +2766,8 @@ speculative than it was.
 
 #### 6.14.5 `meadow.hzBand` IS 155.83 AND NOT 6.11.6's 12.29, AND `?midhole=0` REPRODUCES 12.29 EXACTLY
 
+> **CORRECTION NOTE (Admin, at the RN-2560 merge, 2026-08-22):** this section's inference that the treeline term 'still moves nothing with the ground risen past 690 m' is REFUTED as pose-blindness by rendering.md section 2.36: the term is live at 86 to 99 per cent of aerial terrain pixels, and the standing-eye band it owns at this pose is about half a pixel; the decisive arm is `meadow.hzBand` lighting 125.29 to 131.70 on the below-690 stage while flat on both past-690 stages. The measured 0.00 in this section reproduces and was correct; the inference from it was not.
+
 This is the largest disagreement between this lane's table and 6.11.6's, it is
 composition rather than a defect in either, and it is proved rather than
 reasoned. On the shipped (swelled) arm, one flag at a time:

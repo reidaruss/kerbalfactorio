@@ -177,6 +177,67 @@ export function treelineMottleFromQuery(): number {
 }
 
 /**
+ * RN-2560. `?treelinefar=1`, THE SCALED SHELL'S ARM.
+ *
+ * The term shipped inside a `#ifndef OF_SCALED` with no reason recorded beside
+ * it, so the band from the ~15 km chunk-depth handover out to the 37,947 m
+ * horizon -- which is the far half of this term's own charter -- never ran it.
+ * The paint below measured how much of a frame that is (1.46 per cent of the
+ * terrain pixels at `forestair`, 0.74 at `flyover`, about 1 at the standing
+ * poses), and the guard is now a UNIFORM so the band can be priced one flag
+ * apart on one build instead of two commits apart.
+ *
+ * It DEFAULTS OFF. Turning it on makes a term newly live on ground no probe
+ * has ever measured, which is a visual lane with hero pairs and guards rather
+ * than something a diagnosis lane flips on the way past. rendering.md 2.36
+ * carries the price and the routing.
+ */
+export function treelineFarFromQuery(): number {
+  return new URLSearchParams(self.location.search).get('treelinefar') === '1'
+    ? 1 : 0;
+}
+
+/**
+ * RN-2560. `?treelinepaint=1|2`, THE PAINTED ARM, and it exists because an
+ * amplitude sweep of this term cannot answer the only question that was open.
+ *
+ * The term had been reported measuring exactly 0.00 counts on BOTH sides of
+ * its own range -- below 690 m (world-gen.md 6.13.8) and, after the WG-275
+ * swell raised the plains ground past 690 m, at `meadow` as well (6.14.5) --
+ * and NUMBERS.md's own entry says a term gated off sweeps as WEAK rather than
+ * as MISSING, so the branch has to be painted rather than scaled.
+ *
+ *   `?treelinepaint=1`  the STAGE map. Every terrain fragment is painted with
+ *                       a flat categorical colour naming how far into this
+ *                       term it got: which PROGRAM drew it, whether the outer
+ *                       gate passed, whether the Beer-Lambert term was
+ *                       evaluated at all, and whether it returned coverage.
+ *                       Five colours, every one under 0.25 so the ACES grade
+ *                       does not compress the ladder (RN-2479's rule).
+ *   `?treelinepaint=2`  the LEVEL map: `treeK`, the coverage this term
+ *                       actually mixes with, scaled to 0.22 for the same
+ *                       reason. Black is exactly zero, which is the one value
+ *                       a painted scalar can carry through the grade
+ *                       unambiguously.
+ *   `?treelinepaint=3`  ..`=7`, the ISOLATE arms: stage 0..4 painted 0.20 and
+ *                       every other fragment painted exactly black, so a
+ *                       committed rectangle's own mean is a direct reading of
+ *                       how much of it sat at that stage. Five arms one flag
+ *                       apart on one build, and they are what turns the hue
+ *                       map above from a picture into a table.
+ *
+ * 0 is the shipped frame: the paint sits behind a BARE-UNIFORM branch, so the
+ * default program takes it never, and the no-pixel-change claim is measured
+ * rather than argued (see rendering.md 2.36).
+ */
+export function treelinePaintFromQuery(): number {
+  const raw = new URLSearchParams(self.location.search).get('treelinepaint');
+  if (raw === null) return 0;
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 ? v : 0;
+}
+
+/**
  * THE CANOPY TONE, AND IT IS READ OFF THE LIVE CARD RATHER THAN COPIED.
  *
  * The near cards and the far ground meet at the handover, so if their greens

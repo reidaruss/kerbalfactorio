@@ -246,6 +246,16 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // against; `treelineamp=` scales the coverage, `treelinemottle=` the
   // 34 m crown-scale value break-up inside it.
   'treeline', 'treelineamp', 'treelinemottle',
+  // RN-2560. `treelinepaint=1` paints the far treeline's own STAGE (which
+  // program drew the fragment, whether the outer gate passed, whether the
+  // Beer-Lambert term was evaluated, whether it returned coverage) and
+  // `treelinepaint=2` paints the coverage itself. Registered in the same
+  // commit that introduces it, which is what this list's own guard asks for.
+  'treelinepaint',
+  // RN-2560. `treelinefar=1` lets the SCALED terrain program run the far
+  // treeline, which a `#ifndef OF_SCALED` had removed it from since RN-2265.
+  // Registered in the same commit that introduces it.
+  'treelinefar',
   // RN-2275. Inter-crown self-shadowing: the exact off control, and the two
   // numbers the law is chosen on. Registered in the commit that introduces
   // them (RN-152's scar).
