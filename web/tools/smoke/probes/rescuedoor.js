@@ -28,6 +28,18 @@
 // NEGATIVE CASES: a malformed key and a key with no stored copy must both
 // refuse (`ok:false`) rather than throwing or silently writing nothing where
 // something was expected.
+//
+// §7/§8, ADDED AFTER A FRESH-CONTEXT VERIFIER'S FIX CONDITION: a restore
+// lands in the SAME KEY the running session's own autosave writes to
+// (`slotKey(g.mode.mode)`), so the very next `AUTOSAVE_TICKS` firing (20 real
+// seconds, `GameplayStep.ts`) would silently overwrite the restored bytes with
+// the live world if nothing held it off. `restoreRescue` now arms
+// `sim/SaveInhibit.ts`'s latch on a successful write and `PersistSlot.loadSlot`
+// releases it; §1b proves the timer fires normally BEFORE any restore has
+// happened (so a red at §7 cannot be blamed on the inhibit sticking on for an
+// unrelated reason), §7 proves the restored slot survives `of.run(22)`
+// un-touched while still un-loaded, and §8 proves a real `of.load()` releases
+// the pause so the next save is not refused.
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };
@@ -105,6 +117,24 @@
   check('§1 the fixture actually dug and harvested, so there is something to lose',
     struck > 0 && harvested > 0 && (receipt?.voxelBytes ?? 0) > 0,
     `struck ${struck}, harvested ${harvested}, voxelBytes ${receipt?.voxelBytes ?? 0}`);
+  check('§1 and this ordinary save was not refused: nothing has inhibited saving yet',
+    receipt !== null && receipt.refused === undefined, JSON.stringify(receipt));
+
+  // ===========================================================================
+  // §1b - THE NEGATIVE CONTROL, RUN FIRST: autosave fires on its OWN 20-second
+  //       timer (GameplayStep.ts's AUTOSAVE_TICKS) for a session that has not
+  //       called of.rescue.restore, proven before this file ever calls it, so
+  //       a red at §7 later cannot be blamed on the inhibit having been left
+  //       globally armed by some unrelated cause. `savedAt` moving with no
+  //       manual of.save() in between is the timer firing on its own, not this
+  //       probe firing it.
+  // ===========================================================================
+  const beforeAuto = await getKey('orbital-foundry', 'saves', 1, 'auto-sandbox');
+  await run(22); // AUTOSAVE_TICKS is 20 s (1200 fixed ticks at 60 Hz); +2 s margin.
+  const afterAuto = await getKey('orbital-foundry', 'saves', 1, 'auto-sandbox');
+  check('§1b autosave fires unattended when nothing has been restored',
+    afterAuto !== null && afterAuto.savedAt !== (beforeAuto?.savedAt ?? null),
+    `savedAt ${beforeAuto?.savedAt} -> ${afterAuto?.savedAt}`);
 
   const key = 'auto-sandbox';
   const stored = await getKey('orbital-foundry', 'saves', 1, key);
@@ -195,6 +225,48 @@
   // the byte-mover the client's load path already uses to copy a STORED slot
   // verbatim, and nothing in that call path touches the live scene.
 
+  // ===========================================================================
+  // §7 - THE AUTOSAVE-CLOBBER REGRESSION, CLOSED. A fresh-context verifier
+  //      measured this twice over raw IndexedDB: immediately after §6's
+  //      restore the slot matched the rescued bytes, and after of.run(22) it
+  //      did not, because the running session's own 20-second AUTOSAVE_TICKS
+  //      timer had silently overwritten it with the LIVE world. `restoreRescue`
+  //      now arms `sim/SaveInhibit.ts`'s latch on a successful write, so this
+  //      run must NOT reproduce that: the slot this arm reads back is exactly
+  //      §6's `landed`, not §1b's `stored` (which is what "the live world
+  //      autosaved over it" would look like) and not the "junk" sentinel
+  //      (which would mean nothing ever wrote at all).
+  // ===========================================================================
+  await run(22); // Same margin as §1b, over the identical 20-second timer.
+  const afterTimer = await getKey('orbital-foundry', 'saves', 1, key);
+  check('§7 the restored slot SURVIVES the autosave timer while still un-loaded',
+    afterTimer !== null && eq(afterTimer, stampless),
+    afterTimer === null ? 'null'
+      : eq(afterTimer, { junk: true }) ? 'still the junk sentinel: restore never wrote'
+      // The rescued copy is STAMPLESS by construction (§2 deletes fieldGen);
+      // a live autosave always carries a real one, so its PRESENCE alone
+      // convicts a fresh autosave even though the exact bytes (savedAt, dayT,
+      // ...) have moved on from §1b's own `stored` snapshot by now.
+      : typeof afterTimer.fieldGen === 'number'
+        ? `THE REGRESSION: a LIVE autosave overwrote the restored copy `
+          + `(fieldGen ${afterTimer.fieldGen} present; the rescued copy had none)`
+        : 'differs from the rescued bytes some other way');
+
+  // ===========================================================================
+  // §8 - THE PAUSE RELEASES ON THE NEXT LOAD, and ordinary saving resumes.
+  //      Loading the slot §6 just restored is itself a real load of a
+  //      stampless (pre-swell-shaped) slot, so PersistSlot.fieldGenAdopt fires
+  //      its own real clear on the way in; that is expected (R-RECOVER-1 says
+  //      a restore is not an undo) and is not what this section asserts. The
+  //      claim here is only that `loadSlot`'s `allowSave()` ran: the very next
+  //      save is not refused.
+  // ===========================================================================
+  await of.load();
+  const postLoadSave = await of.save();
+  check('§8 a real of.load() releases the pause: the next save is not refused',
+    postLoadSave !== null && postLoadSave.refused === undefined,
+    JSON.stringify(postLoadSave));
+
   return {
     valid: fails.length === 0, pass: fails.length === 0, fails,
     says: [
@@ -203,6 +275,10 @@
       + 'and no debug verb; of.rescue.list/read/restore is the first reachable path.',
       'restore is explicit-only and writes verbatim through SaveKeys.writeKey, '
       + 'never through SaveGame.writeSlot, and never automatically.',
+      'restore also arms SaveInhibit until the next load, closing the '
+      + "autosave-clobber window a fresh-context verifier found: without it, "
+      + "the running session's own 20-second timer silently overwrote a "
+      + 'restored slot with the live world.',
     ],
     rescueKey, bodyBytesBefore,
     listedCount: listed.length,

@@ -38,10 +38,23 @@
 // recovery path that does not exist was load-bearing and false. See
 // persistence.md's R-RECOVER-1 for the full case and what closing it does and
 // does not mean (it is not an automatic undo for a field-generation clear).
+//
+// AND THAT FIRST CUT OF `restoreRescue` WAS ITSELF ONE MORE FALSE CLAIM,
+// FOUND BY A FRESH-CONTEXT VERIFIER BEFORE IT SHIPPED: it writes into the
+// SAME KEY the running session's own autosave writes to, so the timer that
+// fires every 20 real seconds (`GameplayStep.ts`'s `AUTOSAVE_TICKS`) would
+// otherwise silently overwrite a restored copy with the live world on its
+// own schedule, no error, no second warning, and re-stamp `fieldGen` to the
+// current planet on the way out so the next load never sees a mismatch to
+// report. `restoreRescue` now arms `sim/SaveInhibit.ts`'s existing latch the
+// moment the write lands, and `PersistSlot.loadSlot` releases it, so the
+// window this file's own warning describes is closed rather than merely
+// disclosed.
 
 import { needsRescale } from './FactoryRescale.js';
 import type { SaveSlot } from './SaveGame.js';
 import { writeKey } from './SaveKeys.js';
+import { inhibitSave } from '../sim/SaveInhibit.js';
 
 const DB = 'of-rescue';
 const STORE = 'slots';
@@ -184,13 +197,33 @@ export interface RescueRestoreReport {
  * RESTORES INTO THE SLOT THE KEY NAMES, not the running mode's live slot, so
  * this is for RECOVERY-THEN-INSPECTION and not silent resurrection: it lands
  * the bytes under (say) `auto`, and picking them up is a SEPARATE, later
- * `__of.load()` or a reload, never this call. Restoring a `fieldgen` copy
- * onto the CURRENT planet re-creates exactly the misplacement PS-53/PS-54
- * exist to prevent (a pre-swell world addressed in a planet that has since
- * changed shape): the stamp will read a mismatch again on the very next load
- * and clear the body half a second time. `warning` says so on every call, not
- * only the first, because a copy read back clean today is not a promise about
- * the load after it.
+ * `__of.load()` or a reload, never this call.
+ *
+ * AND THAT SLOT IS ALMOST ALWAYS THE RUNNING SESSION'S OWN AUTOSAVE KEY,
+ * WHICH A FRESH-CONTEXT VERIFIER PROVED IS NOT SAFE TO LEAVE UNGUARDED
+ * (measured twice, raw IndexedDB, on the shipped BT-320 cut): `parsed.slot`
+ * is `slotKey(g.mode.mode)` by construction (see `rescueKey`'s callers), the
+ * SAME key `GameplayStep.stepFixed`'s `AUTOSAVE_TICKS` timer (20 real
+ * seconds) writes to. Restoring and then simply letting the session keep
+ * running meant the very next autosave silently overwrote the restored bytes
+ * with the LIVE world, re-stamping `fieldGen` to the CURRENT planet on its
+ * way out with no error and no second toast, so a load taken a minute later
+ * saw a clean MATCH and PS-53's own detector never got a chance to fire on
+ * it. This function therefore calls `inhibitSave` (`sim/SaveInhibit.ts`, the
+ * same latch `FlightDoors`/`FlightRecover` already use for a different
+ * "this save would be wrong" case) the moment the write lands, and
+ * `PersistSlot.loadSlot` clears it again as its first statement: the restored
+ * bytes are safe from THIS session's own autosave for as long as the player
+ * leaves them un-loaded, and the pause is visible on the navball
+ * (`FlightReadout.ts` already reads `saveInhibit()`), not merely logged.
+ *
+ * RESTORING A `fieldgen` COPY IS STILL NOT AN UNDO. Loading it back onto the
+ * CURRENT planet re-creates exactly the misplacement PS-53/PS-54 exist to
+ * prevent (a pre-swell world addressed in a planet that has since changed
+ * shape): the load that finally applies it will detect the mismatch and
+ * clear the body half again. `warning` says both of these things on every
+ * call, not only the first, because a copy read back clean today is not a
+ * promise about the load after it.
  */
 export async function restoreRescue(key: string): Promise<RescueRestoreReport> {
   const parsed = parseRescueKey(key);
@@ -210,14 +243,28 @@ export async function restoreRescue(key: string): Promise<RescueRestoreReport> {
   }
   const warning = `[of] restoring rescue copy '${key}' into slot '${parsed.slot}'. `
     + 'This writes the OLD bytes back verbatim; it does not load them, and nothing '
-    + `here does that automatically. If this is a '${parsed.reason}' copy taken `
-    + "because the body's height field had changed since it was saved, restoring "
-    + 'it onto the CURRENT planet re-creates the exact misplacement that clear '
-    + 'existed to prevent: the next load will detect the mismatch again and clear '
-    + 'the body half a second time. Recovery-then-inspection, not silent '
-    + 'resurrection: inspect what came back before trusting it as the world.';
+    + 'here does that automatically. Autosave for this session is now PAUSED: '
+    + `without that, the running world's own 20-second autosave timer would `
+    + `silently overwrite '${parsed.slot}' with the LIVE world (re-stamping `
+    + "fieldGen to the CURRENT planet on the way out) with no error and no second "
+    + 'warning, so a load taken even a minute later would see a clean world and '
+    + 'this restore would already be gone. The pause holds until the next '
+    + '__of.load() or reload, so inspect the restored world before you load it: '
+    + `if this is a '${parsed.reason}' copy taken because the body's height field `
+    + "had changed since it was saved, LOADING it onto the CURRENT planet "
+    + 're-creates the exact misplacement that clear existed to prevent, and that '
+    + 'load will detect the mismatch and clear the body half again. '
+    + 'Recovery-then-inspection, not silent resurrection.';
   console.warn(warning);
   const ok = await writeKey(parsed.slot, value);
+  // THE INHIBIT ARMS ONLY ON A SUCCESSFUL WRITE, and only after it, so a
+  // failed restore (ok === false) never blocks a save the running world was
+  // never actually at risk from.
+  if (ok) {
+    inhibitSave(`a rescue copy ('${key}') was restored into '${parsed.slot}' and `
+      + 'is paused from autosave until the next load; inspect it, then load '
+      + 'deliberately');
+  }
   return { ok, key, targetSlot: parsed.slot, reason: parsed.reason, warning };
 }
 

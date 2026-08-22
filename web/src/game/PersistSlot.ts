@@ -16,7 +16,7 @@ import { readSlot, slotKey, writeSlot } from './SaveGame.js';
 import { keepRescue, rescueBefore } from './FactoryRescue.js';
 import { clearedBodyHalf, fieldGenReport, fieldGenVerdict, fieldStampFor,
   forgetFieldGen, noteFieldGen } from './FieldStamp.js';
-import { noteSave, saveInhibit } from '../sim/SaveInhibit.js';
+import { allowSave, noteSave, saveInhibit } from '../sim/SaveInhibit.js';
 import { adoptWorldFor, keepWorlds } from './SaveWorlds.js';
 import { worldScopeReport } from './WorldScope.js';
 import { apply, snapshot } from './Persist.js';
@@ -177,6 +177,17 @@ async function fieldGenAdopt(g: Gameplay, stored: SaveSlot,
 }
 
 export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
+  // BT-320 (R-RECOVER-1). RELEASED FIRST, same reasoning as PS-41's `keepWorlds`
+  // right below: whatever a PREVIOUS moment inhibited saving for (a flight in
+  // progress, a `rescue.restore` waiting to be inspected) is about to be
+  // replaced wholesale by this load, so a reason latched before it is stale
+  // the instant this function starts. Unconditional and not read first, on the
+  // same argument `FlightDoors.ts`/`FlightRecover.ts` already apply to their
+  // own inhibiting condition: the thing the inhibit was protecting either
+  // just got read (a restore, about to be picked up by THIS load) or is about
+  // to be discarded (a flight, torn down by the world this load builds), and
+  // in neither case should the reason survive into the freshly loaded world.
+  allowSave();
   // PS-41. CLEARED FIRST, so every exit that is not an accept leaves nothing
   // behind, including one added later (SaveWorlds.ts).
   keepWorlds([]);
