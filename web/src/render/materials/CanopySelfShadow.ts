@@ -220,21 +220,43 @@ export const CROWN_SELF_K = 3.2;
  * LOW-sun poses are already ABOVE the band's 0.75 ceiling before any light is
  * added. So raising this floor walks `forestairnoon` up toward 0.39 and walks
  * `flyoverlow` up toward 3.25 at the same time, and the second leaves the band
- * long before the first enters it: holding `flyoverlow` at exactly 0.75 caps
- * `forestairnoon` at **0.117** against a floor of 0.18. The band is 4.2x wide
- * and the spread this floor would have to fit inside it is 8.3x.
+ * long before the first enters it. **The band is 4.2x wide and the spread this
+ * floor would have to fit inside it is 8.3x.** Measured at a real candidate
+ * rather than modelled: at `?crownshadefloor=0.2`, `forestairnoon` is still
+ * 0.0335 SHORT of the band's bottom while `flyoverlow` is already 0.3358 OVER
+ * its top, and both `box` ratchets fail with it. (An earlier draft also quoted
+ * a modelled intermediate, "holding `flyoverlow` at 0.75 caps `forestairnoon`
+ * at 0.117"; it is dropped rather than defended. A fresh-context verifier got
+ * ~0.105 by two obvious routes, the derivation was never written down, and it
+ * UNDERSTATES the infeasibility, so nothing rests on it.)
  *
  * THE 8.3x IS NOT THIS CONSTANT'S FAULT AND CANNOT BE FIXED HERE. It is the
- * crossed-quad impostor's shading normal: a crown drawn as two VERTICAL planes
- * has a wall's cosine response to solar elevation while the clearing it is
- * divided by has a floor's, so as the sun drops the denominator collapses and
- * the numerator does not. That is why `rho` reads LIGHTER at low sun than at
- * noon, which is backwards for a canopy, and it is routed as the next lane's
- * subject in rendering.md 2.36.7. Until the impostor is shaded like a crown
- * instead of like a fence, this floor cannot be given its derived value
- * without failing the guard at two poses, and moving it part of the way is
- * tuning rather than physics. **The number stays at 0.08 and the derivation
- * above is the standing statement of what it should be.**
+ * crown impostor's SHADING NORMAL: the crown responds to solar elevation quite
+ * differently from the horizontal clearing it is divided by, so as the sun
+ * drops the denominator collapses further than the numerator does. That is why
+ * `rho` reads LIGHTER at low sun than at noon, which is backwards for a canopy.
+ *
+ * **WHICH NORMAL, CORRECTED 2026-08-22 AFTER A FRESH-CONTEXT VERIFIER.** An
+ * earlier draft of this paragraph said the impostor is "drawn as two VERTICAL
+ * planes" and so "has a wall's cosine response". The ASSET half is true --
+ * `build_props_canopy.py` authors exactly that -- but **those authored normals
+ * never reach a draw call**: `PropGeometry.ts:291` runs every `foliage`-bake
+ * rung, `OF_Canopy` included, through RN-1766's `bendNormals`, which
+ * spherifies the normal attribute in place at registration. The SHIPPED mean
+ * `|up|`, recomputed off the `glb` bytes, is **0.4557 to 0.4985, not 0.0000**,
+ * and `?foliagenormal=0` (RN-1766's own control, which restores the authored
+ * bytes) takes the pose spread from 8.3x to **63.5x**. So the wall-versus-floor
+ * picture describes THAT arm and not the shipped frame.
+ *
+ * The shipped defect is that `bendNormals` DEGENERATES on crossed quads: the
+ * base centre it bends away from lies ON both card planes, so the bent normal
+ * ends up inside its own card's plane, and the hemisphere sign term then
+ * resolves on floating-point residue. Both degeneracies are in rendering.md
+ * 2.37.1a and the route is 2.37.7 item 1. Until they are repaired this floor
+ * cannot be given its derived value without failing the guard at two poses,
+ * and moving it part of the way is tuning rather than physics. **The number
+ * stays at 0.08 and the derivation above is the standing statement of what it
+ * should be.**
  */
 export const CROWN_SELF_FLOOR = 0.08;
 
@@ -277,35 +299,55 @@ export const CROWN_SELF_AMP = 1;
  * from its authored 0.800 to the fully-rough limit 1.0 moves the crown card's
  * own specular by **-1.6 per cent at `forestairnoon` and +2.0 per cent at
  * `flyoverlow`** -- the wrong way at the second -- and leaves its diffuse
- * unmoved to four digits (rendering.md 2.36.4). So this file ships **no change
+ * unmoved to four digits (rendering.md 2.37.4). So this file ships **no change
  * to the value** and ships **the switch that was missing**, which is RN-952's
  * rule: a term with no switch is the one candidate no experiment can eliminate.
  *
  * WHY ROUGHNESS CANNOT REACH IT, now that the measurement says so. Roughness
  * moves three's DIRECT lobe hard (the GGX `D` term peaks as `1/alpha^2`) and
  * its INDIRECT one barely at all: the split-sum environment BRDF for a
- * dielectric at `F0 = 0.04` is nearly flat in roughness. The crown card's
+ * dielectric at `F0 = 0.04` is nearly flat in roughness. In three 0.185.1 that
+ * term is a SAMPLED table, `texture2D(dfgLUT, vec2(roughness, dotNV))` in
+ * `lights_physical_pars_fragment.glsl.js` (lines 377 and 396), not the
+ * analytic `DFGApprox` an earlier draft of this comment named; the reference
+ * is corrected and the conclusion is unchanged, since it rests on the measured
+ * arms below rather than on which implementation supplies the term. The crown card's
  * specular is therefore almost entirely the sky PMREM lobe, not the sun lobe,
  * which is also why N7 found it 99.7 per cent of the card's own BLUE -- a sun
  * lobe would not be blue. Worse, broadening the lobe at a GRAZING sun smears
  * more sky into the view than a narrow one did, which is exactly the `+2.0 per
  * cent at flyoverlow` above. **The handle that reaches this term is
  * `envMapIntensity`, which has no page parameter anywhere in the project
- * (N7's own note), and it is routed in rendering.md 2.36.7 rather than
+ * (N7's own note), and it is routed in rendering.md 2.37.7 rather than
  * guessed at here.**
  *
  * WHAT WAS RIGHT ABOUT THE HYPOTHESIS, KEPT, because the geometry argument
  * stands even though the handle does not. `tools/blender/build_props_canopy.py`
  * authors `OF_Canopy` as **two crossed quads over the crown and nothing else**
- * -- its own docstring says exactly that -- yawed per instance. Each quad is
- * one flat VERTICAL plane carrying one flat HORIZONTAL shading normal, and a
- * GGX lobe on that normal reflects the sky coherently off a plane that is a
- * DRAWING CONVENTION for a leaf mass. That normal is also what makes the crown
- * respond to solar elevation like a WALL while the clearing it is divided by
- * responds like a FLOOR, which is the 8.3x pose spread `CROWN_SELF_FLOOR`'s
- * header measures and the reason stage 2's target is unreachable. The
- * impostor's shading normal is the subject of the next lane; its roughness is
- * a closed question.
+ * -- its own docstring says exactly that -- yawed per instance, and a GGX lobe
+ * on a whole-crown billboard is reflecting the sky off a plane that is a
+ * DRAWING CONVENTION for a leaf mass rather than a microfacet distribution.
+ *
+ * **BUT THE AUTHORED NORMAL IS NOT THE SHIPPED ONE, CORRECTED 2026-08-22 AFTER
+ * A FRESH-CONTEXT VERIFIER.** An earlier draft of this paragraph said each quad
+ * "carries one flat HORIZONTAL shading normal" and that this makes the crown
+ * respond to solar elevation "like a WALL". That is true of the `glb` and false
+ * of the frame: `PropGeometry.ts:291` runs every `foliage`-bake rung through
+ * RN-1766's `bendNormals`, which spherifies the normal attribute in place at
+ * registration, so the SHIPPED mean `|up|` is **0.4557 to 0.4985, not
+ * 0.0000**, and `?foliagenormal=0` (which restores the authored bytes) takes
+ * the pose spread from 8.3x to **63.5x**. The lane's own best frame,
+ * `RN2570_crowns_noshade_3x.png`, shows bright crown tops over dark bottoms --
+ * a vertical gradient a flat horizontal normal cannot produce.
+ *
+ * The 8.3x spread is still the impostor's shading normal and still the reason
+ * stage 2's target is unreachable; what is wrong with that normal is TWO
+ * DEGENERACIES in `bendNormals` on crossed quads (the base centre lies in both
+ * card planes, so the bent normal is in-plane and the hemisphere sign resolves
+ * on floating-point residue). Both are named in rendering.md 2.37.1a and
+ * routed in 2.37.7 item 1, and the fix belongs in `FoliageNormal.ts` rather
+ * than in the asset or in a new shader term. Its roughness, meanwhile, is a
+ * closed question.
  *
  * ---------------------------------------------------------------------------
  * The historical derivation that motivated the fully-rough arm, kept because
@@ -319,7 +361,7 @@ export const CROWN_SELF_AMP = 1;
  * on the committed `crowns` rectangle, un-hazed, coverage-corrected -- the
  * specular is **78.5 / 85.9 / 58.0 / 86.6 per cent of the crown card's WHOLE
  * radiance** at `forestairnoon` / `forestairlow` / `flyovernoon` / `flyoverlow`
- * (rendering.md 2.36.2). A crown that is four fifths a mirror of the sun and
+ * (rendering.md 2.37.2). A crown that is four fifths a mirror of the sun and
  * the sky is not a crown, it is a wet leaf the size of a tree.
  *
  * A leaf mass has no coherent plane: its microfacets are ten thousand leaves

@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2570 to RN-2573, `lane/n10-crownlight`, **THE SPREAD IS A WALL DIVIDED BY A FLOOR, AND R4 STAGE 2's TARGET IS UNREACHABLE WITH THE KNOBS IT WAS GIVEN.** N8's routed stage-2 brief, taken; **BOTH HALVES OF THE ACCEPTED SHAPE FAIL ON MEASUREMENT AND THE LANE SHIPS NO PIXEL CHANGE**, which is the result rather than a shortfall. **THE SPREAD IS EXPLAINED AND IT IS TWO DIFFERENT TERMS, NEITHER THE ONE EXPECTED.** The SITE ordering is the self-shadow law working correctly: `residentCanopyMu` is **0.6918** at Forest against **0.2996** at Hills, so Beer-Lambert puts `S` at 0.1254 against 0.3959 and the Forest crowns are properly darker. The SUN ordering (low sun LIGHTER than noon, backwards for path length) is **not a canopy term at all**: `?crownshade=0` with the specular also off gives a crown reflectance `rho0` of **0.3925 / 1.9161 / 0.3995 / 3.2474** -- **at NOON both sites land dead centre of the CORE and at LOW sun both are already ABOVE the band's 0.75 ceiling before one photon is added.** The cause is that `build_props_canopy.py` draws a whole crown as **two crossed VERTICAL quads** carrying one flat HORIZONTAL normal, so the crown's irradiance goes as `cos(elevation)` while its clearing goes as `sin(elevation)`: `Y_clear` falls **6.8x and 9.6x** from noon to low sun while the crown's unshaded diffuse falls **1.40x and 0.73x** (it RISES at Hills). **The renderer is dividing a wall by a floor.** **SO NO VALUE OF `CROWN_SELF_FLOOR` SATISFIES THE GUARD, PROVED AT A MEASURED CANDIDATE:** at `crownshadefloor=0.2`, `forestairnoon` is still **0.0335 SHORT** of the band's bottom while `flyoverlow` is already **0.3358 OVER** its top, and both `box` ratchets fail (boxSurf 1.0271 against a 0.9826 ceiling). **The band is 4.2x wide and the pose spread is 8.3x.** Per 2.35.9 item 8 that is reported as a **FAIL, and NO ratchet ceiling is raised, moved or re-derived.** **THE ROUGHNESS FIX WAS BUILT, MEASURED AT BOTH ENDS AND REFUSED.** The crown is **58 to 87 per cent SPECULAR** in the guard's own linear-luminance units (N7's blue-channel 99.7 per cent, re-taken on the whole pixel), but driving the material from its authored **0.800** to the fully-rough 1.0 moves that specular **-1.6 per cent at `forestairnoon` and +2.0 per cent at `flyoverlow`, the wrong way at the second**, with the diffuse unmoved to four digits. The reason is that the split-sum environment BRDF at `F0 = 0.04` is nearly flat in roughness, so the crown's specular is the **sky PMREM lobe** and not the sun lobe -- which is also why it is blue -- and broadening the lobe under a grazing sun smears MORE sky into view. **`envMapIntensity` is the handle and has no page parameter anywhere**; routed, not guessed at. **SO THE VALUE IS UNCHANGED AND THE MISSING SWITCH SHIPS:** `?canopyrough=` is an OVERRIDE returning `null`, so the shipped path writes nothing and the asset's own value stands, a no-op BY CONSTRUCTION rather than by a literal that happens to match the glTF. **THE FLOOR'S DERIVATION IS CLOSED AND THE SHIPPED VALUE IS 5.7x TOO SMALL:** the existing 0.08 counts only the SKY, and the omitted term is the canopy's own scattered light; closing it with the two-stream `rInf(w)` **already in `FoliageTone.ts` for the crown's HUE** gives luma 0.061703 over the card's own tone luma 0.135373 = **0.4558**, exported as `CROWN_SELF_FLOOR_DERIVED` and published on `canopySelfNow()` so a claim of that size is a value a probe can read rather than prose in a comment (2.35.2's own scar). It is deliberately NOT wired in. **ACCEPTANCE: `rn2550guard` exit 0 on the base build AND on the final build, all four poses bit-identical** (rho 0.0992 / 0.4363 / 0.2488 / 0.7021, eight clearing pins inside 1 per cent), which is also the no-pixel-change proof by frame since a dist-hash test is unavailable to a lane that edits `web/src/`. **EYE: CROWNS STILL NOT MET**, and the crops say why: the refused fully-rough arm is indistinguishable from shipped, the refused raise adds a faint teal edge on a still-slate mass, and **`?crownshade=0` is unmistakably GREEN sunlit crown tops reading as a real aerial canopy** -- the crown's unshaded optics are already right at noon, and one term cannot both supply that and hold the low-sun poses down while the impostor's normal keeps them 8.3x apart. **2.35.9 item 5 DISCHARGED** (the K table and the "margins" block now say the sign test they were judged against no longer exists and that their numbers are pre-`lane/wg-ship`); K unmoved at 3.2, `CROWN_SELF_FLOOR` unmoved at 0.08, N6's spectral split extended and never rewritten, `FoliageTone`'s sat 1.08 untouched, no `artframe.js` rectangle or pose row added. **NEW OWED:** the crown impostor's SHADING NORMAL is the next lane and is the cause rather than a symptom; `envMapIntensity` needs an isolator before it is judged; the display-linear tone exponent is measured at **~1.40** (`D` scales as `S^1.40`, four poses agreeing 1.36 to 1.46), which anyone predicting a radiance change must use and which independently corroborates 2.35.9 item 1's "the deep-shadow slope EXPANDS ratios"; `flyoverlow`'s `sinSun` jitters **0.2051 against 0.2141** between runs of one build, worth pinning since that pose sits 0.036 from a band ceiling; and **the stage-2 premise itself needs an Admin correction**, since neither half of "the raise travels with the roughness fix, which pays for the headroom" survived contact. Gates 0, 0, **9 of 9**, guard 0. Full record in section 2.36; frames `docs/screenshots/RN2570_*`.) (Previous: `lane/n8-guardband` section 2.35; `lane/n7-bluefloor` section 2.34; `lane/n6-crownshade` section 2.33; `lane/n4-midobjects` section 2.32.) THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2570 to RN-2573, `lane/n10-crownlight`, **THE SPREAD IS A WALL DIVIDED BY A FLOOR, AND R4 STAGE 2's TARGET IS UNREACHABLE WITH THE KNOBS IT WAS GIVEN.** N8's routed stage-2 brief, taken; **BOTH HALVES OF THE ACCEPTED SHAPE FAIL ON MEASUREMENT AND THE LANE SHIPS NO PIXEL CHANGE**, which is the result rather than a shortfall. **THE SPREAD IS EXPLAINED AND IT IS TWO DIFFERENT TERMS, NEITHER THE ONE EXPECTED.** The SITE ordering is the self-shadow law working correctly: `residentCanopyMu` is **0.6918** at Forest against **0.2996** at Hills, so Beer-Lambert puts `S` at 0.1254 against 0.3959 and the Forest crowns are properly darker. The SUN ordering (low sun LIGHTER than noon, backwards for path length) is **not a canopy term at all**: `?crownshade=0` with the specular also off gives a crown reflectance `rho0` of **0.3925 / 1.9161 / 0.3995 / 3.2474** -- **at NOON both sites land dead centre of the CORE and at LOW sun both are already ABOVE the band's 0.75 ceiling before one photon is added.** The cause is geometric and lives in the impostor's SHADING NORMAL: `Y_clear` falls **6.8x and 9.6x** from noon to low sun while the crown's unshaded diffuse falls **1.40x and 1.18x**, so the clearing loses irradiance **4.9x and 8.1x faster** than the crown does. **CORRECTED 2026-08-22 AFTER A FRESH-CONTEXT VERIFIER (verdict FIX, all text; every measurement reproduced and the refusal CONFIRMED and extended -- even TOTAL specular removal cannot satisfy the band).** Two errors: the unshaded diffuse was written "1.40x and 0.73x (it RISES at Hills)" against this lane's own table (0.016152 / 0.019077 = 0.8466, a FALL); and the mechanism was attributed to the ASSET's flat horizontal normal, which is true of the `glb` and **false of the frame** -- `PropGeometry.ts:291` runs every `foliage`-bake rung through RN-1766's `bendNormals`, so the SHIPPED mean `|up|` is **0.4557 to 0.4985, not 0.0000**, and `?foliagenormal=0` takes the spread from **8.3x to 63.5x**. The lane's own best frame refuted it and went unread: bright crown tops over dark bottoms is a vertical gradient a flat normal cannot render. **THE REAL DEFECTS ARE TWO DEGENERACIES IN `FoliageNormal.ts` ON CROSSED QUADS:** COPLANARITY (the base centre lies in both card planes, so at `amount = 1.0` the bent normal is entirely in-plane and `N . V` is near zero head-on) and a SIGN TEAR caused by it (`n . d` is exactly zero, so the sign resolves on +/-2.6e-16 of residue and verts 6/7 on the SAME top edge take `up` +0.994 / -0.994, i.e. **one of every crown impostor's four triangles is lit as if it faced the ground** -- a live shipping defect, not this lane's, and separable). **SO NO VALUE OF `CROWN_SELF_FLOOR` SATISFIES THE GUARD, PROVED AT A MEASURED CANDIDATE:** at `crownshadefloor=0.2`, `forestairnoon` is still **0.0335 SHORT** of the band's bottom while `flyoverlow` is already **0.3358 OVER** its top, and both `box` ratchets fail (boxSurf 1.0271 against a 0.9826 ceiling). **The band is 4.2x wide and the pose spread is 8.3x.** Per 2.35.9 item 8 that is reported as a **FAIL, and NO ratchet ceiling is raised, moved or re-derived.** **THE ROUGHNESS FIX WAS BUILT, MEASURED AT BOTH ENDS AND REFUSED.** The crown is **58 to 87 per cent SPECULAR** in the guard's own linear-luminance units (N7's blue-channel 99.7 per cent, re-taken on the whole pixel), but driving the material from its authored **0.800** to the fully-rough 1.0 moves that specular **-1.6 per cent at `forestairnoon` and +2.0 per cent at `flyoverlow`, the wrong way at the second**, with the diffuse unmoved to four digits. The reason is that the split-sum environment BRDF at `F0 = 0.04` is nearly flat in roughness, so the crown's specular is the **sky PMREM lobe** and not the sun lobe -- which is also why it is blue -- and broadening the lobe under a grazing sun smears MORE sky into view. **`envMapIntensity` is the handle and has no page parameter anywhere**; routed, not guessed at. **SO THE VALUE IS UNCHANGED AND THE MISSING SWITCH SHIPS:** `?canopyrough=` is an OVERRIDE returning `null`, so the shipped path writes nothing and the asset's own value stands, a no-op BY CONSTRUCTION rather than by a literal that happens to match the glTF. **THE FLOOR'S DERIVATION IS CLOSED AND THE SHIPPED VALUE IS 5.7x TOO SMALL:** the existing 0.08 counts only the SKY, and the omitted term is the canopy's own scattered light; closing it with the two-stream `rInf(w)` **already in `FoliageTone.ts` for the crown's HUE** gives luma 0.061703 over the card's own tone luma 0.135373 = **0.4558**, exported as `CROWN_SELF_FLOOR_DERIVED` and published on `canopySelfNow()` so a claim of that size is a value a probe can read rather than prose in a comment (2.35.2's own scar). It is deliberately NOT wired in. **ACCEPTANCE: `rn2550guard` exit 0 on the base build AND on the final build, all four poses bit-identical** (rho 0.0992 / 0.4363 / 0.2488 / 0.7021, eight clearing pins inside 1 per cent), which is also the no-pixel-change proof by frame since a dist-hash test is unavailable to a lane that edits `web/src/`. **EYE: CROWNS STILL NOT MET**, and the crops say why: the refused fully-rough arm is indistinguishable from shipped, the refused raise adds a faint teal edge on a still-slate mass, and **`?crownshade=0` is unmistakably GREEN sunlit crown tops reading as a real aerial canopy** -- the crown's unshaded optics are already right at noon, and one term cannot both supply that and hold the low-sun poses down while the impostor's normal keeps them 8.3x apart. **2.35.9 item 5 DISCHARGED** (the K table and the "margins" block now say the sign test they were judged against no longer exists and that their numbers are pre-`lane/wg-ship`); K unmoved at 3.2, `CROWN_SELF_FLOOR` unmoved at 0.08, N6's spectral split extended and never rewritten, `FoliageTone`'s sat 1.08 untouched, no `artframe.js` rectangle or pose row added. **NEW OWED:** **`FoliageNormal.ts`'s two degeneracies are the next lane, and it must NOT be briefed as "reconstruct a crown-outward normal in the prop shader" because RN-1766 already did that and it ships**; two risks travel with it (`bendNormals` is shared by grass/leaf/canopy and bought +7.4 per cent of `forestfloor` frame `iqr`, so scope to the canopy bake or measure the understorey both arms; and the shipped bend is the only thing keeping `flyoverlow` in the band, 0.7021 with against 0.9024 without, so a noon fix can push low sun out), the sign-tear fix is low-risk and separable while the coplanarity fix moves the aerial look, and **`envMapIntensity` joins that lane as a required isolator rather than its own allocation**; `envMapIntensity` needs an isolator before it is judged; the display-linear tone exponent is measured at **~1.40** (`D` scales as `S^1.40`, four poses agreeing 1.36 to 1.46), which anyone predicting a radiance change must use and which independently corroborates 2.35.9 item 1's "the deep-shadow slope EXPANDS ratios"; `flyoverlow`'s `sinSun` jitters **0.2051 against 0.2141** between runs of one build, worth pinning since that pose sits 0.036 from a band ceiling; and **the stage-2 premise itself needs an Admin correction**, since neither half of "the raise travels with the roughness fix, which pays for the headroom" survived contact. Gates 0, 0, **9 of 9**, guard 0. Full record in section 2.37 (renumbered from 2.36; N9's 2.36 is merged on main); frames `docs/screenshots/RN2570_*`.) (Previous: `lane/n8-guardband` section 2.35; `lane/n7-bluefloor` section 2.34; `lane/n6-crownshade` section 2.33; `lane/n4-midobjects` section 2.32.) THIS LINE IS A POINTER: replace it, never append to it.
 
 
 
@@ -11666,7 +11666,7 @@ fell to it and was discharged.
    guard depends on the answer: the band, the coverage correction and the
    arming checks are all independent of the ratchet.
 
-## 2.36 THE SPREAD IS A WALL DIVIDED BY A FLOOR, AND STAGE 2's TARGET IS UNREACHABLE WITH THE KNOBS IT WAS GIVEN (RN-2570 to RN-2573, 2026-08-22, `lane/n10-crownlight`)
+## 2.37 THE SPREAD IS A WALL DIVIDED BY A FLOOR, AND STAGE 2's TARGET IS UNREACHABLE WITH THE KNOBS IT WAS GIVEN (RN-2570 to RN-2573, 2026-08-22, `lane/n10-crownlight`)
 
 > R4 stage 2, N8's routed stage-2 brief (2.35.9, and the Admin decision in
 > NUMBERS' RN-2550 row). Base `origin/main` at `ad536350`. Branch
@@ -11679,9 +11679,19 @@ fell to it and was discharged.
 > `cd web && npm run check` run as SEPARATE steps with each exit status read on
 > its own.
 >
-> **NOTE ON THE SECTION NUMBER:** `lane/n9-treeline` may land a 2.36
-> concurrently. This is the next number free on THIS branch; Admin renumbers at
-> merge.
+> **NOTE ON THE SECTION NUMBER:** written as 2.36 and renumbered to 2.37 after
+> verification, because `lane/n9-treeline`'s 2.36 is merged on main.
+>
+> **CORRECTED 2026-08-22 AFTER A FRESH-CONTEXT VERIFIER, VERDICT FIX, ALL TEXT.**
+> Every measurement in this section reproduced to the digit and the REFUSAL is
+> confirmed and strengthened (the verifier extended the proof: even TOTAL
+> specular removal cannot satisfy the band). **But the MECHANISM sentence this
+> lane attached to the numbers was false of the shipped frame, and 2.37.1a is
+> the correction.** The crown impostor's authored flat horizontal normal is
+> REPLACED at registration by RN-1766's `bendNormals`, so the wall-shaped cosine
+> response described below is the `?foliagenormal=0` state and not the shipped
+> one. The real defects are two degeneracies inside `FoliageNormal.ts`, and they
+> are named in 2.37.1a and routed in 2.37.7 item 1.
 >
 > **THIS LANE SHIPS NO PIXEL CHANGE, AND THAT IS THE RESULT RATHER THAN A
 > SHORTFALL.** It was sent to raise `forestairnoon`'s crown reflectance into
@@ -11693,7 +11703,7 @@ fell to it and was discharged.
 > argued. What ships is a diagnosis, one missing isolator, one derived constant
 > published as a value rather than a sentence, and two probes.
 
-### 2.36.1 THE ONE-LINE ANSWER
+### 2.37.1 THE ONE-LINE ANSWER
 
 **The factor-of-seven spread is two different terms, and neither of them is the
 one the brief expected.** The SITE ordering (both Forest poses below both Hills
@@ -11702,8 +11712,11 @@ poses) is the self-shadow law working exactly as designed: `residentCanopyMu` is
 0.1254 against 0.3959 and the Forest crowns are properly darker. The SUN
 ordering (low sun reading LIGHTER than noon, the part that is backwards for a
 path-length argument) is **not a canopy term at all**: it is that the crown
-impostor is two crossed VERTICAL quads and its clearing is a horizontal floor,
-so as the sun drops the denominator collapses and the numerator does not.
+impostor's SHADING NORMAL is degenerate, so the crown responds to solar
+elevation quite differently from the horizontal floor it is divided by, and as
+the sun drops the denominator collapses further than the numerator does.
+**2.37.1a names the degeneracy precisely and withdraws this lane's first
+explanation of it.**
 
 Measured, with the self-shadow AND the specular both removed -- the LIMIT any
 floor raise can approach, since `S` cannot exceed 1 -- the crown's own diffuse
@@ -11723,7 +11736,65 @@ optics are right at noon and wrong by 5x to 8x at low sun, the error is
 geometric, and it is why raising `CROWN_SELF_FLOOR` walks `forestairnoon` up
 toward 0.39 and `flyoverlow` up toward 3.25 **at the same time**.
 
-### 2.36.2 THE PER-TERM DECOMPOSITION, one build, one session, a fresh process per arm
+### 2.37.1a THE MECHANISM, CORRECTED: THE NORMAL IS BENT, AND IT IS BENT INTO ITS OWN CARD'S PLANE
+
+**WHAT THIS LANE FIRST WROTE, AND IT IS WITHDRAWN.** The first draft of this
+section said the crown impostor "carries one flat HORIZONTAL shading normal", so
+its irradiance goes as `cos(elevation)` while the clearing's goes as
+`sin(elevation)`. **That is false of the shipped frame**, and this lane had the
+evidence to catch it and did not: its own best picture,
+`RN2570_crowns_noshade_3x.png`, shows **bright crown tops over dark crown
+bottoms**, and a flat horizontal normal cannot render a vertical gradient at all.
+
+**WHAT IS ACTUALLY THERE.** The ASSET sentence stands -- `build_props_canopy.py`
+authors `OF_Canopy` as two crossed quads and nothing else, each an exactly
+vertical plane -- but those authored normals never reach a draw call.
+`PropGeometry.ts:291` runs every `foliage`-bake rung, `OF_Canopy` included,
+through **RN-1766's `bendNormals`**, which rewrites the normal attribute in
+place at registration toward the direction from the part's own base centre. A
+fresh-context verifier recomputed the SHIPPED normals from the `glb` bytes and
+read a mean `|up|` of **0.4557 to 0.4985**, not 0.0000. The shipped crown is
+spherified, not flat.
+
+**AND THE SWEEP THAT SETTLES IT ALREADY EXISTED.** `?foliagenormal=0` restores
+the authored bytes exactly (RN-1766's own standing-rule-7 control). Under it the
+pose spread **explodes from 8.3x to 63.5x** and `D0` rises **5.76x / 6.61x**.
+So the `cos(elevation)` model above is a correct description of the
+`?foliagenormal=0` state and a wrong one of the shipped state, and the bend is
+doing a great deal of work.
+
+**THE REAL DEFECTS ARE TWO DEGENERACIES IN `FoliageNormal.ts`, AND THE SECOND IS
+CAUSED BY THE FIRST.** Both are visible in that file's own source.
+
+1. **COPLANARITY.** `bendNormals` takes its base centre as the mean `x`/`z` over
+   all vertices at the minimum `y`. For crossed quads **centred on their own
+   axis** that centre is `(0, lo, 0)`, which lies ON both card planes. So the
+   outward direction `d = pos - base` lies IN the card's own plane for every
+   vertex of that card, and at the shipped `amount = 1.0` the bent normal is
+   exactly `sgn * d/dl` -- **entirely in-plane**. A card viewed head-on
+   therefore has `N . V` near zero across its whole face. `bendNormals` was
+   written for TUFTS offset from a clump centre, where `d` genuinely leaves the
+   blade's plane; a crossed quad centred on its own axis is the one shape the
+   construction degenerates on, and nothing in RN-1766 excluded it.
+2. **A SIGN TEAR, WHICH FOLLOWS FROM (1).** The hemisphere term is
+   `sgn = (n . d) < 0 ? -1 : 1`. Because `d` lies in the plane and `n` is the
+   plane's normal, `n . d` is **exactly zero in exact arithmetic**, so the sign
+   is decided by floating-point residue: the 90-degree yaw leaves `x` at
+   `+/-2.6e-16` and the comparison resolves on that. The verifier found verts 6
+   and 7 on the **same top edge** taking `up = +0.994` and `-0.994`. **One of
+   every crown impostor's four triangles is lit as if it faced the ground.**
+   That is a live shipping defect, it is not this lane's, and it is separable.
+
+**WHAT SURVIVES UNCHANGED.** Every number in this section, the refusal, and the
+routing of the next lane. The spread is still geometric, still lives in the
+impostor's shading normal, and still cannot be repaired from
+`CROWN_SELF_FLOOR`. What changes is WHICH normal is wrong and WHERE the fix
+goes: not "reconstruct a crown-outward normal in the prop shader" (RN-1766
+already did that, and a lane briefed on this lane's first sentence would open
+the file and find the work done), but "repair two degeneracies in the
+reconstruction that already ships". 2.37.7 item 1 is rewritten accordingly.
+
+### 2.37.2 THE PER-TERM DECOMPOSITION, one build, one session, a fresh process per arm
 
 `rho` is a ratio and a ratio cannot be diagnosed, only its terms can, so
 `web/tools/smoke/rn2570spread.mjs` prints both absolute levels and splits the
@@ -11771,18 +11842,29 @@ right direction for a canopy) while the specular part rises **4.2x** (0.1443 to
 0.6082) and drags the total up with it. At Forest the diffuse rises 2.9x and the
 specular 4.8x, so the specular still dominates the move.
 
-**AND THE MECHANISM IS THE COSINE MISMATCH, NOT A MYSTERY.** `Y_clear` falls
-**6.8x** from noon to low sun at Forest and **9.6x** at Hills -- a horizontal
-Lambertian floor losing `sin(elevation)`. `D0`, the crown's unshaded diffuse,
-falls only **1.40x** and **0.73x** (it RISES at Hills). A crossed-quad crown
-carries an exactly HORIZONTAL shading normal, so its direct irradiance goes as
-`cos(elevation)` and rises as the sun drops, and its specular lobe strengthens
-at grazing incidence on top of that. **The renderer is dividing a wall by a
-floor.** A real crown is neither: it is a roughly ellipsoidal leaf mass seen
-from above at these poses, and its sunlit projected area does not grow as the
-sun sets.
+**AND THE MECHANISM IS A COSINE MISMATCH, WITH THE CAUSE CORRECTED IN 2.37.1a.**
+`Y_clear` falls **6.8x** from noon to low sun at Forest and **9.6x** at Hills --
+a horizontal Lambertian floor losing `sin(elevation)`. `D0`, the crown's
+unshaded diffuse, falls only **1.40x** at Forest (0.011798 to 0.008427) and
+**1.18x** at Hills (0.019077 to 0.016152). **BOTH FALL, and an earlier draft of
+this sentence said "0.73x (it RISES at Hills)", which this section's own table
+contradicts: 0.016152 / 0.019077 is 0.8466, a fall. Corrected 2026-08-22 on a
+fresh-context verifier's reading.** The finding is unaffected and is the ratio
+of the two rates: the clearing loses irradiance **4.9x and 8.1x faster** than
+the crown does, so `rho` rises as the sun sets.
 
-### 2.36.3 THE TARGET IS UNREACHABLE WITH `CROWN_SELF_FLOOR`, AND THE PROOF IS A MEASURED CANDIDATE
+**WHAT MAKES THE CROWN HOLD ITS BRIGHTNESS IS NOT A FLAT NORMAL.** An earlier
+draft attributed it to the impostor carrying an exactly horizontal authored
+normal, i.e. a wall's `cos(elevation)` against a floor's `sin(elevation)`.
+**Withdrawn: RN-1766's `bendNormals` replaces that normal at registration
+(2.37.1a), and the shipped mean `|up|` is 0.4557 to 0.4985.** The shipped
+mismatch is the residue of a spherification that degenerates on crossed quads
+centred on their own axis. The `cos(elevation)` picture does describe the
+`?foliagenormal=0` arm, where the spread goes to **63.5x** and `D0` rises
+**5.76x / 6.61x** -- which is the measurement that both refutes the first
+explanation and shows how much the bend is already buying.
+
+### 2.37.3 THE TARGET IS UNREACHABLE WITH `CROWN_SELF_FLOOR`, AND THE PROOF IS A MEASURED CANDIDATE
 
 The brief's first target was `forestairnoon` `rho` **into** the band
 (>= 0.18). `web/tools/smoke/rn2572cand.mjs` judges a candidate against BOTH
@@ -11847,7 +11929,7 @@ is the cards, and the separation is total. Two consequences worth stating:
 2. **Even scoping a raise to the card half alone would not reach the band.**
    The card's whole remaining shade headroom at this pose is worth `rho` 0.5502
    with `S` driven all the way to 1, and the low-sun poses' ceiling problem
-   (2.36.1) is untouched by any of it, since the binding constraint is the
+   (2.37.1) is untouched by any of it, since the binding constraint is the
    band's TOP at `flyoverlow` and not the `box` ratchet. That matters because
    splitting the two halves is the move a reader will reach for next, and
    `CanopySelfShadow.ts`'s header forbids it anyway on 2.18.4 seam grounds.
@@ -11863,7 +11945,7 @@ Renamed to `farShadeOff` / `cardShadeOff`, the header now says what the flags do
 and what experiment they are NOT, and the table above is a re-run under the
 corrected names rather than the old output relabelled.
 
-### 2.36.4 THE ROUGHNESS FIX WAS BUILT, MEASURED AT BOTH ENDS AND REFUSED
+### 2.37.4 THE ROUGHNESS FIX WAS BUILT, MEASURED AT BOTH ENDS AND REFUSED
 
 The staging decision (2.34.10 item 1, adopted by Admin) was that the raise would
 travel with a canopy roughness correction because **deleting the specular alone
@@ -11888,7 +11970,12 @@ is the correct control: roughness must not touch it, and it does not.
 **WHY, AND IT IS THE SAME REASON THE SPECULAR IS BLUE.** Roughness moves three's
 DIRECT lobe hard (the GGX `D` term peaks as `1/alpha^2`) and its INDIRECT lobe
 barely at all -- the split-sum environment BRDF for a dielectric at `F0 = 0.04`
-is nearly flat in roughness. So the crown card's specular is almost entirely the
+is nearly flat in roughness. (In three 0.185.1 that term is a SAMPLED table,
+`texture2D(dfgLUT, vec2(roughness, dotNV))` at
+`lights_physical_pars_fragment.glsl.js` lines 377 and 396, not the analytic
+`DFGApprox` an earlier draft named. Corrected 2026-08-22 on a fresh-context
+verifier's reading; the conclusion rests on the measured arms above and is
+unchanged.) So the crown card's specular is almost entirely the
 **sky PMREM lobe**, not the sun lobe, which is exactly why N7 measured it at
 99.7 per cent of the card's BLUE: a sun lobe would not be blue. Worse,
 broadening the lobe under a GRAZING sun smears MORE sky into the view than a
@@ -11896,7 +11983,7 @@ narrow one did, which is the `+2.0 per cent` at `flyoverlow`.
 
 **THE HANDLE THAT REACHES THIS TERM IS `envMapIntensity`, WHICH HAS NO PAGE
 PARAMETER ANYWHERE IN THE PROJECT** (N7's own note, 2.34.2 item 4). It is routed
-in 2.36.7 rather than guessed at here.
+in 2.37.7 rather than guessed at here.
 
 **SO THE VALUE IS NOT CHANGED AND THE SWITCH IS.** `?canopyrough=` is what the
 project actually lacked: before this lane the crown card's roughness was an
@@ -11908,7 +11995,7 @@ writes nothing and the asset's own value stands -- a no-op **by construction**
 rather than by a TypeScript literal that happens to match the glTF, which would
 have been a second copy of one constant (MachineMat.ts's scar).
 
-### 2.36.5 THE FLOOR'S DERIVATION IS CLOSED, AND THE NUMBER IS 5.7x THE SHIPPED ONE
+### 2.37.5 THE FLOOR'S DERIVATION IS CLOSED, AND THE NUMBER IS 5.7x THE SHIPPED ONE
 
 `CROWN_SELF_FLOOR`'s existing derivation counts **only the sky**:
 `AMBIENT_NOON`, `TERRAIN_SKY_AMBIENT`, a sky irradiance and a sky-view factor,
@@ -11942,11 +12029,11 @@ RN-2495 because `FoliageTone`'s saturation term is exactly luma-preserving.
 `canopySelfNow()`, AND IT IS NOT WIRED IN.** Exported because 2.35.2's largest
 finding is that RN-2275's whole guard lived for four lanes as prose in this
 file's K table and four lanes budgeted against a sentence; a claim of this size
-should be a value a probe can read. Not wired in because 2.36.3 measures what it
+should be a value a probe can read. Not wired in because 2.37.3 measures what it
 does: at 0.4558 the band fails at `flyoverlow` while `forestairnoon` is still
 short, and moving it part of the way is tuning rather than physics.
 
-### 2.36.6 GUARDS, GATES AND THE NO-PIXEL-CHANGE PROOF
+### 2.37.6 GUARDS, GATES AND THE NO-PIXEL-CHANGE PROOF
 
 **THE ACCEPTANCE TEST.** `rn2550guard.mjs` on the base build before anything
 moved: **exit 0**, reproducing N8's four-pose table to the digit (rho 0.0992 /
@@ -11957,7 +12044,7 @@ value unchanged. Both runs print the same four rows and the same coverage block,
 **THE NO-PIXEL-CHANGE CLAIM IS MADE BY THE FRAME, NOT BY THE BUNDLE.** A
 dist-hash identity test is unavailable to this lane because it edits
 `web/src/`, so the proof is the guard's own twenty-four arms reproducing to the
-digit, plus the independent `canopyrough=0.8` rows in 2.36.3 landing exactly on
+digit, plus the independent `canopyrough=0.8` rows in 2.37.3 landing exactly on
 the pins. The one write this lane adds to the render path is behind
 `if (rough !== null)` and `canopyRoughnessOverride()` returns `null` with no
 flag on the URL.
@@ -11974,25 +12061,55 @@ it**.
 **GATES, each exit status read on its own:** `npx tsc --noEmit` **0**,
 `npm run build` **0**, `cd web && npm run check` ****9 of 9****.
 
-### 2.36.7 OWED, ROUTED, with the sizes measured
+### 2.37.7 OWED, ROUTED, with the sizes measured
 
-1. **THE CROWN IMPOSTOR'S SHADING NORMAL IS THE NEXT LANE, AND IT IS THE CAUSE
-   RATHER THAN A SYMPTOM.** `build_props_canopy.py` draws a whole crown as two
-   crossed quads, each an exactly vertical plane with an exactly horizontal
-   normal. That normal is why `rho0` spans 8.3x across four poses of one canopy
-   model, why low sun reads lighter than noon, and (through the same fictional
-   plane) why the card carries a coherent sky reflection at all. The standard
-   correction is a SPHERICAL/crown-outward normal reconstructed in the prop
-   shader. **Until it lands, no value of `CROWN_SELF_FLOOR` can put all four
-   poses inside a 4.2x band**, which is this lane's central result and is
-   proved rather than argued (2.36.3).
-2. **`envMapIntensity` ON THE CANOPY FAMILY HAS NO SWITCH AND IS THE TERM
-   `?canopyrough=` CANNOT REACH.** 2.36.4 measures the crown at 58 to 87 per
-   cent specular and shows roughness moves that by under 2 per cent in either
-   direction. The remaining specular is the sky PMREM lobe. It should be
-   isolable before it is judged, on RN-952's rule, and this lane deliberately
-   did not add a second knob it had no budget to measure.
-3. **THE DISPLAY-LINEAR TONE EXPONENT IS ~1.40 AND IT IS NOT 1.** Measured four
+1. **`FoliageNormal.ts`'s TWO DEGENERACIES ON CROSSED QUADS ARE THE NEXT LANE.
+   DO NOT BRIEF IT AS "RECONSTRUCT A CROWN-OUTWARD NORMAL IN THE PROP SHADER":
+   RN-1766 ALREADY DID THAT AND IT SHIPS.** An earlier version of this item said
+   exactly that, and a lane taking it would have opened the file and found the
+   work done (2.37.1a). The work that remains is repairing the reconstruction:
+
+   - **COPLANARITY.** `bendNormals` takes its base centre as the mean `x`/`z`
+     at minimum `y`. A crossed-quad crown is centred on its own axis, so that
+     centre lies ON both card planes, `d = pos - base` lies IN the card's
+     plane, and at the shipped `amount = 1.0` the bent normal IS `sgn * d/dl`
+     and is entirely in-plane: `N . V` near zero head-on. The function was
+     written for tufts OFFSET from a clump centre and nothing excluded the one
+     shape it degenerates on. **This is the term that moves the aerial look,
+     and it is the one with risk.**
+   - **A SIGN TEAR, CAUSED BY THE COPLANARITY, AND A LIVE SHIPPING DEFECT.**
+     `sgn = (n . d) < 0 ? -1 : 1` with `n . d` exactly zero in exact
+     arithmetic, so the sign resolves on floating-point residue: the 90-degree
+     yaw leaves `x` at `+/-2.6e-16` and verts 6 and 7 on the SAME top edge take
+     `up = +0.994` and `-0.994`. **One of every crown impostor's four triangles
+     is lit as if it faced the ground.** **Low-risk and SEPARABLE from the
+     coplanarity fix**, and worth landing on its own.
+
+   **TWO RISKS THE VERIFIER NAMED, both of which a brief must carry:**
+
+   - **`bendNormals` IS SHARED BY `grass`, `leaf` AND `canopy`.** RN-1766 bought
+     **+7.4 per cent of whole-frame `iqr` at `forestfloor`** with it, so a fix
+     aimed at crowns can regress the understorey. Scope it to the canopy bake,
+     or measure the understorey on BOTH arms.
+   - **THE SHIPPED BEND IS CURRENTLY THE ONLY THING KEEPING `flyoverlow` INSIDE
+     THE BAND** (rho **0.7021** with it, **0.9024** without). So a change that
+     helps noon can push low sun OUT of the top, and the guard must be run on
+     all four poses rather than on the one being fixed.
+
+   **`envMapIntensity` GOES TO THAT LANE AS A REQUIRED ISOLATOR, NOT AS ITS OWN
+   ALLOCATION.** 2.37.4 measures the crown at 58 to 87 per cent specular and
+   shows roughness moves that by under 2 per cent either way, so the term needs
+   a switch before it can be judged (RN-952's rule). It is folded in here rather
+   than allocated separately for two reasons the measurements give: the band is
+   unreachable **even with the specular removed entirely**, so an
+   `envMapIntensity` lane on its own could not deliver it; and a corrected
+   normal moves the diffuse AND the specular together, so separating them would
+   put two lanes on one seam.
+
+   **Until this lands, no value of `CROWN_SELF_FLOOR` can put all four poses
+   inside a 4.2x band**, which is this lane's central result and is proved
+   rather than argued (2.37.3).
+2. **THE DISPLAY-LINEAR TONE EXPONENT IS ~1.40 AND IT IS NOT 1.** Measured four
    ways on this build: with `?crownshade=0` the card's diffuse rises 18.4x /
    31.1x / 3.83x / 34.5x for an `S` rise of 7.97x / 12.5x / 2.53x / 11.3x, i.e.
    `D` scales as `S^1.40` (per pose: 1.403, 1.361, 1.447, 1.461) in the
@@ -12001,7 +12118,7 @@ it**.
    corroboration of 2.35.9 item 1's correction that the deep-shadow slope
    **EXPANDS** ratios, and one more reason the HalfFloat scene-RT readout is
    worth having.
-4. **`Smeas / S` IS 0.32 TO 0.66 AND THE SPECTRAL SPLIT'S PIN DOES NOT PREDICT
+3. **`Smeas / S` IS 0.32 TO 0.66 AND THE SPECTRAL SPLIT'S PIN DOES NOT PREDICT
    IT.** The split pins `LUMA . shadeRGB = S` exactly, and 2.33.3 predicts the
    rendered luma runs slightly BRIGHTER than `base_luma * S` because green is
    attenuated least. Measured on the frame, `D/D0` is 2.3x to 3.1x DARKER than
@@ -12009,7 +12126,7 @@ it**.
    0.43, against a measured 0.4336 at `forestairnoon` -- close enough to be the
    whole story) but that has not been separated from the base-colour weighting
    term, and it should be before anyone reasons from `cardShade` to a pixel.
-5. **`flyoverlow`'s SUN ANGLE JITTERS BETWEEN RUNS OF THE SAME BUILD.**
+4. **`flyoverlow`'s SUN ANGLE JITTERS BETWEEN RUNS OF THE SAME BUILD.**
    `sinSun` read **0.2051** and **0.2141** on two runs of the same pose on the
    same build (`cardShade` 0.0886 against 0.0904), a 4.4 per cent move in the
    pose's own driving variable. Every rect quoted here is from one build in one
@@ -12017,7 +12134,7 @@ it**.
    ceiling and the guard's `TOL` is 0.005, so a settle-dependent sun angle is
    worth pinning before that margin is spent. `artframe.js`'s `sunTol` for the
    `low` tag is the place to look.
-6. **2.35.9 ITEM 5 IS DISCHARGED.** `CanopySelfShadow.ts`'s K table quoted a
+5. **2.35.9 ITEM 5 IS DISCHARGED.** `CanopySelfShadow.ts`'s K table quoted a
    `?canopy=0` clearing of 103.22 and a "wood - clearing" column from RN-2275's
    build, and a later block called 1.76 to 7.31 counts "margins". Both are now
    headed with the correction that the sign test they were judged against no
@@ -12025,16 +12142,16 @@ it**.
    that the numbers are pre-`lane/wg-ship`, which moved that pose's `box`
    clearing 16.2 per cent. K is unmoved: its physical bracket of 2.5 to 3.5
    depends on neither change.
-7. **THE STAGE-2 BRIEF'S OWN PREMISE NEEDS AN ADMIN CORRECTION.** The accepted
+6. **THE STAGE-2 BRIEF'S OWN PREMISE NEEDS AN ADMIN CORRECTION.** The accepted
    shape was "the radiance raise travels WITH the canopy roughness fix, because
    specular removal PAYS for headroom the raise then spends". Measured, the
    roughness handle does not move the specular and the raise has no feasible
    value. **Neither half of the pairing survives contact**, and the decision
-   that framed them should be recorded as superseded by 2.36.3 and 2.36.4
+   that framed them should be recorded as superseded by 2.37.3 and 2.37.4
    rather than left standing for a later lane to budget against -- which is
    exactly the failure 2.35.2 documents.
 
-### 2.36.8 THE EYE, AGAINST 2.31.5 / 2.33.7 / 2.34.8's "CROWNS: NOT MET"
+### 2.37.8 THE EYE, AGAINST 2.31.5 / 2.33.7 / 2.34.8's "CROWNS: NOT MET"
 
 **CROWNS: STILL NOT MET, and this lane does not move the picture at all.**
 `docs/screenshots/RN2570_crowns_shipped_3x.png` against RN-2540's own
@@ -12054,25 +12171,34 @@ the most useful picture in it:
   **unmistakably GREEN sunlit crown tops against dark shadowed flanks, and it
   reads as a forest canopy seen from the air.** This is the picture the project
   has been trying to get since 2.31.5, and the measurement says its reflectance
-  ratio at noon is 0.3925 -- dead centre of the CORE. **The crown''s unshaded
+  ratio at noon is 0.3925 -- dead centre of the CORE. **The crown's unshaded
   optics are already right at noon; the self-shadow law is what flattens them
   to slate, and the same law is the only thing keeping the LOW-sun poses
   (`rho0` 1.92 and 3.25) from being far too light.** One term cannot do both
-  jobs while the impostor''s normal makes noon and low sun 8.3x apart.
+  jobs while the impostor's normal makes noon and low sun 8.3x apart.
+
+  **AND THIS CROP IS THE EVIDENCE THAT REFUTED THIS LANE'S FIRST MECHANISM
+  SENTENCE, which the lane failed to read.** The bright tops over dark bottoms
+  are a VERTICAL GRADIENT, and a flat horizontal normal -- what the first draft
+  claimed the impostor carries -- cannot render one. The gradient is RN-1766's
+  `bendNormals` working, and 2.37.1a is the correction.
 
 **FIDELITY-GAP section 1, item by item.** Item 5 (vegetation asset fidelity) is
 the one this lane speaks to and it **sharpens N7's re-aiming of it into a
-specific, actionable asset defect**: N7 said a better crown MESH would change
-nothing until the crown's radiance changes; this lane says the crown's radiance
-cannot be fixed while the mesh is two vertical quads, because the impostor's
-normal is what spreads the four poses 8.3x. The two findings compose into one
-route -- the impostor's SHADING is the asset problem, not its triangle count.
+specific, actionable defect**: N7 said a better crown MESH would change nothing
+until the crown's radiance changes; this lane says the crown's radiance cannot
+be fixed until the impostor's SHADING NORMAL is, because that normal is what
+spreads the four poses 8.3x. **The defect is not the asset and not the triangle
+count: the authored geometry never reaches a draw call, since `bendNormals`
+rewrites its normals at registration, so the work is in `FoliageNormal.ts` and
+not in `build_props_canopy.py`** (2.37.1a). The two findings compose into one
+route, and it is a SHADER-side route rather than an asset-side one.
 Item 3 (the sky as a participant) is **touched and not closed**: the crown's 58
 to 87 per cent specular share is the sky lighting the mid-distance far too
 coherently, measured, with the handle named and unbuilt. Items 1, 2, 4 and 6 are
 **untouched**.
 
-### 2.36.9 Rails and boundaries held
+### 2.37.9 Rails and boundaries held
 
 **TOUCHED:** `web/src/render/materials/CanopySelfShadow.ts` (the
 `?canopyrough=` override and its record, `CROWN_SELF_FLOOR_DERIVED`, the
@@ -12092,4 +12218,4 @@ rewritten), `FoliageTone.ts` (`sat 1.08` stands; not edited at all), any
 `test/expected.json`, and `artframe.js` (no pose row, no rectangle, no manifest
 row -- this lane added none, not even an additive one). **No ratchet ceiling
 raised, moved or re-derived; the one candidate that would have required it is
-reported as a FAIL in 2.36.3.** No em dash anywhere.
+reported as a FAIL in 2.37.3.** No em dash anywhere.
