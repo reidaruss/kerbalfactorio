@@ -13283,9 +13283,15 @@ standing violation rather than merely holding it** (0.1016 against 0.0992).
 
 ### 2.39.8 THE ACCEPTANCE RUN: `rn2550guard` EXIT 0, AND THREE OF FOUR POSES ARE NOW IN THE CORE
 
-Full four-pose `rn2550guard` on the FINAL build (entry chunk
-`8406a0c499aa908f`, verified served), six arms per pose, a fresh process each,
-twenty-four browser runs:
+Full four-pose `rn2550guard`, six arms per pose, a fresh process each,
+twenty-four browser runs. **RUN TWICE, ON TWO SEPARATE BUILDS OF THE SAME
+SOURCE** (entry chunks `8406a0c499aa908f` and `283b01db3db805d2`, each verified
+byte-for-byte against the served bundle before any arm ran), because the second
+build carries a comment-only edit and a moved `+dirty` stamp and a chunk hash
+therefore cannot prove the bundle equivalent (NUMBERS' own `+dirty` trap).
+**Every one of the eight `box` numbers and all four `rho` values reproduce to
+the digit across the pair**, which is the determinism claim this table rests on
+taken rather than assumed:
 
 | pose | boxShip | boxSurf | `f` | `rho` | before | verdict |
 |---|---:|---:|---:|---:|---:|---|
@@ -13582,15 +13588,24 @@ the bake's own `path` back and requires the two arms to differ:
 
 | pose | pixels moved | darker / lighter | maxDelta | meanDelta |
 |---|---:|---|---:|---:|
-| `forestfloor` | 7,716 (**0.68%**) | 4,044 / 3,672 | 237 | 31.4 |
-| `meadownight` | 484 (**0.04%**) | 226 / 258 | 237 | 86.5 |
+| `forestfloor`, build A | 7,716 (**0.68%**) | 4,044 / 3,672 | 237 | 31.4 |
+| `forestfloor`, build B | 8,599 (**0.75%**) | 3,871 / 4,728 | 234 | 32.2 |
+| `meadownight`, build A | 484 (**0.04%**) | 226 / 258 | 237 | 86.5 |
+| `meadownight`, build B | 795 (**0.07%**) | 480 / 315 | 237 | 49.5 |
 
 against RN-1766's own **3.78 per cent two-page-load floor** at `forestfloor`.
-**NIGHT IS UNTOUCHED** at 0.04 per cent of pixels. The `forestfloor` move is the
+Run on both builds, and the pair is itself worth reading: the WALK poses are NOT
+bit-deterministic the way the aerial rectangles are (0.68 against 0.75 per cent
+for the identical comparison), which is exactly the scatter the 3.78 per cent
+floor exists to absorb and is why this gate is a floor test rather than an
+identity test. **NIGHT IS UNTOUCHED** at 0.04 and 0.07 per cent of pixels. The
+`forestfloor` move is the
 far canopy cards visible from the ground, not the understorey: the understorey
 cannot have moved, because `FoliageNormal.ts` was not edited and the crown path
 is selected by MATERIAL NAME, and the balanced darker/lighter split (4,044
-against 3,672) is a reshaping signature rather than the one-sided darkening a
+against 3,672, and 3,871 against 4,728 on the other build, i.e. balanced and
+not even consistently signed) is a reshaping signature rather than the
+one-sided darkening a
 tuft-shading change would produce (RN-62's own reading of that split).
 
 **GATES.** `npx tsc --noEmit` exit 0; `npm run build` exit 0;
