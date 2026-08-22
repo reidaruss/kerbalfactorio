@@ -1,7 +1,13 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2635 to RN-2644, `lane/n14-drysea`, **THE DRY SEA'S CHROMA STEP IS FIXED IN ALBEDO AND MEASURABLY HALVED, AND A BIOME-ID PAINT ARM BUILT BEFORE THE ALBEDO ROW WAS TOUCHED FOUND THE R5 AUDIT'S OWN "BEACH CREAM" SAMPLE WAS FOREST -- CORRECTED 2026-08-22 BY A FRESH-CONTEXT VERIFIER, VERDICT FIX: every load-bearing number reproduced (the row-372 walk value-for-value, both candidate arms, the midpoint derivation exact, Beach's untouched row proved by byte presence), with nine corrections folded in.** R5 rank 3, taken under the verifier's binding constraints (rendering.md 2.40.6, NUMBERS RN-2635 row). **CONSTRAINT 1 DISCHARGED FIRST, AND ONE OF ITS OWN FINDINGS NEEDED A CORRECTION:** a new paint arm (`BiomeIdPaint.ts`, `?biomeid=1`) renders ONLY a fixed, saturated debug colour keyed on the terrain's raw `/core` Biome index, deliberately independent of `BiomePalette.ts`'s own suspect HEX table, spliced in AFTER both aerial-perspective calls in `TerrainFragLight.glsl.ts` so the reading survives RN-2540's ~92 per cent additive floor at range. Walking `forestair` row 372 column by column gives the true class sequence Ocean (x<1290) -> Beach (x 1300-1410) -> Forest (x>1440): **the audit's own "Beach" window, x[1430,1480), sampled FOREST**, one class too far out (Beach's own first-published calibration, (147,196,99), was itself wrong -- corrected to its DOMINANT fill, (178,226,123), which STRENGTHENS the finding by matching row 372's true Beach patch to one count), and the TRUE Ocean/Beach warm step at that row is **25.46 screen counts (14.23 to 39.69), bigger than the published 14.63, not smaller.** A narrow band read as "a thin Plains sliver" is **STRUCK as UNPROVEN**: `vBiomeIdx` is an interpolated varying, and Beach(1)-to-Forest(3) is this frame's one interface between non-adjacent indices, so `int(v+0.5)` fabricates a fake Plains(2) band at the interpolation's midpoint by construction (no Ocean/Beach interface, adjacent indices, shows the same artefact); this failure mode is now in `BiomeIdPaint.ts`'s own header. **CONSTRAINT 2, TARGETED IN ALBEDO:** `?terrainpaint=1` (the existing airlight isolator) shows the additive floor's own warm is nearly IDENTICAL at both true patches (27.11 vs 28.33), so it cancels almost completely out of the DIFFERENCE and the screen warm gap is carried by the surface term almost exactly; old Ocean's linear-albedo warm is **-0.1489** against Beach's **+0.2200** (a 0.3689 gap). **This cancellation argument is a SANITY CHECK, not a license**: it is exact only for an additive pipeline, and candidate A disproves that it extends further (predicted 44.6 per cent screen closure, measured 8.8 per cent). Candidate A's actual built hex, `0x6d6558`, is HSV (37.14 deg, 0.193, 0.427), not the originally-stated (36.85, 0.15, 0.42) -- a real, measured hex whose crop IS plainly flatter and warmer than shipped, yet the plate STILL reads as a lake there, so it was REJECTED as flattened (screen step 2.25 counts, 8.8 per cent) rather than "unchanged". The shipped hex, `0x505564`, is candidate B, the LINEAR-albedo midpoint between old Ocean and candidate A: measured screen warm step **25.46 -> 12.60 counts (49.5 per cent)**, luma step 23.78 -> 17.14 (72.1 per cent), Beach's own two windows read to within float noise across three builds -- EVERY PRINTED NUMBER MATCHED TO THE DIGIT, not "bit-identical" (PNG byte comparison was never run; this harness's own repeat-capture noise floor, now a NUMBERS.md catalogue entry, is up to 46 per cent of pixels between two captures of the SAME build). **A stronger stopping point:** shipped Ocean's warm lands within 0.78 counts of the frame's own untouched Forest ground warm, and the shipped Ocean/Beach step is no louder than the frame's own untouched Beach/Forest boundary (11.64/11.81) -- shipped Ocean joins the frame's dominant hue family with Beach revealed as the actual outlier. Ocean is now the SECOND-darkest dry biome (only Forest's 0.0534 is darker; Ocean's new luma is 0.0912), which keeps its own identity clear of the Hills/Plains band. **CONSTRAINT 3 HELD, WITH A FALSE SAFETY CLAIM CORRECTED:** only the Ocean row moved; Beach's `0xb3a184` is untouched. **`pondside`'s real water is NOT "a different material entirely"** as first printed: it draws the SAME terrain material, `ofArtWetTint` applied on top of `uBiomeColor[bi]` (`TerrainFragAlbedo.glsl.ts:411-412`), and the verifier proved zero Ocean-paint pixels in that whole frame directly -- the safety is INCIDENTAL (every placed pond sits on Hills, not Ocean), and a future world-gen change placing a pond on Ocean class would silently reach this hex, recorded as a hazard rather than closed. The new hex is a cool grey-mud defensible whether Ocean later floods or stays dry. **GUARDS: `meadow` shows every printed number matching a stash-and-rebuild pair to the digit** (not bit-identical, see above), `rn2550guard` exit 0 THREE times across the whole lane with the four pinned `rho` values unmoved (0.1019/0.3747/0.2974/0.5130) -- **measured against this lane's own base, `39bc5643`, now STALE**: `main` has since moved to `c20a2798` (N13 merged, re-pinning `flyovernoon` up and `forestairlow` down 0.12), so this PASS evidences this lane's own diff cannot move those pins, not a claim about the new pins, `npm run check` **9 of 9** both before and after the correction pass. **EYE, HONESTLY: STILL READS AS WATER AT 1x.** The before/after 3x crops at the row-372 boundary (`RN2635_crop_before_3x.png` / `_after_3x.png`) show the SAME smooth, boundary-distinct, value-dipped plate shape even under candidate A's genuinely flatter, warmer arm; **this is a new finding, not a shortfall to hide: the "lake" read is carried at least as much by the plate's SHAPE and flat, untextured VALUE DIP as by its hue**, and no hue-only fix inside `BiomePalette.ts`'s two rows can fully discharge "no longer reads as water" while the class has no relief/splat texture of its own. Routed to Admin as an open item rather than claimed solved. **PROMOTED RULE for the standing rules at merge: an albedo/palette lane must prove its subject with an instrument INDEPENDENT of the table under suspicion, AND state that instrument's own failure mode at class boundaries.** Gates 0, 0, **9 of 9**, guard 0 (three times). Full record in section 2.41 (renumbers to 2.42 at merge, per Admin); frames `docs/screenshots/RN2635_*`.) (Previous: `lane/n12-crownnormal` section 2.39.) (Same day: `lane/n13-backface` section 2.41; World Audit R5 section 2.40.) THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2645 to RN-2648, `lane/n15-crownfinish`, **THE DEAD SWITCH IS ALIVE, THE CROWN STOPS BEING MAJORITY SPECULAR AT THREE OF FOUR POSES WITH ITS DIFFUSE UP AND ITS LEVEL HELD, THE RECORDED DEBT IS MEASURED TO BE UNREACHABLE BY ANY AMBIENT-FLOOR HANDLE ON EITHER HALF, AND THE PROJECT'S SECOND LOGGED GUARD DECISION CLEARS `forestairnoon`'s STALE WAIVER.** 2.41.11 item 2, taken, both handles in one lane. `CrownEnv.ts` gives `OF_Canopy` its OWN `envMap` (the same PMREM the scene already holds, assigned per frame), which takes it out of `WebGLRenderer.js:2694-2696`'s overwrite branch, and `material.envMapIntensity` -- dead since the day RN-2590 built it -- carries a DERIVED sky-view factor. **THE HEADLINE: the crown's specular share falls at ALL FOUR poses, 51-to-71 per cent becomes 40-to-61 per cent, and THREE of the four are now under a half** (`forestairlow` 0.6752 to 0.3969); its DIFFUSE rises at all four (+32 / +35 / +3 / +40 per cent) and its LEVEL is held, `rho` at `forestairnoon` reading 0.1890 against 0.1906, still INSIDE the band. **THE CHROMA IS THE SECOND HEADLINE AND IT IS THE ONE R2 3.11(c) ASKS FOR: on the crown cards alone the BLUE falls 36 per cent against the green (B/G 0.6138 to 0.3913) while the luminance moves 0.7 per cent** (Y 0.003449 to 0.003425) -- **and both of those carry a caveat the first draft did not: the luminance hold is a CANCELLATION of two large opposite moves (card floor alone +27 per cent Y, env cut alone -22) and breaks the moment either handle moves again, and like-for-like at ONE card floor the environment handle's own chroma floor is B/G 0.4403, which the shipped pair goes BELOW because the card floor lifts the green.** **ALL EIGHT `box` RATCHET NUMBERS FALL** (N12 moved six down and two up, N13 six up and two down; this lane moves eight down). `rn2550guard` **exit 0, four of four IN BAND, three IN CORE**, and the `rho0` spread 2.46x to **2.43x**, not worsened. **THE DERIVATION, AND IT RETIRES A GUESS THIS FILE HAS CARRIED SINCE RN-2275.** `CROWN_SELF_FLOOR`'s own arithmetic is "ambient share 0.137 times a canopy sky-view factor of about 0.55". `CrownSkyView.ts` DERIVES that factor as the cosine-weighted hemispherical mean of the layer-mean beam transmittance -- the canopy SUNLIT FRACTION `(1-exp(-kL))/(kL)`, the two-leaf models' own quantity -- and it READS BACK **0.285** in the Forest stand and **0.507** in the Hills stand against one hand-picked number for both. (Those are per-frame readings off `residentCanopyMu()` that wobble about 0.15 per cent between runs, not four-decimal constants; an earlier draft retyped a hand-computed triple that disagreed with the shipped code and it is corrected at its own site.) It is applied to the CARD's own sky, which is its `envMap`, so the guessed factor comes OUT of the CARD's floor (which becomes the bare share, **0.137**) or one hemisphere would be occluded twice. **The far paint has no `envMap` at all**, so its sky-view factor has nowhere else to live and `CROWN_SELF_FLOOR` stays at 0.08 and is now the paint's alone: one occlusion on each half, in the place each half's sky is. **AND THE DEBT IS NOT REPAID.** RN-2605 raised `flyovernoon` by 0.0248 / 0.0251 and named this lane to lower both; this lane lowers them by **0.0023 and 0.0028** (9 and 11 per cent) and re-pins them down. **THIS LANE'S OWN CARD-FLOOR RAISE COST MORE THAN IT REPAID and the table says so: the env cut bought -0.0055 / -0.0067 and the card floor gave back +0.0032 / +0.0039**, because the card floor was spent on the BAND at `forestairnoon` (rho 0.1510 without it) out of the debt. **THE CEILING IS THE JOINT ONE AND IT IS 61 AND 70 PER CENT** (`crownenv=0,crowncardfloor=0`: 0.9439 / 0.9096), not the 45 and 52 an earlier draft quoted from a two-flag arm under a one-flag label. **AND THE RESIDUE'S ROUTING IS CORRECTED BY A MEASUREMENT NEITHER THE LANE NOR ITS FIRST DRAFT RAN: the far paint's own ambient floor driven to ZERO buys only -0.0083 / -0.0095, 37 and 43 per cent of the 0.0225 / 0.0223 residue, and the arm with EVERY ambient floor at zero AND the crown's environment deleted reads 0.9356 / 0.9002, still missing RN-2605's pre-raise boxShip by 0.0013. NO AMBIENT-FLOOR HANDLE ON EITHER HALF CAN CLOSE THIS DEBT**; what is left is the far paint's ALBEDO or its COVERAGE, which is World Audit R5 rank 1's territory, and Admin's adopted plan merges the two. **`forestairnoon`'s boxShip sits 0.0009 under its PIN and 0.0014 under its CEILING**, which is 2.39.7's "the guard's two constraints disagree about the same change at the same pose" measured to a thousandth. **THE SHADE LAW'S RAISE IS DERIVED, BUILT AND REFUSED ON THE FRAME.** The shipped law takes the transmittance at the BASE of the canopy layer where a whole-crown impostor needs the layer MEAN, i.e. the sunlit fraction; built as `?crownshadelaw=1` it takes `forestairnoon`'s boxSurf to **1.0929**, the wood reading nine per cent LIGHTER than the clearing it stands in, which is R2 3.10's standing refusal made literal, and `flyovernoon`'s `rho` to 0.8803, above the band. Better physics, refused, arm left reachable. A sun-elevation-aware floor is derivable too and moves the low-sun ordering the WRONG way by construction; the arithmetic that refuses it is written down so the next lane does not spend a build on it. **THE SECOND LOGGED GUARD DECISION, ADMIN 2026-08-22, ADOPTED FROM THIS LANE'S FRESH-CONTEXT VERIFIER AND EXECUTED HERE: `forestairnoon`'s `rhoOut: 'low'` WAIVER IS CLEARED AND ITS `rho` RE-PINNED TO THE MEASURED 0.1890.** Two lanes had declined it as out of their decision; what settled it is that the waiver's 0.0898 of slack is LIVE -- the arm with both crown-side handles at their floor reads `rho` 0.0955, **0.0845 BELOW the band, and the guard passes it at exit 0** -- and that it cannot reach the routed paint lane, because `rho` is coverage-corrected on the `?terrainpaint=1` arm and a full paint-floor sweep leaves it at 0.1890 unchanged to four decimals. The cost is stated: **0.0090 of `rho` headroom** that every remaining crown-side specular handle must now budget for. The guard's standing note is gone from its output. **THE ESCAPE COSTS ONE THING FOUND BY READING THE RENDERER: the branch it leaves is also how `Headlamp.ts:401` dims every stock material underground**, so the write is `sceneIntensity * skyView` -- **and that compensation is correct by READING and is NOT measured**, because `sceneIntensity` reads 1.0000 on every arm of every pose and there is no cave pose; it also lags one frame (`Systems.ts:352` against `:373`) and `rn2647untouched`'s off arm covers only the env half. **THE READBACK IS AN OUTCOME READ**: `appliedLive` is `material.envMapIntensity` read AFTER the draw, and `rn2647untouched` asserts both directions. **`?crownenv=1` reproduces `?crownenv=off` TO THE DIGIT at one card floor on all four poses and all four quantities**, so every difference is the scalar and not the plumbing. **PER-FRAME COST IS ZERO PROGRAMS AND ZERO TRIANGLES** (56/56/56 on both arms, three repeats; 226,133 tris / 27 calls / 114.8 MB identical), because this lane scopes by MATERIAL OBJECT rather than by program and so does not buy N13's +3. **NIGHT MEASURED, AND THE NULL IS STRONGER THAN N13's BECAUSE THE POSE ARMS ITSELF**: at sun dot -0.25 the three env arms read linear Y 0.000152 / 0.000154 / 0.000152 while `?crownshade=0` on the SAME rectangle at the SAME hour reads 0.000564, **+271 per cent**; the 8-bit-floor limit is stated anyway. **UNDERSTOREY GREEN**: `rn2647untouched` (NEW) `forestfloor` 0.55 per cent and `meadownight` 0.06 per cent against RN-1766's 3.78 per cent floor, with N12's and N13's own probes green beside it. **AND ITS ARMING TEST WAS WRONG FIRST, IN A NEW WAY:** copied from RN-2607 it compared a WHOLE-FRAME pixel percentage against a noise floor and called a 22-per-cent move of the subject "not armed", because the `crowns` rectangle is 1.4 per cent of the frame and a term confined to the cards has its signal divided by seventy before it meets a floor that is not divided at all. Re-armed on the guard's own quantity on the cards alone: **22.02 per cent against a 0.000 per cent two-load noise.** **EYE: PARTIAL, and it is a COMPOSITION step, which is why the 3x crop understates it and the chroma table does not.** **A FRESH-CONTEXT VERIFIER RETURNED FIX, RECORD-ONLY**: twenty of twenty table values reproduced, the derivation three independent ways, both findings, the losers' prices, the chroma to six digits and a merged-tree guard run proving the N14 interaction safe -- and it changed FOUR CONCLUSIONS, every one of them drawn from an arm this lane did not run (the routing, the ceiling, the chroma's mismatched floor with the luminance hold's fragility, and the unmeasured cave compensation), plus three arm labels, one stale readback triple, one undercounted result and one loose use of "ceiling". **The pattern is the lesson: every error was in an arm reasoned about rather than run.** THREE new `PAGE_PARAMS` registered in the same commit, two new probes (one takes the `--out=` flag RN-2605's verifier asked for), three new NUMBERS traps. Gates 0, 0, **9 of 9**; guard **0**. Full record in section 2.43; frames `docs/screenshots/RN2645_*`. **AFTER THIS MERGE THE CROWN THREAD PAUSES PENDING REID'S EYE**, per the verifier's G3: the next decisions are taste calls.) (Previous: `lane/n13-backface` section 2.41; `lane/n12-crownnormal` section 2.39; `lane/n10-crownlight` section 2.38; `lane/n11-treelinepose` section 2.37; `lane/n9-treeline` section 2.36; `lane/n8-guardband` section 2.35.) (Same day: World Audit R5, section 2.40.) (Same day: `lane/n14-drysea` section 2.42; `lane/n13-backface` section 2.41.) THIS LINE IS A POINTER: replace it, never append to it.
+
+
+
+
+
+
 
 >
 > *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2590 to RN-2593, `lane/n12-crownnormal`, **THE CROWN IMPOSTOR GETS THE CANOPY LAYER'S NORMAL: THE POSE SPREAD FALLS 8.41x TO 5.20x, THREE OF FOUR POSES ENTER THE CORE, AND THE GUARD'S OWN TWO CONSTRAINTS TURN OUT TO OPPOSE EACH OTHER.** 2.38.7 item 1, taken. `CrownNormal.ts` gives `OF_Canopy` and only `OF_Canopy` a canopy-LAYER shading normal: a dome anchored `q = R / tan(CROWN_FLANK_DEG)` BELOW the crown base, split into its POLAR angle and its AZIMUTH, with the azimuth mixed toward the card's own authored normal. **BOTH DEGENERACIES GO BY CONSTRUCTION, NOT BY AN EPSILON:** there is no sign ternary at all (`downVerts` 3 of 24 on the pre-lane path, **0** on the shipped one) and at `crowncard = 1` the azimuth IS the card normal, so `minAzimuthOut` goes 0.0000 to **1.0000**. Constants `CROWN_FLANK_DEG = 25` and `CROWN_CARD_MIX = 1.0`, both pinned by a measured ladder with the argument beside them. **SCOPED BY MATERIAL NAME, so `FoliageNormal.ts` IS NOT EDITED AT ALL** and the understorey's bytes are identical by construction. **THE SHIPPED BYTES WERE RE-READ FROM THE `glb` WITH A MANUAL PARSE** and 2.38.1a is sharpened: the tear is ONE VERTEX PER TREE (v7, `up` -0.8944 on the Broadleaf), the residue is `hw * cos(pi/2)` at 2.572e-16 / 1.179e-16 / 8.879e-17 per species, and quad A's `z` is EXACTLY zero so only the yawed quad tears. **THREE FINDINGS THE BRIEF DID NOT CONTAIN.** **(1) A THIRD DEGENERACY:** `OF_Canopy` is `doubleSided`, three negates the WHOLE normal on a back face and a planar quad is entirely front- or back-facing from any camera, so about half of every stand's drawn card area is lit upside down. It is why **the sign fix taken alone, as 2.38.7 routed it, COSTS A QUARTER OF THE CROWN'S LUMINANCE** (`rho` 0.0992 to 0.0748): the tear was the only correctly-lit normal on a back-facing quad. The three arms measure **-29 / -44 / -11 per cent alone and +1.8 per cent together**, so neither fix could have been landed on its own and 2.38.7's "low-risk and SEPARABLE" is withdrawn. **(2) THE GUARD'S TWO CONSTRAINTS OPPOSE EACH OTHER:** correcting the normal makes the crown respond properly to a HIGH sun, which moves `flyovernoon` INTO the CORE and simultaneously trips that pose's one-sided `box` darkness ratchet. The first candidate (`crownflank=12`, spread 2.23x) was **REFUSED on boxShip 0.9403 against 0.9343 + 0.005**, reported as a FAIL and NOT re-pinned; the shipped angle is bracketed from ABOVE by the band and from BELOW by the ratchet. **(3) `envMapIntensity` IS A DEAD SWITCH, NOT AN INERT TERM (this item was first published the other way round and a fresh-context verifier refuted it; the withdrawal is retracted):** the required isolator is built and a sixteen-fold change moves the `crowns` rectangle by **exactly 0.000000** at both binding poses, and the reason is that `WebGLRenderer.js:2694-2696` OVERWRITES the uniform from `scene.environmentIntensity` every frame while the material has no own `envMap` and `SkyIbl.ts:133`'s environment is set, so the write never reaches the draw. The readback proved the query PARSED, not that the uniform SURVIVED, and the sibling-write control is invalid because `envMapIntensity` is the one property in that group with a per-frame renderer override. The control this lane did not run, `?ibldiag=noenv`, moves the same rectangle **-37.48 per cent**, so the environment is a LARGE term in the crown and **2.38.4's PMREM reading is CORROBORATED** (honestly: that control removes environment DIFFUSE and SPECULAR together, so it establishes the environment's size and not the specular's share of it, and 2.38.4's stronger "almost entirely" form is supported rather than proved). The LIVE handle is `scene.environmentIntensity` or an own `envMap`. Roughness is live at the sharp end too: `?canopyrough=0.05` moves the crowns RECTANGLE **+1,334 per cent** (0.001566 to 0.022454, the whole rectangle and not the specular alone) and `?canopyrough=1.0` moves it **-24.97 per cent**, so 2.38.4 refuses the fully-rough DIRECTION and its 0.8-to-1.0 window is NARROWED rather than upheld. Both withdrawals are annotated at their own sites (2.38.4 and 2.38.7 item 1). **ACCEPTANCE: `rn2550guard` EXIT 0**, and its own verdict line goes from **3 of 4 poses outside the CORE to 1**: `rho` 0.0992/0.4363/0.2488/0.7021 to **0.1016 / 0.3747 / 0.2968 / 0.5126**, with `forestairlow`, `flyovernoon` and `flyoverlow` all IN CORE and `forestairnoon`'s standing violation **REPAID** rather than deepened. **NO ratchet ceiling raised, moved, lowered or re-derived**; **SIX of eight FELL and TWO rose** (`flyoverlow` boxSurf 0.8884 to 0.8446 the largest fall; `flyovernoon` boxShip AND boxSurf both up, inside tolerance), all reported. **ADMIN HAS ANSWERED: the post-N12 pins are NOT adopted** (the 6/2 split makes re-pinning selective, the movement is a reshaping a one-sided ratchet would freeze, and the numbers are already stale on merged main where WG-285 moves `forestairlow` boxSurf to 0.7704); the ratchet re-measure on merged main is routed to `check:guard`'s owner as an instrument job. **THE SPREAD: `rho0` 8.41x to 5.20x and `rho` 7.08x to 5.05x**, and the mechanism shows in the split, where the crown's DIFFUSE now rises at both noon poses (+23%, +29%) and FALLS at both low-sun poses (-22%, -22%) -- the canopy-layer statement coming true. **THE BAND'S FLOOR AT `forestairnoon` IS NOT REACHED (0.1016 against 0.18) AND IS PROVED UNREACHABLE FROM THE SHADING NORMAL AT ALL** (`rho = rho0 * Smeas + P/Y_clear`, `Smeas` 0.0544 fixed by the shade law, `rho0` capped at the flat-plate limit 0.4578), **but what CAN reach it is measured**: with the `crownflank=12` normal, `?crownshadefloor=0.30` puts BOTH binding poses inside the band (0.2190 and 0.6940), which 2.38.3 proved impossible with the shipped normal. Routed, not taken, and **Admin has since REFUSED that route as the next lane** because it drives the wood brighter than its own clearing (1.0287 / 1.0327). **THE NEXT LANE IS THE THIRD DEGENERACY** (largest term, roughly doubles the diffuse, does not spend the `box` ratchet), then the specular reopened with the right handle. **EYE: PARTIAL, residual named** -- the specks lose their blue-violet cast and read greener, the mass is still slate-green, and the residual is `Smeas` crushing the diffuse to a twentieth plus the face negation throwing away half of what is left. **NO PER-FRAME COST**, all five arms 226,133 triangles / 27 calls / 53 programs / 114.8 MB identical to the digit. **NIGHT AND THE UNDERSTOREY UNTOUCHED, ASSERTED:** `meadownight` 0.04 per cent of pixels and `forestfloor` 0.68 per cent (far crown cards, balanced darker/lighter) against RN-1766's 3.78 per cent two-page-load floor. Four new probes, four new `PAGE_PARAMS` registered in the same commit, **four** new NUMBERS traps. **CORRECTED 2026-08-22 after a fresh-context verifier, verdict FIX: claims A, B, C and E all reproduced to the digit on an independent build; claim D (the isolator) is the one refuted, and its correction is item 3 above.** `CROWN_SELF_K`, `CROWN_SELF_FLOOR`, the spectral split, `FoliageTone` and `artframe.js` all untouched. Gates 0, 0, **9 of 9**, guard 0. Full record in section 2.39; frames `docs/screenshots/RN2590_*`.) (Previous: `lane/n10-crownlight` section 2.38; `lane/n11-treelinepose` section 2.37; `lane/n9-treeline` section 2.36; `lane/n8-guardband` section 2.35.) (Same day: `lane/n13-backface` section 2.41; World Audit R5 section 2.40.) THIS LINE IS A POINTER: replace it, never append to it.
@@ -15009,3 +15015,806 @@ comments only (`BiomePalette.ts`'s and `BiomeIdPaint.ts`'s doc blocks; no
 GLSL, no uniform, no shipped hex changed), rebuilding to `index-CpBkZoYq.js`,
 verified via `check:boot`'s own served-bundle check rather than a
 lane-owned server.
+
+## 2.43 THE DEAD SWITCH IS ALIVE, THE CROWN STOPS BEING MAJORITY SPECULAR AT TWO OF FOUR POSES WITH ITS DIFFUSE UP AND ITS LEVEL HELD, AND THE RECORDED DEBT IS MEASURED TO BE UNREACHABLE RATHER THAN RE-NEGOTIATED (RN-2645 to RN-2648, 2026-08-22, `lane/n15-crownfinish`)
+
+> 2.41.11 item 2, taken, both handles in one lane. Base `origin/main` at
+> `c20a2798`. Branch `lane/n15-crownfinish`, pushed, **not merged to main**.
+> Server `127.0.0.1:5645`, `--strictPort`, sentinel
+> `dist/of-sentinel-rn2645.txt` whose **CONTENT** was fetched back over the wire
+> on each of three builds (tokens `RN2645-BASE-A1Q`, `RN2645-SEARCH2-P4X`,
+> `RN2645-FINAL-Z8K`), never a status code, and on the final build **the SERVED
+> CHUNK ITSELF** was fetched and hashed against `dist`
+> (`StarterContent-DJ3502Y8.js`, sha256 `b40946ea...`, byte-identical) and
+> searched for this lane's own three page parameters, so the arm set is proved
+> to be running THIS source rather than a cached one. `rn2550guard`
+> independently re-checked the served entry chunk (`0d6087872e99e11d`) against
+> `dist`. PID owned by this lane and killed by it. `npx tsc --noEmit`,
+> `npm run build` and `cd web && npm run check` run as SEPARATE steps with each
+> exit status read on its own. **THE PRE-LANE BASELINE WAS RE-MEASURED IN THIS
+> WORKTREE BEFORE ANY EDIT and reproduces N13's whole four-pose guard table to
+> the digit**, so every delta below is against a number this lane watched
+> arrive rather than against a quoted one.
+
+### 2.43.1 THE ONE-LINE ANSWER, AND IT HAS THREE PARTS
+
+**`OF_Canopy` now carries its OWN `envMap`, which takes it out of
+`WebGLRenderer.js:2694-2696`'s per-frame overwrite, and `material.envMapIntensity`
+-- dead since the day it was built -- carries a DERIVED sky-view factor. The
+crown's specular share falls at all four poses, from 51-to-71 per cent to
+40-to-61 per cent, and at `forestairlow` it falls 0.6752 to 0.3969, i.e. the
+crown stops being majority specular. Its DIFFUSE rises at all four poses
+(+32 / +35 / +3 / +40 per cent) and its overall level is HELD: `rho` at
+`forestairnoon` reads 0.1890 against 0.1906, still INSIDE the band. Every one of
+the eight `box` ratchet numbers FALLS. `rn2550guard` is exit 0, four of four in
+band, three in core.** The composition changed and the luminance did not, which
+is exactly what R2 3.11(c) asks for and what a scalar band cannot ask for.
+
+**AND THE DEBT IS NOT REPAID. IT IS MEASURED TO BE UNREACHABLE FROM THIS LANE'S
+TWO HANDLES, AND THAT IS REPORTED AS A SHORTFALL WITH A NUMBER.** RN-2605 raised
+`flyovernoon` by 0.0248 boxShip / 0.0251 boxSurf and named this lane to lower
+both again. This lane lowers them by **0.0023 and 0.0028**, 9 and 11 per cent,
+and re-pins them down. The rest is a ceiling rather than an effort:
+
+- **BOTH CROWN-SIDE HANDLES AT THEIR FLOOR AT ONCE**
+  (`?crownenv=0&crowncardfloor=0`, the environment deleted and the card's floor
+  at zero, which is more than any derivation licenses) **move `flyovernoon` by
+  -0.0152 boxShip and -0.0175 boxSurf: 61 and 70 per cent of the debt, and
+  that is the boundary of the box.** The environment alone at zero with the
+  card held at its pre-lane floor is -0.0111 / -0.0130, 45 and 52 per cent.
+- **THIS LANE'S OWN CARD-FLOOR RAISE COST MORE THAN THE LANE REPAID.** The
+  environment cut bought -0.0055 / -0.0067 and the card floor gave back
+  **+0.0032 / +0.0039**; the net is the 0.0023 / 0.0028 re-pinned above. The
+  card floor was spent on the BAND at `forestairnoon` and it was spent out of
+  the debt, and saying it any other way would be flattering the lane.
+- **The diffuse handle moves `box` the OTHER way at every pose**, because the
+  shade law's floor reaches the far PAINT and 2.38.3 measured the paint at 12.8x
+  the cards on that rectangle. `?crownshadefloor=0.137` on both halves takes
+  `forestairnoon` boxShip to 0.9935 against a 0.9822 ceiling.
+- **AND THE AMBIENT FLOORS CANNOT CLOSE IT FROM EITHER SIDE.** Driving the far
+  paint's own ambient floor to ZERO with the card held
+  (`?crownshadefloor=0&crowncardfloor=0.137`) buys **-0.0083 / -0.0095, 37 and
+  43 per cent of the residue**; and the arm with EVERY ambient floor in the
+  model at zero and the crown's environment deleted reads **0.9356 / 0.9002**,
+  so boxShip still misses RN-2605's pre-raise 0.9343 by 0.0013. **No
+  combination of the ambient-floor handles on either half closes this debt**,
+  which is why 2.43.11 routes the residue to the paint's ALBEDO and COVERAGE
+  rather than to its floor.
+
+**THE DERIVED SHADE-LAW RAISE IS BUILT, MEASURED AND REFUSED, AND THE REFUSAL IS
+A NUMBER THIS PROJECT HAS NEVER HAD.** The shipped law takes the transmittance at
+the BASE of the canopy layer where a whole-crown impostor needs the layer MEAN,
+which is the canopy SUNLIT FRACTION and has a textbook anchor. Built as
+`?crownshadelaw=1` and measured: it takes `forestairnoon`'s boxSurf to
+**1.0929**, i.e. **the wood reads LIGHTER than the clearing it stands in**, which
+is `docs/web/WORLD-AUDIT-R2-2026-08-21.md` section 3.10's standing refusal made
+literal, and it takes `flyovernoon`'s `rho` to 0.8803, above the band. Better
+physics, refused on the frame, with the arm left reachable.
+
+**WHAT COULD BE SPENT IS THE CARD'S HALF OF THE FLOOR, AND IT IS DERIVED BY
+DELETING A GUESS RATHER THAN BY ADDING ONE.** `CROWN_SELF_FLOOR`'s own arithmetic
+is `ambient share 0.137 x a canopy sky-view factor of about 0.55`. This lane
+DERIVES that sky-view factor (`crownSkyView(K mu)`, read live off the page:
+**0.285** in the Forest stand, **0.507** in the Hills stand, against one
+hand-picked number for both)
+and applies it to the CARD's own sky, which is its `envMap`. Leaving the guessed
+factor inside the card's floor as well would occlude one hemisphere twice, so it
+comes out and the card's floor is the bare share, **0.137**. The far paint has no
+`envMap` at all -- the terrain reads its sky ambient from the scattering integral
+per fragment, which is why the IBL was deferred at W3 -- so its sky-view factor
+has nowhere else to go and its floor stays at 0.08. **One occlusion on each half,
+in the place each half's sky lives.**
+
+### 2.43.2 THE ESCAPE, AND THE OUTCOME READBACK THAT PROVES IT
+
+`WebGLRenderer.js:2694-2696` is predicated on `material.envMap === null`:
+
+```
+if ( ( material.isMeshStandardMaterial || ... )
+     && material.envMap === null && scene.environment !== null ) {
+  m_uniforms.envMapIntensity.value = scene.environmentIntensity;
+}
+```
+
+`CrownEnv.ts` assigns the crown material the SAME PMREM texture the scene
+already holds, every frame, from the same `Systems` line that writes the card's
+self-shadow colour and one line after `SkyIbl.update`. The branch stops firing.
+
+- **NO NEW TEXTURE AND NO NEW MEMORY:** the same object, by reference.
+- **NO PROGRAM CHANGE:** `WebGLRenderer` resolves `material.envMap ||
+  environment` (line 2344) and compares the RESULT against
+  `materialProperties.envMap`; with the same object on both sides the comparison
+  is equal. `USE_ENVMAP` was already defined, by `scene.environment`.
+- **RE-ASSIGNED PER FRAME** because `SkyIbl` builds a NEW PMREM on each refresh,
+  so a one-shot assignment would pin the crown to a stale sky.
+
+**THE READBACK IS AN OUTCOME READ AND NOT RN-2590's REQUEST ONE.**
+`treeline().crownEnv.appliedLive` is `material.envMapIntensity` read at PROBE
+TIME, which is after the last frame's DRAW. If the escape had failed the renderer
+would have put `scene.environmentIntensity` back and the two fields would
+disagree. On the shipped arm at `forestairnoon`:
+
+```
+{ raw: null, installed: true, forced: null,
+  tau: 2.2018936035270147, skyView: 0.28493066498909464,
+  sceneIntensity: 1, applied: 0.28493066498909464,
+  appliedLive: 0.28493066498909464, ownEnvMap: true, sameTexture: true,
+  writes: 1139, materials: ["props:OF_Canopy:canopy"] }
+```
+
+`rn2647untouched` asserts BOTH directions on every run: the shipped arm's
+`appliedLive` must equal `applied`, and the `?crownenv=off` arm's must equal
+`sceneIntensity` -- which is the non-vacuity proof for the readback itself, since
+a readback that cannot show the renderer putting its own value back is not
+reading the draw.
+
+**AND THE ESCAPE COSTS ONE THING, FOUND BY READING THE RENDERER RATHER THAN BY
+MEASURING IT.** The branch it leaves is also how `Headlamp.ts:401` dims every
+stock material's ambient underground (`near.environmentIntensity = lerp(CAVE_ENV,
+1, k)`). A material with an own `envMap` stops following that global, so a crown
+card in a cave would stay lit by a sky it cannot see. The shipped write is
+therefore `sceneIntensity * skyView`, and `sceneIntensity` is published in the
+readback.
+
+**AND THAT COMPENSATION IS CORRECT BY READING AND IS NOT MEASURED. An earlier
+draft of this paragraph said the readback made the composition "a reading rather
+than a promise" and it does not** (corrected on a fresh-context verifier's
+reading). `sceneIntensity` reads exactly **1.0000 on every arm of every pose in
+this section**, because `Headlamp`'s cave ramp is driven by an occlusion no
+committed shot ever puts the observer under: **there is no cave pose.** So the
+readback proves the multiply HAPPENS and cannot prove it is RIGHT, and the first
+frame that exercises it will be the first test of it. Two limits ride with that
+and both are in `CrownEnv.ts`'s own header:
+
+1. **IT LAGS BY ONE FRAME.** `updateCanopyCardShade` runs at `Systems.ts:352`
+   and `headlamp.update` at `Systems.ts:373`, so the value read is the PREVIOUS
+   frame's. On a ramp that moves over a walk into a cave that is invisible; on a
+   hard cut it is one frame of a stale sky. The fix is to move the call below
+   the headlamp and it is deliberately not made here, because reordering
+   `Systems`'s update sequence has a blast radius this lane cannot measure.
+2. **`rn2647untouched` DOES NOT COVER IT.** That probe's pair is `?crownenv=off`
+   against the shipped default, which isolates the ENV half and says nothing
+   about the card floor or the cave ramp. It is a scope test, not a coverage
+   test.
+
+### 2.43.3 THE INSTALL IS NOT A LOOK CHANGE, AND THAT IS MEASURED AT FOUR POSES
+
+`?crownenv=1` is the own-`envMap` installed with the intensity forced to 1 times
+the scene's own, i.e. exactly what the renderer would have written. It must
+reproduce `?crownenv=off` to the digit, and it does, on all four poses and on all
+four quantities at once.
+
+**EVERY ROW BELOW CARRIES TWO FLAGS AND BOTH ARE NAMED, because a fresh-context
+verifier found the first draft of this section labelling these rows
+`crownenv=off` when the card floor was also at its pre-lane value.** These arms
+were taken on the search build, before `CROWN_CARD_FLOOR` existed, so the card
+floor in all of them is 0.08; on the final build the identical numbers are
+reproduced by `?crownenv=off&crowncardfloor=0.08`, and BARE `?crownenv=off`
+(card floor 0.137) is a THIRD frame and reads differently:
+
+| pose | `crownenv=off,crowncardfloor=0.08` boxShip / boxSurf / rho / f | `crownenv=1,crowncardfloor=0.08` |
+|---|---|---|
+| `forestairnoon` | 0.9814 / 0.9504 / 0.1906 / 0.6019 | **identical** |
+| `forestairlow` | 0.9464 / 0.7732 / 0.4109 / 0.4731 | **identical** |
+| `flyovernoon` | 0.9591 / 0.9271 / 0.5031 / 0.5120 | **identical** |
+| `flyoverlow` | 0.9643 / 0.8415 / 0.4381 / 0.4217 | **identical** |
+
+and for the record, bare `?crownenv=off` on the final build reads **0.9844 /
+0.9541 / 0.2386 / 0.6123** at `forestairnoon` and **0.9625 / 0.9315 / 0.5568 /
+0.5121** at `flyovernoon`, which is the card floor's own cost with the
+environment left alone.
+
+So every difference below is the SCALAR and not the plumbing, and the pre-lane
+row is also this worktree reproducing N13's shipped table to the digit before
+anything moved.
+
+### 2.43.4 THE DERIVED SCALAR, AND IT RETIRES A GUESS THIS FILE HAS CARRIED SINCE RN-2275
+
+`CrownSkyView.ts` holds one integral and two consumers of it. For a beam at
+direction cosine `c` through a canopy of optical depth `tau = K mu`, the fraction
+that survives to the MEAN depth of the layer is
+
+```
+T_mean(tau, c) = (1/tau) INT_0^tau exp(-t/c) dt = (c/tau) (1 - exp(-tau/c))
+```
+
+which is the canopy SUNLIT FRACTION `(1 - exp(-kL))/(kL)`, the quantity every
+two-leaf canopy model is built on (de Pury and Farquhar 1997; Wang and Leuning
+1998). Averaged over the hemisphere with the cosine measure an irradiance
+integral uses,
+
+```
+skyView(tau) = 2 INT_0^1 c T_mean(tau, c) dc = (2/tau) (1/3 - E_4(tau))
+```
+
+written as a 24-node Gauss-Legendre quadrature over `c` rather than as an
+exponential integral, because in that form the physics is on the page and the
+`E_4` route needs an `E_1` series, a continued fraction and an upward recurrence
+that loses digits exactly where this project's `tau` lives.
+
+**`CROWN_SELF_FLOOR`'s OWN DERIVATION NEEDED THIS NUMBER AND GUESSED IT.** That
+block ends "a canopy interior does not see the whole sky, and half of it is the
+honest reduction, so 0.08 is that share times a canopy sky-view factor of about
+0.55". The derived value at the Hills stand is **0.507**. The guess was good and
+it is now a derivation, density-dependent as a constant could never be:
+
+| site | `mu` | `tau = K mu` | `skyView` | the guess |
+|---|---:|---:|---:|---:|
+| Forest (`forestair*`) | 0.6881 | 2.2019 | **0.2849** | 0.55 |
+| Hills (`flyover*`) | | | **0.5068** | 0.55 |
+
+**THOSE ARE READBACKS OFF `treeline().crownEnv` AND NOT AUTHORED CONSTANTS, AND
+THE FIRST DRAFT OF THIS TABLE GOT THEM WRONG BY RETYPING** (a fresh-context
+verifier's catch). It quoted 0.6918 / 2.2138 / 0.2821 and 0.5063, hand-computed
+off 2.38.1's published `mu`, against what the shipped code actually computes.
+The correction matters more as a habit than as four digits: `mu` is
+`residentCanopyMu()`, a canopy-area-weighted mean over the RESIDENT chunk set, so
+it moves with what has streamed in and these values **wobble by about 0.15 per
+cent between runs of the same build**. Quote them to three figures, read them off
+the page, and never retype them into a second file.
+
+**IT IS NOT GIVEN A FLOOR OF ITS OWN, and that is the one place this lane's two
+handles could have double-counted.** A crown surface deep in a stand is also lit
+by light scattered off its neighbours. That light is real and it is ALREADY in
+the model: it is what `CROWN_SELF_FLOOR` is, on the albedo side. Adding it again
+here would count one photon twice and count it in the wrong place, since the
+environment map is the SKY's radiance and neighbour-scattered light is
+leaf-green.
+
+### 2.43.5 THE FOUR-POSE TABLE: ONE BUILD, ONE SESSION, A FRESH PROCESS PER ARM
+
+`rn2591ladder --shots=forestairnoon,forestairlow,flyovernoon,flyoverlow
+--cands=crownenv=off,crowncardfloor=0.08 | - --rho0=1 --split=1 --verifyclear=1`:
+four poses times two arms times four measurements plus the clearing pair and a
+clearing re-check per pose, **forty browser runs, each its own process**. The
+clearing re-check under the shipped arm reads **crowns 0.000 per cent** at all
+four poses, so the reused denominator is asserted rather than assumed.
+
+**`rho`, the quantity the band is a band on, and the two `box` ratchets beside
+it (the `box` numbers are `rn2550guard`'s own acceptance run, not the ladder's):**
+
+| pose | boxShip before / after | boxSurf before / after | `rho` before / after | verdict |
+|---|---|---|---|---|
+| `forestairnoon` | 0.9814 / **0.9808** | 0.9504 / **0.9499** | 0.1906 / **0.1890** | **IN BAND, held** |
+| `forestairlow` | 0.9464 / **0.9429** | 0.7732 / **0.7668** | 0.4109 / **0.2996** | IN CORE |
+| `flyovernoon` | 0.9591 / **0.9568** | 0.9271 / **0.9243** | 0.5031 / **0.4762** | IN CORE |
+| `flyoverlow` | 0.9643 / **0.9618** | 0.8415 / **0.8347** | 0.4381 / **0.4016** | IN CORE |
+| **spread** | | | **2.64x / 2.52x** | |
+
+**ALL EIGHT `box` NUMBERS FALL.** That has not happened in this sequence before:
+N12 moved six down and two up, N13 moved six up and two down. Every pose's wood
+is darker relative to its own clearing than it was, which is the direction R2
+3.10 cares about, and the ratchet is re-pinned down at `flyovernoon` accordingly.
+
+**THE SPLIT, `?propspec=0` per arm, and it is the result of the lane:**
+
+| pose | `D` before | `D` after | `P` before | `P` after | spec share before | **after** |
+|---|---:|---:|---:|---:|---:|---:|
+| `forestairnoon` | 0.0562 | **0.0742** | 0.1344 | **0.1148** | 0.7052 | **0.6073** |
+| `forestairlow` | 0.1335 | **0.1807** | 0.2774 | **0.1189** | 0.6752 | **0.3969** |
+| `flyovernoon` | 0.2457 | **0.2528** | 0.2574 | **0.2234** | 0.5116 | **0.4692** |
+| `flyoverlow` | 0.1498 | **0.2097** | 0.2883 | **0.1920** | 0.6581 | **0.4779** |
+
+**THE DIFFUSE RISES AT EVERY POSE AND THE SPECULAR FALLS AT EVERY POSE, WHICH IS
+THE WHOLE POINT OF PUTTING THE TWO HANDLES IN ONE LANE.** Read the `D` column as
+a spread and it also improves: **3.41x after (0.0742 to 0.2528) against 4.37x
+before**. **THREE of the four poses are now minority-specular** (0.3969, 0.4692
+and 0.4779 all under a half; an earlier draft of this line said two and
+understated its own result, corrected on a fresh-context verifier's reading), and
+`forestairlow` -- the pose that ran 0.6752 -- reads 0.3969.
+
+**`rho0`, the crown's UNSHADED UNSPECULAR diffuse ratio, and it does two jobs
+here.** It is the spread the acceptance asks about, and its MOVE is the
+measurement of the one honest overlap in 2.43.4:
+
+| pose | `rho0` before | `rho0` after | ratio |
+|---|---:|---:|---:|
+| `forestairnoon` | 0.9047 | 0.7517 | 0.831 |
+| `forestairlow` | 1.6565 | 1.1903 | 0.719 |
+| `flyovernoon` | 0.9344 | 0.8399 | 0.899 |
+| `flyoverlow` | 2.2276 | 1.8297 | 0.821 |
+| **spread** | **2.46x** | **2.43x** | |
+
+**THE SPREAD IS NOT WORSENED (2.46x to 2.43x)**, which is the acceptance
+condition, and the ratio column is the double count named in `CrownEnv.ts`'s
+header, measured: `envMapIntensity` scales the environment's DIFFUSE irradiance
+as well as its specular, and that diffuse half is multiplied by an albedo already
+carrying the shade law's `S`. **The size of the overlap is 10 to 28 per cent of
+the crown's unshaded diffuse, largest at low sun where the sky is the largest
+share of the crown's light.** It is stated rather than corrected because the
+correction is out of reach: the shade law rides the ALBEDO precisely because a
+stock `MeshStandardMaterial` in three r185 exposes no shadow factor to a splice.
+
+### 2.43.6 THE DEBT: THE ARITHMETIC, AND WHY THE REST OF IT IS A CEILING
+
+| | boxShip | boxSurf |
+|---|---:|---:|
+| RN-2605's pre-raise ceiling | 0.9343 | 0.9020 |
+| RN-2605's raised ceiling (the debt's origin) | 0.9591 | 0.9271 |
+| **owed** | **0.0248** | **0.0251** |
+| RN-2645 measured at `flyovernoon` | **0.9568** | **0.9243** |
+| **repaid** | **0.0023** | **0.0028** |
+| **residue, still owed** | **0.0225** | **0.0223** |
+| repaid, per cent | 9.3 | 11.2 |
+| of which the env cut bought | -0.0055 | -0.0067 |
+| **of which this lane's own card floor GAVE BACK** | **+0.0032** | **+0.0039** |
+
+**THE CARD-FLOOR RAISE COST MORE THAN THE LANE REPAID, AND THERE IS NO KINDER WAY
+TO PUT IT.** The environment cut is the whole of the repayment and then some; the
+card floor was spent on the BAND at `forestairnoon` (`rho` 0.1510 without it,
+0.1890 with it) and it was spent out of the debt. The last two rows are the
+honest accounting and an earlier draft of this section did not carry them.
+
+**THE CEILING, MEASURED RATHER THAN ARGUED, AND EVERY ARM WITH BOTH ITS FLAGS
+NAMED.** `flyovernoon`, all against the pre-lane 0.9591 / 0.9271:
+
+| arm | boxShip | boxSurf | against pre-lane | of the debt |
+|---|---:|---:|---:|---:|
+| `crowncardfloor=0.08` (the env cut alone) | 0.9536 | 0.9204 | -0.0055 / -0.0067 | 22% / 27% |
+| **SHIPPED** | **0.9568** | **0.9243** | -0.0023 / -0.0028 | 9% / 11% |
+| `crownenv=off` (the card floor alone) | 0.9625 | 0.9315 | +0.0034 / +0.0044 | negative |
+| `crownenv=0,crowncardfloor=0.08` | 0.9480 | 0.9141 | -0.0111 / -0.0130 | 45% / 52% |
+| `crownenv=0` (card floor 0.137) | 0.9510 | 0.9175 | -0.0081 / -0.0096 | 33% / 38% |
+| **`crownenv=0,crowncardfloor=0`, the JOINT ceiling** | **0.9439** | **0.9096** | **-0.0152 / -0.0175** | **61% / 70%** |
+| `crownshadefloor=0,crowncardfloor=0.137` (the PAINT's floor at zero) | 0.9485 | 0.9148 | -0.0106 / -0.0123 | 43% / 49% |
+| **all four handles at zero** | **0.9356** | **0.9002** | **-0.0235 / -0.0269** | **95% / 107%** |
+
+**THE FIRST DRAFT OF THIS SECTION QUOTED THE 45/52 ROW UNDER THE LABEL
+`?crownenv=0` AND CALLED IT THE CEILING. Both halves of that were wrong** (a
+fresh-context verifier's catch). The row is a TWO-flag arm, and the real ceiling
+of the crown-side handles is the JOINT one at **61 and 70 per cent**, which is
+what a lane willing to spend both to their floor could reach. Neither figure is a
+proposal: they are the boundary of the box.
+
+**AND THE PAINT'S AMBIENT FLOOR CANNOT CLOSE THE RESIDUE EITHER, WHICH
+CONTRADICTS WHERE THE FIRST DRAFT ROUTED IT.** Driving the far paint's own
+ambient floor to ZERO with the card held is -0.0106 / -0.0123 against the
+pre-lane arm, but against the SHIPPED frame -- which is what the residue is
+measured from -- it is **-0.0083 / -0.0095, 37 and 43 per cent of the 0.0225 /
+0.0223 residue.** And the last row settles it in general: with **every ambient
+floor in the model at zero and the crown's environment deleted**, boxShip reads
+0.9356 and still misses RN-2605's pre-raise 0.9343 by 0.0013, while boxSurf only
+just clears 0.9020. **No combination of the ambient-floor handles on either half
+closes this debt.** What is left is the paint's ALBEDO or its COVERAGE. 2.43.11
+item 1 routes it there, and this lane's own earlier item 2 had already conceded
+the point with a -0.0017 estimate while item 1 still said the opposite.
+
+**AND THE OTHER HANDLE PAYS NEGATIVE.** Every raise of the crown's diffuse that
+goes through the shade law's floor reaches the far PAINT, which 2.38.3 measured
+holding `boxSurf` down by 0.3452 against the cards' 0.0270, a factor of 12.8. On
+this build, both halves at `?crownshadefloor=0.137`:
+
+| pose | boxShip | boxSurf | `rho` | against its ceiling |
+|---|---:|---:|---:|---|
+| `forestairnoon` | 0.9935 | 0.9690 | 0.1890 | **boxShip +0.0113 FAIL** |
+| `forestairlow` | 0.9522 | 0.7863 | 0.2996 | **+0.0058 / +0.0131 FAIL** |
+| `flyovernoon` | 0.9628 | 0.9318 | 0.4762 | pass by 0.0003 |
+| `flyoverlow` | 0.9656 | 0.8478 | 0.4016 | pass |
+
+**`forestairnoon`'s boxShip SITS 0.0009 UNDER ITS PIN AND 0.0014 UNDER ITS
+CEILING ON THE SHIPPED FRAME, and that is the number that closes the question.**
+(One consistent meaning of each word, corrected on a fresh-context verifier's
+reading: the PIN is `BASE`'s 0.9817, the CEILING is the pin plus `TOL` 0.005, and
+an earlier draft quoted 0.0008, which is the PRE-LANE arm's distance to the
+ceiling and mixed the two.) With the environment cut in hand there is 0.0040 of
+headroom at that pose and the cheapest derived raise costs 0.0153. This is
+2.39.7's "the guard's own two constraints disagree about the same change at the
+same pose" one lane further on and now measured to a thousandth.
+
+**SO THE RESIDUE BELONGS TO A LANE THAT DARKENS THE FAR TREELINE PAINT'S ALBEDO
+OR ITS COVERAGE, AND NOT TO ONE THAT TOUCHES ITS AMBIENT FLOOR** -- the table
+above is what separates those two, and the first draft of this section did not
+have the arm that separates them. It is routed in 2.43.11 rather than left as a
+sentence. Nothing was re-negotiated: the two constants are lowered by what was
+actually bought, the residue and the four ceiling arms are written into
+`rn2550guard.mjs`'s own `BASE` comment, and this lane reports the shortfall.
+
+### 2.43.7 THE SHADE LAW'S RAISE IS DERIVED, BUILT, MEASURED AND REFUSED
+
+The shipped law is `S = FLOOR + (1 - FLOOR) exp(-tau / sinSun)`. Algebraically
+that is `S = T + (1 - T) FLOOR`, i.e. a two-leaf mixture of a sunlit fraction `T`
+and a shaded floor -- and `exp(-tau/sinSun)` is the transmittance at the BASE of
+the layer, while the card it multiplies is a whole-crown impostor. The quantity
+the mixture wants is the layer MEAN, which is the sunlit fraction. That is a
+one-symbol change with a textbook anchor and it is `?crownshadelaw=1`.
+
+**MEASURED, IT IS REFUSED, AND THE NUMBER THAT REFUSES IT IS NOT MARGINAL:**
+
+| pose | boxShip | boxSurf | `rho` |
+|---|---:|---:|---:|
+| `forestairnoon` | 1.0628 | **1.0929** | 0.4600 |
+| `forestairlow` | 0.9806 | 0.8534 | 0.5236 |
+| `flyovernoon` | 1.0135 | **1.0065** | **0.8803** |
+| `flyoverlow` | 0.9863 | 0.9245 | 0.7987 |
+
+(the environment left alone, so this is the law's own effect). **`boxSurf` 1.0929
+is the wood reading nine per cent LIGHTER than the clearing it stands in**, which
+is R2 section 3.10's standing finding inverted, and `rho` 0.8803 is above the
+band's ceiling. With the environment cut applied on top it is still 1.0852 and
+0.7600. The arm stays reachable, the derivation stays in `CrownSkyView.ts`, and
+the refusal is on the frame rather than on the physics.
+
+**WHAT IT SAYS ABOUT THE ORDERING, which the brief asked to be checked.** N8's
+"low sun reads LIGHTER than noon, which is backwards for a canopy" is compressed
+again but not closed: `rho0` still runs 0.7517 / 1.1903 at Forest and 0.8399 /
+1.8297 at Hills, noon against low. This lane makes it slightly BETTER (the ratio
+falls from 1.83x to 1.58x at Forest and 2.38x to 2.18x at Hills) because the sky
+is a larger share of the crown's light at low sun and the cut is largest there.
+**The layer-mean law would have made it WORSE**, because the sunlit fraction goes
+as `sinSun/tau` at low sun while the clearing goes as `sinSun`, so the ratio stops
+falling with the sun at all. And a sun-elevation-aware FLOOR -- the third
+candidate the brief listed -- is derivable (the floor is `ambient/(ambient +
+direct)` and the direct term collapses with `sinSun`, so the honest floor at
+`sinSun` 0.2 is about 0.42 rather than 0.137) **and it moves the ordering the
+wrong way by construction, for the same reason.** It is not built; the arithmetic
+that refuses it is written here so the next lane does not spend a build on it.
+
+### 2.43.8 SCOPE, NIGHT, AND THE UNDERSTOREY
+
+**THE SCOPE IS ONE MATERIAL OBJECT AND THE PAGE PUBLISHES WHICH.**
+`SurfaceBind.apply`'s `canopy` branch is the only caller of
+`noteCrownEnvMaterial`, the call is deduplicated by material identity because
+`apply` re-runs on a late texture load, and `treeline().crownEnv.materials` reads
+`["props:OF_Canopy:canopy"]` and nothing else on every arm of every run in this
+section. `OF_Canopy` is authored at `_LOD3` alone (RN-2247) and
+`PropLibrary.batchFor` clones one shared material per batch key, so this reaches
+every far crown card and cannot reach a near tree, an understorey batch, the
+avatar or the terrain.
+
+**`rn2647untouched.mjs` (NEW), three poses, one build, one flag apart:**
+
+| pose | claim | pixels moved | darker / lighter | meanDelta |
+|---|---|---:|---|---:|
+| `forestfloor` | quiet | 6,307 (**0.55%**) | 2,043 / 4,264 | 26.65 |
+| `meadownight` | quiet | 679 (**0.06%**) | 277 / 402 | 43.50 |
+| `forestairnoon` | **must move** | 3,838 (0.34%) | | 13.19 |
+| `forestairnoon` | its own two-load noise | 645 (0.06%) | two loads of the SHIPPED arm | |
+
+against RN-1766's 3.78 per cent two-page-load floor on the quiet pair.
+`rn2593untouched.mjs` (N12's, unedited) and `rn2607untouched.mjs` (N13's,
+unedited) are both green on this branch: `forestfloor` 0.72 and 0.9 per cent,
+`meadownight` 0.04 and 0.05 per cent, and N13's arming pose still moves 3.44 per
+cent against its own 0.05 per cent noise.
+
+**AND THE ARMING TEST WAS WRONG FIRST, IN A NEW WAY, AND IS RECORDED RATHER THAN
+QUIETLY REPAIRED.** Copied from RN-2607 it compared the armed pair's WHOLE-FRAME
+pixel percentage (0.33) against that pose's own two-load noise (0.12) times five,
+and duly called this lane "not armed" -- while the ladder on the same build reads
+the same change moving the `crowns` rectangle by 22 per cent. **Both numbers are
+right and only one of them is an arming test.** The `crowns` rectangle is 20,000
+pixels of a 1,440,000-pixel frame, so a term confined to the crown cards has its
+signal divided by seventy before it meets a noise floor that is not divided at
+all. RN-2607's own term cleared that bar because a back-face normal negation on
+half of every card is a far larger per-pixel change than a 15 per cent cut of a
+specular lobe, which is a property of THAT term and not of the instrument. The
+arming is now on the guard's own quantity on the guard's own rectangle with the
+terrain flattened (`?terrainpaint=1`, the cards alone):
+
+```
+forestairnoon  ARMED  crowns lin.Y on the CARDS ALONE (?terrainpaint=1)
+               0.003425 shipped against 0.004392 off = 22.02% of the subject,
+               on a two-load noise of 0.000%
+```
+
+Filed as a trap: **a whole-frame pixel count cannot arm a term confined to one
+per cent of the frame, and borrowing another lane's arming SHAPE is the same
+defect as borrowing its constant.**
+
+**NIGHT, VIA THE CONDITION-AS-ARGUMENT PATTERN AND WITH THE ARMING BESIDE IT.**
+`artframe.js` takes `sunDot` and `sunTol` as evalargs ARGUMENTS, so the Forest
+AERIAL site is re-shot at `meadownight`'s own -0.25 sun with no committed pose
+row touched, no rectangle moved and no `artframe.js` edit -- RN-2605's own
+pattern, with its own warning attached.
+
+**AND THE NULL IS STRONGER THAN N13's, BECAUSE THIS POSE ARMS ITSELF.** Six
+arms at the Forest AERIAL site at sun dot -0.25, `crowns` rectangle:
+
+| arm | luma | linear Y | iqr | against shipped |
+|---|---:|---:|---:|---:|
+| **shipped** | 0.50 | **0.000152** | 0.72 | |
+| `?crownenv=off` | 0.51 | 0.000154 | 0.72 | +1.3% |
+| `?crownenv=1` | 0.51 | 0.000154 | 0.72 | +1.3% |
+| `?crownenv=0` | 0.50 | 0.000152 | 0.72 | 0.0% |
+| `?crownshadelaw=1` | 0.53 | 0.000162 | 0.72 | +6.6% |
+| **`?crownshade=0`** | **1.86** | **0.000564** | **1.72** | **+271%** |
+
+**THE ENVIRONMENT TERM IS NULL AT NIGHT AND THE SHADE LAW IS NOT, AND THE SAME
+RECTANGLE SAYS BOTH.** N13's night arm could only quote a NOON arming beside its
+zero; this one has an IN-POSE arming, because `?crownshade=0` moves the very same
+rectangle at the very same hour by 271 per cent. So "the crowns are simply black
+here" is refuted by the rectangle itself, and the environment's flatness is a
+statement about the environment. The mechanism is the one N13 named: below the
+horizon `sinSun` clamps, `S` saturates to the floor, and the environment map at
+night is a night sky. The readback shows `applied` / `appliedLive` reading
+0.2849 / 1.0000 / 0.0000 on the three env arms of each night run, so the mode
+reached the program every time.
+
+**AND THE HONEST LIMIT, THE SAME ONE N13 STATED: linear Y 0.000152 is luma 0.5 of
+255, under the 8-bit floor.** What is measured is that five arms agree this is
+black plus a sixth that does not. That is a stronger null than N13's and it is
+still a null taken near the instrument's quantisation. Frames
+`RN2645_forestairnoon_sun-0.25_*`.
+
+### 2.43.9 PER-FRAME COST
+
+**ZERO PROGRAMS, ZERO TRIANGLES, AND A `p50` THIS HARNESS CANNOT SEPARATE.**
+`rn2646shots --cost=3` runs the two arms that differ only in whether the
+own-`envMap` is installed (`?crownenv=off` against `?crownenv=1`, both at the
+shipped card floor, which 2.43.3 proves are the same pixel to the digit at the
+pre-lane floor and which differ in nothing but the install here) three times
+each, printing every reading:
+
+```
+envoff   p50 [6.8, 6.7, 6.8]  p95 [9.1, 9.5, 9.6]  programs [56, 56, 56]
+env1     p50 [6.7, 6.6, 6.6]  p95 [9.3, 9.6, 9.0]  programs [56, 56, 56]
+```
+
+with **226,133 triangles / 27 draw calls / 114.8 MB on both arms and on all six
+frame arms**, identical to the digit. **THE PROGRAM COUNT DOES NOT MOVE**, which
+is the one number N13 had to buy (+3 of 53, the price of scoping by PROGRAM).
+This lane scopes by MATERIAL OBJECT instead, so `OF_Canopy` keeps exactly the
+program set RN-2605 left it with. The `p50` pair does not separate and the
+`env1` arm is if anything the faster of the two, which is scatter; the work added
+per frame is one texture-reference assignment and one float write, on ONE
+material, outside every draw loop.
+
+**ONE COUNT THAT DID MOVE, REPORTED RATHER THAN ROUNDED AWAY.** At `flyovernoon`
+the shipped arm read 44 programs against 43 on the other five, and that same run
+read 239,561 triangles against 239,557 with `writes` at 2081 against about 1200.
+Both are streaming state rather than this term: `programs` is a cumulative cache
+count, the run had visibly converged differently, and the `forestairnoon` arms
+read 56 on all six arms and on all three repeats of the cost pair. It is written
+down because an unexplained +1 is exactly the shape of a cost somebody later
+quotes as a finding.
+
+### 2.43.10 THE EYE, AGAINST 2.31.5 / 2.33.7 / 2.34.8 / 2.38.8 / 2.39.11 / 2.41.9's "CROWNS"
+
+**CROWNS: STILL PARTIAL, AND THIS LANE'S STEP IS A COMPOSITION STEP RATHER THAN A
+LUMINANCE ONE, WHICH IS WHY THE CROP UNDERSTATES IT AND THE TABLE DOES NOT.** Six
+1x frames and six 3x crops were TAKEN at `forestairnoon`, six of each at
+`flyovernoon`, and six at the night site, all on the final build, cropped on the
+committed `crowns` rectangle at (450,600) 200x100 with `rn2450crop.mjs`. **TEN of
+the eighteen 1x frames are COMMITTED and twelve of the eighteen crops**: the
+redundant `env0` and `env1` full frames are dropped at 1.4 MB each, since their
+whole content is a number in the tables above and the crops carry the picture.
+Taken and committed are different counts and this line says which is which.
+
+- `RN2645_crowns_shipped_3x.png` against `RN2645_crowns_envoff_3x.png` (one flag
+  apart, same build): **a small, real, consistent shift from a grey-blue cast
+  toward green.** It is not a difference a reader would reliably call without
+  being told which is which, and 2.33.7's caution applies in full. The crop is
+  the weakest evidence in this section and it is put first so that is plain.
+- **THE MEASUREMENT THE CROP IS TOO SMALL TO CARRY IS THE CHROMA, WHICH IS WHAT
+  R2 3.11(c) ACTUALLY COMPLAINS ABOUT.** On the crown cards alone
+  (`?terrainpaint=1`, un-hazed, the arm `rho` itself is measured on),
+  linear-light per channel at `forestairnoon`:
+
+  | arm | R | G | B | **B/G** | R/G | Y |
+  |---|---:|---:|---:|---:|---:|---:|
+  | pre-lane (`crownenv=off,crowncardfloor=0.08`) | 0.001710 | 0.004063 | 0.002494 | **0.6138** | 0.4209 | 0.003449 |
+  | the env cut alone (`crowncardfloor=0.08`) | 0.001476 | 0.003162 | 0.001565 | 0.4949 | 0.4668 | 0.002688 |
+  | the card floor alone (`crownenv=off`) | 0.001777 | 0.005351 | 0.002587 | 0.4835 | 0.3321 | 0.004392 |
+  | **RN-2645 shipped, both** | 0.001537 | 0.004168 | 0.001631 | **0.3913** | 0.3688 | **0.003425** |
+  | the env handle's floor (`crownenv=0,crowncardfloor=0.08`) | 0.001387 | 0.002839 | 0.001250 | **0.4403** | 0.4886 | 0.002416 |
+  | `?crownshadelaw=1`, refused | 0.002443 | 0.012408 | 0.003016 | 0.2431 | 0.1969 | 0.009611 |
+
+  **THE CROWN'S BLUE FALLS 36 PER CENT RELATIVE TO ITS GREEN (B/G 0.6138 to
+  0.3913) WHILE ITS LUMINANCE IS HELD TO 0.7 PER CENT (Y 0.003449 to 0.003425).**
+  That is the lane in two numbers: the level the band measures did not move and
+  the colour the audit calls blocking did.
+
+  **AND BOTH OF THOSE NUMBERS NEED A CAVEAT THE FIRST DRAFT DID NOT CARRY, both
+  found by a fresh-context verifier and both visible in the rows above.**
+
+  **(a) THE LUMINANCE HOLD IS A CANCELLATION, NOT A PROPERTY.** The card floor
+  ALONE takes Y from 0.003449 to 0.004392, **+27 per cent**; the env cut ALONE
+  takes it to 0.002688, **-22 per cent**; together they land on 0.003425. The
+  hold is two large opposite moves meeting, so **it is not robust: any future
+  change to either handle breaks it**, and a later lane must not read "the level
+  is held" as a property of the design.
+
+  **(b) THE 84-PER-CENT CLAIM COMPARED TWO DIFFERENT CARD FLOORS AND IS
+  WITHDRAWN.** It set the shipped arm (card floor 0.137) against an
+  environment-free arm at floor 0.08 and computed a fraction across the mismatch.
+  Like for like at floor 0.08, the environment handle's own floor is **B/G
+  0.4403** and the derived cut reaches 0.4949, which is **69 per cent** of the
+  distance the environment alone can travel. **The shipped arm reads 0.3913,
+  BELOW that floor**, because the card floor lifts the green channel (0.004063 to
+  0.005351 with the floor alone) and B/G is a ratio: the two handles together
+  take the blue further down than deleting the environment could. That is a
+  better result than the withdrawn claim and it is arrived at honestly.
+- `RN2645_crowns_flyovernoon_shipped_3x.png` against `..._envoff_3x.png` is
+  nearly indistinguishable, exactly as its numbers predict (linear Y 0.135218
+  against 0.138365, 2.3 per cent): the Hills stand is sparse, its derived
+  sky-view factor is 0.5068 rather than 0.2849, and the cut there is half the
+  size. Both crops show individual crown tops as separate lit blobs over shaded
+  ground, which is what 2.41.9's `flyovernoon` pair earned and this lane keeps
+  rather than spends.
+- **AND IT IS STILL NOT `RN2645_crowns_noshade_3x.png`**, the `?crownshade=0`
+  ceiling re-taken on THIS build so the comparison is not across five merges of
+  drift. That reference is unmistakable bright-green sunlit tops over dark
+  flanks. The shipped crop has the mass, the continuity and now the hue, and does
+  not have the sunlit tops. **The residual is the one 2.41.9 named and this lane
+  has now PRICED it: the shade law is still the largest term, the floor the leaf
+  optics ask for is 0.4558, and the frame refuses even 0.137 on both halves
+  because the far PAINT is what `box` measures.** That is no longer a judgement,
+  it is 2.43.6's table.
+- `RN2645_crowns_law1_3x.png` is what the better physics looks like and it is
+  committed precisely because it is refused: the brightest, greenest and least
+  blue crop in the set (B/G 0.2431, Y 2.8x the shipped arm), with a wood that
+  reads lighter than its own clearing.
+
+**FIDELITY-GAP section 1.** Item 3 (the sky as a participant) moves from "the
+handle for it is still unspent" (2.41.9) to **the handle exists, is derived, is
+scoped to one material object, costs no programs, and has been spent: the crown's
+blue is down 36 per cent against its green and its specular share is under half
+at two of four poses**. Item 5 (vegetation asset fidelity) is unchanged in
+diagnosis and now carries a price: the shade law's raise is refused by the far
+paint's `box` ratchet and not by anything about the crown.
+
+### 2.43.11 OWED AND ROUTED
+
+1. **THE RESIDUAL DEBT IS 0.0225 boxShip AND 0.0223 boxSurf AT `flyovernoon`,
+   AND IT IS OWED BY A LANE THAT DARKENS THE FAR PAINT'S ALBEDO OR ITS COVERAGE
+   -- NOT ITS AMBIENT FLOOR, WHICH IS MEASURED AND CANNOT PAY.**
+
+   **THE FIRST DRAFT OF THIS ITEM SAID "the lane that darkens the far treeline
+   PAINT" AND WAS CONTRADICTED BY ITS OWN ITEM 2 A PARAGRAPH LATER**, which had
+   already estimated the paint-floor route at -0.0017 while this item still
+   called it the answer. A fresh-context verifier measured the arm neither of
+   them had run and it settles it: **the far paint's ambient floor driven to
+   ZERO with the card held buys -0.0083 / -0.0095, which is 37 and 43 per cent
+   of the residue**, and the arm with EVERY ambient floor in the model at zero
+   and the crown's environment deleted still misses RN-2605's pre-raise boxShip
+   by 0.0013 (2.43.6's table). **No combination of the ambient-floor handles on
+   either half closes this debt.**
+
+   So the residue is a question about how much light the far treeline PAINT
+   REFLECTS and how much of the ground it COVERS, which is World Audit R5 rank
+   1's territory (the mottle, the same shader and the same pixels) and not a
+   shade-law question at all. **Admin's adopted plan, 2026-08-22: it merges with
+   the R5 rank 1 mottle lane, debt measured separately first, residue targeted at
+   albedo and coverage.**
+2. **THE FAR PAINT'S FLOOR STILL CARRIES THE GUESSED 0.55 AND THE CARD'S NO
+   LONGER DOES, AND THAT INCONSISTENCY IS DELIBERATE AND OWED -- FOR
+   CONSISTENCY, NOT FOR THE DEBT.** The derived `crownSkyView(K mu)` is 0.285 in
+   a Forest stand against the guess's 0.55, so a paint floor of
+   `0.137 * crownSkyView` would read about **0.039** at Forest and **0.069** at
+   Hills against the shipped 0.08 -- a DARKENING of the far treeline at both.
+   It is not built here for two reasons, both priced: the paint's `mu` is
+   per-VERTEX, so `skyView` would have to be evaluated in the terrain fragment
+   shader (a 24-node quadrature is out of the question; a 3 or 4-node rule or a
+   rational fit would need its own error budget against the CPU one), and the
+   whole ambient-floor route is bounded by item 1's measurement at 37 and 43 per
+   cent of the residue even when driven to zero. **It is worth having so the two
+   halves stop disagreeing about one quantity; it is not the debt's answer and
+   this item no longer claims to be.**
+3. **THE ENVIRONMENT'S DIFFUSE IS OCCLUDED TWICE AND THE SIZE IS NOW KNOWN:
+   10 to 28 per cent of the crown's unshaded diffuse** (2.43.5's `rho0` ratio
+   column). Closing it needs the shade law to stop riding the ALBEDO, which
+   needs a shadow factor a stock `MeshStandardMaterial` does not expose to a
+   splice -- but `PropSkyAmbient` and `CrownFaceFold` between them now prove
+   that this material's fragment stage IS reachable, so a lane that wanted to
+   could splice the occlusion onto the direct term and leave the albedo alone.
+   That is a bigger change than any of the last five lanes and it is the one
+   that would let the derived floor (0.4558) and the layer-mean law both be
+   spent.
+4. **`?crownshadelaw=1` IS REFUSED, NOT DELETED.** It is better physics than what
+   ships and the frame cannot absorb it (2.43.7). The place it might win is a
+   build where the far paint no longer sets `box`, i.e. after item 3. Re-run
+   `rn2572cand` on it before assuming this refusal transfers.
+5. **THE CROWN IS STILL 40 TO 61 PER CENT SPECULAR, AND WHATEVER SPENDS THAT NOW
+   HAS A `rho` BUDGET OF 0.0090.** The share fell at every pose and at THREE of
+   four it is now under half, but R2 3.11(c)'s complaint is about a canopy whose
+   pixel is a sky reflection and 0.61 at `forestairnoon` is still that. The
+   remaining handles are the roughness window below 0.8 (2.39.12 item 2 narrowed
+   rather than upheld the refusal, and `?canopyrough=0.05` moves the rectangle
+   +1,334 per cent, so the SHARP end is unexplored) and the grazing `dotNV`
+   pinned to zero over the back half of every stand by N13's own fix, which is a
+   `CrownFaceFold` question and was out of this lane's rails. **Item 6's re-pin
+   is what puts a price on them**: `forestairnoon` now sits 0.0090 above
+   `BAND_LOW` with no waiver under it, so a specular cut that darkens the crown
+   further has to bring its own diffuse or come with an Admin line.
+   **AND THE NEXT DECISION HERE IS A TASTE CALL RATHER THAN A MEASUREMENT.**
+   Admin's adopted plan, 2026-08-22: after this merge **the crown thread PAUSES
+   pending Reid's eye**. Whether 40 to 61 per cent specular is still wrong, and
+   whether item 3's refactor is worth a lane, are questions the instruments in
+   this file cannot answer and a person looking at the frame can.
+6. **`forestairnoon`'s `rhoOut: 'low'` WAIVER IS CLEARED AND ITS `rho` IS
+   RE-PINNED TO THE MEASURED 0.1890. THIS IS THE SECOND LOGGED GUARD DECISION IN
+   THE PROJECT AND IT IS EXECUTED HERE.** The first draft of this item declined
+   it, as N13 had, on the ground that it was out of the lane's decision. **Admin
+   answered on 2026-08-22, adopting this lane's fresh-context verifier's G2 with
+   its measured evidence, and the execution is routed back here.**
+
+   **WHAT SETTLED IT WAS A MEASUREMENT, NOT THE TWO LANES' NOTES.** `rhoOut:
+   'low'` with a pin of 0.0992 does not exempt the pose, it judges it on DEPTH:
+   repayable, never deepened. The pose has been inside the band since RN-2605 and
+   the waiver has been carrying 0.0898 of slack no lane needs. **That slack is
+   live, not theoretical**: on this build the arm with both crown-side handles at
+   their floor (`crownenv=0,crowncardfloor=0`) reads `rho` **0.0955 at
+   `forestairnoon`, 0.0845 BELOW the band, and `rn2550guard` passes it at exit
+   0**, because 0.0955 is not deeper than 0.0992. A guard that green-lights a
+   measured 0.0845 out-of-band excursion is not guarding the band at that pose.
+
+   **AND IT DOES NOT REACH THE ROUTED PAINT LANE, WHICH IS THE OBVIOUS
+   OBJECTION.** `rho` is the coverage-corrected crown reflectance on the
+   `?terrainpaint=1` arm, which flattens the terrain and divides the paint out.
+   Measured: `crownshadefloor=0` with the card held -- the far paint's entire
+   ambient floor swept to zero -- leaves `forestairnoon` `rho` at **0.1890,
+   unchanged to four decimals**, while moving that pose's boxShip by 0.018.
+
+   **THE COST IS HONEST AND IS ITEM 5's BUDGET:** 0.0090 of `rho` headroom at
+   that pose, now visible before it is spent rather than after. The decision, the
+   evidence and the cost are quoted in `rn2550guard.mjs`'s own `BASE` comment,
+   which is where the next reader needs them, and the guard's standing note is
+   gone from its output.
+
+### 2.43.12 GATES, RAILS AND FILES
+
+**TOUCHED:** `web/src/render/materials/CrownSkyView.ts` (NEW, the sunlit-fraction
+beam mean, its hemispherical average, the literature anchor and the GLSL half),
+`web/src/render/materials/CrownEnv.ts` (NEW, the own-`envMap` escape, the derived
+intensity, the `Headlamp` composition and the outcome readback),
+`web/src/render/materials/CanopySelfShadow.ts` (the transmittance-form switch in
+both languages, `CROWN_AMBIENT_SHARE` / `CROWN_SKYVIEW_GUESS` /
+`CROWN_CARD_FLOOR` and the card's own floor, one call into `CrownEnv`, two
+arguments on `updateCanopyCardShade`, and three doc blocks corrected at their own
+sites), `web/src/render/instancing/SurfaceBind.ts` (one registration inside the
+`canopy` branch's existing statement group), `web/src/app/Systems.ts` (two
+arguments on the call it already made), `web/src/render/materials/TerrainArtHandle.ts`
+(one additive `treeline()` field), `web/tools/smoke/run.mjs` (THREE new
+`PAGE_PARAMS` entries, same commit as the code that reads them),
+`web/tools/smoke/rn2550guard.mjs` (the `flyovernoon` re-pin DOWN with the
+residual debt and the eight ceiling arms quoted beside it, AND the second logged
+decision: `forestairnoon`'s `rhoOut` waiver cleared and its `rho` re-pinned to
+0.1890), two new probes (`rn2646shots.mjs`, `rn2647untouched.mjs`,
+both new names, no existing probe overwritten, and `rn2646shots` takes the
+`--out=` flag RN-2605's fresh-context verifier asked the next lane to add), this
+file, `docs/web/NUMBERS.md` and `docs/screenshots/RN2645_*`.
+
+**NOT TOUCHED, and these are the brief's own rails:** `CrownNormal.ts` and
+`CrownFaceFold.ts` and every constant in either, `FoliageNormal.ts`,
+`FoliageTone.ts` (cross-referenced in prose only), `ScatterLook.ts`, the height
+field, the wasm, `artframe.js` (no pose row, no rectangle, and the night arm is
+an ARGUMENT rather than an edit), and `CROWN_SELF_K`, `CROWN_SUN_MIN`,
+`CROWN_SELF_AMP` and the spectral split. **`CROWN_SELF_FLOOR` IS UNMOVED AT 0.08**
+and is now the far paint's alone. **`rn2550guard.mjs`'s `BASE` IS TOUCHED**, in
+the TIGHTENING direction only, at one pose, which needs no decision, with the
+residual debt and the eight ceiling arms written into the same comment.
+**`forestairnoon`'s `rho` pin and its `rhoOut` marking ARE also touched, under
+the second logged Admin decision** (2.43.11 item 6), and that is the one rail
+this lane crosses that a rule forbids. No em dash anywhere.
+
+**AND EVERY HEADLINE ABOVE WAS RE-MEASURED BY A FRESH-CONTEXT VERIFIER, WHICH
+RETURNED FIX, RECORD-ONLY.** Twenty of twenty table values reproduced, the
+derivation was recomputed three independent ways, both findings held, the
+losers' prices held, the chroma reproduced to six digits, and a merged-tree guard
+run proved the N14 interaction safe. **What it changed was four conclusions, and
+every one of them was a conclusion this lane drew from an arm it did not run:**
+the routing of the residue (2.43.11 item 1), the ceiling figure (2.43.6), the
+chroma comparison's mismatched card floor together with the luminance hold's
+fragility (2.43.10), and the `sceneIntensity` compensation being correct by
+READING rather than by measurement (2.43.2). Three arm labels, one stale readback
+triple, one undercounted result ("two of four" minority-specular was three) and
+one inconsistent use of the word "ceiling" are corrected at their own sites.
+**The pattern is worth naming and it is this section's cheapest lesson: every
+error was in an arm the lane reasoned about instead of running, and none was in
+an arm it ran.**
+
+**GATES**, each run as its own step with its own exit status read, never chained
+into an aggregate:
+
+| gate | result |
+|---|---|
+| `npx tsc --noEmit` | exit 0 |
+| `npm run build` | exit 0 |
+| `cd web && npm run check` | **9 of 9**, exit 0 |
+| `node tools/smoke/rn2647untouched.mjs` | exit 0 |
+| `node tools/smoke/rn2593untouched.mjs` | exit 0 |
+| `node tools/smoke/rn2607untouched.mjs` | exit 0 |
+| `node tools/smoke/rn2646shots.mjs --cost=3` (and at `flyovernoon`, and at sun -0.25) | exit 0 |
+| `node tools/smoke/rn2591ladder.mjs` (four poses, `--rho0=1 --split=1`) | exit 0 |
+| `node tools/smoke/rn2572cand.mjs` (three search rounds, eleven candidates) | exit 0 |
+| **`node tools/smoke/rn2550guard.mjs`** | **exit 0, `PASS (4 of 4 poses judged, 1 outside CORE)`** |
+

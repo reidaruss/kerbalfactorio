@@ -76,6 +76,8 @@
 
 import type * as THREE from 'three';
 import { BIOME_CANOPY_MU, residentCanopyMu } from '../geometry/ChunkCanopy.js';
+import { CROWN_BEAM_GLSL, crownBeamMean } from './CrownSkyView.js';
+import { updateCrownEnv } from './CrownEnv.js';
 
 /**
  * `K`: the conversion from the crown PLAN-AREA index this game can compute to
@@ -257,6 +259,32 @@ export const CROWN_SELF_K = 3.2;
  * and moving it part of the way is tuning rather than physics. **The number
  * stays at 0.08 and the derivation above is the standing statement of what it
  * should be.**
+ *
+ * ---------------------------------------------------------------------------
+ * RN-2645. **THIS CONSTANT IS NOW THE FAR PAINT'S ALONE. The CARD's floor is
+ * `CROWN_CARD_FLOOR` further down, and it differs from this one by exactly the
+ * sky-view factor the arithmetic at the top of this block GUESSED at 0.55.**
+ *
+ * Nothing here is retracted and the value is unmoved. What changed is that the
+ * guessed factor is now DERIVED (`CrownSkyView.crownSkyView(K * mu)`: 0.285 in
+ * a Forest stand, 0.506 in a Hills stand, against one hand-picked number for
+ * both) and is applied to the CARD's own sky, which is its `envMap`, by
+ * `CrownEnv.ts`. Leaving it inside the card's floor as well would occlude one
+ * hemisphere twice. The far paint has no `envMap` -- the terrain reads its sky
+ * ambient from the scattering integral per fragment -- so its floor is the only
+ * place its own sky-view factor can live, and it stays here at 0.08.
+ *
+ * AND THE TWO-STREAM 0.4558 IS RE-MEASURED AND STILL REFUSED, now on the
+ * post-RN-2605 normal. `?crownshadefloor=0.137`, less than a third of the way
+ * there and applied to BOTH halves, already takes `forestairnoon`'s boxShip to
+ * 0.9935 against a 0.9822 ceiling, and the layer-mean transmittance
+ * (`?crownshadelaw=1`, which is better physics than the shipped exponential and
+ * is derived in `CrownSkyView.ts`) takes that pose's boxSurf to **1.0929** --
+ * the wood reading LIGHTER than the clearing it stands in, which is
+ * `docs/web/WORLD-AUDIT-R2-2026-08-21.md` section 3.10's standing refusal.
+ * The far paint is 12.8x of `box` and this constant reaches it; that is why a
+ * raise here cannot be spent and why RN-2645's raise is the card's alone.
+ * rendering.md 2.43 has the four-pose table.
  */
 export const CROWN_SELF_FLOOR = 0.08;
 
@@ -371,6 +399,20 @@ export const CROWN_SELF_AMP = 1;
  * routed in 2.38.7 item 1, and the fix belongs in `FoliageNormal.ts` rather
  * than in the asset or in a new shader term. Its roughness, meanwhile, is a
  * closed question.
+ *
+ * ---------------------------------------------------------------------------
+ * RN-2645. THE SPECULAR HANDLE THIS BLOCK KEEPS ROUTING NOW EXISTS, AND IT IS
+ * `CrownEnv.ts`. Giving `OF_Canopy` its own `envMap` takes it out of
+ * `WebGLRenderer.js:2694-2696`'s overwrite branch, after which
+ * `material.envMapIntensity` survives to the draw and carries a derived
+ * sky-view factor. Deleting the crown's environment outright
+ * (`?crownenv=0&crowncardfloor=0.08`, i.e. this constant's own pre-RN-2645 card
+ * floor held while only the environment moves -- the label matters and an
+ * earlier draft of this line dropped the second flag) moves the `crowns`
+ * rectangle's `rho` from 0.5031 to 0.3601 at `flyovernoon` and from 0.1906 to
+ * 0.1366 at `forestairnoon`, so the term the sweep called absent is between a
+ * quarter and a third of the pixel and 2.38.4's PMREM reading is confirmed a
+ * third time. See rendering.md 2.43.
  *
  * ---------------------------------------------------------------------------
  * The historical derivation that motivated the fully-rough arm, kept because
@@ -556,6 +598,36 @@ const HALF = ((): [number, number] => {
 })();
 
 /**
+ * RN-2645. WHICH TRANSMITTANCE THE LAW TAKES, and it is the one term in this
+ * file the lane changes.
+ *
+ *   `?crownshadelaw=0`  `exp(-tau / sinSun)`, the transmittance at the layer's
+ *                       BASE. The exact pre-RN-2645 frame.
+ *   `?crownshadelaw=1`  `crownBeamMean`, the layer MEAN of the same
+ *                       exponential, which is the canopy SUNLIT FRACTION.
+ *
+ * THE ARGUMENT IS IN `CrownSkyView.ts` AND IT IS NOT A TUNING. The card is one
+ * impostor spanning a whole crown, so the quantity the law needs is the mean of
+ * the beam transmittance over the depth the card occupies. `exp(-tau/c)` is the
+ * value at the darkest leaf in the stand. `(c/tau)(1 - exp(-tau/c))` is the
+ * mean, and it is the sunlit fraction every two-leaf canopy model is built on.
+ * Both halves of the term take it, through the same seam and the same
+ * interpolated GLSL, so the near cards and the far paint cannot disagree.
+ *
+ * WHICH ONE SHIPS IS A MEASUREMENT AND IS RECORDED IN rendering.md 2.43, not
+ * here: the layer-mean form is the better physics and the guard's `box` ratchet
+ * prices it, and this file does not get to decide that on its own.
+ */
+const LAW_RAW = new URLSearchParams(self.location.search).get('crownshadelaw');
+/** The default. See rendering.md 2.43 for the four-pose table that chose it. */
+export const CROWN_LAW_SHIPPED = 0;
+export const CROWN_LAW_MODE: number = ((): number => {
+  if (LAW_RAW === null) return CROWN_LAW_SHIPPED;
+  const v = Number(LAW_RAW);
+  return Number.isFinite(v) && v >= 0 && v <= 1 ? v : CROWN_LAW_SHIPPED;
+})();
+
+/**
  * THE LAW, in TypeScript. `ofCrownSelfShade` below is the same three lines in
  * GLSL, and both take their constants from the vector above rather than from a
  * literal of their own.
@@ -567,7 +639,9 @@ const HALF = ((): [number, number] => {
 export function crownSelfShade(
   mu: number, sinSun: number, p: readonly [number, number, number],
 ): number {
-  const t = Math.exp(-p[1] * mu / Math.max(sinSun, CROWN_SUN_MIN));
+  const tau = p[1] * mu;
+  const c = Math.max(sinSun, CROWN_SUN_MIN);
+  const t = CROWN_LAW_MODE < 0.5 ? Math.exp(-tau / c) : crownBeamMean(tau, c);
   const s = p[2] + (1 - p[2]) * t;
   return 1 + (s - 1) * p[0];
 }
@@ -580,7 +654,7 @@ export function crownSelfShade(
  */
 export const CROWN_SELF_GLSL = /* glsl */`
   #define OF_CROWN_SUN_MIN ${CROWN_SUN_MIN.toFixed(5)}
-
+${CROWN_LAW_MODE < 0.5 ? '' : CROWN_BEAM_GLSL}
   // RN-2275. INTER-CROWN SELF-SHADOWING. See CanopySelfShadow.ts for the law,
   // for why this takes the FULL mu while ofTreeCover takes the (1 - w)
   // complement, and for why a common multiplier on both arms of 2.18.4's
@@ -589,8 +663,16 @@ export const CROWN_SELF_GLSL = /* glsl */`
   // p is uCrownShade = (amp, K, floor). amp 0 returns exactly 1.0, which is
   // what makes ?crownshade=0 the pre-lane frame rather than an argument that
   // it is.
+  //
+  // RN-2645. The transmittance is the layer BASE's under ?crownshadelaw=0 and
+  // the layer MEAN's (the sunlit fraction) under =1. The branch is taken in
+  // TypeScript at interpolation time rather than by a preprocessor #if, so
+  // mode 0 emits the pre-RN-2645 function body character for character and the
+  // helper above it is absent from that program rather than merely unused.
   float ofCrownSelfShade(float mu, float sinSun, vec3 p) {
-    float t = exp(-p.y * mu / max(sinSun, OF_CROWN_SUN_MIN));
+    float t = ${CROWN_LAW_MODE < 0.5
+    ? 'exp(-p.y * mu / max(sinSun, OF_CROWN_SUN_MIN))'
+    : 'ofCrownBeamMean(p.y * mu, sinSun)'};
     return mix(1.0, p.z + (1.0 - p.z) * t, p.x);
   }
 `;
@@ -873,14 +955,100 @@ const card: {
   shadeRGB: [1, 1, 1],
 };
 
+/**
+ * RN-2645. THE AMBIENT SHARE, LIFTED OUT OF `CROWN_SELF_FLOOR`'S OWN ARITHMETIC
+ * AND GIVEN A NAME, because this lane needs one of its two factors and not the
+ * other.
+ *
+ * `CROWN_SELF_FLOOR`'s derivation is, in its own words, "0.08 is that share
+ * times a canopy sky-view factor of about 0.55", where the share is the ambient
+ * fraction of a flat fragment's noon irradiance:
+ *
+ *     AMBIENT_NOON luma 0.0577 + TERRAIN_SKY_AMBIENT 0.88 x a sky irradiance
+ *     luma 0.140, against a direct term of about 1.23, gives 0.195 / 1.42
+ *
+ * Nothing here is new: the two factors are separated so the second one can be
+ * DELETED where this lane replaces it, and multiplied back where it cannot.
+ */
+export const CROWN_AMBIENT_SHARE = 0.137;
+
+/** The sky-view factor `CROWN_SELF_FLOOR` guessed by eye. Kept as a named
+ *  constant so the claim "0.137 x 0.55 is 0.0754, which is the shipped 0.08"
+ *  is a computation a reader can check rather than a sentence. */
+export const CROWN_SKYVIEW_GUESS = 0.55;
+
+/**
+ * RN-2645. THE CARD'S OWN FLOOR, AND WHY THE TWO HALVES NOW DIFFER IN EXACTLY
+ * ONE FACTOR.
+ *
+ * THE RULE THIS CROSSES, STATED FIRST. This file's header says "one law applied
+ * in one place on both sides beats better physics applied in two different
+ * places, because the thing this lane must not do is let the near stand and the
+ * far treeline disagree", and rendering.md 2.38.3 item 2 records that splitting
+ * the halves is the move a reader reaches for and that the header forbids it.
+ * **This is not that move.** The LAW is unchanged and identical on both halves,
+ * the amplitude is identical, `K` is identical and the transmittance is
+ * identical. What differs is one FACTOR INSIDE THE FLOOR, and it differs
+ * because the two halves' sky lives in two different places:
+ *
+ *   THE CARD is a stock `MeshStandardMaterial` lit by three's IBL. Its sky is
+ *   an `envMap`, and `CrownEnv.ts` now multiplies that map by the DERIVED
+ *   sky-view factor `crownSkyView(K * mu)` -- 0.285 in a Forest stand, 0.506 in
+ *   a Hills stand, against the one hand-picked 0.55 that stood for both. The
+ *   guessed factor must therefore come OUT of the card's floor, or the same
+ *   hemisphere is occluded twice.
+ *
+ *   THE FAR PAINT has no environment map at all. The terrain reads its sky
+ *   ambient from the scattering integral per fragment (`SkyIbl.ts`'s own
+ *   header: that is exactly why the IBL was deferred at W3), so there is
+ *   nowhere else for its sky-view factor to go and it stays inside its floor,
+ *   at the value it has always had.
+ *
+ * **SO THE SKY IS OCCLUDED ONCE ON EACH HALF, WHICH IS WHAT THE HEADER'S RULE
+ * IS ACTUALLY FOR.** The two halves already differ in their `mu` for the same
+ * class of reason -- `residentCanopyMu()` for the card against the per-vertex
+ * field for the paint, a difference this file's own updater documents and which
+ * was forced by a measurement at the handover, not chosen -- and the seam is
+ * protected by MEASURING the handover rather than by insisting the two scalars
+ * be typed the same.
+ *
+ * AND THE HONEST COST, NAMED. The floor multiplies the ALBEDO, so it scales the
+ * card's DIRECT term as well as its ambient one. Removing the sky-view factor
+ * from it therefore lets a fully self-shadowed crown keep 13.7 per cent of the
+ * direct sun where it kept 7.5 per cent before. That leak is a property of the
+ * apply point (this file's header: a stock material in three r185 exposes no
+ * shadow factor to a splice, so the law rides the albedo), not of this change,
+ * and it is bounded by the same factor at both settings.
+ *
+ * `?crowncardfloor=` sweeps it alone; `?crownshadefloor=` still sets BOTH
+ * halves, unchanged, and takes precedence when it is given, so every arm any
+ * earlier lane recorded still means what it meant.
+ */
+export const CROWN_CARD_FLOOR = CROWN_AMBIENT_SHARE;
+
 /** The one live `(amp, K, floor)`. The terrain uniform takes it with the FAR
  *  half's isolator folded into the amp; the card updater takes it with the
  *  NEAR half's. Neither halves' isolator can reach the other's numbers. */
 const BASE_SHADE = crownShadeFromQuery();
+
+/**
+ * The card's floor: `?crowncardfloor=` if given, else `?crownshadefloor=` if
+ * given (so the both-halves sweep keeps working exactly as it did), else the
+ * derived `CROWN_CARD_FLOOR`.
+ */
+const CARD_FLOOR = ((): number => {
+  const p = new URLSearchParams(self.location.search);
+  const raw = p.get('crowncardfloor');
+  if (raw !== null) {
+    const v = Number(raw);
+    if (Number.isFinite(v) && v >= 0) return v;
+  }
+  return p.get('crownshadefloor') !== null ? BASE_SHADE[2] : CROWN_CARD_FLOOR;
+})();
 export const SHADE: [number, number, number] =
   [BASE_SHADE[0] * HALF[0], BASE_SHADE[1], BASE_SHADE[2]];
 export const SHADE_CARD: [number, number, number] =
-  [BASE_SHADE[0] * HALF[1], BASE_SHADE[1], BASE_SHADE[2]];
+  [BASE_SHADE[0] * HALF[1], BASE_SHADE[1], CARD_FLOOR];
 
 /** Called by SurfaceBind when the `canopy` family's material is finalised. */
 export function publishCanopyCardBase(c: THREE.Color): void {
@@ -928,8 +1096,19 @@ export function publishCanopyCardBase(c: THREE.Color): void {
  * one seam this lane took through (the far half is `TerrainTreeline.glsl.ts`,
  * spliced with the same `ofCrownSpectralSplit`).
  */
-export function updateCanopyCardShade(biome: number, sinSun: number): void {
+export function updateCanopyCardShade(
+  biome: number, sinSun: number,
+  env: THREE.Texture | null = null, sceneEnvIntensity = 1,
+): void {
   const mu = (BIOME_CANOPY_MU[biome] ?? 0) > 0 ? residentCanopyMu() : 0;
+  // RN-2645. THE ENVIRONMENT HALF, ON THE SAME `mu` AND THE SAME `K`, from the
+  // one place both are already in hand. `tau` is computed here rather than in
+  // `CrownEnv` so there is exactly one expression for the canopy's optical
+  // depth in the project, and `SHADE_CARD[1]` is the same `K` the law two lines
+  // below takes. It runs even when the card material has not been bound yet:
+  // the updater is a no-op with no materials and its `writes` counter is what
+  // makes that visible instead of silent.
+  updateCrownEnv(env, sceneEnvIntensity, SHADE_CARD[1] * mu);
   const s = crownSelfShade(mu, sinSun, SHADE_CARD);
   const rgb = crownSpectralSplit(s);
   card.mu = mu;

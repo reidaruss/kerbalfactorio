@@ -260,6 +260,34 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // numbers the law is chosen on. Registered in the commit that introduces
   // them (RN-152's scar).
   'crownshade', 'crownshadeamp', 'crownshadek', 'crownshadefloor',
+  // RN-2645. WHICH TRANSMITTANCE THE SHADE LAW TAKES. `crownshadelaw=0` is the
+  // layer BASE's `exp(-tau/sinSun)`, the pre-RN-2645 frame; `=1` is the layer
+  // MEAN's `(sinSun/tau)(1 - exp(-tau/sinSun))`, which is the canopy SUNLIT
+  // FRACTION and the quantity a whole-crown impostor actually needs. Read at
+  // module scope and interpolated into the terrain's GLSL, so it needs a page
+  // load and has no runtime pair. Registered in the commit that introduces it
+  // (RN-152's scar). See CrownSkyView.ts for the derivation and the anchor.
+  'crownshadelaw',
+  // RN-2645. THE CARD HALF'S OWN FLOOR. The far paint keeps 0.08; the crown
+  // CARD's floor drops the sky-view factor `CROWN_SELF_FLOOR`'s arithmetic
+  // guessed at 0.55, because this lane applies the DERIVED sky-view factor to
+  // the card's own sky (its `envMap`) and the paint has no such term. The two
+  // halves therefore occlude the same hemisphere ONCE EACH, in the place each
+  // one's sky lives. `crowncardfloor=0.08` is the exact pre-lane card, and
+  // `crownshadefloor=` still sets BOTH halves and takes precedence, so every
+  // arm an earlier lane recorded still means what it meant. Registered in the
+  // commit that introduces it (RN-152's scar).
+  'crowncardfloor',
+  // RN-2645. THE CROWN'S ENVIRONMENT TERM, and the first LIVE handle on it.
+  // `crownenv=off` leaves the material inside `WebGLRenderer.js:2694-2696`'s
+  // overwrite branch (the pre-lane state and the COST arm); `=1` installs the
+  // own `envMap` and forces intensity 1, which must reproduce `off` to the
+  // digit and is therefore the proof that the install is not itself a look
+  // change; `=0` is the DELETING control and its move is this handle's whole
+  // authority; absent is the derived `crownSkyView(K * mu)`. Readable back at
+  // `treeline().crownEnv`, where `appliedLive` is read AFTER the draw and is
+  // an OUTCOME readback rather than RN-2590's request one.
+  'crownenv',
   // WG-230. The world-locked phase PROBE. The shipped amplitude is 0, so the
   // usual polarity is inverted here: `phaseamp=1` is the ON arm that paints the
   // 2 m checker proving the attribute reaches the shader, and the DEFAULT is

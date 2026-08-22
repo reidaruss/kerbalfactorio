@@ -343,7 +343,14 @@ export function registerSystems(s: Services, loop: Loop): void {
     // to make: `biomeHere` is the /core classifier call SkyIbl makes one line
     // up, now named instead of made twice, and `elev` is dot(sunDir, up), the
     // one hour the starlight floor, the tone drive and the IBL all ride.
-    updateCanopyCardShade(biomeHere, elev);
+    // RN-2645 adds the near scene's own environment and its live intensity, so
+    // the crown card's `envMapIntensity` can be scaled by a derived sky-view
+    // factor WITHOUT losing `Headlamp`'s underground ramp, which is written on
+    // `scene.environmentIntensity` and which a material with an own `envMap`
+    // would otherwise stop following. Read one line after `ibl.update`, so it
+    // is this frame's environment and not the previous one's.
+    updateCanopyCardShade(biomeHere, elev, s.scenes.near.environment,
+      s.scenes.near.environmentIntensity);
     // RN-152: the starlight floor rides the SAME elevation the sky, the IBL
     // and the sun lights read, written into the shared TERRAIN_AMBIENT object
     // both terrain materials and the sky ground shell hold by reference.

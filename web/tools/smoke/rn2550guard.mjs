@@ -306,6 +306,113 @@ const F_MIN = 0.10;
 // pin and its `rhoOut: 'low'` marking likewise stand, even though the pose is
 // now INSIDE the band at 0.1906 and the guard prints a note saying so: clearing
 // that marking is the same class of change and is not in this decision.
+// **(SUPERSEDED by RN-2645's second logged decision below, which clears it.)**
+//
+// ===========================================================================
+// RN-2645, 2026-08-22. THE DEBT IS PARTLY REPAID AND THE REST OF IT IS
+// MEASURED TO BE UNREACHABLE FROM THIS LANE'S TWO HANDLES. REPORTED AS A
+// SHORTFALL WITH A NUMBER, NOT RE-NEGOTIATED.
+// ===========================================================================
+// RN-2605 raised `flyovernoon` by 0.0248 boxShip / 0.0251 boxSurf under a
+// logged decision and named the next lane to lower both again. RN-2645 is that
+// lane. It lowers them by **0.0023 and 0.0028**, which is 9 and 11 per cent of
+// what is owed. **THE FULL ARM SET IS BELOW, at `flyovernoon`, EVERY ROW WITH
+// BOTH ITS FLAGS NAMED**, because a fresh-context verifier found the first
+// draft of this block quoting a two-flag arm under a one-flag label:
+//
+//   pre-lane   crownenv=off,crowncardfloor=0.08          0.9591 / 0.9271
+//   env cut    crowncardfloor=0.08                       0.9536 / 0.9204
+//   SHIPPED    (derived env cut + card floor 0.137)      0.9568 / 0.9243
+//   card only  crownenv=off                              0.9625 / 0.9315
+//   env 0      crownenv=0,crowncardfloor=0.08            0.9480 / 0.9141
+//   env 0      crownenv=0        (card floor 0.137)      0.9510 / 0.9175
+//   JOINT 0    crownenv=0,crowncardfloor=0               0.9439 / 0.9096
+//   paint 0    crownshadefloor=0,crowncardfloor=0.137    0.9485 / 0.9148
+//   ALL 0      crownenv=0,crowncardfloor=0,crownshadefloor=0
+//                                                        0.9356 / 0.9002
+//
+// **THE CARD-FLOOR RAISE COST MORE THAN THIS LANE REPAID, AND THAT IS THE
+// PLAINEST WAY TO SAY WHAT HAPPENED.** The environment cut bought
+// -0.0055 / -0.0067; the card floor gave back **+0.0032 / +0.0039**; the net is
+// the 0.0023 / 0.0028 re-pinned above. The card floor was spent on the BAND at
+// `forestairnoon` (rho 0.1510 without it, 0.1890 with it) and it was spent out
+// of the debt.
+//
+//   * THE JOINT CEILING OF BOTH CROWN-SIDE HANDLES is `crownenv=0` with
+//     `crowncardfloor=0`: **0.9439 / 0.9096, i.e. -0.0152 / -0.0175, which is
+//     61 and 70 per cent of the debt** and is more than either handle alone
+//     (`crownenv=0,crowncardfloor=0.08` is -0.0111 / -0.0130, 45 and 52 per
+//     cent). Both figures are arms no derivation licenses; they are the
+//     boundary of the box, not proposals.
+//   * THE DIFFUSE HANDLE MOVES `box` THE OTHER WAY AT EVERY POSE, because the
+//     shade law's floor reaches the far PAINT and 2.38.3 measured the paint at
+//     12.8x the cards on this rectangle. `?crownshadefloor=0.137` on both
+//     halves takes `forestairnoon` boxShip to 0.9935 against a 0.9822 ceiling,
+//     and the layer-mean transmittance (`?crownshadelaw=1`, better physics and
+//     derived in `CrownSkyView.ts`) takes that pose's boxSurf to **1.0929** --
+//     the wood LIGHTER than its clearing, which is R2 section 3.10's standing
+//     refusal.
+//
+// **AND THE ROUTING IN THE FIRST DRAFT OF THIS BLOCK WAS CONTRADICTED BY A
+// MEASUREMENT IT DID NOT TAKE.** It said the residue "belongs to whichever lane
+// next darkens the far treeline PAINT". That is right about WHICH SURFACE and
+// wrong about WHICH TERM, and the arm that settles it is `crownshadefloor=0`
+// with the card held: **driving the far paint's ambient floor to ZERO buys only
+// -0.0083 / -0.0095, which is 37 and 43 per cent of the 0.0225 / 0.0223
+// residue.** Worse, the ALL-HANDLES arm -- every ambient floor in the model at
+// zero AND the crown's environment deleted -- reads **0.9356 / 0.9002**, so
+// boxShip still misses RN-2605's pre-raise 0.9343 by 0.0013 while boxSurf only
+// just clears 0.9020. **NO COMBINATION OF THE AMBIENT-FLOOR HANDLES ON EITHER
+// HALF CAN CLOSE THIS DEBT.** What is left is the paint's ALBEDO or its
+// COVERAGE, which is World Audit R5 rank 1's territory and not a shade-law
+// question at all. rendering.md 2.43.6 has the arithmetic and 2.43.11 routes it
+// there.
+//
+// ===========================================================================
+// RN-2645, 2026-08-22. THE SECOND LOGGED GUARD DECISION: `forestairnoon`'s
+// `rhoOut` WAIVER IS CLEARED AND ITS `rho` IS RE-PINNED TO THE MEASURED 0.1890.
+// ===========================================================================
+// **ADMIN, 2026-08-22, adopting `lane/n15-crownfinish`'s fresh-context
+// verifier's G2 with its measured evidence.** Two lanes running, the guard has
+// printed the same note ("forestairnoon rho is now INSIDE the band and is still
+// marked rhoOut 'low'. Clear the marking and re-pin"), and both declined it as
+// out of their own decision. It is taken here.
+//
+// **WHY IT IS NOT COSMETIC, AND THIS IS THE EVIDENCE.** `rhoOut: 'low'` with a
+// pin of 0.0992 does not mean "this pose is exempt", it means "this pose is
+// judged on DEPTH: it may be repaid, never deepened". The pose has been inside
+// the band since RN-2605 and the waiver has been carrying 0.0898 of slack no
+// lane needed. That slack is not theoretical: measured on this build, the arm
+// with both crown-side handles at their floor (`crownenv=0,crowncardfloor=0`)
+// reads `rho` **0.0955 at `forestairnoon`, which is 0.0845 BELOW the band**, and
+// the guard passes it at **exit 0** because 0.0955 is not deeper than 0.0992.
+// A guard that green-lights a measured 0.0845 out-of-band excursion is not
+// guarding the band at that pose at all.
+//
+// **WHY IT IS SAFE FOR THE ROUTED PAINT LANE, MEASURED RATHER THAN ASSUMED.**
+// The obvious objection is that the next lane is a far-treeline PAINT lane and
+// this tightens a constraint under it. It does not reach it: `rho` is the
+// COVERAGE-CORRECTED crown reflectance on the `?terrainpaint=1` arm, which
+// flattens the terrain and divides the paint out. Measured, `crownshadefloor=0`
+// with the card held -- the far paint's whole ambient floor swept to zero --
+// leaves `forestairnoon` `rho` at **0.1890, unchanged to four decimals**, while
+// moving that pose's boxShip by 0.018. The paint cannot move this pin.
+//
+// **AND THE COST IS STATED RATHER THAN BURIED.** Re-pinning to the measured
+// 0.1890 against `BAND_LOW` 0.18 leaves the pose **0.0090 of `rho` headroom**,
+// and every remaining crown-side specular handle spends into it: the roughness
+// window below 0.8, any further environment cut, and anything that touches
+// `dotNV` over the back half of a stand. A lane that wants one of those must
+// budget for 0.0090 at this pose or bring its own diffuse. That is the point of
+// pinning it: the budget is now visible before it is spent instead of after.
+//
+// The other three poses ALSO fell under RN-2645 (forestairnoon 0.9814/0.9504
+// to 0.9808/0.9499, forestairlow 0.9464/0.7732 to 0.9429/0.7668, flyoverlow
+// 0.9643/0.8415 to 0.9618/0.8347) and are NOT re-pinned, on the precedent
+// rendering.md 2.39.12 item 5 records Admin setting: re-pinning a fall tightens
+// the guard for every later lane on the strength of one build. `flyovernoon` is
+// re-pinned because it is the pose the debt is ON and a partial repayment that
+// is not written into the constant is not a repayment.
 //
 // Every value below marked RN-2605 was measured on `lane/n13-backface`'s final
 // build, server 127.0.0.1:5605 --strictPort, sentinel CONTENT verified over the
@@ -313,13 +420,21 @@ const F_MIN = 0.10;
 // process per arm, and reproduced to the digit on a second build with the arms
 // under different labels.
 const BASE = {
+  // RN-2645: `rho` re-pinned to the measured 0.1890 and `rhoOut` CLEARED, under
+  // the second logged decision above. The pose is judged on the band now, not
+  // on a depth, and it has 0.0090 of headroom against BAND_LOW.
   forestairnoon: { boxShip: 0.9817, boxSurf: 0.9826, boxClearY: 0.189652,
-    crownClearY: 0.103580, rho: 0.0992, rhoOut: 'low' },
+    crownClearY: 0.103580, rho: 0.1890, rhoOut: null },
   // RN-2605: both re-derived DOWNWARD, no decision needed.
   forestairlow: { boxShip: 0.9464, boxSurf: 0.7732, boxClearY: 0.106526,
     crownClearY: 0.058633, rho: 0.4363, rhoOut: null },
   // RN-2605: both RAISED under the logged decision above. Debt 0.0248 / 0.0251.
-  flyovernoon: { boxShip: 0.9591, boxSurf: 0.9271, boxClearY: 0.288112,
+  // RN-2645: both LOWERED again, in the guard's TIGHTENING direction, which
+  // needs no decision. THE REPAYMENT IS PARTIAL AND THE RESIDUE IS NAMED:
+  // 0.0225 boxShip and 0.0223 boxSurf are still owed against RN-2605's
+  // pre-raise 0.9343 / 0.9020. See the RN-2645 block below for why it is a
+  // ceiling and not a shortfall of effort.
+  flyovernoon: { boxShip: 0.9568, boxSurf: 0.9243, boxClearY: 0.288112,
     crownClearY: 0.148116, rho: 0.2488, rhoOut: null },
   flyoverlow: { boxShip: 0.9774, boxSurf: 0.8884, boxClearY: 0.147985,
     crownClearY: 0.078325, rho: 0.7021, rhoOut: null },

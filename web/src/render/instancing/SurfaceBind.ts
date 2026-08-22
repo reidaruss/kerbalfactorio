@@ -16,6 +16,7 @@ import { applyFoliageTone } from './FoliageTone.js';
 import { publishCanopyTone } from '../materials/TerrainTreeline.js';
 import { canopyEnvOverride, canopyRoughnessOverride, publishCanopyCardBase }
   from '../materials/CanopySelfShadow.js';
+import { noteCrownEnvMaterial } from '../materials/CrownEnv.js';
 import type { Family } from './SurfaceRoles.js';
 
 export interface Surface {
@@ -158,6 +159,15 @@ export function apply(r: Reg): void {
       // and rendering.md 2.39.10.
       const env = canopyEnvOverride();
       if (env !== null) r.mat.envMapIntensity = env;
+      // RN-2645. THE SWITCH ABOVE IS DEAD AND THIS IS WHAT MAKES IT LIVE. The
+      // material is registered with `CrownEnv`, which gives it an own `envMap`
+      // per frame (the same PMREM the scene already holds) so the renderer's
+      // overwrite branch stops firing, and then writes a DERIVED
+      // `envMapIntensity` on it. Registered HERE for the same reason the three
+      // lines above are: this is the one place the `canopy` family's material
+      // is reachable. The call is idempotent by material identity, because
+      // `apply` re-runs on a late texture load.
+      noteCrownEnvMaterial(r.mat, `props:OF_Canopy:${r.family}`);
     }
     r.mat.needsUpdate = true;
     // NO early return (RN-455). A tiling body family carries an albedo AND a
