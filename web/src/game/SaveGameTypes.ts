@@ -220,6 +220,29 @@ export interface SaveSlot {
    *  second key. Additive and optional under exactly the rule `dayT` and
    *  `stationPower` were added by, so SAVE_VERSION deliberately does NOT move. */
   body?: number;
+  /** PS-53: WHICH GENERATION OF THE HEIGHT FIELD THIS BODY'S WORLD WAS
+   *  AUTHORED AGAINST, as `FieldStamp.fieldStampFor`'s fingerprint of the
+   *  designed surface. BODY-SCOPED (`WORLD_KEYS`), so each world in `others`
+   *  carries its own and a change gated to one body's height stack does not
+   *  invalidate the other body's world.
+   *
+   *  WG-275 moved Forge's ground by up to 281 m with the encoding unchanged, so
+   *  a pre-swell save's voxel edits, buildings and pads are buried or floating
+   *  in absolute body-frame metres while every reader still parses it
+   *  perfectly. `SAVE_VERSION` is the wrong instrument for that (it refuses the
+   *  WHOLE slot including the global half, which is still exactly right) and
+   *  this is the surgical one PS-40's bucket boundary made available.
+   *
+   *  Additive and optional under exactly the rule `dayT`, `stationPower`,
+   *  `body` and `others` were added by, so SAVE_VERSION deliberately does NOT
+   *  move: a bump is refused on MISMATCH and would destroy every world anybody
+   *  is playing, and an absent stamp is not MISREAD. It is read as what it is,
+   *  a world authored before the stamp existed, which is treated as a MISMATCH
+   *  rather than as an unknown (see `FieldStamp.fieldGenVerdict` for why
+   *  "absent means fine" would protect nobody). An older reader that has never
+   *  heard of this field ignores it, which is the correct reading for a client
+   *  that also predates the field change. */
+  fieldGen?: number;
   /** PS-41: the OTHER bodies' worlds, each complete and each naming its body.
    *  A load applies the one that matches the running body and CARRIES THE REST
    *  THROUGH UNTOUCHED, which is what makes visiting the moon safe: the Forge

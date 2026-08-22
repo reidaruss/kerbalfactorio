@@ -82,6 +82,14 @@ export const WORLD_KEYS = [
   // left global would follow the player to the moon and stand at the moon's
   // centre, exactly as an un-classified station would have.
   'antennas',
+  // PS-53. BODY-SCOPED, and it is the only entry here that is not player state:
+  // it is the statement that the fourteen above are still addressable. A height
+  // field is per body (`of_base_height` takes a body handle, and WG-275's swell
+  // is gated to the planet stack so it moved Forge and not Cinder by one
+  // sample), so a stamp on the SLOT rather than on the WORLD would invalidate a
+  // moon world for a change to a planet, and a world carried through in
+  // `others` would come back with no way to say which planet it described.
+  'fieldGen',
 ] as const;
 
 export type WorldKey = typeof WORLD_KEYS[number];

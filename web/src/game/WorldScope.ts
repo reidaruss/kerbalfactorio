@@ -249,7 +249,11 @@ export function worldScopeReport(): {
 function countsOf(w: SaveWorld): Record<string, number> {
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(w as unknown as Record<string, unknown>)) {
-    if (k === 'body') continue;
+    // PS-53. `fieldGen` is skipped by name rather than by falling off the end
+    // of the two branches below, because a body-scoped field that is a NUMBER
+    // is new here and a silent skip is how a later one gets lost. It is a
+    // stamp, not a count, and `fieldGenReport()` is where it is read.
+    if (k === 'body' || k === 'fieldGen') continue;
     if (Array.isArray(v)) out[k] = v.length;
     else if (v !== null && typeof v === 'object') {
       // The one non-array body-scoped field, `voxels`, which is two arrays.

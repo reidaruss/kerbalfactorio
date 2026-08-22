@@ -19,6 +19,7 @@
     "check:proplods": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/check-proplods.mjs",
     "check:proxies": "node scripts/check-proxies.mjs",
     "check:roles": "node scripts/check-roles.mjs",
+    "check:fieldstamp": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./tools/ts-run.mjs wasm/test/fieldstamp.mjs",
     "check:boot": "node tools/smoke/boot.mjs",
     "check:pose": "node tools/smoke/posecheck.mjs",
     "check:probes": "node tools/smoke/check-invocations.mjs",

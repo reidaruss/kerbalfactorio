@@ -69,6 +69,14 @@ const ALL_CHECKS = [
   // rungs, and two rungs group identically under the broken rule and the fixed
   // one. Cheap (no build, no browser), so it runs beside the other static gates.
   'check:proplods',
+  // PS-53. The field-generation stamp, both directions, against the shipped
+  // wasm's own pre-swell arm. It is a LINK and not a probe for `check:proplods`'
+  // reason one domain over: the decision it guards is pure data over a
+  // `SaveSlot`, so a browser would be a slow test of the browser, and the
+  // persistence gates that DO need one (`twobody.mjs`, `probes/bodyfields.js`,
+  // `probes/fieldstamp.js`) cost minutes and cannot sit here. Cheap: no build,
+  // no browser, about a second including instantiating the module.
+  'check:fieldstamp',
   'typecheck',
   'check:pose',
   'check:limits',
