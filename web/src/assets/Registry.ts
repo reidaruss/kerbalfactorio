@@ -362,6 +362,69 @@ const CANOPY_PLAINS: readonly PropSpec[] = [
 const CANOPY_MOUNTAIN: readonly PropSpec[] = [
   C('Canopy_Pine', 330), C('Canopy_Fir', 150),
 ];
+/**
+ * WG-286. THE COASTAL FLAT, and it exists because the Beach CLASS is not a
+ * strand in this world. Measured, not assumed (world-gen.md 6.15).
+ *
+ * `biome.h` gives Beach every direction whose RAW relief is inside
+ * `kBeachBandRel` 0.010 of the datum, and Forge's `maxReliefM` is 6,000 m, so
+ * the class is **the lowest 60 metres of relief on the planet**. In a lowland
+ * that is not a shoreline, it is a swathe: at the `forestair` site a transect
+ * along the hero bearing crosses **3,000 m of continuous Beach** at 6.5 to
+ * 9.5 km, with Forest at 20 to 30 m of designed height on both sides of it.
+ * The class covers **2.54 per cent of Forge** (200,000 uniform directions),
+ * fringing an Ocean class that covers **44.43 per cent** and holds no water
+ * anywhere but the one authored pond.
+ *
+ * WHAT THAT DID TO THE AERIAL FRAME, and it is the largest single thing in it.
+ * Beach carried NO canopy spec, so `ChunkCanopy.BIOME_CANOPY_MU[1]` was
+ * exactly 0 and the far treeline's outer gate refused across the whole swathe:
+ * **12.15 per cent of `forestair`'s terrain pixels, one contiguous band, 89
+ * per cent of a row at its peak** (rendering.md 2.36.11 item 3, re-measured
+ * here). Not clearings, not the treeline altitude, not `canopyWeight` -- a
+ * biome polygon with a categorical zero in it.
+ *
+ * WHY A TABLE AND NOT A CLASSIFIER FIX. The honest fix is that a beach should
+ * be a distance from water rather than a slice of relief, and that is
+ * `biome.h`, i.e. /core and the wasm, with every biome on the planet moving
+ * under it: routed with its numbers rather than done here (world-gen.md 6.15).
+ * What IS world-gen's to fix in one binary is the categorical zero, and it is
+ * `CANOPY_FLOOR_W`'s own argument one level up: "a clearing with EXACTLY no
+ * trees in it is a hole with a rim, and the rim reads as a wall". A hole three
+ * kilometres across has a very visible rim.
+ *
+ * IT IS PLAINS' TABLE, COPIED, AND THE REFERENT IS THE POINT. This ground is
+ * not sand because it is sand; it is sand because it is within 60 m of the
+ * datum. Sixty-one metres up, the same moisture test that runs everywhere else
+ * would call it Plains or Forest. Plains is the conservative half of that pair
+ * ("copses in open grass ... an oak in a field, not a pine"), so the coastal
+ * flat gets the open-country canopy rather than the wood's, and it gets it from
+ * a row with a stated meaning rather than from a number tuned against a frame.
+ * The stand and grove fields still multiply over it, so the flat carries copses
+ * and open ground rather than an even wash.
+ *
+ * THE LADDER, measured, one build per rung, `forestair`'s band rectangle (rows
+ * 345 to 449, the band no committed rectangle contains -- see 6.15):
+ *
+ *   pre-scale total   stems/ha   band mean luma   delta
+ *     0 (shipped)         0        165.030          --
+ *   210 (half Plains)    12.6      163.931        -1.10
+ *   420 (Plains)         25.2      162.775        -2.26
+ *   1200 (Hills)         72.0      159.375        -5.66
+ *
+ * Roughly linear, which is Beer-Lambert at low optical depth and is why no rung
+ * on this ladder can make the band read as forest: at 6 km from a 1,200 m eye
+ * even the Hills rung is about a tenth of the crown cover the Forest ground
+ * beside it carries. **The band's appearance is not the canopy's to fix**, and
+ * 6.15 routes the two things it IS.
+ *
+ * `?beachcanopy=0` restores the empty table, which is the one-binary control
+ * this row is measured against rather than argued from, and it reproduces the
+ * pre-lane build's committed rectangles to the digit (6.15).
+ */
+const CANOPY_BEACH: readonly PropSpec[] = [
+  C('Canopy_Pine', 100), C('Canopy_Fir', 30), C('Canopy_Broadleaf', 290),
+];
 
 /**
  * THE DECOR-ROCK RETIREMENT (WG-68). Admin's ruling for this pass: there are
@@ -408,11 +471,14 @@ const FOREST_BASE: readonly PropSpec[] = [
   P('Forest_Fern', false, 4200), P('Forest_DeadTree', true, 420),
   P('Forest_FallenLog', true, 260), P('Forest_MushroomCluster', false, 1500),
 ];
+const BEACH_BASE: readonly PropSpec[] = [
+  P('Beach_Driftwood', true, 260),
+  P('Beach_ShellCluster', false, 1400), P('Beach_DuneGrass', false, 5200),
+  ...DRY_DETAIL,
+];
 const BIOME_PROPS_MUT: PropSpec[][] = [
   [P('Ocean_Kelp', false, 900)],
-  [P('Beach_Driftwood', true, 260),
-    P('Beach_ShellCluster', false, 1400), P('Beach_DuneGrass', false, 5200),
-    ...DRY_DETAIL],
+  [...BEACH_BASE, ...CANOPY_BEACH],
   [P('Plains_GrassTuftA', false, 9000), P('Plains_GrassTuftB', false, 7000),
     P('Plains_FlowerCluster', false, 1800),
     P('Plains_Shrub', false, 700),
@@ -441,4 +507,20 @@ export const BIOME_PROPS: readonly (readonly PropSpec[])[] = BIOME_PROPS_MUT;
 export function setForestDetail(on: boolean): void {
   BIOME_PROPS_MUT[3] = [...FOREST_BASE,
     ...(on ? FOREST_DETAIL : GROUND_DETAIL), ...CANOPY_FOREST];
+}
+
+/**
+ * WG-286. `?beachcanopy=0` puts Beach back on the empty canopy table it shipped
+ * with, which is the state the 12.15 per cent stage-1 band was measured in.
+ *
+ * IT MUST RUN BEFORE ANY CHUNK IS FILLED and it is not enough on its own:
+ * `ChunkCanopy.BIOME_CANOPY_MU` is DERIVED from this table at import time, so
+ * the caller pairs this with `refreshCanopyMu()`. That pairing is the whole
+ * cost of deriving the index live instead of tabulating it, and it is still the
+ * right trade -- a tabulated copy would go stale against this row silently,
+ * which is the failure NUMBERS.md calls "a constant copied from the thing it
+ * watches".
+ */
+export function setBeachCanopy(on: boolean): void {
+  BIOME_PROPS_MUT[1] = [...BEACH_BASE, ...(on ? CANOPY_BEACH : [])];
 }

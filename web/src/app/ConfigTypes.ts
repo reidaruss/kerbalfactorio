@@ -279,6 +279,10 @@ export interface Config {
    *  `GROUND_DETAIL` meadow mix, which is what its neutrality is measured
    *  against rather than argued from. */
   readonly forestDetail: boolean;
+  /** WG-286: `?beachcanopy=0` puts Beach back on the EMPTY canopy table it
+   *  shipped with, which is the state `forestair`'s 12.15 per cent stage-1
+   *  band was measured in. One binary, one flag. */
+  readonly beachCanopy: boolean;
   /**
    * `?proplod2=0` makes the UNDERSTOREY draw its LOD0 geometry at all ranges,
    * which is the state the four ground-detail cards were in until RN-45

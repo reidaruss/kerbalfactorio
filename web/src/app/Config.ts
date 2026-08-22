@@ -300,6 +300,7 @@ export function parseConfig(search: string): Config {
     nodeCull: p.get('nodecull') !== '0',
     spires: p.get('spires') !== '0',
     forestDetail: p.get('forestdetail') !== '0',
+    beachCanopy: p.get('beachcanopy') !== '0',
     propLod2: p.get('proplod2') !== '0',
     gameplay: p.get('gameplay') !== '0',
     vab: p.get('vab') !== '0',
