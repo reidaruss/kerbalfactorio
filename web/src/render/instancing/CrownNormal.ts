@@ -196,9 +196,22 @@ export function isCrownImpostorMaterial(name: string): boolean {
 // has no uniform for a probe to read. RN-2268's scar is that a flag which never
 // reaches the shader reports the default and every arm then measures the same
 // picture; the remedy for a CPU-side bake is to publish what it actually wrote.
-// `downVerts` is the tear's own signature and is 4 of 24 on the shipped build.
+// `downVerts` is the tear's own signature and is 3 of 24 on the pre-lane path.
+//
+// TWO OUT-OF-PLANE MEASURES, NOT ONE, and the second exists because the first
+// answers a question that is only half the defect. `minAbsOutOfPlane` is the
+// baked normal projected onto its card's plane normal: it is the literal
+// coplanarity reading and it is 0.0000 at all 24 vertices on the pre-lane path.
+// But a normal pointing STRAIGHT UP is also in that plane (the card plane
+// contains the vertical axis), so raising `meanUp` drives this measure toward
+// zero while genuinely fixing the aerial `N . V`, and reading it alone would
+// call the anchor fix a regression. `minAzimuthOut` therefore measures the same
+// projection on the HORIZONTAL part of the normal alone, which is the azimuth
+// spread `crowncard` buys and is independent of how far off vertical the dome
+// put the vertex. Both are published; a reader needs both.
 const report = {
-  parts: 0, verts: 0, meanUp: 0, minAbsOutOfPlane: 1, downVerts: 0, path: 'none',
+  parts: 0, verts: 0, meanUp: 0, minAbsOutOfPlane: 1, minAzimuthOut: 1,
+  downVerts: 0, path: 'none',
 };
 let accUp = 0;
 
@@ -320,13 +333,23 @@ export function accumulateCrownBake(g: THREE.BufferGeometry, path: string): void
     // the vertical, so its normal is the horizontal direction PERPENDICULAR to
     // the vertex's own plan radial. Projecting the baked normal onto it is
     // exactly "how far did this normal leave its card's plane", and it reads
-    // 0.0000 on the shipped build at every one of the 24 vertices.
+    // 0.0000 on the pre-lane path at every one of the 24 vertices.
     const rx = pos.getX(i) - cx; const rz = pos.getZ(i) - cz;
     const rl = Math.hypot(rx, rz);
     if (rl > 1e-6) {
       const ox = -rz / rl; const oz = rx / rl;
-      const a = Math.abs(nrm.getX(i) * ox + nrm.getZ(i) * oz);
+      const nxv = nrm.getX(i); const nzv = nrm.getZ(i);
+      const a = Math.abs(nxv * ox + nzv * oz);
       if (a < report.minAbsOutOfPlane) report.minAbsOutOfPlane = a;
+      // THE AZIMUTH-ONLY MEASURE. Same projection, but on the normal's
+      // horizontal part alone, so a vertex the dome has pointed nearly straight
+      // up does not report as "in-plane" for a reason that has nothing to do
+      // with the azimuth mix. See the report block's own note.
+      const hl = Math.hypot(nxv, nzv);
+      if (hl > 1e-6) {
+        const b = Math.abs((nxv / hl) * ox + (nzv / hl) * oz);
+        if (b < report.minAzimuthOut) report.minAzimuthOut = b;
+      }
     }
   }
   report.parts += 1;

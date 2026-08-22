@@ -72,6 +72,11 @@ const verifyClear = argv.get('--verifyclear') === '1';
 // `--rho0=1` doubles the browser runs and is worth it only when the SPREAD is
 // the question, so it is off by default rather than always on.
 const wantRho0 = argv.get('--rho0') === '1';
+// `--split=1` adds the `?propspec=0` arm, so `D` (diffuse) and `P = Ycard - D`
+// (specular) are separated per candidate. This is 2.38.2's own decomposition
+// re-taken per arm, and it is off by default for the same reason `--rho0` is:
+// it is another browser run per candidate per pose.
+const wantSplit = argv.get('--split') === '1';
 const cands = (argv.get('--cands') ?? '-').split('|').map((s) => s.trim())
   .map((s) => ({ label: s, flags: s === '-' ? []
     : s.split(',').filter(Boolean).map((k) => `--${k.trim()}`) }));
@@ -138,11 +143,24 @@ for (const shot of shots) {
         rho0 = z.extra.crowns.lin.Y / (f0 * Yclear);
       }
     }
+    let D = null;
+    if (wantSplit) {
+      const y = arm(shot, ['--terrainpaint=1', '--propspec=0', ...OFF, ...c.flags]);
+      if (!ok(y)) { console.error(`  ${c.label}: split arm failed`); bad++; }
+      // Its OWN coverage, for the same reason `rho0` takes its own: removing
+      // the specular changes how many card pixels quantise to exactly black.
+      else D = y.extra.crowns.lin.Y / (1 - y.extra.crowns.blackFrac) / Yclear;
+    }
     const cn = (e.treeline ?? {}).crownNormal ?? null;
     const where = rho < BAND_LOW ? `BELOW band by ${(BAND_LOW - rho).toFixed(4)}`
       : rho > BAND_HIGH ? `ABOVE band by ${(rho - BAND_HIGH).toFixed(4)}`
         : (rho >= CORE_LOW && rho <= CORE_HIGH ? 'IN CORE' : 'IN BAND');
     table.push({ shot, label: c.label, rho, rho0 });
+    if (D !== null) {
+      console.log(`${''.padEnd(34)} split: D/Yclear ${D.toFixed(4)}`
+        + `  P/Yclear ${(rho - D).toFixed(4)}`
+        + `  specular share ${((rho - D) / rho).toFixed(4)}`);
+    }
     console.log(`${c.label.padEnd(34)} ${f.toFixed(4)} ${Ycard.toFixed(6)}`
       + `  ${rho.toFixed(4)}  ${(rho - b.rho >= 0 ? '+' : '')}${(rho - b.rho).toFixed(4)}`
       + `    ${rho0 === null ? '  --  ' : rho0.toFixed(4)}   ${where}`

@@ -5,21 +5,28 @@
 // reaches the shader reports the default" does not apply directly: nothing in
 // the frame says which construction ran. `TerrainArtHandle.treeline()` therefore
 // publishes `crownNormal`, which is what the bake WROTE (`meanUp`,
-// `minAbsOutOfPlane`, `downVerts`, `parts`, `verts`, `path`) beside what was
+// `minAbsOutOfPlane`, `minAzimuthOut`, `downVerts`, `parts`, `verts`, `path`)
+// beside what was
 // ASKED FOR (`ask`). This script reads both and asserts the pair.
 //
 // THE THREE THINGS IT PROVES, and each is a separate defect from 2.38.1a:
 //
 //   downVerts         the SIGN TEAR's own signature: the number of baked vertex
 //                     normals with a NEGATIVE y, i.e. lit as if facing the
-//                     ground. The pre-lane path bakes 4 of 24 (one per tree on
-//                     the 90-degree-yawed quad's top edge, three trees). The
+//                     ground. The pre-lane path bakes 3 of 24, one per tree,
+//                     on the 90-degree-yawed quad's own top edge. The
 //                     crown path must bake 0, and it must bake 0 BY
 //                     CONSTRUCTION rather than by a tuned epsilon.
-//   minAbsOutOfPlane  the COPLANARITY measure: the baked normal projected onto
-//                     its own card's plane normal, minimised over every vertex.
-//                     The pre-lane path reads 0.0000 at all 24 (every normal
-//                     lies in its card's plane). `?crowncard=c` must raise it.
+//   minAzimuthOut     the COPLANARITY measure, and it is taken on the normal's
+//                     HORIZONTAL part alone. The pre-lane path reads 0.0000 at
+//                     all 24 vertices: every normal lies in its own card's
+//                     plane. `?crowncard=c` must raise it, and it must do so
+//                     independently of `crownflank`, which is why the absolute
+//                     projection (`minAbsOutOfPlane`, also printed) is not the
+//                     measure asserted on: a normal pointing straight UP is
+//                     also in the card plane, so raising `meanUp` drives the
+//                     absolute measure toward zero while genuinely fixing the
+//                     aerial `N . V`.
 //   meanUp            the ANCHOR's effect: dropping the dome anchor below the
 //                     crown base raises the rim's up-component from exactly 0
 //                     to cos(crownflank), so the mean over the part rises
@@ -88,13 +95,14 @@ for (const [label, flags] of ARMS) {
 console.log(`\n--- RN-2590 THE CROWN BAKE, READ BACK (${shot},`
   + ' ?terrainpaint=1, un-hazed) ---');
 console.log('arm                          parts verts    meanUp  minOutPlane'
-  + '  downVerts  path    ask(flank,card)   crownsY');
+  + '  minAzimOut  downVerts  path      ask(flank,card)   crownsY');
 for (const r of rows) {
   const a = r.cn.ask ?? {};
   console.log(`${r.label.padEnd(28)} ${String(r.cn.parts).padStart(5)}`
     + ` ${String(r.cn.verts).padStart(5)}    ${r.cn.meanUp.toFixed(4)}`
     + `       ${r.cn.minAbsOutOfPlane.toFixed(4)}`
-    + `        ${String(r.cn.downVerts).padStart(3)}  ${String(r.cn.path).padEnd(6)}`
+    + `      ${r.cn.minAzimuthOut.toFixed(4)}`
+    + `        ${String(r.cn.downVerts).padStart(3)}  ${String(r.cn.path).padEnd(8)}`
     + `  ${a.on === false ? 'OFF' : `${a.flankDeg},${a.cardMix}`}`.padEnd(18)
     + `  ${r.Y === null ? '  --  ' : r.Y.toFixed(6)}`);
 }
@@ -120,9 +128,9 @@ else {
       + ' this lane exists to remove is not reproducing. Either the arm is'
       + ' vacuous or the defect moved.');
   }
-  if (prelane.cn.minAbsOutOfPlane > 1e-4) {
+  if (prelane.cn.minAzimuthOut > 1e-4) {
     fails.push(`the PRE-LANE arm's normals are not in-plane`
-      + ` (minAbsOutOfPlane ${prelane.cn.minAbsOutOfPlane}), so the coplanarity`
+      + ` (minAzimuthOut ${prelane.cn.minAzimuthOut}), so the coplanarity`
       + ' defect is not reproducing either.');
   }
   // 2. THE SHIPPED PATH MUST FIX BOTH, and neither by an epsilon.
@@ -134,7 +142,7 @@ else {
     fails.push(`the SHIPPED path still bakes ${shipped.cn.downVerts} downward`
       + ' normals. The tie was not removed.');
   }
-  if (shipped.cn.minAbsOutOfPlane <= 1e-4) {
+  if (shipped.cn.minAzimuthOut <= 1e-4) {
     fails.push('the SHIPPED path is still in-plane, so the coplanarity fix is'
       + ' not reaching the bake.');
   }
@@ -146,11 +154,11 @@ for (const [a, b, what] of [[shipped, card0, '?crowncard='],
   [shipped, flank90, '?crownflank='], [shipped, signOnly, 'flank90+card0']]) {
   if (!a || !b) continue;
   const same = Math.abs(a.cn.meanUp - b.cn.meanUp) < 1e-6
-    && Math.abs(a.cn.minAbsOutOfPlane - b.cn.minAbsOutOfPlane) < 1e-6;
+    && Math.abs(a.cn.minAzimuthOut - b.cn.minAzimuthOut) < 1e-6;
   if (same) fails.push(`${what} bakes IDENTICAL normals to the shipped arm.`
     + ' The flag is not reaching the construction.');
 }
-if (signOnly && signOnly.cn.minAbsOutOfPlane > 1e-4) {
+if (signOnly && signOnly.cn.minAzimuthOut > 1e-4) {
   fails.push('the sign-only arm is not in-plane; `crowncard=0` is not zeroing'
     + ' the out-of-plane mix, so the two fixes are not separable after all.');
 }
