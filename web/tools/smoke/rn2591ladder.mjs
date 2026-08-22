@@ -168,7 +168,7 @@ for (const shot of shots) {
         + ` ${cn.minAbsOutOfPlane.toFixed(3)} down ${cn.downVerts}]` : '')
       // THE MATERIAL-SIDE REQUESTS, READ BACK OFF THE PAGE. RN-2268: an arm
       // that changes nothing is only interesting once the ask is proved to have
-      // arrived, and `?canopyenv=` measures as an exact zero (2.39.9), so this
+      // arrived, and `?canopyenv=` measures as an exact zero (2.39.10), so this
       // column is what separates "the term is absent" from "the flag was
       // dropped".
       + (() => {

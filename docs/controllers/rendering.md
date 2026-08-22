@@ -13084,7 +13084,7 @@ abs(normal.y)` scoped to `OF_Canopy` by a define (the canopy has no
 `onBeforeCompile` of its own, so it would have to enter `PropWind`'s shared
 hook), or duplicating the four triangles with reversed winding and moving the
 material to `FrontSide`. The first is one line and a per-fragment cost the brief
-excluded; the second doubles the impostor's triangles. **Routed in 2.39.10 item
+excluded; the second doubles the impostor's triangles. **Routed in 2.39.12 item
 1 with the measurement that sizes it.**
 
 ### 2.39.4 THE CONSTRUCTION, AND THE TWO ANSWERS IT IS NOT
@@ -13310,7 +13310,7 @@ four are in the CORE and the fourth has repaid part of its standing violation.
 Per 2.35.9 item 8 the rise is reported and not raised; the FALLS are reported
 and **not lowered either**, which is a deliberate departure from the guard's own
 "a lane that darkens the wood LOWERS the constant in the same commit" and is
-routed as a decision in 2.39.11 item 5 rather than taken unilaterally, because
+routed as a decision in 2.39.12 item 5 rather than taken unilaterally, because
 `BASE` is a baseline with provenance (N8 measured it on `lane/n8-guardband`),
 five of its eight ceilings are already provisional pending 2.35.7's unanswered
 decision request, and re-pinning seven while refusing to re-pin the eighth is a
