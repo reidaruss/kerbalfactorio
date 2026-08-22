@@ -413,6 +413,31 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // request-against-outcome pair RN-2268 asks for. Registered in the same
   // commit that introduces it.
   'canopyrough',
+  // RN-2590, the crown impostor's `envMapIntensity`, routed to this lane by
+  // 2.38.7 as a REQUIRED isolator. An OVERRIDE like `canopyrough`: absent,
+  // nothing is written. **IT IS A DEAD SWITCH AND MOVES NOTHING, corrected
+  // 2026-08-22:** `WebGLRenderer.js:2694-2696` overwrites the uniform from
+  // `scene.environmentIntensity` every frame while the material has no own
+  // `envMap` and `SkyIbl.ts:133`'s environment is set, so a sweep of it
+  // measures exactly 0.000000 for a reason that has nothing to do with the
+  // term's size. The environment is 37.48 per cent of the `crowns` rectangle
+  // (`?ibldiag=noenv`), so 2.38.4's PMREM reading STANDS. The live handle is
+  // `scene.environmentIntensity`. Registered and kept because the
+  // request/outcome pair is what made the overwrite findable; see
+  // rendering.md 2.39.10 before quoting it as an amplitude.
+  'canopyenv',
+  // RN-2590, the CROWN IMPOSTOR's shading normal, three switches for three
+  // separable terms (RN-952). `crownnormal=0` routes the crown card back
+  // through RN-1766's `bendNormals` and is the exact pre-lane control, tear
+  // and all. `crownflank=<deg>` is the angle from UP the shading normal takes
+  // at the crown's widest rim, and `crownflank=90` puts the dome anchor back
+  // at the base (RN-1766's anchor) so it isolates the SIGN fix on its own.
+  // `crowncard=<0..1>` is the out-of-plane mix with the card's own normal, so
+  // `crowncard=0` restores the coplanarity degeneracy and isolates that fix on
+  // its own. All three are read at REGISTRATION, like `foliagenormal`, so they
+  // need a page load and cannot have a runtime pair; all three are readable
+  // back against what the bake WROTE at `treeline().crownNormal`.
+  'crownnormal', 'crownflank', 'crowncard',
   // RN-47, the underwater view. `underwater=0` removes the pass; the other
   // four tune extinction, tint, scatter and the path clamp.
   'underwater', 'uwext', 'uwtint', 'uwscatter', 'uwpath',

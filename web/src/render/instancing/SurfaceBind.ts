@@ -14,7 +14,7 @@ import * as THREE from 'three';
 
 import { applyFoliageTone } from './FoliageTone.js';
 import { publishCanopyTone } from '../materials/TerrainTreeline.js';
-import { canopyRoughnessOverride, publishCanopyCardBase }
+import { canopyEnvOverride, canopyRoughnessOverride, publishCanopyCardBase }
   from '../materials/CanopySelfShadow.js';
 import type { Family } from './SurfaceRoles.js';
 
@@ -139,6 +139,25 @@ export function apply(r: Reg): void {
       // MachineMat.ts's exact scar, so it is written down before it bites.
       const rough = canopyRoughnessOverride();
       if (rough !== null) r.mat.roughness = rough;
+      // RN-2590. THE SECOND MISSING ISOLATOR, written in the same statement
+      // group and by the same rules as the one above: an absolute WRITE (so a
+      // re-run of `apply` on a late texture load is idempotent), `null` on the
+      // shipped path (so the lane cannot move a pixel by accident), and AFTER
+      // the colour writes.
+      //
+      // **IT IS A DEAD SWITCH AND THE WRITE BELOW CANNOT SURVIVE, corrected
+      // 2026-08-22.** The first version of this comment called it "the handle
+      // that actually reaches the crown's specular"; it is not.
+      // `WebGLRenderer.js:2694-2696` overwrites `envMapIntensity` from
+      // `scene.environmentIntensity` every frame for a MeshStandardMaterial
+      // with no own `envMap` while `scene.environment` is set, and
+      // `SkyIbl.ts:133` sets it. The write stays because the request/outcome
+      // pair it publishes is what made the overwrite findable, and because it
+      // becomes live the day the canopy gets an own envMap. The LIVE handle is
+      // `scene.environmentIntensity`. See CanopySelfShadow.canopyEnvOverride
+      // and rendering.md 2.39.10.
+      const env = canopyEnvOverride();
+      if (env !== null) r.mat.envMapIntensity = env;
     }
     r.mat.needsUpdate = true;
     // NO early return (RN-455). A tiling body family carries an albedo AND a

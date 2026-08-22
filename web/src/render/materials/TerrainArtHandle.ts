@@ -13,6 +13,7 @@
 import { ART_DEFAULT, fineAmpFromQuery, specAmpFromQuery} from './TerrainAmpQuery.js';
 import { canopyToneNow } from './TerrainTreeline.js';
 import { canopySelfNow } from './CanopySelfShadow.js';
+import { crownBakeReport, crownBend } from '../instancing/CrownNormal.js';
 import { horizonOccFromQuery, reliefCellFromQuery, reliefCellNoiseFromQuery,
   reliefGradFromQuery, reliefGradUvFromQuery, reliefSwingFromQuery }
   from './TerrainReliefQuery.js';
@@ -368,6 +369,8 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
       amp: number; mottle: number; reachM: number; paint: number; far: number;
       tone: { r: number; g: number; b: number; live: boolean };
       self: ReturnType<typeof canopySelfNow> & { uniform: [number, number, number] };
+      crownNormal: ReturnType<typeof crownBakeReport>
+        & { ask: ReturnType<typeof crownBend> };
     } {
       const v = s.treeline.value;
       const c = s.crownShade.value;
@@ -392,6 +395,17 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
         // the NEAR half of this term is silently absent -- 2.18.5's failure
         // mode one term over, and invisible in a frame for the same reason.
         self: { ...canopySelfNow(), uniform: [c.x, c.y, c.z] },
+        // RN-2590. THE CROWN BAKE, READ BACK. A registration-time rewrite of a
+        // normal attribute has no uniform, so RN-2268's remedy ("a flag that
+        // never reaches a uniform reports the default") needs a different
+        // surface: this publishes what the bake ACTUALLY WROTE beside what was
+        // ASKED FOR, so an arm can be proved non-vacuous from the page's own
+        // state. `downVerts` is the sign tear's own signature and reads 3 on
+        // the pre-lane path (one vertex per tree, three trees) and 0 on the
+        // shipped one. It rides `treeline()`
+        // rather than a new hook because every probe already captures this
+        // object whole, so no probe needs editing to see it.
+        crownNormal: { ...crownBakeReport(), ask: crownBend() },
       };
     },
     ...terrainSplatHandle(s),

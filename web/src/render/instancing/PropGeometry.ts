@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import { bendNormals, foliageBend } from './FoliageNormal.js';
+import { accumulateCrownBake, crownBend, crownNormals } from './CrownNormal.js';
 import { copyUv } from './Surfaces.js';
 
 /** Just enough of `PropLibrary.Batch` for the base-shade toggle below. */
@@ -258,6 +259,7 @@ export function bakeColour(g: THREE.BufferGeometry, bake: BaseBake): void {
 /** Strip everything a BatchedMesh cannot bind consistently across geometries. */
 export function normalize(
   src: THREE.BufferGeometry, worldMatrix: THREE.Matrix4, bake: BaseBake,
+  crown = false,
 ): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const pos = src.getAttribute('position') as THREE.BufferAttribute;
@@ -288,7 +290,27 @@ export function normalize(
   // centre in the frame the prop STANDS in, and a glTF node carrying a
   // rotation would otherwise have its outward direction computed in the
   // authoring frame and applied in the placed one.
-  if (bake === 'foliage') bendNormals(g, foliageBend().amount);
+  // RN-2590. THE CROWN IMPOSTOR TAKES ITS OWN CONSTRUCTION, and the split is
+  // here rather than inside `bendNormals` so the understorey's bytes are
+  // untouched BY CONSTRUCTION: `bendNormals` is shared by grass, leaf and
+  // canopy, and RN-1766 bought +7.4 per cent of `forestfloor`'s whole-frame
+  // `iqr` with it, so a crown fix edited into it could only ever be proved
+  // harmless by re-measuring the understorey. `?crownnormal=0` routes the crown
+  // back through `bendNormals` and is the exact pre-lane control.
+  // See CrownNormal.ts for the two degeneracies and the derivation.
+  if (bake === 'foliage') {
+    const amount = foliageBend().amount;
+    const useCrown = crown && crownBend().on;
+    if (useCrown) crownNormals(g, amount);
+    else bendNormals(g, amount);
+    // The label says which construction WROTE these bytes, and `authored` is
+    // its own answer rather than being folded into either: at
+    // `?foliagenormal=0` both paths return before writing anything, so
+    // reporting `crown` there would name a construction that did not run.
+    if (crown) {
+      accumulateCrownBake(g, amount <= 0 ? 'authored' : (useCrown ? 'crown' : 'bend'));
+    }
+  }
   bakeColour(g, bake);
   g.computeBoundingSphere();
   return g;
