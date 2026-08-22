@@ -1012,6 +1012,30 @@
         // measuring nothing. A lane that wants a denser crown rect should move
         // BOTH and re-pin, as one decision.
         crowns: [0.28125, 0.666667, 0.40625, 0.777778],
+        // WG-296. THE BAND BETWEEN `hzBand` AND `box`, WHICH NO COMMITTED
+        // RECTANGLE AT THIS POSE HAS EVER CONTAINED, and it is exactly the
+        // band R5 rank 1 is about.
+        //
+        // Solved with this pose's own curvature-correct inversion (R5 section
+        // 11 item 1: depression = s/(2R) + h/s, row from depression through
+        // `of.look`'s `pitch - atan(v tan 30)` convention), at h = 1,200 m and
+        // pitch -14. Rows 338 to 405 are **13,227 m to 6,624 m** of ground.
+        // Above it `hzBand` (rows 315-338) is 22.0 to 13.2 km and below it
+        // `box` (rows 405-675) is 6,624 m to 1,791 m, so the three tile the
+        // visible ground from 22 km down to the frame's bottom edge with no
+        // gap. The horizon's own dip `sqrt(2h/R)` puts it at row 307.4, so all
+        // three are on the GROUND side of it (RN-2475's straddle trap, which
+        // retired `meadow.hzBand` for being on the wrong side).
+        //
+        // It exists because the pre-WG-295 instance tier stopped at 3,500 m,
+        // i.e. at row 529, and the whole question of this lane is what is in
+        // the frame ABOVE that. `box` tops out at 6,624 m and therefore
+        // SATURATES at a tail reach of about 7 km: measured, `box` moves
+        // 98.72 to 97.60 to 97.57 across tail reaches of 3.5, 7.0 and 10.5 km
+        // at `forestair`, which reads as a term that has stopped working and
+        // is really a rectangle that has run out of subject. Without this
+        // rectangle a reach ladder past 7 km is measured by nothing at all.
+        farband: [0.2000, 0.3756, 0.8000, 0.4500],
       },
       why: 'the MID-ALTITUDE FLIGHT VIEW at 1,200 m over the spawn',
     },
@@ -1119,6 +1143,12 @@
         // rectangle under `?canopy=0`, which is the clearing at identical
         // range through identical air, so nothing about it is hand-balanced.
         crowns: [0.28125, 0.666667, 0.40625, 0.777778],
+        // WG-296. `flyover.farband`'s fractions to the digit, and it is the
+        // same rectangle because it is the same camera: this pose differs from
+        // `flyover` only in latitude and longitude, so 13,227 m to 6,624 m of
+        // ground is rows 338 to 405 at both. See `flyover.farband` for the
+        // derivation and for why `box` cannot measure past about 7 km.
+        farband: [0.2000, 0.3756, 0.8000, 0.4500],
       },
       why: 'the MID-ALTITUDE FLIGHT VIEW at 1,200 m over FOREST, not the spawn',
     },
@@ -4105,6 +4135,21 @@
       wantedPerM2: s.props.wantedPerM2, placedPerM2: s.props.placedPerM2,
       deliveredFraction: s.props.deliveredFraction,
       cellsCapped: s.props.cellsCapped, chunksCapped: s.props.chunksCapped,
+      // WG-295 / WG-301. The reach half and the cap half of R5 rank 1, side
+      // by side and never merged. `canopyTailM` is where the coarse tail
+      // stops (0 = no tail, which is every ground pose by construction) and
+      // `treeline.reachM` beside it is where the COVER fade stops, which is
+      // what the terrain material is told: the pair IS this lane's handover
+      // assumption, printed rather than described. `capCellFrac` is how much
+      // of the resident cell grid the per-chunk cap never reached, which
+      // `chunksCapped` cannot say and `canopyDelivered` structurally cannot
+      // see (it reads 1.0008 while one chunk is truncated).
+      canopyTailM: s.props.canopyTailM ?? null,
+      capCells: s.props.capCells ?? null,
+      capOfferCells: s.props.capOfferCells ?? null,
+      capCellFrac: s.props.capCellFrac ?? null,
+      capScaleMin: s.props.capScaleMin ?? null,
+      capFair: s.props.capFair ?? null,
       chunksRefused: s.props.chunksRefused,
       scatterBacklog: s.props.scatterBacklog, chunks: s.props.chunks,
       poolRefused, poolCeiling: s.props.ceiling ?? null,

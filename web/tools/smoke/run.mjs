@@ -565,6 +565,22 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // the second half of the same lane, on its own flag so the mid tier's new
   // silhouettes and the ring's softened edge can be attributed apart.
   'midhole', 'midedge',
+  // WG-295 / WG-301, standing rule 7. Three flags, one per finding, so R5
+  // rank 1's reach half and its cap half can never be attributed to each
+  // other in a reading.
+  //   `canopytail=` is the coarse tail's multiple of the cover reach and
+  //     `canopytail=1` is its STRUCTURAL off (the sampler's tail branch is
+  //     never entered), so the before picture is one page param away on the
+  //     shipped build. It sweeps, because the tail's cost is
+  //     `EDGE_W r0^2 (1 - 1/mult)` and the shipping value is the widest the
+  //     frame and the canopy pool hold.
+  //   `capfair=0` restores MAX_PER_CHUNK's raster-order first-N truncation,
+  //     which is what makes the density-aware cap measurable rather than
+  //     asserted: the delivery ratio reads 1.0008 in both arms and only
+  //     `capCellFrac` tells them apart.
+  //   `canopymaxcell=` overrides RN-2230's coarsest admissible canopy cell,
+  //     so the chunk-LOD ceiling on the reach is a ladder and not a claim.
+  'canopytail', 'capfair', 'canopymaxcell',
   // WG-67, standing rule 7. `rocks=0` places NO world rocks, which is the
   // one-binary control for the whole rock-node pass; `rockdensity=` scales
   // every biome's rock ask together for the cost ladder.

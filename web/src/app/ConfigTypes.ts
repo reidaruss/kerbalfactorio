@@ -239,6 +239,28 @@ export interface Config {
   /** WG-260. The biome ring's edge weight. `?midedge=0` restores the step. */
   readonly midEdge: boolean;
   /**
+   * WG-295. `?canopytail=` is the coarse tail's MULTIPLE of the cover reach,
+   * and 1 (or anything at or below it) is the structural off. A multiple
+   * rather than a radius because the cover reach is already altitude-aware, so
+   * one number serves the 1,200 m flyover and the 60 m ground-adjacent eye.
+   * It sweeps a ladder for the same reason `?canopy=` does: the tail's cost is
+   * `EDGE_W * r0^2 * (1 - 1/mult)` and the shipping value has to be the widest
+   * the frame and the pool ceilings hold.
+   */
+  readonly canopyTailMult: number;
+  /**
+   * WG-301. `?capfair=0` restores `MAX_PER_CHUNK`'s raster-order first-N
+   * truncation, so the before picture of the density-aware cap is one binary
+   * apart (standing rule 7).
+   */
+  readonly capFair: boolean;
+  /**
+   * WG-295. `?canopymaxcell=` overrides RN-2230's coarsest admissible canopy
+   * cell. It exists so the chunk-LOD ceiling on the reach is a measured ladder
+   * rather than an assertion, and the shipped value is unchanged.
+   */
+  readonly canopyMaxCellM: number;
+  /**
    * WG-67: `?rocks=0` places NO world rocks and is the one-binary control for
    * the whole rock pass, the same shape as `?canopy=0` one paragraph up.
    * `?rockdensity=` scales every biome's rock ask together and exists for the

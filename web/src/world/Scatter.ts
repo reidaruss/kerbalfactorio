@@ -33,6 +33,7 @@ import {
   CELLS, MAX_CELL_M, BUILDS_PER_UPDATE, MAX_PER_CHUNK,
   RADIUS_M, DETAIL_RADIUS_M, DETAIL_FULL_M, tierOf, type Tier,
   CANOPY_FULL_M, CANOPY_MAX_CELL_M, CANOPY_BANDS, canopyReachM,
+  CANOPY_TAIL_MULT, canopyTailReachM,
 } from './ScatterTuning.js';
 import { CONTACT_CARDS } from '../render/ScatterLook.js';
 import { PropEmitter } from './ScatterEmit.js';
@@ -84,8 +85,10 @@ export class Scatter {
   /** A BOX and not a number, for `eye`'s reason: `deps` is assembled once in
    *  the constructor and the sampler reads the live value through it. */
   private readonly alt = { m: 0 };
-  /** RN-2234. The realised canopy reach this frame. See `deps.reach`. */
+  /** RN-2234. The realised canopy COVER reach this frame. See `deps.reach`. */
   private readonly reach = { m: 0 };
+  /** WG-295. The coarse tail's reach this frame, or 0. See `deps.tail`. */
+  private readonly tail = { m: 0 };
 
   constructor(
     private readonly lib: PropLibrary,
@@ -140,6 +143,33 @@ export class Scatter {
     /** WG-260. The biome ring's edge weight. `?midedge=0` restores the
      *  boolean gate the tier shipped with. See `ScatterTuning.BASE_FULL_M`. */
     private readonly midEdge = true,
+    /**
+     * WG-295. THE COARSE TAIL'S MULTIPLE OF THE COVER REACH. `?canopytail=1`
+     * (or anything at or below 1) is the STRUCTURAL off: `canopyTailReachM`
+     * returns 0, `deps.tail.m` stays 0, and the sampler's tail branch is never
+     * entered, so the build is the pre-WG-295 one rather than a tuning value
+     * set to zero (standing rule 7).
+     *
+     * A multiple and not a radius, so one number serves a 1,200 m flyover and
+     * a 60 m ground-adjacent eye without either paying for the other. See
+     * `CANOPY_TAIL_MULT`.
+     */
+    private readonly canopyTailMult = CANOPY_TAIL_MULT,
+    /**
+     * WG-301. `?capfair=0` restores the raster-order first-N truncation that
+     * `MAX_PER_CHUNK` has always been, so the before picture is one binary
+     * apart. See `ScatterCap.ts` for what it is truncating and for why the
+     * delivery ratio reads 1.0008 while it happens.
+     */
+    private readonly capFair = true,
+    /**
+     * RN-2230's coarsest admissible cell for the canopy branch, overridable
+     * from `?canopymaxcell=` so the chunk-LOD ceiling on the reach is a
+     * MEASURED ladder rather than an assertion. The shipped value admits depth
+     * 8 and no coarser; see `CANOPY_MAX_CELL_M` for what depth 7 would cost in
+     * positional quantisation.
+     */
+    private readonly canopyMaxCellM = CANOPY_MAX_CELL_M,
   ) {
     this.em = new PropEmitter(lib, fair, grassShort);
     this.deps = {
@@ -147,7 +177,7 @@ export class Scatter {
       densityScale: this.densityScale, eye: this.eye,
       bodyRadiusM: this.bodyRadiusM,
       canopyShade: this.canopyShade, mid: this.mid, midEdge: this.midEdge,
-      em: this.em, alt: this.alt,
+      em: this.em, alt: this.alt, tail: this.tail, capFair: this.capFair,
       // RN-2234. A BOX holding the REALISED reach for this frame, refreshed in
       // `update`. The sampler gates and fades on this rather than on the
       // configured radius, so the ring it builds and the ring `reachM` admits
@@ -165,13 +195,35 @@ export class Scatter {
    * measured table this is derived from.
    */
   private get reachM(): number {
-    const c = canopyReachM(this.canopyRadiusM, this.eyeAltM);
-    return c > RADIUS_M ? c : RADIUS_M;
+    const c = this.canopyCoverM;
+    const t = this.canopyTailM;
+    const far = t > c ? t : c;
+    return far > RADIUS_M ? far : RADIUS_M;
+  }
+
+  /**
+   * RN-2234's reach, unchanged: the range the COVER fade
+   * (`canopyDistanceWeight`) is normalised over, and the one the terrain
+   * material is told about.
+   */
+  private get canopyCoverM(): number {
+    return canopyReachM(this.canopyRadiusM, this.eyeAltM);
+  }
+
+  /**
+   * WG-295. The coarse tail's reach, or 0. Zero at every ground pose by
+   * construction (`canopyTailReachM` is bounded by the eye's own horizon), so
+   * `reachM` there is the number it has always been, to the bit.
+   */
+  private get canopyTailM(): number {
+    const c = this.canopyCoverM;
+    if (!(c > RADIUS_M)) return 0;
+    return canopyTailReachM(c, this.eyeAltM, this.bodyRadiusM, this.canopyTailMult);
   }
 
   /** True when the canopy, not the 170 m ground ring, is what `reachM` is. */
   private get canopyGoverns(): boolean {
-    return canopyReachM(this.canopyRadiusM, this.eyeAltM) > RADIUS_M;
+    return this.canopyCoverM > RADIUS_M;
   }
 
   /**
@@ -186,9 +238,22 @@ export class Scatter {
    * disagree the first time `?canopy=` or `CANOPY_REACH_PER_ALT` moved. No
    * behaviour changes here; this is an accessor over two existing private
    * getters. See rendering.md 2.18 and TerrainTreeline.ts.
+   *
+   * **WG-295. IT IS THE COVER REACH AND DELIBERATELY NOT THE OUTER GATE, and
+   * that is this lane's stated handover assumption.** The coarse tail places
+   * instances beyond this range, so "exactly where it stops" above is no
+   * longer literally true and the sentence is corrected here rather than left
+   * to rot (a docstring that names a cause outlives the cause). What is
+   * published is the range the COVER fade ends at, because that is the
+   * quantity `canopyDistanceWeight` is normalised over and the quantity
+   * `ofTreeCover`'s Beer-Lambert complement is exact against. The tail is
+   * additive silhouette on ground the far paint already colours, priced
+   * against R5 rank 1's own finding that the paint moves those rows by under
+   * one count; see `canopyTailWeight` for the whole argument and for the
+   * `?canopytail=1` switch that removes it if RN-2660 changes that finding.
    */
   get canopyReachOutM(): number {
-    return this.canopyGoverns ? this.reachM : 0;
+    return this.canopyGoverns ? this.canopyCoverM : 0;
   }
 
   /**
@@ -225,7 +290,8 @@ export class Scatter {
     this.eye.copy(eye);
     this.eyeAltM = eyeAltM;
     this.alt.m = eyeAltM;
-    this.reach.m = canopyReachM(this.canopyRadiusM, eyeAltM);
+    this.reach.m = this.canopyCoverM;
+    this.tail.m = this.canopyTailM;
     const seen = new Set<string>();
     let budget = BUILDS_PER_UPDATE;
     let backlog = 0;
@@ -422,6 +488,10 @@ export class Scatter {
     this.c.midCells -= pl.midCells;
     this.c.midWanted -= pl.midWanted;
     this.c.midM2 -= pl.midCells * pl.cellArea;
+    // WG-301. Matched with the `+=` pair in `build`, so the cap fraction is a
+    // property of the RESIDENT set and not of everything ever built.
+    this.c.capCells -= pl.capCells;
+    this.c.capOfferCells -= pl.capOfferCells;
     this.placed.delete(key);
   }
 
@@ -436,7 +506,7 @@ export class Scatter {
     // on chunks one depth band coarser so the impostor tier can reach past
     // 2.3 km. When the canopy is off the two are the same test and this file
     // refuses exactly the chunks it refused before.
-    const maxCell = this.canopyGoverns ? CANOPY_MAX_CELL_M : MAX_CELL_M;
+    const maxCell = this.canopyGoverns ? this.canopyMaxCellM : MAX_CELL_M;
     if (!(cell > 0) || cell > maxCell) { this.barren.add(v.key); return; }
     // Whether THIS chunk is fine enough for the ground tiers. A depth-8 chunk
     // admitted for its canopy still places no biome prop, no understorey and
@@ -511,6 +581,10 @@ export class Scatter {
     this.c.midCells += pl.midCells;
     this.c.midWanted += pl.midWanted;
     this.c.midM2 += pl.midCells * pl.cellArea;
+    // WG-301. Matched with `drop`'s pair. The sampler returns them on the
+    // record rather than incrementing, for exactly this reason.
+    this.c.capCells += pl.capCells;
+    this.c.capOfferCells += pl.capOfferCells;
     this.write(v, pl);
   }
 
@@ -545,7 +619,8 @@ export class Scatter {
     return scatterStats(this.c, {
       cellsCapped: this.em.cellsCapped, fair: this.fair,
       canopyRadiusM: this.canopyRadiusM, canopyShade: this.canopyShade,
-      mid: this.mid, midEdge: this.midEdge,
+      mid: this.mid, midEdge: this.midEdge, capFair: this.capFair,
+      canopyTailM: this.canopyTailM,
     });
   }
 }

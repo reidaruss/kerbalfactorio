@@ -24,7 +24,9 @@ import {
   CANOPY_MIN_SLOPE_COS, CANOPY_SHADE, canopyWeight,
   canopyDistanceWeight, standAt, groveAt, crownAt, crownShade, canopyFarGrow,
   midDistanceWeight, MID_CARD_M, baseWeight,
+  canopyTailWeight, canopyTailGrow,
 } from './ScatterTuning.js';
+import { canopyCapScale } from './ScatterCap.js';
 import { CLUSTER_SHIFT } from '../render/ScatterLook.js';
 import { PropEmitter, type Build } from './ScatterEmit.js';
 import type { Placed } from './ScatterTypes.js';
@@ -48,8 +50,15 @@ export interface ScatterSampleDeps {
   /** RN-2228. The eye's height above the surface, live. A BOX for `eye`'s
    *  reason: these deps are assembled once and read every build. */
   readonly alt: { m: number };
-  /** RN-2234. The realised canopy reach this frame, metres of ground. */
+  /** RN-2234. The realised canopy reach this frame, metres of ground. This is
+   *  the COVER reach: what `canopyDistanceWeight` fades over and what
+   *  `Scatter.canopyReachOutM` publishes to the terrain material. */
   readonly reach: { m: number };
+  /** WG-295. The coarse tail's reach this frame, metres of ground, or 0 when
+   *  there is no tail. Always either 0 or greater than `reach`. */
+  readonly tail: { m: number };
+  /** WG-301. `?capfair=0` restores the raster-order first-N truncation. */
+  readonly capFair: boolean;
 }
 
 export function sampleChunk(
@@ -122,10 +131,19 @@ export function sampleChunk(
   let midProps = 0;
   let midCards = 0;
   const r2 = RADIUS_M * RADIUS_M;
-  // The OUTER gate. Equal to `r2` whenever the canopy is off or does not
-  // reach further, which is what makes `?canopy=0` take the identical path
-  // through this loop that existed before the tier did.
-  const treeR = canopy.total > 0 ? d.reach.m : 0;
+  // WG-295. TWO REACHES NOW, AND THEY ARE DIFFERENT QUANTITIES.
+  //
+  // `coverR` is what `canopyDistanceWeight` fades over and what the terrain
+  // material is told (`Scatter.canopyReachOutM`), so the published handover is
+  // exactly the one it has always been. `tailR` is how far the coarse tail
+  // places beyond it, or 0 when there is no tail -- which is every ground pose
+  // by construction, because `canopyTailReachM` is bounded by the eye's own
+  // horizon. `outerR` is the residency and cell gate, and it is `coverR`
+  // whenever the tail is absent, so every pre-WG-295 pose runs the identical
+  // comparison.
+  const coverR = canopy.total > 0 ? d.reach.m : 0;
+  const tailR = canopy.total > 0 && d.tail.m > coverR ? d.tail.m : 0;
+  const treeR = tailR > coverR ? tailR : coverR;
   const canopyOn = treeR > RADIUS_M;
   const maxR2 = canopyOn ? treeR * treeR : r2;
   // RN-2228. THE EYE HEIGHT, squared, for the ground-distance conversion. Zero
@@ -141,8 +159,29 @@ export function sampleChunk(
     pos, local, quat, scale, parts, owner, n: 0, want,
     nx: 0, ny: 0, nz: 0, cluster: 0, i00: 0, i10: 0, i01: 0, i11: 0, seed: 0,
   };
+  // WG-301. THE DENSITY-AWARE CAP. One estimate per chunk, before the loop,
+  // and only on a chunk the ground tiers already refuse (`base` and `card` are
+  // both empty there, so the whole of `want` is the canopy's budget). See
+  // ScatterCap.ts for why a scale beats a bigger ceiling and why the delivery
+  // ratio cannot see the defect this fixes.
+  const coarse = base.total <= 0 && card.total <= 0;
+  const capScale = d.capFair && canopyOn && coarse
+    ? canopyCapScale({
+      pos, ax: a.x, ay: a.y, az: a.z, nrm,
+      upx, upy, upz,
+      ex: d.eye.x, ey: d.eye.y, ez: d.eye.z,
+      px: v.pos.x, py: v.pos.y, pz: v.pos.z,
+      h2, bodyRadiusM: d.bodyRadiusM, canopyTotal: canopy.total, perKm2,
+      coverReachM: coverR, tailReachM: tailR, want,
+    })
+    : 1;
+  // WG-301. Cells the loop never reached, i.e. the ground the cap took away.
+  // Counted rather than inferred, because `canopyWanted` structurally cannot
+  // report it: the ask is accumulated inside the loop the cap exits.
+  let visited = 0;
   for (let cy = 0; cy < CELLS && b.n < want; ++cy) {
     for (let cx = 0; cx < CELLS && b.n < want; ++cx) {
+      ++visited;
       const i00 = (cy * DIM + cx) * 3;
       const dx = v.pos.x + pos[i00] - d.eye.x;
       const dy = v.pos.y + pos[i00 + 1] - d.eye.y;
@@ -241,7 +280,17 @@ export function sampleChunk(
           // crown term look like it did less than it did.
           planetShadeW = canopyWeight(altM, stand, 1);
           const gM = Math.sqrt(g2);
-          treeW = planetW * canopyDistanceWeight(gM, treeR);
+          // WG-295. THE TWO SEGMENTS. Inside the cover reach this is exactly
+          // the expression that has always been here, called with the COVER
+          // reach rather than the outer gate, so a pose with no tail is
+          // bit-identical. Outside it the coarse tail takes over, continuous
+          // in both weight and card size at the join by construction.
+          const tailOn = tailR > coverR && gM >= coverR && gM < tailR;
+          const distW = tailOn
+            ? canopyTailWeight(gM, coverR) : canopyDistanceWeight(gM, coverR);
+          const grow = tailOn
+            ? canopyTailGrow(gM, coverR) : canopyFarGrow(gM);
+          treeW = planetW * distW * capScale;
           if (treeW <= 0) c.canopyBareCells++;
           else {
             canopyCells++;
@@ -257,7 +306,7 @@ export function sampleChunk(
             // arithmetic that says no density reaches forest-credible crown
             // cover one-instance-per-tree at this range.
             canopyWanted += d.em.drawTier(b, canopy,
-              canopy.total * perKm2 * treeW, 8192, canopyFarGrow(gM),
+              canopy.total * perKm2 * treeW, 8192, grow,
               d2 <= DETAIL_RADIUS_M * DETAIL_RADIUS_M);
             canopyProps += b.n - n0;
           }
@@ -292,7 +341,12 @@ export function sampleChunk(
             // the difference is what switches it off over ground the frame
             // does not contain.
             const dM = Math.sqrt(d2);
-            const midW = planetW * midDistanceWeight(dM, treeR);
+            // WG-295. THE COVER REACH, not the outer gate. This tier is
+            // defined as the DEFICIT against `canopyDistanceWeight`, so it has
+            // to be handed the same reach that function is handed or the two
+            // would stop summing to `midTargetWeight` -- and the tail, which
+            // starts at `coverR` and this tier ends at 690 m, cannot reach it.
+            const midW = planetW * midDistanceWeight(dM, coverR);
             if (midW > 0) {
               midCells++;
               const m0 = b.n;
@@ -375,6 +429,18 @@ export function sampleChunk(
     }
   }
   if (b.n >= want) c.chunksCapped++;
+  // WG-301. The cells the cap took away, and the cells this chunk offered, as
+  // a PAIR. A count on its own cannot be read (a chunk that legitimately ran
+  // out of ground is not a chunk that was truncated), and the fraction is what
+  // `chunksCapped` has never been able to say: HOW MUCH of a capped chunk is
+  // empty. Both are zero on every chunk that finished its grid.
+  // They are returned on the `Placed` record and accumulated by `Scatter
+  // .build` rather than incremented here, so `drop` can undo them in the
+  // matched pair every other residency total in this class uses.
+  // `capScaleMin` is the one that cannot be paired (see its own note) and is
+  // therefore the one this function writes directly.
+  const unvisited = CELLS * CELLS - visited;
+  if (capScale < c.capScaleMin) c.capScaleMin = capScale;
   const n = b.n;
   return {
     parts, local: local.subarray(0, n * 3), quat: quat.subarray(0, n * 4),
@@ -382,6 +448,7 @@ export function sampleChunk(
     cells, cellArea, wanted, detailBand: band,
     canopyCells, canopyProps, canopyWanted,
     midCells, midProps, midWanted, midCards,
+    capCells: unvisited, capOfferCells: CELLS * CELLS,
     builtPos: v.pos.clone(),
   };
 }
