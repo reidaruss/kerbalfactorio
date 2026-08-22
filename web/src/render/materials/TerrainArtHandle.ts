@@ -14,6 +14,7 @@ import { ART_DEFAULT, fineAmpFromQuery, specAmpFromQuery} from './TerrainAmpQuer
 import { canopyToneNow } from './TerrainTreeline.js';
 import { canopySelfNow } from './CanopySelfShadow.js';
 import { crownBakeReport, crownBend } from '../instancing/CrownNormal.js';
+import { crownFaceState } from './CrownFaceFold.js';
 import { horizonOccFromQuery, reliefCellFromQuery, reliefCellNoiseFromQuery,
   reliefGradFromQuery, reliefGradUvFromQuery, reliefSwingFromQuery }
   from './TerrainReliefQuery.js';
@@ -371,6 +372,7 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
       self: ReturnType<typeof canopySelfNow> & { uniform: [number, number, number] };
       crownNormal: ReturnType<typeof crownBakeReport>
         & { ask: ReturnType<typeof crownBend> };
+      crownFace: ReturnType<typeof crownFaceState>;
     } {
       const v = s.treeline.value;
       const c = s.crownShade.value;
@@ -406,6 +408,14 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
         // rather than a new hook because every probe already captures this
         // object whole, so no probe needs editing to see it.
         crownNormal: { ...crownBakeReport(), ask: crownBend() },
+        // RN-2605. THE BACK-FACE FOLD, READ BACK, AND IT IS AN OUTCOME
+        // READBACK RATHER THAN A REQUEST ONE. `mode` is the LIVE `.value` of
+        // the uniform object three uploads on every draw, `spliced` is how
+        // many PROGRAMS the splice reached, `misses` is which anchor was not
+        // found, and `materials` is the scope claim (`props:canopy` alone).
+        // RN-2590's dead switch reported a healthy parsed request while the
+        // renderer erased the write every frame; none of these four can.
+        crownFace: crownFaceState(),
       };
     },
     ...terrainSplatHandle(s),

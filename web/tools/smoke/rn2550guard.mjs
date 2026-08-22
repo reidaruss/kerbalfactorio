@@ -255,12 +255,71 @@ const F_MIN = 0.10;
 // the band on the shipped frame. It is not an exemption: an out-of-band pose
 // still fails if it moves FURTHER out, and a pose that is not marked here fails
 // the moment it leaves the band at all.
+//
+// ===========================================================================
+// RN-2605, 2026-08-22. THE FIRST LOGGED RAISE OF A `box` CEILING, AND IT IS A
+// REPAIR RATHER THAN A REGRESSION. ADMIN DECISION, QUOTED.
+// ===========================================================================
+// The header above says a re-pin may not raise a ceiling without a logged
+// decision. This is that decision, recorded here rather than only in the
+// controller file, because the next reader of this table is the person who
+// needs it.
+//
+// **ADMIN, 2026-08-22, decision (a)-at-merge, (b)-next, adopted verbatim from
+// `lane/n13-backface`'s fresh-context verifier:** "every number reproduced to
+// the digit (including pixel-identical regenerated frames across two
+// machines); the distributional evidence settles question (3): at
+// `flyovernoon` the p95 is unmoved, the median moved 0.30 counts, and the
+// entire brightening is the darkest decile (p05 +11.52, loFrac 9 to 1 per
+// cent), which is what a back-face-only repair looks like and not what new
+// light looks like, so essentially 100 per cent of the ratchet excess is the
+// repaired defect; R2 3.10's physical rule still holds with margin AND the
+// ratchet's own author declares it 'carries no physics claim'; its own
+// `flyovernoon` eye pair shows the before arm as 3.10's literal 'blue-black
+// confetti' and the shipped arm as trees, comfortably darker than the
+// clearing."
+//
+// WHAT MOVED AND WHY. RN-2605 cancels three's `DOUBLE_SIDED` shading-normal
+// negation on `OF_Canopy`, which was throwing away about half of every stand's
+// drawn card area. The wood at `flyovernoon` therefore gets LIGHTER, from 6.2
+// per cent darker than its clearing to 4.1 per cent, and the one-sided
+// darkness ratchet fires on exactly that. The distribution says it is the
+// repair and not new light: the bright end of the patch does not move at all
+// and the whole delta is in the pixels that were near-black.
+//
+// **THE DEBT, RECORDED SO IT CANNOT BE FORGOTTEN: 0.0248 boxShip and 0.0251
+// boxSurf at `flyovernoon`.** That darkness now belongs to the shade law,
+// which is where rendering.md 2.39.12's ranked order always put it, and the
+// NEXT LANE (the shade-law raise paired with the specular cut) MUST LOWER
+// THESE TWO CONSTANTS AGAIN IN ITS OWN COMMIT. A raise that is never repaid is
+// a ratchet quietly becoming a rubber band.
+//
+// `forestairlow`'s two pins are re-derived in the same pass and both move in
+// the guard's TIGHTENING direction, which needs no decision and is overdue:
+// `boxSurf` 0.8928 was stale by 0.12 (WG-285's beach canopy, measured at
+// 0.7704 pre-lane and 0.7732 post) and `boxShip` 0.9581 by 0.012.
+//
+// `forestairnoon` and `flyoverlow` are NOT re-pinned. Both FELL under this
+// lane and re-pinning a fall is a separate decision with a separate cost (it
+// tightens the guard for every later lane on the strength of one build), which
+// rendering.md 2.39.12 item 5 records Admin declining. `forestairnoon`'s `rho`
+// pin and its `rhoOut: 'low'` marking likewise stand, even though the pose is
+// now INSIDE the band at 0.1906 and the guard prints a note saying so: clearing
+// that marking is the same class of change and is not in this decision.
+//
+// Every value below marked RN-2605 was measured on `lane/n13-backface`'s final
+// build, server 127.0.0.1:5605 --strictPort, sentinel CONTENT verified over the
+// wire, served entry chunk `f01db459b1d657f0` verified against `dist`, a fresh
+// process per arm, and reproduced to the digit on a second build with the arms
+// under different labels.
 const BASE = {
   forestairnoon: { boxShip: 0.9817, boxSurf: 0.9826, boxClearY: 0.189652,
     crownClearY: 0.103580, rho: 0.0992, rhoOut: 'low' },
-  forestairlow: { boxShip: 0.9581, boxSurf: 0.8928, boxClearY: 0.106526,
+  // RN-2605: both re-derived DOWNWARD, no decision needed.
+  forestairlow: { boxShip: 0.9464, boxSurf: 0.7732, boxClearY: 0.106526,
     crownClearY: 0.058633, rho: 0.4363, rhoOut: null },
-  flyovernoon: { boxShip: 0.9343, boxSurf: 0.9020, boxClearY: 0.288112,
+  // RN-2605: both RAISED under the logged decision above. Debt 0.0248 / 0.0251.
+  flyovernoon: { boxShip: 0.9591, boxSurf: 0.9271, boxClearY: 0.288112,
     crownClearY: 0.148116, rho: 0.2488, rhoOut: null },
   flyoverlow: { boxShip: 0.9774, boxSurf: 0.8884, boxClearY: 0.147985,
     crownClearY: 0.078325, rho: 0.7021, rhoOut: null },

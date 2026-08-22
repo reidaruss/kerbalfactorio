@@ -138,6 +138,21 @@ import * as THREE from 'three';
  * on whichever side is visible. That is the property being bought: `c` raises
  * `N . V` on the visible face monotonically and can never lower it.
  *
+ * **THE PARAGRAPH ABOVE IS WITHDRAWN, RN-2605, 2026-08-22, AND IT IS ANNOTATED
+ * RATHER THAN DELETED BECAUSE IT IS WHY THE THIRD DEGENERACY WENT UNPRICED FOR
+ * A LANE.** It is arithmetically true and it argues for the wrong fix. Three's
+ * negation flips the WHOLE vector, not the azimuth, so what it actually buys is
+ * `N . V` on the visible face AND `up` pointing at the ground on half the drawn
+ * area; and once the `up` half is corrected, the choice of azimuth sign is a
+ * real decision rather than a free property. Turning the azimuth toward the
+ * viewer makes the crown's DIFFUSE a function of where the camera is, which a
+ * Lambertian layer's is not, and the frame agrees: the crown's unshaded
+ * unspecular diffuse ratio spreads **3.90x** across the four guard poses with
+ * the azimuth turned toward the viewer against **2.46x** with the bake's own
+ * azimuth kept on both faces. `CrownFaceFold.ts` ships the second and carries
+ * the measurement. Nothing in the construction below changes; `CROWN_FLANK_DEG`
+ * and `CROWN_CARD_MIX` are untouched.
+ *
  * `dome`'s sign is likewise fixed at `+1` unconditionally. Outward-and-up from
  * a point below the crown base is the correct hemisphere for a crown with no
  * case analysis, which is why RN-1766's sign term is absent here rather than
@@ -173,6 +188,13 @@ import * as THREE from 'three';
  * per-face negation), it is measured at a quarter of the crown's luminance
  * (rendering.md 2.39.3), and it is routed as the next lane in 2.39.12 item 1.
  * Read every number this construction produces as the half that is lit right.
+ *
+ * **FIXED, RN-2605.** `CrownFaceFold.ts` cancels three's negation on the crown
+ * card alone, so both faces now take this construction as written. The
+ * paragraph above stands as the statement of what was wrong; the sentence
+ * "nothing in this file can reach it" is still true and is still the reason the
+ * fix lives in a sibling. `forestairnoon` `rho` 0.1019 to 0.1906 and the
+ * four-pose `rho0` spread 5.20x to 2.46x, rendering.md 2.40.
  */
 /**
  * THE RIM ANGLE, AND IT IS PINNED BY TWO MEASUREMENTS PULLING OPPOSITE WAYS
