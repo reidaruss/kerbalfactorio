@@ -444,6 +444,16 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // binary. A distance rather than a flag, so the same control sweeps the
   // cost, which goes as its square.
   'canopy', 'canopyshade',
+  // WG-260, standing rule 7. `midhole=0` removes the 170-to-690 m mid tier and
+  // restores the hole that stood between the biome-prop ring's hard edge and
+  // the impostor tier's 550 m start. Structural rather than a density of zero:
+  // the sampler never enters the draw, so the off arm is the pre-WG-260 world
+  // and every arm in the lane's table is one page param from the SHIPPED build
+  // (the one-session arm-table trap, NUMBERS.md 2026-08-21).
+  // `midedge=0` restores the biome-prop ring's own hard boolean edge at 170 m,
+  // the second half of the same lane, on its own flag so the mid tier's new
+  // silhouettes and the ring's softened edge can be attributed apart.
+  'midhole', 'midedge',
   // WG-67, standing rule 7. `rocks=0` places NO world rocks, which is the
   // one-binary control for the whole rock-node pass; `rockdensity=` scales
   // every biome's rock ask together for the cost ladder.

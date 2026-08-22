@@ -129,13 +129,25 @@ export class Scatter {
      *  the state it has been in since WG-116. `?canopyshade=1` re-arms it.
      *  Full argument and the judged frames: `Config.ts`, this line. */
     private readonly canopyShade = true,
+    /**
+     * WG-260. The 170-to-690 m mid tier. `?midhole=0` switches it off, and
+     * the switch is read here rather than as a radius of zero because the
+     * tier has no radius of its own: its band is `MID_NEAR_M` to
+     * `CANOPY_NEAR_FULL_M`, both derived from constants two other tiers
+     * already own.
+     */
+    private readonly mid = true,
+    /** WG-260. The biome ring's edge weight. `?midedge=0` restores the
+     *  boolean gate the tier shipped with. See `ScatterTuning.BASE_FULL_M`. */
+    private readonly midEdge = true,
   ) {
     this.em = new PropEmitter(lib, fair, grassShort);
     this.deps = {
       pool: this.pool, water: this.water, editsHandle: this.editsHandle,
       densityScale: this.densityScale, eye: this.eye,
       bodyRadiusM: this.bodyRadiusM,
-      canopyShade: this.canopyShade, em: this.em, alt: this.alt,
+      canopyShade: this.canopyShade, mid: this.mid, midEdge: this.midEdge,
+      em: this.em, alt: this.alt,
       // RN-2234. A BOX holding the REALISED reach for this frame, refreshed in
       // `update`. The sampler gates and fades on this rather than on the
       // configured radius, so the ring it builds and the ring `reachM` admits
@@ -392,7 +404,12 @@ export class Scatter {
     const pl = this.placed.get(key);
     if (pl === undefined) return;
     for (const part of pl.parts) this.lib.release(part.material, part.slot);
-    this.c.propsPlaced -= pl.scale.length / 3 - pl.canopyProps;
+    // WG-260. The mid tier comes OUT of `propsPlaced` on the canopy's terms
+    // and for the canopy's reason: that number is the GROUND tiers' density
+    // claim (`placedPerM2` against `wantedPerM2`, the property this layer
+    // publishes), and a tree standing 400 m away is not part of it. Both
+    // subtrahends are matched by the `+=` pair in `build`.
+    this.c.propsPlaced -= pl.scale.length / 3 - pl.canopyProps - pl.midProps;
     this.c.wantedProps -= pl.wanted;
     this.c.cellsScattered -= pl.cells;
     this.c.groundM2 -= pl.cells * pl.cellArea;
@@ -400,6 +417,11 @@ export class Scatter {
     this.c.canopyCells -= pl.canopyCells;
     this.c.canopyWanted -= pl.canopyWanted;
     this.c.canopyM2 -= pl.canopyCells * pl.cellArea;
+    this.c.midProps -= pl.midProps;
+    this.c.midCards -= pl.midCards;
+    this.c.midCells -= pl.midCells;
+    this.c.midWanted -= pl.midWanted;
+    this.c.midM2 -= pl.midCells * pl.cellArea;
     this.placed.delete(key);
   }
 
@@ -476,7 +498,7 @@ export class Scatter {
     // ground: the understorey's ring is 78 m and the canopy's is 520 m, so a
     // single per-m2 figure over a single denominator could not be right for
     // either of them.
-    this.c.propsPlaced += pl.scale.length / 3 - pl.canopyProps;
+    this.c.propsPlaced += pl.scale.length / 3 - pl.canopyProps - pl.midProps;
     this.c.wantedProps += pl.wanted;
     this.c.cellsScattered += pl.cells;
     this.c.groundM2 += pl.cells * pl.cellArea;
@@ -484,6 +506,11 @@ export class Scatter {
     this.c.canopyCells += pl.canopyCells;
     this.c.canopyWanted += pl.canopyWanted;
     this.c.canopyM2 += pl.canopyCells * pl.cellArea;
+    this.c.midProps += pl.midProps;
+    this.c.midCards += pl.midCards;
+    this.c.midCells += pl.midCells;
+    this.c.midWanted += pl.midWanted;
+    this.c.midM2 += pl.midCells * pl.cellArea;
     this.write(v, pl);
   }
 
@@ -518,6 +545,7 @@ export class Scatter {
     return scatterStats(this.c, {
       cellsCapped: this.em.cellsCapped, fair: this.fair,
       canopyRadiusM: this.canopyRadiusM, canopyShade: this.canopyShade,
+      mid: this.mid, midEdge: this.midEdge,
     });
   }
 }

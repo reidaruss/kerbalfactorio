@@ -58,6 +58,19 @@ export class PropEmitter {
   private readonly looks = new Map<string, Look>();
   /** The understorey pool the CURRENT chunk's contact skirt draws from. */
   skirt: Tier | null = null;
+  /**
+   * WG-260. THE CURRENT DRAW WANTS A CANOPY TREE'S NEAR RUNGS, not its card.
+   *
+   * A field rather than an argument, on `skirt`'s precedent exactly: `drawTier`
+   * already carries six parameters and this one is a property of the CALL SITE
+   * (one draw, set and cleared around it) rather than of the prop or the cell.
+   * Default false, so every existing draw composes the pre-WG-260 instance
+   * byte-for-byte.
+   *
+   * What it changes is only which of a canopy stem's parts get slots and which
+   * two LOD distances they carry. See `emit`.
+   */
+  nearRung = false;
   /** Cells whose draw was TRUNCATED by MAX_PER_CELL. Must stay 0 near. */
   cellsCapped = 0;
 
@@ -189,7 +202,12 @@ export class PropEmitter {
     // else gets `lod3M === lod2M`, so its far pick lands on the same geometry
     // id at the same range and the ladder is inert for it by arithmetic rather
     // than by a branch.
-    const lod3M = spec.canopy === true ? CANOPY_LOD3_M : lod2M;
+    //
+    // WG-260. A NEAR-RUNG canopy draw is the one exception: it is PINNED to
+    // the `_LOD2` cone at every distance (see the push below), so both its
+    // switch ranges are inert and the value they carry cannot matter.
+    const nearRung = spec.canopy === true && this.nearRung;
+    const lod3M = spec.canopy === true && !nearRung ? CANOPY_LOD3_M : lod2M;
     for (const part of list) {
       // RN-2240. A canopy prop is drawn ONLY at the impostor rung: every
       // canopy instance stands beyond CANOPY_NEAR_M, which is past
@@ -208,7 +226,32 @@ export class PropEmitter {
       // it), and a canopy prop whose LOD3 legitimately reuses this part
       // (none do today) would still be skipped, exactly as `geomAtTier`
       // itself treats an unauthored tier as absent rather than borrowed.
-      if (spec.canopy === true && part.lods[PROP_LODS - 1] < 0) continue;
+      //
+      // WG-260. THE NEAR-RUNG DRAW TAKES EXACTLY THE PARTS THIS RULE SKIPS,
+      // and it is the same test read the other way round rather than a second
+      // list. A canopy stem carries one part per material it uses at ANY tier:
+      // Bark / LeafDeep / Leaf / LeafLight from `_LOD0` and `_LOD2`, and one
+      // `OF_Canopy` part that exists only at `_LOD3`. The far draw keeps the
+      // part that HAS a far rung; the near draw keeps the parts that have a
+      // near one. Neither can take the other's, so a tree is a card or a cone
+      // and never both, which is the double-draw RN-2240 removed.
+      //
+      // THE NEAR TEST IS `lods[2]` EXACTLY AND NOT `geomAtTier(part, 2)`, and
+      // the difference is the whole correctness of this branch. `geomAtTier`
+      // WALKS DOWN, which is right for a request that has to be answered
+      // somehow and wrong for a rung selection: a material that appears only
+      // in the `_LOD0` mesh walks down to its 784-triangle geometry and would
+      // draw it at 300 m, and a material that appears only in the `_LOD2`
+      // mesh has no `_LOD0` at all, so `lod0` would be -1 and `BatchedMesh`
+      // refuses the draw outright (it did, on this lane's first build:
+      // `Invalid geometryId -1`). Asking for the authored rung and skipping
+      // the part when it is absent selects exactly the meshes the `_LOD2`
+      // cone is made of and nothing else.
+      const g2 = nearRung ? part.lods[2] : -1;
+      if (spec.canopy === true
+        && (nearRung ? g2 < 0 : part.lods[PROP_LODS - 1] < 0)) {
+        continue;
+      }
       const slot = this.lib.acquire(part.material);
       if (slot < 0) continue;
       // Tinted HERE, where the slot is acquired, and never again. See
@@ -218,6 +261,37 @@ export class PropEmitter {
       // Resolved through the ladder, not read off two named fields: an atlas
       // that ships no LOD2 walks back down to LOD0 exactly as it always did,
       // and one that ships a LOD3 no longer overwrites its LOD2 (PropLods).
+      // WG-260. A CANOPY PROP IS PINNED TO ONE RUNG, AND THAT FIXES A LATENT
+      // DEFECT IN THE FAR HALF AS WELL AS ENABLING THE NEAR ONE.
+      //
+      // `Scatter.write` re-picks the rung from the LIVE eye distance on every
+      // rebase, while the part list is frozen at build time. For a canopy
+      // prop the two disagree, because the part that carries the impostor
+      // rung carries NOTHING else: `geomAtTier(part, 2)` and
+      // `geomAtTier(part, 0)` are both -1 for the `OF_Canopy` part, so the
+      // moment the eye closes inside `CANOPY_LOD3_M` before that chunk's next
+      // rebuild, `write` asks for -1 and `BatchedMesh` refuses the whole draw
+      // (`Invalid geometryId -1`). That is reachable on the SHIPPED build --
+      // the nearest canopy instance is at `CANOPY_NEAR_M` 550 m and a chunk
+      // is only rebuilt when the eye crosses a `CANOPY_BANDS` boundary, which
+      // at the standing reach is 175 m, so 375 m is attainable and 375 is
+      // inside 420 -- and this lane made it easy rather than rare, because
+      // the mid tier's own far half starts placing cards at 420 m.
+      //
+      // The pin is the honest statement of what a canopy instance IS: one
+      // rung, chosen from the GROUND the tree stands on at build time, for
+      // the tier that placed it. Three equal ids make `write`'s distance pick
+      // return that rung at every distance instead of a value the asset
+      // cannot answer.
+      if (spec.canopy === true) {
+        const gid = nearRung ? g2 : part.lods[PROP_LODS - 1];
+        b.parts.push({
+          material: part.material, slot,
+          lod0: gid, lod2: gid, lod3: gid, lod2M, lod3M,
+        });
+        b.owner.push(n);
+        continue;
+      }
       b.parts.push({
         material: part.material, slot,
         lod0: geomAtTier(part, 0), lod2: geomAtTier(part, 2),

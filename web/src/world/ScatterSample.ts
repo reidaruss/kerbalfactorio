@@ -23,6 +23,7 @@ import {
   DETAIL_FAR_GROW, WET_REJECT_M, detailWeight, keyHash, type Tier,
   CANOPY_MIN_SLOPE_COS, CANOPY_SHADE, canopyWeight,
   canopyDistanceWeight, standAt, groveAt, crownAt, crownShade, canopyFarGrow,
+  midDistanceWeight, MID_CARD_M, baseWeight,
 } from './ScatterTuning.js';
 import { CLUSTER_SHIFT } from '../render/ScatterLook.js';
 import { PropEmitter, type Build } from './ScatterEmit.js';
@@ -39,6 +40,10 @@ export interface ScatterSampleDeps {
   readonly eye: THREE.Vector3;
   readonly bodyRadiusM: number;
   readonly canopyShade: boolean;
+  /** WG-260. `?midhole=0` switches the 170-to-690 m tier off structurally. */
+  readonly mid: boolean;
+  /** WG-260. `?midedge=0` restores the biome ring's hard boolean edge. */
+  readonly midEdge: boolean;
   readonly em: PropEmitter;
   /** RN-2228. The eye's height above the surface, live. A BOX for `eye`'s
    *  reason: these deps are assembled once and read every build. */
@@ -106,6 +111,16 @@ export function sampleChunk(
   // the two differ by five cards a tree.
   let canopyWanted = 0;
   let canopyProps = 0;
+  // WG-260. The mid tier's own three, kept apart from the canopy's for the
+  // reason `shadeW` and `planetShadeW` are kept apart one block down: the two
+  // tiers share a spec pool and a slope gate and nothing else, and folding
+  // them into one counter would make `canopyPerM2` -- a number the far tier's
+  // whole density argument is written against -- silently a different
+  // quantity from the one WG-220 measured.
+  let midCells = 0;
+  let midWanted = 0;
+  let midProps = 0;
+  let midCards = 0;
   const r2 = RADIUS_M * RADIUS_M;
   // The OUTER gate. Equal to `r2` whenever the canopy is off or does not
   // reach further, which is what makes `?canopy=0` take the identical path
@@ -246,14 +261,79 @@ export function sampleChunk(
               d2 <= DETAIL_RADIUS_M * DETAIL_RADIUS_M);
             canopyProps += b.n - n0;
           }
+          // --- WG-260. THE MID TIER, the 170-to-690 m band.
+          //
+          // It rides the SAME `planetW` the canopy tier rides, deliberately
+          // and not for convenience: the whole point is that a stand
+          // CONTINUES across 550 m rather than restarting, and the only way
+          // to promise that is for both tiers to read one field. What differs
+          // is the distance weight, and `midDistanceWeight` is defined as the
+          // deficit against the line above's own weight, so the two sum to
+          // `midTargetWeight` -- ONE QUADRATIC-IN-RANGE ramp to full density at
+          // `MID_FULL_M` 550 m, not the smootherstep an earlier draft of this
+          // comment named, which is the shape this lane built and refused --
+          // and neither tier can open a seam at the handover.
+          //
+          // A SEPARATE SALT (12288) rather than a second use of 8192. The two
+          // draws run on the same cell hash and the same spec pool, and a
+          // shared stream would put every mid tree at the exact position the
+          // canopy draw would have used, i.e. would correlate the two tiers'
+          // placements across the seam where they overlap. That is the same
+          // argument `drawTier`'s own note makes about the base and detail
+          // tiers, one tier over.
+          //
+          // NO SKIRT, for the canopy draw's stated reason at four times the
+          // range: five contact cards under a tree 300 m away are five
+          // instances carrying no pixels, and the understorey they are drawn
+          // from stops at 78 m anyway.
+          if (d.mid) {
+            // 3-D eye distance, not `gM`. See `midDistanceWeight`: this
+            // tier's every number is about apparent size, and from the air
+            // the difference is what switches it off over ground the frame
+            // does not contain.
+            const dM = Math.sqrt(d2);
+            const midW = planetW * midDistanceWeight(dM, treeR);
+            if (midW > 0) {
+              midCells++;
+              const m0 = b.n;
+              // The rung is picked per CELL from the cell's own ground range,
+              // so a tree's geometry is a function of where it STANDS and not
+              // of which tier drew it. `canopyFarGrow` is 1 everywhere in this
+              // band by construction (it ramps from `CANOPY_NEAR_FULL_M`) and
+              // is called rather than written as a literal so the two stay
+              // tied if that boundary ever moves.
+              const near2 = dM <= MID_CARD_M;
+              d.em.nearRung = near2;
+              midWanted += d.em.drawTier(b, canopy,
+                canopy.total * perKm2 * midW, 12288, canopyFarGrow(dM), false);
+              d.em.nearRung = false;
+              midProps += b.n - m0;
+              if (!near2) midCards += b.n - m0;
+            }
+          }
         }
       }
       // Everything below is ground cover and stops at the biome ring.
       if (!near) continue;
       cells++;
 
-      // --- the biome props, over the whole ring at a flat density.
-      wanted += d.em.drawTier(b, base, base.total * perKm2, 0, 1, true);
+      // --- the biome props, over the whole ring.
+      //
+      // WG-260. NO LONGER AT A FLAT DENSITY, and the weight is applied to the
+      // DENSITY rather than to a visibility flag for `detailWeight`'s stated
+      // reason one tier down: the thinning has to be a real change in how
+      // many props exist, not a fade that still pays for every instance. See
+      // `BASE_FULL_M` for why 120 m is the number and why no committed near
+      // rectangle can see it. `?midedge=0` restores the flat ring exactly.
+      //
+      // No `grow` term to buy the coverage back, unlike `DETAIL_FAR_GROW` one
+      // tier down, and that is deliberate rather than an omission: that term
+      // is confined to CARDS by its own docstring ("a boulder that grew with
+      // range would be obvious"), and this tier is where the boulders are.
+      const bw = d.midEdge ? baseWeight(Math.sqrt(d2)) : 1;
+      if (bw > 0) {
+        wanted += d.em.drawTier(b, base, base.total * perKm2 * bw, 0, 1, true);
+      }
 
       // --- the understorey, GRADED by this cell's own distance to the eye.
       // The weight is applied to the DENSITY and not to a visibility flag,
@@ -301,6 +381,7 @@ export function sampleChunk(
     scale: scale.subarray(0, n * 3), owner: Uint16Array.from(owner),
     cells, cellArea, wanted, detailBand: band,
     canopyCells, canopyProps, canopyWanted,
+    midCells, midProps, midWanted, midCards,
     builtPos: v.pos.clone(),
   };
 }
