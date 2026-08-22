@@ -13830,17 +13830,23 @@ of it by under one count.**
 
 ### 2.40.2 THE FIVE, RANKED
 
-1. **The aerial world is 9 per cent forest and 91 per cent inert paint.**
-   `flyover` instances reach **3,427 m** measured (centre-column cliff of
-   -43.58 counts at row 535) against its own `treeline.reachM` readback of 3,500
-   and a **37,947 m** horizon; `forestaircanopy` reaches **1,400 m** of a
-   690-to-8,485 m band, and a 12 m crown at 1,400 m projects to **row 443.6**
-   predicted against **row 444** measured. `?treeline=0` moves rows spanning
-   4 km to 20 km by **under one count** and spends -7.01 / -8.22 / -14.65 in a
-   three-row ring just outside the instance reach. Three-arm separation at
-   `forestaircanopy`: instances **24.78** counts of band contrast, paint
-   **4.45**. `chunksCapped` **4** at `forestair`, **1** at `flyover` (own
-   readback). BLOCKING, class (b).
+1. **The aerial world is 9 to 16 per cent forest by depth and the paint is
+   inert over most of the rest.** `flyover` instances reach **3,427 m** measured
+   (centre-column cliff of -43.58 counts at row 535) against its own
+   `treeline.reachM` readback of 3,500 and a **37,947 m** horizon, **9.2 per
+   cent** of visible ground depth; `forestaircanopy` reaches **1,400 m** of a
+   690-to-8,485 m band, which computed the same way (reach over full horizon)
+   is **16.5 per cent**, not the same fraction as flyover (the two poses do not
+   corroborate each other; both numbers are stated). A 12 m crown at 1,400 m
+   projects to **row 443.6** predicted against **row 444** measured. `?treeline=0`
+   moves the rows this ladder actually sampled, **3.4 to 15.5 km** (corrected
+   from a first printing's "4 km to 20 km"; the band above 15.5 km, out to the
+   37,947 m horizon, was never sampled), by **under one count** outside a
+   three-row ring where it spends -7.01 / -8.22 / -14.65, EXCEPT rows 399 and
+   509 (-4.28, -2.33 counts), restored here after being dropped from a first
+   printing of the table. Three-arm separation at `forestaircanopy`: instances
+   **24.78** counts of band contrast, paint **4.45**. `chunksCapped` **4** at
+   `forestair`, **1** at `flyover` (own readback). BLOCKING, class (b).
 2. **A 900 m treeless disc follows the player on any beach.** New pose
    `beachground`. `?beachcanopy=0` leaves `box` **151.17 / 62.83 / +54.82** and
    `ring` **124.78 / 59.75 / +46.37** BIT-IDENTICAL while collapsing `hzTree`
@@ -13859,8 +13865,8 @@ of it by under one count.**
 4. **The two tree tiers abut without matching.** At `forestaircanopy` rows
    429-443 have zero instance contribution (`?treeline=0` equals `?canopy=0` to
    the digit) and rows 477-491 zero paint contribution (shipped equals
-   `?treeline=0` to 0.02); the wall's leading edge falls **65.85 -> 35.66 in four
-   rows**. Density either side differs six-fold (**420** harvest against
+   `?treeline=0` to 0.02); the wall's leading edge falls **65.85 -> 35.66 across
+   five rows (457-462)**. Density either side differs six-fold (**420** harvest against
    **2,520** canopy at Plains) because WG-222's x6 never reached
    `TREE_DENSITY_KM2`, whose inline `x6` comment refers to an earlier multiply.
    **RN-2228's constant-density claim has been false since WG-222.** Sequence
