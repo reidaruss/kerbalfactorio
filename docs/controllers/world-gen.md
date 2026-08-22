@@ -3173,6 +3173,15 @@ tuning against a frame.
 | **420 (Plains, SHIPPED)** | **25.2** | **162.775** | **-2.26** | **1.70%** |
 | 1200 (Hills) | 72.0 | 159.375 | -5.66 | -- |
 
+**THE LADDER IS SINGLE-CAPTURE PER RUNG AND THAT IS DISCLOSED RATHER THAN
+BURIED.** Each row is one hero frame per build, not three, because a rung is a
+whole rebuild rather than a flag. The exposure is RN-2560's verifier's
+once-in-nine correlated whole-frame artifact, which moves every rectangle
+together by **0.01 counts**; the smallest delta here is **1.10**, two orders of
+magnitude above it, so the ordering and the linearity cannot be that artifact.
+The pair that IS one flag apart, the committed rectangles in 6.15.4, is
+`--repeats=3` on both arms as the rule requires.
+
 Roughly linear, which is Beer-Lambert at low optical depth, and it is why **no
 rung on this ladder can make the band read as forest**: at 6 km from a 1,200 m
 eye even the Hills rung carries about a tenth of the crown cover the Forest
