@@ -791,7 +791,7 @@ export const CANOPY_MAX_RADIUS_M = 5200;
 export const CANOPY_BANDS = 8;
 
 // ===========================================================================
-// WG-295 to WG-300. THE COARSE TAIL: placed structure past the cover reach,
+// WG-295 to WG-300 of the WG-295..303 used range. THE COARSE TAIL: placed structure past the cover reach,
 // at CONSTANT SCREEN DENSITY and CONSTANT SCREEN SIZE.
 //
 // R5 rank 1 measured the thing this tier exists for and nobody had measured it

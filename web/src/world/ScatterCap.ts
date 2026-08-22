@@ -1,4 +1,4 @@
-// WG-301 to WG-305. THE PER-CHUNK CAP, MADE DENSITY-AWARE INSTEAD OF FIRST-N.
+// WG-301 to WG-303 (WG-304+ surrendered, never shipped; merge-time correction). THE PER-CHUNK CAP, MADE DENSITY-AWARE INSTEAD OF FIRST-N.
 //
 // THE DEFECT, and it is R5 rank 1's second half. `sampleChunk` walks its cell
 // grid in RASTER ORDER and every one of its three loops carries `&& b.n <
