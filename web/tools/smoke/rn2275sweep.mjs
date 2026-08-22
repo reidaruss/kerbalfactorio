@@ -1,5 +1,15 @@
 // RN-2275. THE INTER-CROWN SELF-SHADOW SWEEPER.
 //
+// THIS SCRIPT IS NOT THE GUARD AND NEVER WAS. It PRINTS a signed difference and
+// exits 0 whatever it reads -- read "the pass condition, printed rather than
+// eyeballed" at the bottom of this file literally. RN-2550 replaced the sign
+// test with a two-sided band on PER-PIXEL-LINEARIZED patch means and put it in
+// `tools/smoke/rn2550guard.mjs`, which asserts and exits nonzero.
+// **Use `rn2550guard.mjs` to decide anything; use this file to look around.**
+// The sign test's own defect, for the record: a boolean on 8-bit code values
+// with no budget, satisfied at the shipped frame by a ratio of 0.984 while the
+// physical band is far below it (rendering.md 2.19.4's correction note, 2.35).
+//
 // WHY A SIBLING SCRIPT AND NOT `a5sweep.mjs`, which already does one-server
 // multi-arm work: that script (and `wg220sweep.mjs`) routes a shot to a
 // scenario with `shot === 'flyover' ? 'surface' : 'walk'`, so it sends every

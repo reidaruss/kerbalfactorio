@@ -191,6 +191,7 @@
   const log = [];
   const r2 = (x) => (Number.isFinite(x) ? Number(x.toFixed(2)) : null);
   const r3 = (x) => (Number.isFinite(x) ? Number(x.toFixed(3)) : null);
+  const r6 = (x) => (Number.isFinite(x) ? Number(x.toFixed(6)) : null);
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
   const len = (a) => Math.hypot(a[0], a[1], a[2]);
   const norm = (a) => { const n = len(a) || 1; return [a[0] / n, a[1] / n, a[2] / n]; };
@@ -1050,7 +1051,12 @@
         // Every other rectangle on this shot is a BAND across the frame and
         // therefore averages crowns together with the clearings between them.
         // That is the right instrument for "is the wood darker than its
-        // clearing" (RN-2275's four pairs read `box`) and the WRONG one for
+        // clearing" (RN-2275's four pairs read `box`, and RN-2550's band still
+        // does -- but note that "averages crowns together with the clearings
+        // between them" is exactly the crown-COVERAGE term that stops a patch
+        // ratio from being a closed-canopy reflectance: with a black canopy and
+        // no gap shadow the patch ratio can only reach 1 - f. rendering.md 2.35
+        // states what the one scalar can and cannot conclude) and the WRONG one for
         // "what colour is a crown", which is what four audits have actually
         // been complaining about: at `box` the far treeline PAINT carries
         // 1.86 of this lane's 1.93-count move and the CARDS carry 0.07, so a
@@ -3009,9 +3015,41 @@
     return { blob, W: bmp.width, H: bmp.height, cx, at, pre, photo };
   };
 
+  // RN-2550. THE LINEAR-LIGHT PATCH MEAN (`lin`), purely ADDITIVE: every field
+  // below is computed exactly as before and no published number moves.
+  //
+  // WHY IT CANNOT BE RECOVERED FROM `luma` AFTER THE FACT. `luma` is a mean of
+  // sRGB-ENCODED counts. The sRGB decode is CONVEX, so decoding a patch mean is
+  // not the mean of the patch's decoded pixels (Jensen), and the two differ by
+  // a term that grows with the patch's own VARIANCE. The wood arm and the
+  // clearing arm do not have the same variance -- 2.19.4 measured `box` iqr
+  // 64.40 on the wood against 59.62 on the bare ground at `flyovernoon` -- so
+  // the error does not cancel in a wood/clearing RATIO. It has to be done per
+  // pixel, and per pixel it has to be done HERE, because this is the only place
+  // in the project where the pixels exist.
+  //
+  // AND IT IS PER CHANNEL, NEVER ON THE LUMA SCALAR. Luminance is a linear
+  // functional of LINEAR radiance, so the decode goes on R, G and B and the
+  // Rec.709 weights go on the DECODED values. Decoding the 8-bit luma scalar
+  // instead applies a channel EOTF to an already-mixed quantity, which is not a
+  // radiometric quantity at all and is not the same number.
+  //
+  // WHAT IT IS AND IS NOT. This is the exact IEC 61966-2-1 inverse EOTF
+  // INCLUDING THE TOE (c <= 0.04045 -> c/12.92), tabulated over the 256 code
+  // values, so for an 8-bit input the LUT is exact rather than approximate. It
+  // undoes the DISPLAY ENCODE only. The frame is post-ACES and post-grade, so
+  // `lin` is DISPLAY-LINEAR luminance and NOT scene radiance; 2.34.10 item 3's
+  // HalfFloat scene-RT readout is still the thing that would give scene-linear.
+  const SRGB_LIN = new Float64Array(256);
+  for (let i = 0; i < 256; ++i) {
+    const c = i / 255;
+    SRGB_LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  }
+
   /** The §2.1 idiom, on one rectangle. RGB is decoded rather than luma alone:
    *  a luma-only instrument reads ~0 on a hue-only change and a grade moves
-   *  both (§2.6). `warm` is meanR - meanB in counts, POSITIVE IS WARM. */
+   *  both (§2.6). `warm` is meanR - meanB in counts, POSITIVE IS WARM.
+   *  `lin` is the RN-2550 linear-light mean described above. */
   const statOn = (cx, x0, y0, x1, y1) => {
     const w = Math.max(1, Math.round(x1 - x0));
     const h = Math.max(1, Math.round(y1 - y0));
@@ -3019,10 +3057,12 @@
     const n = w * h;
     let sr = 0; let sg = 0; let sb = 0; let ssat = 0;
     let lo = 0; let hi = 0;
+    let lr = 0; let lg = 0; let lb = 0;
     const lum = new Float64Array(n);
     for (let i = 0; i < n; ++i) {
       const r = d[i * 4]; const g = d[i * 4 + 1]; const b = d[i * 4 + 2];
       sr += r; sg += g; sb += b;
+      lr += SRGB_LIN[r]; lg += SRGB_LIN[g]; lb += SRGB_LIN[b];
       const mx = Math.max(r, g, b); const mn = Math.min(r, g, b);
       ssat += mx === 0 ? 0 : (mx - mn) / mx;
       const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -3041,6 +3081,8 @@
       p05: r2(q(0.05)), p50: r2(q(0.50)), p95: r2(q(0.95)),
       iqr: r2(q(0.75) - q(0.25)),
       loFrac: r3(lo / n), hiFrac: r3(hi / n),
+      lin: { Y: r6((0.2126 * lr + 0.7152 * lg + 0.0722 * lb) / n),
+        rgb: [r6(lr / n), r6(lg / n), r6(lb / n)] },
       col: colOn(d, w, h),
     };
   };
