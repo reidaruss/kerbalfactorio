@@ -491,6 +491,62 @@
         // corroborating evidence for the fix rather than noise: `hz` sits
         // inside the plate band it was assumed to sit past.
         hz: [0.0500, 0.2800, 0.9500, 0.3300],
+        // WG-260. THE 170-TO-550 m BAND, TWO RECTANGLES, AND THE LADDER THEY
+        // ARE PLACED FROM. 2.32.10 item 3 asked for rows 278-284 and told
+        // whoever committed it to re-derive the placement from their OWN
+        // corrected centre-column ladder rather than reuse its numbers.
+        //
+        // This is that ladder, re-taken at WG-260 on a throwaway build that
+        // painted the terrain fragment's own `dist` as a THREE-BIT RGB CODE
+        // (six thresholds, one bit per channel, so a level is identified by
+        // WHICH CHANNELS ARE ON and never by a luminance the tone curve
+        // compresses -- a first attempt using six equal luminance steps put
+        // four of its six rungs inside one count of each other and could not
+        // be decoded), captured at 1600x3600 so every 900-frame row is four
+        // rows wide, and read at the narrow centre column `x` in [795, 805).
+        // Rungs, converted back to 900-frame rows:
+        //
+        //     100 m -> row 293.9        170 m -> row 281.6
+        //     130 m -> row 288.4        210 m -> row 279.1
+        //     past 690 m -> rows 274.3 to 278.7     horizon -> row 273.9
+        //
+        // `170 m -> 281.6` reproduces 2.32.3's corrected `281.3` to a third
+        // of a row, from an instrument that shares no code with it. That is
+        // the independent confirmation that record asked for.
+        //
+        // AND IT OVERTURNS 2.32.10's OWN PREDICTED RANGE FOR THIS RECTANGLE.
+        // That item reads rows 278-284 as "roughly 340 m at the top to about
+        // 150 m at the bottom". The bottom is right: row 284.5 interpolates
+        // to about 150 m between the measured 170 m and 130 m rungs. The top
+        // is not. At this column there is NO VISIBLE GROUND AT ALL between
+        // about 210 m and 690 m: it is hidden behind the near rise, whose own
+        // crest is the local skyline, so the painted code steps straight from
+        // the 170-to-210 m level to the past-690 m level inside a single
+        // 900-frame row. Row 278 is therefore ground BEYOND 690 m. Top to
+        // bottom the rectangle reads about 14 per cent far ground past 690 m,
+        // about 37 per cent at 170 to 210 m, and about 49 per cent inside the
+        // 170 m prop ring.
+        //
+        // NARROW IN X, AND THE WIDTH IS MEASURED RATHER THAN ASSUMED. The
+        // same 170 m rung sits at 4x-row 1119.5 at `x` 500, 1126.3 at `x` 800
+        // and 1134.5 at `x` 1100, so iso-range contours curve by 3.75
+        // 900-frame rows across that span and a wide rectangle would smear
+        // its own range boundary over half its height. [0.45, 0.55] holds it
+        // inside about one row. That is 2.32.3's lesson applied to the
+        // RECTANGLE and not only to the instrument that placed it.
+        midband: [0.4500, 0.3088889, 0.5500, 0.3166667],
+        // AND THE ONE THE TERM ACTUALLY LIVES IN, because `midband` is on the
+        // GROUND side of the horizon and everything the mid tier places
+        // stands on the SKY side of it. A 12 m tree at 210 m reaches row 234
+        // and one at 690 m reaches row 265, while the far impostor wall it
+        // stands in front of tops out around row 265. Rows 236 to 264 are
+        // therefore the band that is pure sky without this tier and
+        // silhouette with it. Committing only `midband` would be NUMBERS.md's
+        // straddle trap in mirror image -- a rectangle on the wrong side of
+        // the horizon for the term it is asked about -- so both ship and both
+        // get quoted. Wide in `x` deliberately: this one asks a COVERAGE
+        // question, not a range one, so contour curvature cannot smear it.
+        midtree: [0.1500, 0.2622222, 0.8500, 0.2944444],
       },
       why: 'the MEADOW: plains at a standing eye, the frame section 1 '
         + 'difference 1 is about, and the one no shot in this file could take',
@@ -3685,6 +3741,21 @@
       canopyPlanetSd: s.props.canopyPlanetSd,
       canopyOfferedCells: s.props.canopyOfferedCells,
       canopySlopeCells: s.props.canopySlopeCells,
+      // WG-260. THE MID TIER, the 170-to-550 m band, on the canopy row's own
+      // terms so the pair can be read together. `mid: false` IS the
+      // `?midhole=0` arm and says so on the row (standing rule 7).
+      // `midCards` against `midProps` is the split the eye verdict turns on:
+      // an instance past `CANOPY_LOD3_M` is a four-triangle impostor and one
+      // inside it is an authored `_LOD2` cone, and a row that published only
+      // the total could not tell a band of TREES from a band of billboards
+      // standing fifty pixels tall. Additive; every field above is untouched
+      // and each reads `undefined` on a pre-WG-260 build rather than moving
+      // any existing number.
+      mid: s.props.mid ?? null, midEdge: s.props.midEdge ?? null,
+      midProps: s.props.midProps ?? null,
+      midCards: s.props.midCards ?? null, midCells: s.props.midCells ?? null,
+      midM2: s.props.midM2 ?? null, midPerM2: s.props.midPerM2 ?? null,
+      midDelivered: s.props.midDelivered ?? null,
       propsPlaced: s.props.propsPlaced, cellsScattered: s.props.cellsScattered,
       wantedPerM2: s.props.wantedPerM2, placedPerM2: s.props.placedPerM2,
       deliveredFraction: s.props.deliveredFraction,

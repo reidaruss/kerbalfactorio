@@ -835,6 +835,212 @@ const sstep = (t: number): number =>
 /** Ramp from a to b, clamped. */
 const ramp = (x: number, a: number, b: number): number => sstep((x - a) / (b - a));
 
+/**
+ * WG-260. THE MID TIER: the 170-to-690 m band, and why it is a WEIGHT rather
+ * than a new field, a new asset or a new radius.
+ *
+ * THE HOLE, measured by lane N4 (rendering.md 2.32.4) and reproduced here.
+ * `RADIUS_M` stops the ground props dead at 170 m through a boolean gate with
+ * no edge weight, and `CANOPY_NEAR_M` holds the impostor tier out to 550 m.
+ * Between them the only thing with HEIGHT is `TreeField`'s harvest ring, which
+ * at the Plains table is 420 trees per km2 against this tier's 2,520 -- a SIX
+ * FOLD density step at 550 m, because WG-222 multiplied the canopy table by six
+ * and `TreeTuning.TREE_DENSITY_KM2` (copied from the pre-WG-222 canopy asks) was
+ * not multiplied with it. That step is what the eye reads as a wall: at a 1.62 m
+ * eye the whole plain past the prop ring is about four and a half frame rows
+ * (2.32.3), so every tree from 550 m to the 1,400 m reach lands in a nine-row
+ * strip at roughly uniform apparent height, while the rows ABOVE it -- where a
+ * 12 m tree at 200 to 500 m would stand, 47 down to 19 pixels tall -- are empty
+ * sky. The band is not short of ground material; it is short of silhouettes.
+ *
+ * THE TARGET CURVE AND THE DEFICIT. One curve says how much canopy the world
+ * carries at ground range `g`: zero at the prop ring, one at
+ * `CANOPY_NEAR_FULL_M`, smootherstep between. `canopyDistanceWeight` already
+ * delivers part of it (nothing below 550 m, a linear ramp to 1 at 690 m), and
+ * this tier places exactly the DIFFERENCE. That is `TerrainTreeline`'s own
+ * idiom one band in -- paint the density the other layer is not placing -- and
+ * it has three consequences worth having: the sum is `midTargetWeight` by
+ * construction so there is no seam at 550 m to tune, `canopyDistanceWeight` is
+ * untouched so the far tier, `TerrainTreeline`'s mirror assertion and RN-2233's
+ * shadow theorem all keep their proofs, and `?midhole=0` is a structural
+ * control rather than a tuning value set to zero.
+ *
+ * THE RAMP'S SHAPE IS DERIVED FROM THE POP, and it is the one number in this
+ * block that had to be solved for rather than picked.
+ *
+ * This weight is a property of the VIEW (`canopyDistanceWeight`'s own
+ * distinction), so a tree in this band thins out as the player walks at it and
+ * is gone by 170 m. That is what keeps Reid's ruling that every tree a player
+ * can REACH is minable -- the reachable population is `TreeField`'s and this
+ * tier hands over to it -- and its cost is that a tree can vanish when its
+ * chunk crosses a rebuild boundary. `canopyStepOf` puts those boundaries 175 m
+ * apart at the standing reach, so the size of one pop is the weight change
+ * over 175 m, and how much of the FRAME it moves is that change times the
+ * tree's apparent height, which goes as 1/g. Writing `V(g) = 175 w'(g) h f / g`
+ * for a 12 m tree at the shipped 779.4 px per metre per metre of range, the
+ * ramp that makes the pop the same size everywhere in the band rather than
+ * piling it up where the trees are biggest is the one with `w'(g)` PROPORTIONAL
+ * TO g, i.e. a ramp linear in g SQUARED, and it is the only shape with that
+ * property. Solved between the two fixed endpoints it is
+ *
+ *     w(g) = (g^2 - MID_NEAR_M^2) / (MID_FULL_M^2 - MID_NEAR_M^2)
+ *
+ * and V is then constant at 2 x 175 x 9353 / (550^2 - 170^2) = 12.0 pixels of
+ * tree per rebuild. THE COMPARISON THAT MATTERS IS AGAINST THE SEAM THIS
+ * REPLACES, not against zero: the shipped near ramp runs 0 to 1 over
+ * `CANOPY_NEAR_M` to `CANOPY_NEAR_FULL_M`, 140 m, which is SHORTER than one
+ * rebuild band, so its whole weight change lands in a single rebuild at 550 to
+ * 690 m where a tree is 17 to 21 pixels: V is about 19. This ramp is 2.7 times
+ * longer than one band and lands at 12.0. The band gains a population of trees
+ * and the worst silhouette step at this seam gets SMALLER.
+ *
+ * Two shapes were tried against that number and both are worse. A LINEAR ramp
+ * over the same span reads V = 175 x 9353 / (380 x g), which is 21.5 at 200 m
+ * and 7.9 at 550 m -- the pop is worst exactly where the trees are largest,
+ * which is the defect the whole derivation is about. SMOOTHERSTEP (this lane's
+ * first build, `docs/screenshots/WG260_sstep_band_3x.png`) is flat at both ends
+ * and pays
+ * for it with a doubled derivative in the middle: V peaks at 13.7 at 430 m, and
+ * because it also holds the weight near zero out to 300 m it put only about a
+ * tenth of full density at 300 m and the band still read as a wall by eye. The
+ * quadratic carries 0.223 there, 2.1 times as much, at a LOWER peak pop.
+ *
+ * `MID_FULL_M` is `CANOPY_NEAR_M` and that is the same constant doing the
+ * opposite job: 550 m used to be the range at which the impostor tier switched
+ * on at full density, which is what made it a wall, and it is now the range at
+ * which this tier has finished ramping up to meet it.
+ *
+ * IT ADDS NO REBUILD BAND, on `CANOPY_LOD2_M`'s precedent. `canopyStepOf`
+ * already quantises the gradient into `CANOPY_BANDS` steps of 175 m at the
+ * standing reach, so this ramp spans two of them where the shipped 550-to-690 m
+ * near ramp spans none: today's near ramp is SHORTER than one rebuild band and
+ * is therefore effectively frozen per chunk, and this one is not. A fourth band
+ * would cost a rebuild of every chunk on the way in to improve a gradient that
+ * is already finer than the one it replaces.
+ */
+export const MID_NEAR_M = RADIUS_M;
+export const MID_FULL_M = CANOPY_NEAR_M;
+/** WG-260. Precomputed span of the ramp, in metres SQUARED. See above. */
+const MID_SPAN2 = MID_FULL_M * MID_FULL_M - MID_NEAR_M * MID_NEAR_M;
+/** WG-260. The mid tier's target weight at ground range `g`, in [0,1]. */
+export function midTargetWeight(g: number): number {
+  if (g <= MID_NEAR_M) return 0;
+  if (g >= MID_FULL_M) return 1;
+  return (g * g - MID_NEAR_M * MID_NEAR_M) / MID_SPAN2;
+}
+/**
+ * WG-260. What THIS tier places: the target minus what the canopy tier already
+ * places, and identically zero at and beyond `CANOPY_NEAR_FULL_M`.
+ *
+ * ITS ARGUMENT IS THE 3-D EYE DISTANCE, NOT THE GROUND DISTANCE, and that is
+ * the one place this tier deliberately parts company with the one above it.
+ * `canopyDistanceWeight` is written in ground distance because RN-2228's scar
+ * is about the DISC a radius covers, and from 1,200 m up a 3-D radius covers
+ * no disc at all. This tier is not about a disc: every number in it is about
+ * APPARENT SIZE -- the ramp shape is solved for a constant screen-space pop,
+ * the rung split is `CANOPY_LOD3_M`'s twenty-pixel bar -- and apparent size is
+ * `h f / d`, in 3-D distance. At the standing eye the two agree to 1.62 m in
+ * 550, so the ground poses cannot tell them apart and the deficit identity
+ * with the canopy tier holds where it is read.
+ *
+ * FROM THE AIR THEY DIFFER AND THE DIFFERENCE IS THE POINT: the tier switches
+ * itself off, because every cell is at least the eye's altitude away and 1,200
+ * is past 690. That is not tidiness. MEASURED at `forestair` with the ground
+ * form, the mid tier placed 3,727 instances on ground BELOW THE BOTTOM EDGE OF
+ * THE FRAME (the flyover geometry's nearest visible ground is 1,243 m), and
+ * because that pose already runs into `MAX_PER_CHUNK` on four chunks
+ * (`chunksCapped` 4 in BOTH arms, pre-existing: a depth-8 chunk is 13.5 km2
+ * and asks for 312,000 canopy trees against a 14,000 ceiling) those 3,727
+ * came straight out of the far canopy: `canopyProps` 77,998 -> 74,271, with
+ * the TOTAL pinned to 77,998 to the instance. A tier that reallocates the
+ * frame's whole instance budget to place trees nobody can see is worse than a
+ * tier that is absent, and one comparison removes it.
+ *
+ * The hard zero at the top is not a tidy-up. Past 690 m `canopyDistanceWeight`
+ * begins its economy fade to `CANOPY_EDGE_W`, and the density it gives up out
+ * there is already being painted by `TerrainTreeline`'s Beer-Lambert term
+ * (which returns an instance weight of exactly 1 below 690 m and therefore
+ * paints nothing inside this band). Letting the difference run past 690 m would
+ * place instances the material is simultaneously painting, i.e. would double
+ * the far canopy and undo RN-2234's reach economy in the same line.
+ */
+export function midDistanceWeight(d: number, reachM: number): number {
+  if (d >= CANOPY_NEAR_FULL_M) return 0;
+  const want = midTargetWeight(d);
+  const have = canopyDistanceWeight(d, reachM);
+  return want > have ? want - have : 0;
+}
+/**
+ * WG-260. WHERE A MID TREE STOPS BEING A CARD, and it is `CANOPY_LOD3_M`
+ * rather than a number of its own.
+ *
+ * That constant is already derived as the range at which the shortest canopy
+ * tree covers twenty pixels, which is exactly the bar a crossed impostor card
+ * has to clear, and the same bar applies whichever tier placed the tree. So a
+ * mid instance beyond it is emitted through the canopy path unchanged -- one
+ * four-triangle card, in the canopy's own non-casting batch -- and a mid
+ * instance inside it is emitted through the ORDINARY prop path, which resolves
+ * to the authored `_LOD2` cone (Fir 28, Pine 50, Broadleaf 180 triangles;
+ * `tools/blender/contracts.json`) because every instance in this band is past
+ * `CANOPY_LOD2_M`. No canopy tree is ever drawn at `_LOD0`'s 334 to 784
+ * triangles by this tier, at any range it reaches.
+ *
+ * The near half is what makes RN-2233's shadow theorem survive: the furthest
+ * cascade is 300 m (`ShadowRig.SPLITS_3`), so a mid tree inside it draws its
+ * cone out of an ordinary casting batch and shadows correctly, while the
+ * impostor rung -- which `attachFarShadowSkip` takes out of the shadow pass --
+ * is only ever chosen beyond 420 m, comfortably outside every cascade.
+ */
+export const MID_CARD_M = CANOPY_LOD3_M;
+
+/**
+ * WG-260. THE OTHER SEAM: the biome-prop ring's own outer edge, which has been
+ * a HARD BOOLEAN since the tier was written and is the one edge in the whole
+ * ladder that never got the treatment its neighbours got.
+ *
+ * `ScatterSample`'s gate is `const near = d2 <= r2`, full density on one side
+ * and nothing on the other. `DETAIL_FULL_M`'s docstring one tier down is the
+ * argument against that, in this project's own words and about this project's
+ * own frames: "the understorey stopped dead in a line across the hillside,
+ * with dense cover on one side of it and untouched olive terrain on the other
+ * ... a ring that ends is a ring you can see the edge of, whatever radius you
+ * put it at, so the fix is not a bigger number, it is a gradient." The canopy
+ * tier learned the same lesson at `CANOPY_FULL_M` and paid a 320 m fade for
+ * it. The biome props never did, and their ring edge lands at 900-frame row
+ * 281.6 at the plains hero pose, five rows under the horizon, where a 1.6 m
+ * prop is still seven pixels tall and stands up across the line.
+ *
+ * The shape is `detailWeight`'s exactly, including the reason the edge weight
+ * is not zero: a linear fall to exactly zero puts the last prop AT the
+ * boundary and re-creates a fainter copy of the same line. 0.18 is
+ * `DETAIL_EDGE_W`'s own value, reused rather than re-derived, because the
+ * argument that set it (roughly the density the whole ring used to have, so
+ * the old look becomes the outermost band of the new one) transfers unchanged.
+ *
+ * 120 m rather than a fraction of the radius, and the number is chosen so that
+ * NO COMMITTED NEAR RECTANGLE MOVES. On the measured ladder for this pose
+ * (see `artframe.js`'s `midband` note) 100 m is 900-frame row 293.9 and the
+ * furthest near rectangle at any ground pose, `meadowfield.r100`, spans rows
+ * 295 to 300, i.e. 90 to 100 m of ground. Every rectangle this project scores
+ * near ground on therefore sits inside the full-density disc, and the thin is
+ * confined to the 120-to-170 m annulus that only the horizon-band rectangles
+ * can see.
+ *
+ * IT REMOVES INSTANCES RATHER THAN ADDING THEM, which is worth saying because
+ * every other item in this lane costs something: the annulus is 53 per cent of
+ * the ring's area and it now carries a mean weight of about 0.59, so the tier
+ * gets cheaper. `?midedge=0` restores the boolean.
+ */
+export const BASE_FULL_M = 120;
+export const BASE_EDGE_W = DETAIL_EDGE_W;
+/** WG-260. Biome-prop weight for one cell, from its distance to the eye. */
+export function baseWeight(d: number): number {
+  if (d <= BASE_FULL_M) return 1;
+  if (d >= RADIUS_M) return 0;
+  const t = (d - BASE_FULL_M) / (RADIUS_M - BASE_FULL_M);
+  return 1 + (BASE_EDGE_W - 1) * t;
+}
+
 /** Integer lattice hash for the stand field. Three axes, one round. */
 function ihash3(x: number, y: number, z: number): number {
   let h = (Math.imul(x | 0, 0x27d4eb2f) ^ Math.imul(y | 0, 0x9e3779b1)

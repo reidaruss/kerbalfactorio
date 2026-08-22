@@ -49,6 +49,11 @@ export interface Placed {
   canopyCells: number;
   canopyProps: number;
   canopyWanted: number;
+  /** WG-260. The mid tier's, over its own 170-to-690 m ground. */
+  midCells: number;
+  midProps: number;
+  midWanted: number;
+  midCards: number;
 }
 
 /** A biome with no understorey draws from this rather than from a null check. */

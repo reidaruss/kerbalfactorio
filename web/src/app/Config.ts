@@ -266,6 +266,20 @@ export function parseConfig(search: string): Config {
     // magnitude. Admin rules from the frames; `?canopyshade=1` is the arm to
     // rule on.
     canopyShade: p.get('canopyshade') === '1',
+    // WG-260. THE MID TIER'S KILL SWITCH, and it is a STRUCTURAL control
+    // rather than a tuning value set to zero: with it the sampler never
+    // enters the mid draw at all, so the before picture and the after picture
+    // are one page param apart on ONE binary (standing rule 7, and the
+    // one-session arm-table trap this project wrote down this week -- every
+    // arm in this lane's table has to be reachable from the FINAL build).
+    // Default ON: the 170-to-550 m hole is a defect, not a feature.
+    midHole: p.get('midhole') !== '0',
+    // WG-260. The SECOND half of the same lane, on its own flag so the two
+    // can be attributed apart: the mid tier fills the hole past 170 m and
+    // this softens the 170 m ring's own hard boolean edge into
+    // `detailWeight`'s gradient. `?midhole=0` alone leaves this on, which is
+    // what makes the pair separable; the record quotes both arms.
+    midEdge: p.get('midedge') !== '0',
     rocks: p.get('rocks') !== '0',
     station: p.get('station') !== '0',
     rockDensity: Math.max(0, num(p, 'rockdensity', 1)),

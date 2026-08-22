@@ -36,6 +36,22 @@ export class ScatterCounters {
   canopyWanted = 0;
   canopyM2 = 0;
   /**
+   * WG-260. The mid tier's four, on the canopy's terms exactly so the two
+   * rows can be read against each other: instances placed, cells that carried
+   * any, the ask before quantisation, and the ground those cells cover.
+   *
+   * `midCards` is the split the eye verdict turns on rather than a tally: an
+   * instance past `MID_CARD_M` is a four-triangle impostor and one inside it
+   * is an authored cone, and a lane that reported only the total could not
+   * tell "the band filled with trees" from "the band filled with billboards
+   * at fifty pixels", which is the defect this tier exists to avoid.
+   */
+  midProps = 0;
+  midCards = 0;
+  midCells = 0;
+  midWanted = 0;
+  midM2 = 0;
+  /**
    * WG-223. THE CROWN-SCALE SHADE FIELD'S OWN DISTRIBUTION, and it exists
    * because rendering.md 2.14.7b's verdict was a claim about a distribution
    * that nothing in this file could measure.
@@ -139,6 +155,11 @@ export interface ScatterStats {
   canopyShadeMean: number; canopyShadeSd: number; canopyShadeMax: number;
   canopyShadeCells: number;
   canopyPlanetMean: number; canopyPlanetSd: number;
+  /** WG-260. The mid tier, on the canopy row's own terms. `mid: false` IS
+   *  the `?midhole=0` control and says so on the row (standing rule 7). */
+  mid: boolean; midEdge: boolean;
+  midProps: number; midCards: number; midCells: number;
+  midM2: number; midPerM2: number; midDelivered: number;
   staleMaxM: number; staleChunks: number;
 }
 
@@ -148,6 +169,9 @@ export interface ScatterStatsDeps {
   readonly fair: boolean;
   readonly canopyRadiusM: number;
   readonly canopyShade: boolean;
+  /** WG-260. `?midhole=0` and `?midedge=0`. */
+  readonly mid: boolean;
+  readonly midEdge: boolean;
 }
 
   /**
@@ -213,6 +237,19 @@ export function scatterStats(c: ScatterCounters, d: ScatterStatsDeps): ScatterSt
       ? Math.round(Math.sqrt(Math.max(0,
         c.canopyPlanetSq / c.canopyShadeN
         - (c.canopyPlanetSum / c.canopyShadeN) ** 2)) * 1e4) / 1e4 : 0,
+    // WG-260. The mid tier's row. `midDelivered` is the RN-7 ratio for this
+    // tier alone, so a shortfall here can never be absorbed into the ground
+    // tiers' own `deliveredFraction`.
+    mid: d.mid,
+    midEdge: d.midEdge,
+    midProps: c.midProps,
+    midCards: c.midCards,
+    midCells: c.midCells,
+    midM2: Math.round(c.midM2),
+    midPerM2: c.midM2 > 0
+      ? Math.round((c.midProps / c.midM2) * 1e5) / 1e5 : 0,
+    midDelivered: c.midWanted > 0
+      ? Math.round((c.midProps / c.midWanted) * 1e4) / 1e4 : 0,
     // WG-64. Must be 0.000000. See `staleMaxM`.
     staleMaxM: Math.round(c.staleMaxM * 1e6) / 1e6,
     staleChunks: c.staleChunks,

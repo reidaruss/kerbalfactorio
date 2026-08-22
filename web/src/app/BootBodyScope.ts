@@ -201,7 +201,7 @@ export async function phaseBodyScope(
       cfg.scatterFair, cfg.grassShort,
       cfg.scatterWet ? null : oracle.water,
       () => read(voxelsRef, 'the voxel world')?.handle ?? 0,
-      oracle.body.radiusM, cfg.canopyRadiusM, cfg.canopyShade);
+      oracle.body.radiusM, cfg.canopyRadiusM, cfg.canopyShade, cfg.midHole, cfg.midEdge);
     // WG-64: THE REBASE PATH, which had no caller. `Scatter.replace` documents
     // itself as "THE rebase path" and nothing ever called it, so every prop was
     // left behind by the whole rebase delta each time the origin moved. Measured

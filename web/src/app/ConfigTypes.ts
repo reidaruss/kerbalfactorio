@@ -222,6 +222,10 @@ export interface Config {
    * to make either one look free.
    */
   readonly canopyShade: boolean;
+  /** WG-260. The 170-to-690 m mid tier. `?midhole=0` is its structural off. */
+  readonly midHole: boolean;
+  /** WG-260. The biome ring's edge weight. `?midedge=0` restores the step. */
+  readonly midEdge: boolean;
   /**
    * WG-67: `?rocks=0` places NO world rocks and is the one-binary control for
    * the whole rock pass, the same shape as `?canopy=0` one paragraph up.
