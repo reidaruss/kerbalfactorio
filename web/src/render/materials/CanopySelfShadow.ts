@@ -412,6 +412,40 @@ export function canopyRoughnessOverride(): number | null {
 }
 
 /**
+ * RN-2590. `envMapIntensity` ON THE CROWN CARD, THE HANDLE 2.38.7 ROUTED HERE.
+ *
+ * WHY IT EXISTS AND WHY IT SHIPS AS `null`. 2.38.2 measured the crown card at
+ * **58 to 87 per cent SPECULAR** in the guard's own linear-luminance units, and
+ * 2.38.4 measured the only handle the project had for it -- roughness -- moving
+ * that share by under 2 per cent either way, the WRONG WAY at one of the two
+ * binding poses. The block above explains why: in three 0.185.1 the indirect
+ * lobe is a SAMPLED split-sum table and is nearly flat in roughness for a
+ * dielectric at `F0 = 0.04`, so the crown's specular is almost entirely the sky
+ * PMREM lobe scaled by `envMapIntensity`, and NOTHING in this project reached
+ * that scalar. RN-952's rule is that a term with no switch is the one candidate
+ * no experiment can eliminate, so RN-2590 was required to build it before it
+ * could claim its own normal change moved the specular for a reason.
+ *
+ * IT IS AN ISOLATOR, NOT A LOOK CHANGE. `null` unless `?canopyenv=` is on the
+ * URL, so the shipped path writes nothing and three's own default of 1 stands.
+ * The same `null`-rather-than-a-default design as `canopyRoughnessOverride`,
+ * for the same MachineMat.ts reason: a shipped default here would be a second
+ * copy of three's constant, and the day three changes it this file silently
+ * overrides it back.
+ *
+ * THE RANGE IS 0 TO 4 rather than 0 to 1. Unlike roughness this scalar has no
+ * physical ceiling, and the interesting arm for a crown is a REDUCTION (a leaf
+ * mass is not a mirror), so the upper end exists only so a raise can be
+ * measured as the control that must move the picture the other way.
+ */
+export function canopyEnvOverride(): number | null {
+  const raw = new URLSearchParams(self.location.search).get('canopyenv');
+  if (raw === null) return null;
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 && v <= 4 ? v : null;
+}
+
+/**
  * `(amp, K, floor)`, the one packing both halves read.
  *
  * THIS IS THE ANSWER TO "IS THERE A SECOND COPY OF K". There is not: the vector
@@ -879,6 +913,10 @@ export function canopySelfNow(): {
    *  `CROWN_SELF_FLOOR_DERIVED` is exported at all -- so the claim that the
    *  shipped floor is 5.7x too small is a reading rather than a sentence. */
   roughOverride: number | null; floorDerived: number;
+  /** RN-2590. The `envMapIntensity` OVERRIDE asked for, `null` on the shipped
+   *  path. Published beside `roughOverride` and for the identical reason: it is
+   *  the REQUEST, and `surfaceReport()`'s own reading is the OUTCOME. */
+  envOverride: number | null;
 } {
   return {
     amp: SHADE_CARD[0], k: SHADE_CARD[1], floor: SHADE_CARD[2],
@@ -887,5 +925,6 @@ export function canopySelfNow(): {
     cardShadeRGB: card.shadeRGB, spectral: SPECTRAL_ON,
     roughOverride: canopyRoughnessOverride(),
     floorDerived: CROWN_SELF_FLOOR_DERIVED,
+    envOverride: canopyEnvOverride(),
   };
 }

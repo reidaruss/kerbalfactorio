@@ -18,6 +18,7 @@ import { CANOPY_ATLAS, SHARED_ATLAS } from '../../assets/Registry.js';
 import { LAYER_PROPS } from '../Scenes.js';
 import { attachFarShadowSkip } from '../ShadowLod.js';
 import { isFoliageMaterial } from '../ScatterLook.js';
+import { isCrownImpostorMaterial } from './CrownNormal.js';
 import { normalize, setBaseShade, setLeafVar, type BaseBake }
   from './PropGeometry.js';
 import { applyPropSkyAmbient } from '../materials/PropSkyAmbient.js';
@@ -317,6 +318,14 @@ export class PropLibrary {
         // predicate is imported from `ScatterLook` rather than rewritten,
         // because two copies of "which materials are plants" drift.
         const bake: BaseBake = isFoliageMaterial(mat) ? 'foliage' : 'mineral';
+        // RN-2590. THE CROWN IMPOSTOR'S SHADING NORMAL IS A DIFFERENT
+        // CONSTRUCTION FROM A TUFT'S, and this is the one place the material
+        // NAME is still in hand: `normalize` sees a BufferGeometry and could
+        // only guess from its shape. The predicate is imported rather than
+        // rewritten, on the same argument the `bake` line above gives for
+        // importing `isFoliageMaterial`: two copies of "which material is the
+        // crown card" drift. See CrownNormal.ts.
+        const crown = isCrownImpostorMaterial(mat);
         batch.shaded = true;
         const lods = emptyLods();
         // `?proplod2=0` gives the UNDERSTOREY nothing but its LOD0, so every
@@ -339,7 +348,7 @@ export class PropLibrary {
           const m = flat ? (t === 0 ? near : null) : rungs[t];
           if (m === null || m === undefined) continue;
           lods[t] = batch.mesh.addGeometry(
-            normalize(m.mesh.geometry, m.mesh.matrixWorld, bake));
+            normalize(m.mesh.geometry, m.mesh.matrixWorld, bake, crown));
           if (t === PROP_LODS - 1) batch.far.add(lods[t]);
         }
         list.push({ material: key, lods });
