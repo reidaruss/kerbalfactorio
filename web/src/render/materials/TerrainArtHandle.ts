@@ -15,6 +15,7 @@ import { canopyToneNow } from './TerrainTreeline.js';
 import { canopySelfNow } from './CanopySelfShadow.js';
 import { crownBakeReport, crownBend } from '../instancing/CrownNormal.js';
 import { crownFaceState } from './CrownFaceFold.js';
+import { crownEnvState } from './CrownEnv.js';
 import { horizonOccFromQuery, reliefCellFromQuery, reliefCellNoiseFromQuery,
   reliefGradFromQuery, reliefGradUvFromQuery, reliefSwingFromQuery }
   from './TerrainReliefQuery.js';
@@ -373,6 +374,7 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
       crownNormal: ReturnType<typeof crownBakeReport>
         & { ask: ReturnType<typeof crownBend> };
       crownFace: ReturnType<typeof crownFaceState>;
+      crownEnv: ReturnType<typeof crownEnvState>;
     } {
       const v = s.treeline.value;
       const c = s.crownShade.value;
@@ -416,6 +418,14 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
         // RN-2590's dead switch reported a healthy parsed request while the
         // renderer erased the write every frame; none of these four can.
         crownFace: crownFaceState(),
+        // RN-2645. THE CROWN'S ENVIRONMENT TERM. `appliedLive` is
+        // `material.envMapIntensity` read at PROBE TIME, i.e. after the last
+        // frame's DRAW, which is the one place the renderer's per-frame
+        // overwrite would show: if this material were still inside
+        // `WebGLRenderer.js:2694-2696`'s branch it would read
+        // `sceneIntensity` instead of `applied`. That is what makes it an
+        // OUTCOME readback and not RN-2590's request one.
+        crownEnv: crownEnvState(),
       };
     },
     ...terrainSplatHandle(s),

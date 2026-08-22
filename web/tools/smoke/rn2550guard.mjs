@@ -307,6 +307,46 @@ const F_MIN = 0.10;
 // now INSIDE the band at 0.1906 and the guard prints a note saying so: clearing
 // that marking is the same class of change and is not in this decision.
 //
+// ===========================================================================
+// RN-2645, 2026-08-22. THE DEBT IS PARTLY REPAID AND THE REST OF IT IS
+// MEASURED TO BE UNREACHABLE FROM THIS LANE'S TWO HANDLES. REPORTED AS A
+// SHORTFALL WITH A NUMBER, NOT RE-NEGOTIATED.
+// ===========================================================================
+// RN-2605 raised `flyovernoon` by 0.0248 boxShip / 0.0251 boxSurf under a
+// logged decision and named the next lane to lower both again. RN-2645 is that
+// lane. It lowers them by **0.0023 and 0.0028**, which is 9 and 11 per cent of
+// what is owed, and the reason the rest is not here is a CEILING that this lane
+// measured rather than an effort it did not make:
+//
+//   * THE SPECULAR HANDLE'S MAXIMUM. `?crownenv=0` deletes the crown card's
+//     environment outright -- more than any derivation licenses, and the
+//     largest move `envMapIntensity` can make -- and moves `flyovernoon` by
+//     **-0.0111 boxShip and -0.0130 boxSurf**. At ZERO it is 45 and 52 per cent
+//     of the debt. The shipped derived factor spends about half of that.
+//   * THE DIFFUSE HANDLE MOVES `box` THE OTHER WAY, AT EVERY POSE, BECAUSE THE
+//     SHADE LAW'S FLOOR REACHES THE FAR PAINT AND 2.38.3 MEASURED THE PAINT AT
+//     12.8x THE CARDS ON THIS RECTANGLE. `?crownshadefloor=0.137` on both
+//     halves takes `forestairnoon` boxShip to 0.9935 against a 0.9822 ceiling,
+//     and the layer-mean transmittance (`?crownshadelaw=1`, better physics and
+//     derived in `CrownSkyView.ts`) takes that pose's boxSurf to **1.0929** --
+//     the wood LIGHTER than its clearing, which is R2 section 3.10's standing
+//     refusal. That is why RN-2645's raise is scoped to the CARD's floor, where
+//     it costs `box` almost nothing and buys the whole of the band.
+//
+// So the residue is **0.0225 boxShip and 0.0223 boxSurf**, still owed against
+// RN-2605's pre-raise 0.9343 / 0.9020, and it belongs to whichever lane next
+// darkens the far treeline PAINT -- which is the only term on this rectangle
+// large enough to pay it. rendering.md 2.42.6 has the arithmetic and 2.42.11
+// routes it.
+//
+// The other three poses ALSO fell under RN-2645 (forestairnoon 0.9814/0.9504
+// to 0.9808/0.9499, forestairlow 0.9464/0.7732 to 0.9429/0.7668, flyoverlow
+// 0.9643/0.8415 to 0.9618/0.8347) and are NOT re-pinned, on the precedent
+// rendering.md 2.39.12 item 5 records Admin setting: re-pinning a fall tightens
+// the guard for every later lane on the strength of one build. `flyovernoon` is
+// re-pinned because it is the pose the debt is ON and a partial repayment that
+// is not written into the constant is not a repayment.
+//
 // Every value below marked RN-2605 was measured on `lane/n13-backface`'s final
 // build, server 127.0.0.1:5605 --strictPort, sentinel CONTENT verified over the
 // wire, served entry chunk `f01db459b1d657f0` verified against `dist`, a fresh
@@ -319,7 +359,12 @@ const BASE = {
   forestairlow: { boxShip: 0.9464, boxSurf: 0.7732, boxClearY: 0.106526,
     crownClearY: 0.058633, rho: 0.4363, rhoOut: null },
   // RN-2605: both RAISED under the logged decision above. Debt 0.0248 / 0.0251.
-  flyovernoon: { boxShip: 0.9591, boxSurf: 0.9271, boxClearY: 0.288112,
+  // RN-2645: both LOWERED again, in the guard's TIGHTENING direction, which
+  // needs no decision. THE REPAYMENT IS PARTIAL AND THE RESIDUE IS NAMED:
+  // 0.0225 boxShip and 0.0223 boxSurf are still owed against RN-2605's
+  // pre-raise 0.9343 / 0.9020. See the RN-2645 block below for why it is a
+  // ceiling and not a shortfall of effort.
+  flyovernoon: { boxShip: 0.9568, boxSurf: 0.9243, boxClearY: 0.288112,
     crownClearY: 0.148116, rho: 0.2488, rhoOut: null },
   flyoverlow: { boxShip: 0.9774, boxSurf: 0.8884, boxClearY: 0.147985,
     crownClearY: 0.078325, rho: 0.7021, rhoOut: null },
