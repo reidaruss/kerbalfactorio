@@ -365,7 +365,7 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
     // is what makes it measurable: `live` false means the canopy material has
     // not been bound yet and the ground is painting the fallback.
     treeline(): {
-      amp: number; mottle: number; reachM: number;
+      amp: number; mottle: number; reachM: number; paint: number; far: number;
       tone: { r: number; g: number; b: number; live: boolean };
       self: ReturnType<typeof canopySelfNow> & { uniform: [number, number, number] };
     } {
@@ -373,6 +373,11 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
       const c = s.crownShade.value;
       return {
         amp: v.x, mottle: v.y, reachM: v.z,
+        // RN-2560. The painted arm's mode as the SHADER holds it, so an arm can
+        // be proved non-vacuous from the page's own state instead of from the
+        // flag having been typed (RN-2268's scar, AerialDiag's remedy).
+        paint: s.treelinePaint.value,
+        far: s.treelineFar.value,
         tone: {
           r: s.treelineTone.value.x, g: s.treelineTone.value.y,
           b: s.treelineTone.value.z, live: canopyToneNow().live,

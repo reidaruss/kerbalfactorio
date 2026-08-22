@@ -252,6 +252,15 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // The canopy CARD's own mean rendered albedo, linear, read off the live
     // material by SurfaceBind rather than copied. See TerrainTreeline.ts.
     uniform vec3 uTreelineTone;
+    // RN-2560. THE PAINTED ARM, ?treelinepaint=1 (the stage map) or 2 (the
+    // coverage level). 0 in every shipped frame. Declared for BOTH programs
+    // because the first thing the stage map has to be able to say is "the
+    // SCALED program drew this fragment and the term is not in it".
+    uniform float uTreelinePaint;
+    // RN-2560. ?treelinefar=1. Whether the SCALED program runs the far
+    // treeline at all: 0, the default, is the pre-RN-2560 frame to the bit,
+    // and the near program ignores it (it holds a compile-time 1).
+    uniform float uTreelineFar;
     // RN-2275. INTER-CROWN SELF-SHADOWING: (amp, K, floor). The SAME three
     // floats the canopy card's per-frame colour update reads, held once in
     // CanopySelfShadow.SHADE, so the near stand and the far treeline cannot be

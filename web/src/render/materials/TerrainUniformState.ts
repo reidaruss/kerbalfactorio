@@ -31,8 +31,8 @@ import { fineMFromQuery, horizonOccFromQuery, reliefCellFromQuery,
   reliefCellNoiseFromQuery, reliefGradFromQuery, reliefGradUvFromQuery,
   reliefSwingFromQuery } from './TerrainReliefQuery.js';
 import type { TerrainMaterialOptions } from './TerrainMaterialTypes.js';
-import { onCanopyTone, treelineAmpFromQuery, treelineMottleFromQuery }
-  from './TerrainTreeline.js';
+import { onCanopyTone, treelineAmpFromQuery, treelineFarFromQuery,
+  treelineMottleFromQuery, treelinePaintFromQuery } from './TerrainTreeline.js';
 import { SHADE } from './CanopySelfShadow.js';
 import { phaseProbeFromQuery } from './TerrainPhase.js';
 import { SPLAT_FADE_ALBEDO, SPLAT_FADE_NORMAL, SPLAT_MAPS }
@@ -257,6 +257,16 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
   const treelineTone: THREE.IUniform<THREE.Vector3> = {
     value: new THREE.Vector3(),
   };
+  // RN-2560. THE PAINTED ARM's mode, 0 in the shipped frame. Shared by
+  // reference into BOTH materials on splatFarAmp's reason and on this term's
+  // own: the whole question the paint was built to answer is which of the two
+  // programs draws a given band of ground, so a paint that reached the near
+  // material only would answer it with its own absence.
+  const treelinePaint: THREE.IUniform<number> = { value: treelinePaintFromQuery() };
+  // RN-2560. Whether the SCALED program runs the far treeline. 0 is the
+  // pre-RN-2560 frame to the bit; the NEAR program never reads it, because
+  // there the shell factor is a compile-time 1.
+  const treelineFar: THREE.IUniform<number> = { value: treelineFarFromQuery() };
   onCanopyTone((r, g, b) => { treelineTone.value.set(r, g, b); });
   // RN-2275. INTER-CROWN SELF-SHADOWING, (amp, K, floor). Built FROM the same
   // `SHADE` triple the canopy card's per-frame update reads, so the near cards
@@ -285,7 +295,8 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     fineLum, reliefGrad, reliefGradUv, artFineM, reliefFineM, artCoarseM,
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
-    splatAmp, splatFade, splatFarAmp, treeline, treelineTone, crownShade,
+    splatAmp, splatFade, splatFarAmp, treeline, treelineTone, treelinePaint,
+    treelineFar, crownShade,
     phaseProbe, horizonAmp, horizonEco, horizonCell, horizonPlains, emitGround,
     massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,
