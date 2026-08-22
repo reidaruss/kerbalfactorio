@@ -13,6 +13,7 @@ import { gameplayApi } from './DebugGameplay.js';
 import { terraformApi } from './DebugTerraform.js';
 import { sitesApi } from './DebugSites.js';
 import { ruinsApi } from './DebugRuins.js';
+import { rescueApi } from './DebugRescue.js';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
 import { BINDINGS } from '../player/Bindings.js';
@@ -282,6 +283,8 @@ export function installDebugApi(
     // WG-166. The site TABLE is `sitesApi`; the drawn INSTANCES are this one.
     // See DebugRuins.ts for why the two are separate surfaces.
     ...ruinsApi(s),
+    // BT-320 (R-RECOVER-1). The of-rescue store's first reachable reader.
+    ...rescueApi(s),
   };
   (window as unknown as { __of: OfDebugApi }).__of = api;
   return api;

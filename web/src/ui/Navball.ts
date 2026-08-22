@@ -27,7 +27,7 @@ import {
   viewOf, frontMarks, drawBall, drawMarks, type Mark,
 } from './NavballDraw.js';
 import {
-  SKELETON, add, cells, at, impact, clock, dockChip, approachChip, sasErr,
+  SIZE, SKELETON, add, cells, at, impact, clock, dockChip, approachChip, sasErr,
   warpChip, nm, fix, clamp01, round, alt, conic, spd, signed, deg, mass, met,
 } from './NavballFormat.js';
 
@@ -35,8 +35,13 @@ import type { NavballFullReadout, NavballReadout } from './NavballTypes.js';
 export type { BallMarker, StageReadout, NavballFullReadout, NavballReadout }
   from './NavballTypes.js';
 
-/** CSS pixels. The canvas backing store is this times the device ratio. */
-export const SIZE = 220;
+// BT-320 (R-DEV-1). SIZE now lives in NavballFormat.ts and is re-imported
+// here rather than declared here and imported there: see that file's header
+// for why the old direction was a circular-import TDZ under the unbundled
+// dev server. Re-exported so any external importer of `SIZE` from this
+// module (none found by grep at the time of the fix, but this is the public
+// barrel) keeps working unchanged.
+export { SIZE };
 
 export class Navball {
   private readonly root: HTMLElement;

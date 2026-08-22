@@ -21,25 +21,40 @@
 // rollback is a second authority over "what is the world", and it would fire on
 // the load AFTER a migration the player was perfectly happy with.
 //
-// AND NOTHING PUTS ONE BACK EITHER, WHICH THIS COMMENT USED TO DENY (PS-56,
-// corrected 2026-08-21, R-RECOVER-1). It said the copy "is recovered by an
-// explicit call, `restoreRescue`, which the probe drives and which is reachable
-// from the console". There is no `restoreRescue` anywhere in the repo;
-// `listRescue` and `readRescue` below have ZERO callers in `src` or `tools`;
-// no debug verb exposes them, so nothing here is reachable from the console;
-// and what `rescale.js` actually drives is its own hand-rolled IndexedDB open,
-// not a call into this file. What IS true is the finding half: the key is
-// printed to the console and carried on the factory report, so a copy can be
-// FOUND. Putting it back is a devtools job today.
+// AND NOTHING PUT ONE BACK EITHER, for a while: PS-56 (2026-08-21) corrected a
+// header sentence here that claimed a `restoreRescue` reachable from the
+// console when none existed anywhere in the repo, and left the gap open as
+// R-RECOVER-1 rather than paper over it a second time. `restoreRescue` below
+// is that verb, now real, wired through `__of.rescue.*` (BT-320) rather than
+// left reachable only by opening IndexedDB by hand. It is explicit-only and
+// writes verbatim (see its own comment for why `writeSlot` would be wrong
+// here); nothing calls it automatically, on load or on boot. `listRescue` and
+// `readRescue` are read from the same surface now too. Nothing prunes the
+// store; that is still unbuilt.
 //
-// This mattered enough to correct rather than route, because PS-53 now writes
+// This mattered enough to correct rather than route, because PS-53 writes
 // copies into this store on a field-generation clear and PS-54's decision to
 // clear a world leans on them, so a sentence in the recovery file claiming a
-// recovery path that does not exist is load-bearing and false. Nothing prunes
-// the store either. See persistence.md's R-RECOVER-1.
+// recovery path that does not exist was load-bearing and false. See
+// persistence.md's R-RECOVER-1 for the full case and what closing it does and
+// does not mean (it is not an automatic undo for a field-generation clear).
+//
+// AND THAT FIRST CUT OF `restoreRescue` WAS ITSELF ONE MORE FALSE CLAIM,
+// FOUND BY A FRESH-CONTEXT VERIFIER BEFORE IT SHIPPED: it writes into the
+// SAME KEY the running session's own autosave writes to, so the timer that
+// fires every 20 real seconds (`GameplayStep.ts`'s `AUTOSAVE_TICKS`) would
+// otherwise silently overwrite a restored copy with the live world on its
+// own schedule, no error, no second warning, and re-stamp `fieldGen` to the
+// current planet on the way out so the next load never sees a mismatch to
+// report. `restoreRescue` now arms `sim/SaveInhibit.ts`'s existing latch the
+// moment the write lands, and `PersistSlot.loadSlot` releases it, so the
+// window this file's own warning describes is closed rather than merely
+// disclosed.
 
 import { needsRescale } from './FactoryRescale.js';
 import type { SaveSlot } from './SaveGame.js';
+import { writeKey } from './SaveKeys.js';
+import { inhibitSave } from '../sim/SaveInhibit.js';
 
 const DB = 'of-rescue';
 const STORE = 'slots';
@@ -118,6 +133,139 @@ export async function readRescue(key: string): Promise<SaveSlot | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * BT-320 (R-RECOVER-1). The `<reason>:<slot>:<when>` key back apart.
+ *
+ * SPLITTING ON THE FIRST TWO COLONS, NOT ON EVERY COLON, and that is exact
+ * rather than a convention that could silently drift: `rescueKey` replaces
+ * every `:` and `.` in the ISO timestamp with `-` for exactly this reason
+ * (see its own comment), so `when` is colon-free by construction and the
+ * first two colons in the whole key are always the two separators. Both
+ * real reasons (`rescale`, `fieldgen`) and both real slots (`auto`,
+ * `auto-sandbox`, from `slotKey`) are colon-free too, so this parses every
+ * key either caller has ever written; a future caller that hands
+ * `keepRescue` a NAMED-save key (`save:<mode>:<name>`, which itself contains
+ * colons) would break this, and nothing here does that today.
+ */
+export function parseRescueKey(key: string): { reason: string; slot: string; when: string } | null {
+  const a = key.indexOf(':');
+  if (a < 0) return null;
+  const b = key.indexOf(':', a + 1);
+  if (b < 0) return null;
+  const reason = key.slice(0, a);
+  const slot = key.slice(a + 1, b);
+  const when = key.slice(b + 1);
+  if (reason === '' || slot === '' || when === '') return null;
+  return { reason, slot, when };
+}
+
+export interface RescueRestoreReport {
+  ok: boolean;
+  key: string;
+  targetSlot: string | null;
+  reason: string | null;
+  warning: string;
+}
+
+/**
+ * R-RECOVER-1. THE OTHER HALF OF THE DOOR: a copy this file has always been
+ * able to WRITE and never able to PUT BACK. `listRescue`/`readRescue` above
+ * had zero callers anywhere in the repo; this is the first one, reached
+ * through `__of.rescue.restore` (BT-320) rather than only by opening
+ * IndexedDB by hand, which is what the header above used to falsely claim was
+ * already true.
+ *
+ * WRITES VERBATIM, THROUGH `SaveKeys.writeKey`, NOT `SaveGame.writeSlot`.
+ * `writeSlot` stamps the LIVE world onto whatever it is given (vessels, the
+ * player anchor, the day clock, station power, the assisted mark), which is
+ * correct for an autosave and wrong here: a rescue copy is bytes taken off
+ * disk at a past moment, and restoring it must land exactly those bytes, not
+ * those bytes overwritten by whatever happens to be live in the tab that
+ * calls this. `writeKey` is the same byte-mover the named-save LOAD path
+ * already uses for the identical reason (`SaveGame.ts`'s own comment: "the
+ * load path copies a STORED slot verbatim").
+ *
+ * EXPLICIT ONLY, AND THAT IS THE WHOLE SAFETY ARGUMENT. Nothing calls this but
+ * a deliberate `__of.rescue.restore(key)`: there is no boot-time or load-time
+ * trigger, because an automatic restore would be a second authority over
+ * "what is the world" firing on its own judgement about a copy the player has
+ * not looked at, which is the exact objection FS-79's own header raises
+ * against an automatic rollback.
+ *
+ * RESTORES INTO THE SLOT THE KEY NAMES, not the running mode's live slot, so
+ * this is for RECOVERY-THEN-INSPECTION and not silent resurrection: it lands
+ * the bytes under (say) `auto`, and picking them up is a SEPARATE, later
+ * `__of.load()` or a reload, never this call.
+ *
+ * AND THAT SLOT IS ALMOST ALWAYS THE RUNNING SESSION'S OWN AUTOSAVE KEY,
+ * WHICH A FRESH-CONTEXT VERIFIER PROVED IS NOT SAFE TO LEAVE UNGUARDED
+ * (measured twice, raw IndexedDB, on the shipped BT-320 cut): `parsed.slot`
+ * is `slotKey(g.mode.mode)` by construction (see `rescueKey`'s callers), the
+ * SAME key `GameplayStep.stepFixed`'s `AUTOSAVE_TICKS` timer (20 real
+ * seconds) writes to. Restoring and then simply letting the session keep
+ * running meant the very next autosave silently overwrote the restored bytes
+ * with the LIVE world, re-stamping `fieldGen` to the CURRENT planet on its
+ * way out with no error and no second toast, so a load taken a minute later
+ * saw a clean MATCH and PS-53's own detector never got a chance to fire on
+ * it. This function therefore calls `inhibitSave` (`sim/SaveInhibit.ts`, the
+ * same latch `FlightDoors`/`FlightRecover` already use for a different
+ * "this save would be wrong" case) the moment the write lands, and
+ * `PersistSlot.loadSlot` clears it again as its first statement: the restored
+ * bytes are safe from THIS session's own autosave for as long as the player
+ * leaves them un-loaded, and the pause is visible on the navball
+ * (`FlightReadout.ts` already reads `saveInhibit()`), not merely logged.
+ *
+ * RESTORING A `fieldgen` COPY IS STILL NOT AN UNDO. Loading it back onto the
+ * CURRENT planet re-creates exactly the misplacement PS-53/PS-54 exist to
+ * prevent (a pre-swell world addressed in a planet that has since changed
+ * shape): the load that finally applies it will detect the mismatch and
+ * clear the body half again. `warning` says both of these things on every
+ * call, not only the first, because a copy read back clean today is not a
+ * promise about the load after it.
+ */
+export async function restoreRescue(key: string): Promise<RescueRestoreReport> {
+  const parsed = parseRescueKey(key);
+  if (parsed === null) {
+    return {
+      ok: false, key, targetSlot: null, reason: null,
+      warning: `[of] rescue.restore refuses: '${key}' is not a rescue key `
+        + '(expected <reason>:<slot>:<when>, e.g. one of __of.rescue.list()\'s own entries)',
+    };
+  }
+  const value = await readRescue(key);
+  if (value === null) {
+    return {
+      ok: false, key, targetSlot: parsed.slot, reason: parsed.reason,
+      warning: `[of] rescue.restore refuses: no rescue copy stored under '${key}'`,
+    };
+  }
+  const warning = `[of] restoring rescue copy '${key}' into slot '${parsed.slot}'. `
+    + 'This writes the OLD bytes back verbatim; it does not load them, and nothing '
+    + 'here does that automatically. Autosave for this session is now PAUSED: '
+    + `without that, the running world's own 20-second autosave timer would `
+    + `silently overwrite '${parsed.slot}' with the LIVE world (re-stamping `
+    + "fieldGen to the CURRENT planet on the way out) with no error and no second "
+    + 'warning, so a load taken even a minute later would see a clean world and '
+    + 'this restore would already be gone. The pause holds until the next '
+    + '__of.load() or reload, so inspect the restored world before you load it: '
+    + `if this is a '${parsed.reason}' copy taken because the body's height field `
+    + "had changed since it was saved, LOADING it onto the CURRENT planet "
+    + 're-creates the exact misplacement that clear existed to prevent, and that '
+    + 'load will detect the mismatch and clear the body half again. '
+    + 'Recovery-then-inspection, not silent resurrection.';
+  console.warn(warning);
+  const ok = await writeKey(parsed.slot, value);
+  // THE INHIBIT ARMS ONLY ON A SUCCESSFUL WRITE, and only after it, so a
+  // failed restore (ok === false) never blocks a save the running world was
+  // never actually at risk from.
+  if (ok) {
+    inhibitSave(`a rescue copy ('${key}') was restored into '${parsed.slot}' and `
+      + 'is paused from autosave until the next load; inspect it, then load '
+      + 'deliberately');
+  }
+  return { ok, key, targetSlot: parsed.slot, reason: parsed.reason, warning };
 }
 
 /**
