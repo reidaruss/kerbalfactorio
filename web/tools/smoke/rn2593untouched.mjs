@@ -34,7 +34,6 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -45,7 +44,14 @@ const PROBE = path.join(HERE, 'probes', 'artframe.js');
 const argv = new Map(process.argv.slice(2)
   .map((a) => { const i = a.indexOf('='); return [a.slice(0, i), a.slice(i + 1)]; }));
 const url = argv.get('--url') ?? 'http://127.0.0.1:5590/';
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rn2593-'));
+// INSIDE THE REPO, AND THAT IS A HARNESS CONSTRAINT RATHER THAN A PREFERENCE:
+// `run.mjs` REFUSES an `--out` outside the repo ("--out must stay inside the
+// repo", stage=screenshot), so a first draft of this file that wrote to the OS
+// temp directory failed both arms with a bare `no json (exit 1)` and reported
+// it as "an arm failed". `web/build/` is gitignored by the root rule and is
+// therefore scratch that cannot be committed by accident.
+const dir = path.join(HERE, '..', '..', 'build', 'rn2593');
+fs.mkdirSync(dir, { recursive: true });
 
 // THE CEILING, and it is a real number rather than zero. Two page loads of the
 // SAME build do not produce byte-identical frames at every pose: RN-1766 quotes
