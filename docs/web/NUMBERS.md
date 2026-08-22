@@ -3421,3 +3421,79 @@ all. The corollary for reading old records: a reported whole-frame delta of 0.01
 taken at one repeat per arm is not evidence of anything.
 
 ---
+
+### A DEFECT CAN BE PROPPING UP THE VERY NUMBER ITS FIX IS JUDGED BY, AND REMOVING IT THEN READS AS A REGRESSION (found 2026-08-22 by RN-2590, lane N12)
+
+`FoliageNormal.ts`'s hemisphere ternary resolved on floating-point residue on
+one of a crown impostor's two quads, so **one top-edge vertex per crown was
+baked with `up = -0.994`, lit as if it faced the ground**. It is a defect by any
+reading, it was routed as "low-risk and SEPARABLE", and removing it on its own,
+with the anchor unchanged, **cost the crown 25 per cent of its own luminance**
+at `forestairnoon` (`rho` 0.0992 to 0.0748) and moved the guard's ratio the
+wrong way.
+
+The reason is that `OF_Canopy` is `doubleSided`, so three negates the WHOLE
+shading normal on a back face. On a back-facing quad every correctly-signed
+normal points down and contributes nothing, and the one INVERTED vertex was the
+only one pointing up. The tear was accidentally supplying the light that a third
+degeneracy, the face negation, was taking away. Two wrongs were making a partial
+right, and the fix for one of them exposed the other.
+
+**The rule. Before a defect fix is judged against a metric, ask what the defect
+was contributing TO that metric.** A fix whose isolated arm moves the number
+backwards is not necessarily wrong: it may be the first honest reading. The
+diagnostic that separates the two cases is a THIRD arm that removes the defect
+AND the thing it was compensating for; where that arm is unavailable, the
+backwards move must be reported as what it is rather than tuned away, because
+tuning it away restores the compensation and keeps the causal chain hidden.
+
+---
+
+### A LUMINANCE BAND CANNOT SEE A CHROMATIC DEFECT, AND THE FIX FOR THE CHROMA LOWERS THE LUMINANCE (found 2026-08-22 by RN-2590, lane N12)
+
+`rn2550guard`'s band is on linear-light Rec.709 LUMINANCE, and it is correctly
+derived: a closed canopy over a mid-tone forest floor runs 0.18 to 0.75. What it
+cannot see is WHERE the luminance comes from. 2.38.2 measured the crown card at
+**58 to 87 per cent specular**, and RN-2590 found the geometric cause: the
+impostor's bent normal lies in its own card's plane, so every card is viewed at
+grazing incidence, Fresnel is near its maximum, and the crown pixel is largely a
+reflection of the sky. That is also why it is BLUE.
+
+So the physically right fix, rotating the normal out of the card's plane, is
+measured as a LOSS by the band: at `forestairnoon` every out-of-plane weight
+tested lowered `rho` monotonically, because what it removes is exactly the
+specular the band was counting. **The guard's own ratchet then forbids the fix**,
+on the correct rule that a standing violation may never be deepened.
+
+**The rule. A band on a scalar summary of a pixel cannot arbitrate a change that
+moves the pixel's COMPOSITION.** Where a term is known to be one component of
+the measured scalar, the component must be measured beside the scalar (here
+`?propspec=0` splits `rho` into diffuse and specular in one extra arm) and the
+verdict given on both. A lane that reports only the scalar will refuse the right
+change or accept the wrong one, and neither failure leaves a trace.
+
+---
+
+### A NORMAL POINTING STRAIGHT UP IS ALSO "IN THE CARD'S PLANE", SO THE OBVIOUS COPLANARITY METRIC CALLS THE FIX A REGRESSION (found 2026-08-22 by RN-2590, lane N12)
+
+The defect is "the baked normal lies in its own card's plane", so the obvious
+instrument is the normal projected onto that plane's own normal, minimised over
+the vertices. It reads exactly 0.0000 at all 24 vertices on the pre-lane path,
+which is right.
+
+It is also 0.0000 for a normal pointing STRAIGHT UP, because a vertical card's
+plane contains the vertical axis. The fix that mattered most for the aerial
+poses was rolling the normal toward vertical, and under that metric it looks
+like no fix at all: `crownflank=12` reads `minAbsOutOfPlane` 0.0000 while
+raising the crown's unshaded diffuse ratio 23 per cent at noon and cutting the
+pose spread by more than half.
+
+**The rule. When a degeneracy is defined by a subspace, check whether the
+intended fix leaves that subspace at all, or merely moves within it to somewhere
+harmless.** Here both are wanted and they are separate terms, so the readback
+publishes TWO measures: the absolute projection, and the same projection on the
+normal's HORIZONTAL part alone, which isolates the azimuth spread from how far
+off vertical the vertex was put. A single number could not have scored either
+term without lying about the other.
+
+---
