@@ -110,6 +110,10 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // every crown rectangle needed a switch of its own.
     uniform float uApAmp;
     uniform float uApPaint;
+    // RN-2635. The biome-id paint arm's toggle (0 = shipped, exactly). See
+    // BiomeIdPaint.ts for why it reads its own debug palette rather than
+    // uBiomeColor.
+    uniform float uBiomeIdPaint;
     // RN-57. x water level (metres above datum), y shoreline radius m, z the
     // height in metres over which the wet band dries out, w amplitude.
     uniform vec4 uWetBand;
@@ -267,6 +271,9 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // darkened by different numbers. x = 0 is the exact pre-RN-2275 frame.
     uniform vec3 uCrownShade;
     varying vec3 vBiomeColor;
+    // RN-2635. The raw biome index, float-encoded (TerrainVertex.glsl.ts). Read
+    // only by the biome-id paint arm.
+    varying float vBiomeIdx;
     varying vec4 vMatW;
     varying vec4 vRelW;
     // RN-1257. The per-biome MATERIAL record, packed into two vec4 so the

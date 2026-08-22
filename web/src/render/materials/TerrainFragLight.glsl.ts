@@ -268,6 +268,28 @@ export const TERRAIN_FRAG_LIGHT = /* glsl */`
       // RN-2540. uApAmp at 1 makes this lit, exactly.
       lit = mix(apSrc, lit, uApAmp);
 
+      // RN-2635. THE BIOME-ID PAINT ARM. Replaces lit OUTRIGHT, after both
+      // aerial-perspective calls, so the debug colour is immune to the
+      // ~92 per cent additive floor RN-2540 measured at range (see
+      // BiomeIdPaint.ts for why that ordering is load-bearing). A fixed,
+      // maximally-saturated palette keyed on the raw classifier index --
+      // deliberately NOT vBiomeColor/uBiomeColor, which is the table under
+      // suspicion and would beg rank 3's own question. 0 (shipped) skips the
+      // branch entirely, so this arm cannot move a single existing pixel.
+      if (uBiomeIdPaint > 0.5) {
+        int bid = int(vBiomeIdx + 0.5);
+        if (bid == 0) lit = vec3(1.0, 0.0, 0.0);      // Ocean
+        else if (bid == 1) lit = vec3(0.0, 1.0, 0.0); // Beach
+        else if (bid == 2) lit = vec3(0.0, 0.0, 1.0); // Plains
+        else if (bid == 3) lit = vec3(1.0, 1.0, 0.0); // Forest
+        else if (bid == 4) lit = vec3(1.0, 0.0, 1.0); // Hills
+        else if (bid == 5) lit = vec3(0.0, 1.0, 1.0); // Mountains
+        else if (bid == 6) lit = vec3(1.0, 0.5, 0.0); // Polar
+        else if (bid == 7) lit = vec3(0.5, 0.0, 1.0); // Regolith
+        else if (bid == 8) lit = vec3(0.0, 0.5, 1.0); // MoonHighland
+        else lit = vec3(0.6, 0.6, 0.6);               // CraterFloor
+      }
+
       gl_FragColor = vec4(lit, 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>`;
