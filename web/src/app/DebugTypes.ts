@@ -15,6 +15,8 @@ import type { ObserverState } from '../player/ViewSource.js';
 import type { CameraMode } from '../player/ViewMode.js';
 import type { JitterStats } from '../render/debug/JitterProbe.js';
 import type { ZFightResult } from '../render/debug/ZFightProbe.js';
+import type { SaveSlot } from '../game/SaveGame.js';
+import type { RescueRestoreReport } from '../game/FactoryRescue.js';
 
 export interface WorldState {
   seed: string;
@@ -232,6 +234,19 @@ export interface OfDebugApi {
   forgetTunnels(): unknown;
   /** W7. The first-minute checklist, and the H key that hides it. */
   goals(show?: boolean): unknown;
+  /**
+   * BT-320 (R-RECOVER-1). The `of-rescue` store's reader: rescale copies
+   * (FS-79) and fieldgen copies of a cleared player world (PS-53). `list`/
+   * `read` are side-effect-free; `restore` writes the copy's bytes back into
+   * the slot its own key names and does so ONLY on this explicit call, never
+   * automatically. See `DebugRescue.ts`/`FactoryRescue.ts` for the full
+   * safety argument and persistence.md's R-RECOVER-1 for the record.
+   */
+  rescue: {
+    list(): Promise<string[]>;
+    read(key: string): Promise<SaveSlot | null>;
+    restore(key: string): Promise<RescueRestoreReport>;
+  };
 }
 
 export interface AimRay {

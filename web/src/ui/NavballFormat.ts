@@ -8,7 +8,24 @@ import { esc } from './GameHud.js';
 import { labelOf } from '../player/Bindings.js';
 import { dirOf, type Mark } from './NavballDraw.js';
 import type { BallMarker, NavballFullReadout } from './NavballTypes.js';
-import { SIZE } from './Navball.js';
+
+// BT-320 (R-DEV-1). SIZE LIVES HERE NOW, NOT IN Navball.ts, AND THAT IS THE
+// WHOLE FIX. It used to be the other way round (declared in Navball.ts,
+// imported back here to build SKELETON), which is a two-file cycle: Navball.ts
+// imports SKELETON etc. from this file, and this file imported SIZE from
+// Navball.ts. `vite build` resolves that cycle silently (Rollup's own
+// topological ordering happens to init SIZE before this file's top-level
+// SKELETON line reads it) but the unbundled dev server evaluates each module
+// in the order import statements are hit, depth-first: loading Navball.ts
+// pulls in this file BEFORE Navball.ts's own `const SIZE = 220` line has run,
+// so SKELETON's template literal read SIZE while it was still in the
+// temporal dead zone. Moving the constant to the file that actually needs it
+// AT MODULE-EVALUATION TIME (this one, for the SKELETON string) means nothing
+// here reaches back into Navball.ts at all; Navball.ts now imports SIZE
+// alongside SKELETON from this file, the same direction every other shared
+// name in this pair already flows.
+/** CSS pixels. The canvas backing store is this times the device ratio. */
+export const SIZE = 220;
 
 /** The static frame. Built once; render() only refills the marked regions. */
 export const SKELETON =
