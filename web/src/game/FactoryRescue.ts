@@ -19,10 +19,24 @@
 //
 // NOTHING READS IT AUTOMATICALLY, and that is deliberate too. An automatic
 // rollback is a second authority over "what is the world", and it would fire on
-// the load AFTER a migration the player was perfectly happy with. The copy is
-// recovered by an explicit call, `restoreRescue`, which the probe drives and
-// which is reachable from the console; the key is printed to the console and
-// carried on the factory report so it can never be a copy nobody can find.
+// the load AFTER a migration the player was perfectly happy with.
+//
+// AND NOTHING PUTS ONE BACK EITHER, WHICH THIS COMMENT USED TO DENY (PS-56,
+// corrected 2026-08-21, R-RECOVER-1). It said the copy "is recovered by an
+// explicit call, `restoreRescue`, which the probe drives and which is reachable
+// from the console". There is no `restoreRescue` anywhere in the repo;
+// `listRescue` and `readRescue` below have ZERO callers in `src` or `tools`;
+// no debug verb exposes them, so nothing here is reachable from the console;
+// and what `rescale.js` actually drives is its own hand-rolled IndexedDB open,
+// not a call into this file. What IS true is the finding half: the key is
+// printed to the console and carried on the factory report, so a copy can be
+// FOUND. Putting it back is a devtools job today.
+//
+// This mattered enough to correct rather than route, because PS-53 now writes
+// copies into this store on a field-generation clear and PS-54's decision to
+// clear a world leans on them, so a sentence in the recovery file claiming a
+// recovery path that does not exist is load-bearing and false. Nothing prunes
+// the store either. See persistence.md's R-RECOVER-1.
 
 import { needsRescale } from './FactoryRescale.js';
 import type { SaveSlot } from './SaveGame.js';

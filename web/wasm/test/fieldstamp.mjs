@@ -72,6 +72,27 @@ console.log('===== §1 the instrument: the stamp moves with the field and with n
   const flat = () => 0;
   const tilt = (x, y, z) => 1000 * x + 2000 * y - 500 * z;
   const a = fieldStampFrom(tilt);
+  // V-STAMP-1, THE MERGE CONDITION, and it closes this lane's own argument
+  // against itself. `FieldStamp.ts` opens by saying a list kept by human memory
+  // is the next WG-275, and then declares "THE SAMPLE SET IS FIXED FOREVER AND
+  // MUST NOT BE TIDIED" with nothing but that sentence holding it. A
+  // fresh-context verifier swapped the `i`/`j` loops in `sampleDirs` (the SAME
+  // 216 directions in a different ORDER) and separately moved QUANTUM from 64
+  // to 128; both moved the shipped Forge stamp off 561307605, which would clear
+  // the body-scoped half of every world in existence on the next boot, and BOTH
+  // LEFT THIS FILE GREEN AT 31 OF 31, `npm run check` at 9 of 9, and the driven
+  // probe valid.
+  //
+  // THE PIN IS THE SYNTHETIC STAMP AND NOT THE PLANET'S, which is what makes it
+  // the right guard rather than an annoyance: `tilt` is a fixed arithmetic
+  // function of the sample directions, so this number is machine-independent
+  // and PLANET-INDEPENDENT. A legitimate height-field change (the next WG-275)
+  // never touches it, and it is exactly what SHOULD go red for a change to the
+  // directions, their order, the count, the quantum, the hash or the epoch.
+  ok(a === 4074048012,
+    'THE SAMPLE SET IS UNCHANGED: the pinned synthetic stamp. If this is red, '
+    + 'every body-scoped world in existence is about to be cleared. Change it '
+    + 'only with a FIELD_EPOCH-grade argument.', `${a}`);
   ok(fieldStampFrom(tilt) === a, 'the same field stamps the same twice', `${a}`);
   ok(fieldStampFrom(flat) !== a, 'a different field stamps differently');
   // Below the quantum: a rebuild that reassociates arithmetic must not
@@ -129,6 +150,19 @@ let liveForge = 0, preForge = 0;
     `${moved} samples moved`);
   ok(liveForge !== preForge, 'THE PLANET: the pre-swell field stamps differently',
     `live ${liveForge} vs pre-swell ${preForge}`);
+  // THE SECOND PIN, AND IT IS A DIFFERENT KIND OF THING FROM §1's. §1's
+  // synthetic pin is an INVARIANT: it must never change, because only the
+  // mechanism can move it. This one is a NOTIFICATION: it is the shipped
+  // planet's own stamp, so a legitimate height-field change moves it, and the
+  // lane that does that is supposed to see this go red and read the sentence.
+  // The correct response is to update the number IN THE SAME COMMIT as the
+  // field change, knowing it clears the body-scoped half of every world; the
+  // incorrect response is to update it because it was red.
+  ok(liveForge === 561307605,
+    'THE SHIPPED PLANET still stamps what it stamped at PS-53. Red here means '
+    + 'the height field has MOVED: every body-scoped world will be cleared on '
+    + 'the next boot, which may be exactly right, and this number is updated '
+    + 'in the same commit as the change and never on its own.', `${liveForge}`);
   ok(fieldStampFor(M, M._of_body_create_forge(SEED_LO, SEED_HI)) === liveForge,
     'a second handle on the same body stamps identically');
   // The other half of "not too wide": WG-275 is gated to the planet stack, so a

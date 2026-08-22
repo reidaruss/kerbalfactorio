@@ -67,7 +67,14 @@ import type { SaveSlot } from './SaveGameTypes.js';
  *
  * The sample set below is quasi-uniform over the whole body, so it sees any
  * change that moves the ground broadly and CANNOT see one confined to a patch
- * smaller than the sample spacing (about 72 km on Forge). The pad
+ * smaller than the COVERING RADIUS: about 117 km on Forge, measured over
+ * 200,000 random directions as the worst distance from a direction to its
+ * nearest sample. This said "about 72 km" until the fresh-context verifier
+ * measured it, and 72 km is half the naive sqrt(4*pi*R^2/216) spacing, which is
+ * wrong in the UNSAFE direction by between 1.6x and 3x: the blind spot is
+ * larger than the first draft claimed, not smaller. The argument survives the
+ * correction untouched, because the things it is about are four orders of
+ * magnitude below either number. The pad
  * (`homeFlatRadiusM` 300 m), the pond (tens of metres) and a move of `homeDir`
  * itself are all exactly that kind of change, and they are the ones a player's
  * base actually stands on. No uniform sample set reaches them: covering a 600 m
@@ -92,8 +99,9 @@ export const FIELD_EPOCH = 1;
 
 /**
  * Samples per cube-face axis. 6 faces x 6 x 6 = 216 directions, which costs
- * about 1.3 ms per save (measured, `wasm/test/fieldstamp.mjs` prints it) and is
- * paid once per 20 s autosave and once per load.
+ * about 0.6 ms per save (measured, `wasm/test/fieldstamp.mjs` prints it on every
+ * run and read 0.576 ms on the verifier's) and is paid once per 20 s autosave
+ * and once per load.
  *
  * The count is chosen against the SMALL-BIOME case rather than the cost case: a
  * term that moves only 5 per cent of the sphere is caught with probability
@@ -145,7 +153,10 @@ export const FIELD_SAMPLES = DIRS.length / 3;
  * sample sitting exactly on a quantum boundary, which needs a coincidence of
  * about 1e-11 per sample and is named here rather than pretended away. It is
  * still small enough that any real change to the field moves it: the WG-275
- * swell moves 45 of 54 probed samples by up to 120 m.
+ * swell moves 202 of the 216 samples, worst 208.023 m. (That read "45 of 54 by
+ * up to 120 m" until this was corrected: those are the numbers of a SAMPLE_K=3
+ * draft, left behind when the count went to 216, and a stale measurement beside
+ * a live constant is how a comment stops describing the code.)
  */
 const QUANTUM = 64;
 
