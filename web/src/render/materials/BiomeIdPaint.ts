@@ -30,6 +30,25 @@
 // committed rectangle when unused (verified in this lane's guard pass).
 //
 // RN-150-safe: a missing parameter is missing, never `Number(null) === 0`.
+//
+// A FAILURE MODE THIS ARM HAS AND A READER MUST KNOW, found by the R5
+// verifier reviewing this lane's own "thin Plains sliver" claim (2026-08-22).
+// `vBiomeIdx` (TerrainVertex.glsl.ts) is an INTERPOLATED varying, exactly
+// like `vBiomeColor` beside it, and this file decodes it with `int(v+0.5)`
+// in the fragment. Interpolating between two ADJACENT indices (e.g. Ocean=0
+// to Beach=1) only ever passes through [0,1], which rounds to 0 or 1 and
+// never fabricates a third class. But interpolating between two indices that
+// are NOT adjacent (e.g. Beach=1 directly to Forest=3, with no Plains=2
+// vertex nearby) sweeps continuously through the WHOLE intervening range, and
+// at v in [1.5, 2.5) that rounds to 2 -- Plains -- with no Plains geometry
+// anywhere near it. **Every direct Beach/Forest interface therefore paints a
+// fake mid-index band, by construction, and no Ocean/Beach interface does**,
+// because Ocean and Beach are adjacent indices and Beach and Forest are not.
+// A band read off this arm at a class boundary is UNPROVEN until it is cross-
+// checked against a non-interpolated source (the shipped `vBiomeColor`
+// hue, a `?biomescale=`-style discrete readback, or simply narrowing the
+// window until the reading is flat rather than mid-transition); this arm is
+// reliable in the INTERIOR of a class and not at its edge.
 
 import type * as THREE from 'three';
 import { aerialDiagAmp } from './AerialDiag.js';

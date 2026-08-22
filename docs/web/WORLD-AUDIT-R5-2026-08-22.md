@@ -442,6 +442,17 @@ encode two different intentions about what a beach IS and a lane cannot pick.
 
 ### 3.3 RANK 3: THE DRY SEA IS A 14.63-COUNT CHROMA BOUNDARY AT CONSTANT LUMA, AND THAT IS WHAT READS AS WATER. **BLOCKING** · class (a)
 
+> **CORRECTION POINTER (section 11, item 10, 2026-08-22, lane N14 /
+> `lane/n14-drysea`, verified fresh-context, FIX):** the "Beach cream" window
+> this section names, x[1430,1480) at `forestair` row 372, was proven by a
+> biome-id paint arm to sample FOREST, not Beach. The TRUE Ocean/Beach warm
+> step at that row is **25.46 counts (14.23 to 39.69) at a 23.78-count LUMA
+> step**, not the 14.63 at "constant brightness" this section states below --
+> bigger, and not constant-brightness. The subject-proof discipline this
+> section's own draft brief demanded is exactly what caught the error before
+> a hex was touched. See section 11 item 10 for the full record and
+> `rendering.md` 2.41 / NUMBERS.md's RN-2635 row for the fix itself.
+
 **This is R4's rank 3 re-diagnosed.** Four audits have written "the world from
 the air reads as shallow tropical water with weed beds" and five lanes have been
 spent on crown colour. The frame still reads that way, and the reason is in the
@@ -969,6 +980,30 @@ props state.
 
 **9. All 61 em dashes in this document are replaced** with comma, colon,
 semicolon, period or parentheses, matching R1 through R4, which carry zero.
+
+**10. Rank 3's own "Beach cream" sample was Forest, and the true step is
+bigger, not smaller (2026-08-22, `lane/n14-drysea`, RN-2635, verified
+fresh-context, FIX).** The rank-3 brief this section issued (below, and its
+draft allocation row) demanded a subject proof before any hex moved, and the
+lane's biome-id paint arm (`?biomeid=1`, independent of the suspect
+`BiomePalette.ts` table) found this section's own cream window, x[1430,1480)
+at `forestair` row 372, samples FOREST, not Beach -- one class too far out.
+The TRUE class sequence at that row is Ocean (x<1290) -> Beach (x1300-1410)
+-> Forest (x>1440). Re-measured at the TRUE windows: the Ocean/Beach warm
+step is **25.46 counts (14.23 to 39.69) at a 23.78-count LUMA step**, not
+this section's own headline "14.63-count hue step at constant brightness":
+BIGGER, and NOT constant-brightness, because the window this section
+measured against was the wrong pair. This does not change rank 3's
+diagnosis (the plate is still dry Ocean painted a saturated blue inside a
+warm frame) or its BLOCKING class; it corrects the SIZE and SHAPE of the
+defect the next lane was handed. Full record: `rendering.md` 2.41,
+NUMBERS.md's RN-2635 row. **A citation note from the same verifier pass**:
+rule 4 (unused allocation numbers are abandoned, never reclaimed) and rule 5
+(an allocation recorded only in a brief is invisible to the next allocation,
+so the LANE records its own USED/SURRENDERED split at landing) are two
+different rules answering two different questions, and RN-2635's own
+NUMBERS.md row now cites both correctly and separately rather than treating
+either as covering the other's job.
 
 **Next lanes, ruled.** The first post-R5 lane is **RANK 3**, with the
 verifier's headline constraint carried verbatim: prove the subject before
