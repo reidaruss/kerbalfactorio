@@ -45,9 +45,29 @@
 // own `envMap` stops tracking that global, so a crown card in a cave would stay
 // lit by a sky it cannot see. The write below therefore multiplies the derived
 // factor BY the scene's own live `environmentIntensity`, so the crown follows
-// the cave ramp exactly as it did and the lane's change is a strict scaling of
-// what was there. `sceneIntensity` is published in the readback so the
-// composition can be checked rather than trusted.
+// the cave ramp as it did and the lane's change is a strict scaling of what was
+// there.
+//
+// **THAT COMPENSATION IS CORRECT BY READING AND IS NOT MEASURED, AND THE
+// DIFFERENCE MATTERS ENOUGH TO SAY SO** (a fresh-context verifier's point).
+// `sceneIntensity` reads exactly 1.0000 on every arm of every pose this project
+// owns, because **there is no cave pose**: `Headlamp`'s ramp is driven by an
+// occlusion the committed shot list never puts the observer under. So the
+// readback below proves the multiply HAPPENS and cannot prove it is RIGHT, and
+// the first frame that exercises it will be the first test of it. Two honest
+// limits go with that:
+//
+//  1. **IT LAGS BY ONE FRAME.** `updateCanopyCardShade` runs at `Systems.ts:352`
+//     and `headlamp.update` at `Systems.ts:373`, so the value read here is the
+//     PREVIOUS frame's. On a ramp that moves over a walk into a cave that is
+//     invisible; on a hard cut it would be one frame of a stale sky. Cheap to
+//     fix by moving the call below the headlamp, and deliberately not moved
+//     here, because reordering `Systems`'s update sequence is a change with a
+//     blast radius this lane cannot measure.
+//  2. **`rn2647untouched`'s OFF ARM DOES NOT COVER IT.** That probe's pair is
+//     `?crownenv=off` against the shipped default, which isolates the ENV half
+//     of this lane and says nothing about the card floor or about the cave
+//     ramp. It is a scope test, not a coverage test.
 //
 // ---------------------------------------------------------------------------
 // 2. THE SCALAR, DERIVED, AND IT IS THE SAME NUMBER `CROWN_SELF_FLOOR` GUESSED
@@ -61,13 +81,23 @@
 // along the sun ray. `tau = K * mu` is the same optical depth, from the same
 // two constants, through the same `residentCanopyMu()`.
 //
-//     Forest  mu 0.6918  tau 2.2138  skyView 0.2821
-//     Hills   mu 0.2996  tau 0.9587  skyView 0.5063
+//     Forest  mu 0.6881  tau 2.2019  skyView 0.2849   (forestair*, read live)
+//     Hills                          skyView 0.5068   (flyover*,   read live)
+//
+// **THOSE ARE READBACKS AND NOT CONSTANTS, and the first draft of this block got
+// them wrong by retyping** (a fresh-context verifier's catch). It quoted
+// 0.6918 / 2.2138 / 0.2821 and 0.5063, hand-computed off rendering.md 2.38.1's
+// published `mu`, against what this file itself computes. The correction is the
+// general point rather than the digits: `mu` is `residentCanopyMu()`, a
+// canopy-area-weighted mean over the RESIDENT chunk set, so it moves with what
+// has streamed in and these values wobble by about 0.15 per cent between runs of
+// the same build. **Read them off `treeline().crownEnv`; never retype them, and
+// never quote them to four decimals as though they were authored.**
 //
 // **`CROWN_SELF_FLOOR`'S OWN DERIVATION ALREADY NEEDED THIS NUMBER AND GUESSED
 // IT.** That block ends "a canopy interior does not see the whole sky, and half
 // of it is the honest reduction, so 0.08 is that share times a canopy sky-view
-// factor of about 0.55". The derived value at the Hills stand is 0.5063. The
+// factor of about 0.55". The derived value at the Hills stand is 0.507. The
 // guess was good; it is now a derivation, and it is used HERE on the term it is
 // literally about -- the sky -- rather than only inside an authored constant.
 //
@@ -109,9 +139,19 @@
 //                    change.
 //   `?crownenv=0`    installed, intensity 0. The DELETING control: it must move
 //                    the `crowns` rectangle, and by how much is the authority
-//                    ceiling of this whole handle.
+//                    ceiling of this handle.
 //   `?crownenv=`     absent: SHIPPED, the derived `crownSkyView(tau)`.
 //   `?crownenv=<x>`  any 0..4, for the sweep.
+//
+// **AND EVERY ONE OF THOSE ARMS ALSO CARRIES A CARD FLOOR, WHICH IS A SECOND
+// FLAG AND HAS TO BE WRITTEN DOWN OR THE ROW IS MISLABELLED.** `?crownenv=0`
+// alone is the environment deleted with the card floor at its SHIPPED 0.137;
+// `?crownenv=0&crowncardfloor=0.08` is the environment deleted with the card
+// floor at its PRE-LANE value, which is the arm that isolates this handle from
+// the other one; `?crownenv=0&crowncardfloor=0` is both handles at their floor
+// and is the JOINT ceiling. Those are three different frames and a fresh-context
+// verifier found rendering.md quoting one of them under the label of another.
+// Any table that names one flag when two moved is wrong.
 //
 // The scope is one material and it is published rather than asserted:
 // `treeline().crownEnv.materials` reads `["props:OF_Canopy:canopy"]` and

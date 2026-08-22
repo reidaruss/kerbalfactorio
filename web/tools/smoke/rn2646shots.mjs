@@ -23,6 +23,11 @@
 //   node tools/smoke/rn2646shots.mjs --url=http://127.0.0.1:5645/ --cost=3
 //   node tools/smoke/rn2646shots.mjs --url=... --out=../build/rn2646
 //
+// `--out=` is resolved relative to THIS FILE and **must stay inside the repo**:
+// `run.mjs` refuses an `--out` outside it, so a path that escapes fails at the
+// first frame rather than writing somewhere surprising. `web/build/` and
+// `web/tools/build/` are both gitignored and are the right scratch targets.
+//
 // EVERY FLAG NEEDS AN `=`; the parser splits on the first one.
 
 import { spawnSync } from 'node:child_process';

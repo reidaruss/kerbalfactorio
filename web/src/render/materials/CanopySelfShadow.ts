@@ -405,7 +405,10 @@ export const CROWN_SELF_AMP = 1;
  * `CrownEnv.ts`. Giving `OF_Canopy` its own `envMap` takes it out of
  * `WebGLRenderer.js:2694-2696`'s overwrite branch, after which
  * `material.envMapIntensity` survives to the draw and carries a derived
- * sky-view factor. Deleting the crown's environment outright moves the `crowns`
+ * sky-view factor. Deleting the crown's environment outright
+ * (`?crownenv=0&crowncardfloor=0.08`, i.e. this constant's own pre-RN-2645 card
+ * floor held while only the environment moves -- the label matters and an
+ * earlier draft of this line dropped the second flag) moves the `crowns`
  * rectangle's `rho` from 0.5031 to 0.3601 at `flyovernoon` and from 0.1906 to
  * 0.1366 at `forestairnoon`, so the term the sweep called absent is between a
  * quarter and a third of the pixel and 2.38.4's PMREM reading is confirmed a
