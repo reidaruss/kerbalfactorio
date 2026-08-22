@@ -12308,6 +12308,8 @@ width `forestair`'s own bands use (x [0.20, 0.80]), avoiding the frame edges.
 
 ### 2.37.5 PROOF (a): THE POSE RENDERS DETERMINISTICALLY
 
+> **REFERENCE MOVED (Admin, at the WG-285 merge, 2026-08-22):** the beach-canopy fix crosses this pose's band rect in its top ~0.55 rows, so `box` luma moves **83.00 to 82.91** on merged main (`ctrl690` bit-identical; the `?beachcanopy=0` arm reproduces 83.00 exactly). 82.91 is the current baseline.
+
 Three fresh processes (fresh headless page load each), one owned, sentinel-verified `vite preview` on `127.0.0.1:5975 --strictPort`, shipped
 flags (no paint):
 

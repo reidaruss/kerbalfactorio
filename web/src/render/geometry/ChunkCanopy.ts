@@ -84,7 +84,7 @@ const CROWN_AREA_M2: Readonly<Record<string, number>> = {
  * term with it. The failure mode a copied table has here is the specific one
  * NUMBERS.md calls "a constant copied from the thing it watches".
  */
-export const BIOME_CANOPY_MU: readonly number[] = BIOME_PROPS.map((specs) => {
+function muOf(specs: readonly { canopy?: boolean; stem: string; density: number }[]): number {
   let sum = 0;
   for (const s of specs) {
     if (s.canopy !== true) continue;
@@ -93,7 +93,25 @@ export const BIOME_CANOPY_MU: readonly number[] = BIOME_PROPS.map((specs) => {
     sum += s.density * a;
   }
   return sum / 1e6;
-});
+}
+
+const MU_MUT: number[] = BIOME_PROPS.map(muOf);
+export const BIOME_CANOPY_MU: readonly number[] = MU_MUT;
+
+/**
+ * WG-287. RE-DERIVE the index from the tables as they stand NOW, in place.
+ *
+ * The array above is built at IMPORT time, and `Registry.setBeachCanopy` /
+ * `setForestDetail` rewrite their rows at BOOT time from a query flag. Without
+ * this the boot flag would move the instance scatter and leave the terrain
+ * material's canopy index reading the other table -- the two halves of one
+ * forest disagreeing, which is exactly what `ChunkCanopy`'s header says this
+ * attribute exists to prevent. In place rather than by reassignment because
+ * every importer holds the array itself.
+ */
+export function refreshCanopyMu(): void {
+  for (let i = 0; i < MU_MUT.length; ++i) MU_MUT[i] = muOf(BIOME_PROPS[i]);
+}
 
 /** True for any biome that places canopy trees at all. */
 export const ANY_CANOPY_MU = BIOME_CANOPY_MU.some((m) => m > 0);

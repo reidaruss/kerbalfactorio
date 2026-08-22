@@ -509,6 +509,11 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // exactly as before; `forestdetail=0` puts Forest's understorey back on the
   // shared GROUND_DETAIL meadow mix. One binary, one flag each.
   'spires', 'forestdetail',
+  // WG-286, standing rule 7. `beachcanopy=0` puts the Beach biome back on the
+  // EMPTY canopy table it shipped with, so `BIOME_CANOPY_MU[1]` is 0 again and
+  // the far treeline's outer gate refuses across the coastal flat exactly as
+  // it did when that band was 12.15 per cent of `forestair`'s terrain pixels.
+  'beachcanopy',
   // RN-97, standing rule 7. `wind=0` removes the foliage wind hook entirely,
   // so the program set is stock and the build is the static one (the negative
   // control); `windamp=` sweeps the amplitude in place, and `windamp=0` keeps

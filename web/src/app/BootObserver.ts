@@ -16,8 +16,9 @@ import { PropLibrary } from '../render/instancing/PropLibrary.js';
 import { CANOPY_LOD3_M } from '../world/ScatterTuning.js';
 import { JitterProbe } from '../render/debug/JitterProbe.js';
 import { ZFightProbe } from '../render/debug/ZFightProbe.js';
-import { BIOME_ATLAS, SHARED_ATLAS, CANOPY_ATLAS, setForestDetail }
+import { BIOME_ATLAS, SHARED_ATLAS, CANOPY_ATLAS, setForestDetail, setBeachCanopy }
   from '../assets/Registry.js';
+import { refreshCanopyMu } from '../render/geometry/ChunkCanopy.js';
 import { setSpires } from '../game/NodeArt.js';
 import { registerPool } from '../game/InstancePools.js';
 import { FloatingOrigin } from '../world/FloatingOrigin.js';
@@ -134,6 +135,12 @@ export async function phaseWorldPrep(s: WorldPrepIn): Promise<WorldPrepOut> {
   // control that changes nothing and reports success. See `Registry
   // .setForestDetail` and `NodeArt.setSpires` for what each flag restores.
   setForestDetail(cfg.forestDetail);
+  // WG-286/WG-287, and the refresh is the load-bearing half: `BIOME_CANOPY_MU` is
+  // derived from these tables at IMPORT time, so a boot flag that rewrites a
+  // row without re-deriving it would move the instance scatter and leave the
+  // terrain material's canopy index reading the pre-flag table.
+  setBeachCanopy(cfg.beachCanopy);
+  refreshCanopyMu();
   setSpires(cfg.spires);
   const canopy = cfg.canopyRadiusM > 0 ? [...CANOPY_ATLAS] : [];
   const atlases = cfg.props
