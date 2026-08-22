@@ -790,6 +790,170 @@ export const CANOPY_MAX_RADIUS_M = 5200;
  *  See `Scatter.canopyStepOf` for the trade this number is. */
 export const CANOPY_BANDS = 8;
 
+// ===========================================================================
+// WG-295 to WG-300. THE COARSE TAIL: placed structure past the cover reach,
+// at CONSTANT SCREEN DENSITY and CONSTANT SCREEN SIZE.
+//
+// R5 rank 1 measured the thing this tier exists for and nobody had measured it
+// before: at `flyover` the instance tier's own `reachM` readback is 3,500 m
+// against a `sqrt(2Rh)` horizon of 37,947 m, so **placed structure occupies
+// 9.2 per cent of the visible ground depth** and the centre-column ladder
+// finds the edge of it as a -43 count cliff over ten rows. The cliff is at the
+// reach, to the row: row 535 inverts to 3,427 m and `reachM` reads 3,500.
+//
+// THE ATTRIBUTION THIS BLOCK IS BUILT ON, and it separates two findings the
+// audit reported together. `MAX_PER_CHUNK` truncation is real (`chunksCapped`
+// 4 at `forestair`) and it is NOT what ends the forest: a cap makes a chunk
+// sparse, it cannot move the range at which the tier stops offering cells.
+// The cliff is 100 per cent the reach ladder. The cap is a separate defect,
+// answered by `ScatterCap.ts` in the same lane and measured apart.
+// ===========================================================================
+
+/**
+ * WG-295. HOW MUCH FURTHER THE COARSE TAIL RUNS THAN THE COVER REACH, as a
+ * multiple, and why a multiple rather than a radius of its own.
+ *
+ * `canopyReachM` is already the budget-derived, altitude-aware answer to "how
+ * far is it worth materialising one instance per tree". Everything past it is
+ * a DIFFERENT question, because past it one instance stops being able to be a
+ * tree at all: at 3,500 m a card grown by `CANOPY_FAR_GROW` is 6.9 pixels
+ * tall (WG-225's own arithmetic) and what the eye is reading is a stipple of
+ * canopy blobs, not a stand. So the tail is sized in the units the eye is
+ * actually using out there, and both of them are SCREEN units:
+ *
+ *   * **Constant screen SIZE.** A card's angular height is `H g^-1` times its
+ *     growth, so holding it constant means growth PROPORTIONAL TO g. That is
+ *     `canopyTailGrow` below, and it is continuous with `canopyFarGrow` at the
+ *     join by construction rather than by tuning.
+ *   * **Constant screen DENSITY.** From an eye at height h, ground at range g
+ *     subtends solid angle `dOmega = dA h / g^3`, so instances per steradian
+ *     is `density * g^3 / h`. Holding THAT constant means density
+ *     proportional to `g^-3`. That is `canopyTailWeight`.
+ *
+ * Those two together are the whole design, and the cost consequence is the
+ * reason it is affordable at all. The instance count in the tail is
+ *
+ *     N = 2 pi D INTEGRAL(r0..R) g * EDGE_W * (r0/g)^3 dg
+ *       = 2 pi D EDGE_W r0^2 (1 - r0/R)
+ *
+ * which **CONVERGES**: the entire infinite tail costs `EDGE_W * r0^2` against
+ * the 690-to-r0 band's own `INTEGRAL g w dg`, i.e. about **68 per cent of the
+ * band it is added to, at ANY reach**. Compare the obvious alternative, which
+ * this lane priced and refused: simply renormalising `canopyDistanceWeight`'s
+ * linear fade onto a longer reach costs **2.11x** at 5,100 m and **1.90x**
+ * even with an economy tail spliced onto it, because the linear fade lifts the
+ * weight over the WHOLE existing band on its way to the new edge. A cost that
+ * grows without bound in R is not a tail, it is a bigger ring.
+ *
+ * 1.457 is `5100 / 3500`, and 5,100 rather than a rounder number is
+ * `CANOPY_MAX_RADIUS_M`'s own ceiling minus a margin: `CANOPY_MAX_CELL_M` 128
+ * admits depth 8 and no coarser, depth 7 takes over past 5,259 m of EYE
+ * distance, and at the flyover's 1,200 m that is 5,120 m of ground. **The
+ * shipped tail therefore admits not one chunk depth that was not already
+ * admitted**, which is what makes it a pure economy change rather than a
+ * change to what the sampler will stand on. `?canopytail=` sweeps it and
+ * `?canopytail=1` is the structural off (the branch is never entered).
+ */
+export const CANOPY_TAIL_MULT = 1.457;
+
+/**
+ * WG-295. The tail's own reach in metres of GROUND, or 0 when there is no
+ * tail, and the two bounds are both derived rather than picked.
+ *
+ * **THE HORIZON IS WHAT SWITCHES IT OFF FOR A STANDING EYE, and that is the
+ * whole of the altitude rule.** WG-224 already measured what a ground pose
+ * gets for a longer canopy reach and the answer was a quarter of a luma count
+ * for 1.9 ms; its explanation is `CANOPY_REACH_PER_ALT`'s, that from a low eye
+ * the extra kilometre is a sliver at the horizon. Taken literally that is a
+ * BOUND and not an argument: a standing eye at 1.62 m has a horizon of
+ * `sqrt(2 R h)` = 1,394 m, which is INSIDE `CANOPY_GROUND_REACH_M` (1,400), so
+ * a tail beyond the cover reach would be placed entirely on ground that eye
+ * cannot see. Every walking pose is therefore bit-identical **by
+ * construction** rather than by measurement, and no second altitude constant
+ * has to be invented and later re-derived.
+ *
+ * The second bound is `CANOPY_BANDS`. A tail shorter than one rebuild step is
+ * a population that appears and vanishes on a single chunk rebuild, which is
+ * the pop `midTargetWeight`'s whole derivation is about; below that width the
+ * tier is refused outright rather than shipped as a flicker.
+ *
+ * What it gives at the two aerial poses, both of which are in the R5 ladder:
+ * `flyover` (1,200 m, cover reach 3,500) gets **5,100 m**, 13.4 per cent of
+ * its 37,947 m horizon against 9.2; `forestaircanopy` (60 m, cover reach
+ * 1,400, horizon 8,485) gets **2,040 m**, 24.0 per cent against 16.5.
+ */
+export function canopyTailReachM(
+  coverReachM: number, altM: number, bodyRadiusM: number,
+  mult: number = CANOPY_TAIL_MULT,
+): number {
+  if (!(mult > 1) || !(coverReachM > 0) || !(bodyRadiusM > 0)) return 0;
+  const horizonM = Math.sqrt(2 * bodyRadiusM * Math.max(0, altM));
+  const want = Math.min(coverReachM * mult, horizonM);
+  return want - coverReachM >= coverReachM / CANOPY_BANDS ? want : 0;
+}
+
+/**
+ * WG-295. The tail's density weight at ground range `g`, normalised so it is
+ * CONTINUOUS with `canopyDistanceWeight` at the cover reach.
+ *
+ * `CANOPY_EDGE_W` is the weight the look fade lands on at the reach, and this
+ * function starts there and falls as `g^-3`. That is not a second edge value
+ * to keep in step with the first: it IS the first, read at the range the fade
+ * ends, so the two cannot drift apart.
+ *
+ * **`canopyDistanceWeight` IS UNTOUCHED AND THAT IS LOAD-BEARING, NOT TIDY.**
+ * `TerrainTreeline.assertTreelineMatchesScatter` mirrors that function in
+ * GLSL, calls the live one at module load over `reach` in {1400, 2000, 3500,
+ * 5200} and THROWS on any disagreement; RN-2233's shadow theorem and the
+ * Beer-Lambert complement in `ofTreeCover` both stand on it as well. Splicing
+ * the tail into it would have moved the published handover, which is
+ * RN-2660's subject in the same week and not this lane's file.
+ *
+ * **THE HANDOVER ASSUMPTION THIS LANE STATES, so the second lane to merge can
+ * re-measure it.** The material's reach stays the COVER reach and its paint
+ * past that range is unchanged, so the tail places silhouettes on ground the
+ * far paint already colours. That is deliberate and it is priced against R5's
+ * own measurement rather than assumed away: over 3.4 to 15.5 km `?treeline=0`
+ * moves the centre column by under one count outside a three-row ring, the
+ * shipped arm's own iqr never exceeds 3.9 counts across rows 329-509, and at
+ * row 539 the paint is locally DESTRUCTIVE of contrast. The paint out there
+ * carries colour and no structure; this tier carries structure onto colour.
+ * The overlap in COVER terms is `CANOPY_EDGE_W` at the join and decays as
+ * `1/g` (density `g^-3` times crown area `g^2`), so it is largest exactly
+ * where the handover already absorbs a step of that size. `?canopytail=1`
+ * removes the tier if RN-2660 makes the paint carry structure of its own.
+ */
+export function canopyTailWeight(g: number, coverReachM: number): number {
+  if (!(coverReachM > 0) || g < coverReachM) return 0;
+  const r = coverReachM / g;
+  return CANOPY_EDGE_W * r * r * r;
+}
+
+/**
+ * WG-295. The tail card's size multiplier: `canopyFarGrow` at the join,
+ * proportional to `g` beyond it, so the card's ANGULAR size is constant.
+ *
+ * At `flyover` that is a 31 m card at 3,500 m and a 45 m card at 5,100 m, both
+ * **6.9 pixels tall** at the shipped 1600x900 / 60 degree frame. WG-225's
+ * argument for a card standing for nine trees applies unchanged and is only
+ * stronger here: every instance in this band is already an impostor with no
+ * crown geometry to lose, and it is further away than the range at which that
+ * argument was made.
+ *
+ * It is a function of the GROUND the tree stands on and of the pose's own
+ * cover reach, which is `CANOPY_FAR_GROW`'s stated rule with one honest
+ * difference: the cover reach IS observer-dependent, so unlike the near ramp
+ * this term is not a pure function of position. It cannot be otherwise -- the
+ * tail's whole existence is observer-dependent, the same way
+ * `canopyDistanceWeight` is and `canopyWeight` is not -- and the tail is
+ * confined to ranges at which a chunk is rebuilt long before a card's size
+ * change is resolvable.
+ */
+export function canopyTailGrow(g: number, coverReachM: number): number {
+  if (!(coverReachM > 0)) return 1;
+  return canopyFarGrow(coverReachM) * (g / coverReachM);
+}
+
 /**
  * Canopy weight from a cell's GROUND distance to the eye: the near ramp that
  * hands over from the harvest ring, and the outer gradient that hides the far

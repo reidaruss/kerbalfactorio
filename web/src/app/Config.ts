@@ -11,6 +11,9 @@
 
 import { parsePost } from '../render/post/PostConfig.js';
 import { TREE_RADIUS_M } from '../game/TreeTuning.js';
+import {
+  CANOPY_MAX_CELL_M, CANOPY_TAIL_MULT, MAX_CELL_M,
+} from '../world/ScatterTuning.js';
 import { CANOPY_FAR_RADIUS_M, CANOPY_MAX_RADIUS_M }
   from '../world/ScatterTuning.js';
 import {
@@ -291,6 +294,21 @@ export function parseConfig(search: string): Config {
     // `detailWeight`'s gradient. `?midhole=0` alone leaves this on, which is
     // what makes the pair separable; the record quotes both arms.
     midEdge: p.get('midedge') !== '0',
+    // WG-295. THE COARSE TAIL. A multiple of the cover reach, defaulted to the
+    // shipped `CANOPY_TAIL_MULT` and clamped at 1 from below so
+    // `?canopytail=0` and `?canopytail=1` are the same structural off rather
+    // than one of them being a negative radius nothing checks. No upper clamp
+    // here: `canopyTailReachM` is already bounded by the eye's own horizon and
+    // `Scatter.build` still refuses any chunk coarser than `canopyMaxCellM`,
+    // so a value too big buys nothing and cannot reach a chunk it should not.
+    canopyTailMult: Math.max(1, num(p, 'canopytail', CANOPY_TAIL_MULT)),
+    // WG-301. Default ON: raster-order truncation of a 3.7 km chunk is a
+    // defect, not a feature, and `?capfair=0` is the before picture.
+    capFair: p.get('capfair') !== '0',
+    // WG-295. RN-2230's cell limit, sweepable. Floored at `MAX_CELL_M` so the
+    // canopy branch can never be made STRICTER than the ground tiers it is
+    // supposed to outlive, which would be a silently different defect.
+    canopyMaxCellM: Math.max(MAX_CELL_M, num(p, 'canopymaxcell', CANOPY_MAX_CELL_M)),
     rocks: p.get('rocks') !== '0',
     station: p.get('station') !== '0',
     rockDensity: Math.max(0, num(p, 'rockdensity', 1)),

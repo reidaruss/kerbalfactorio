@@ -24,6 +24,30 @@ export class ScatterCounters {
   groundM2 = 0;
   /** Chunks whose draw was TRUNCATED by MAX_PER_CHUNK. Must stay 0 near. */
   chunksCapped = 0;
+  /**
+   * WG-301. THE SECOND INSTRUMENT FOR THE CAP, because the first one cannot
+   * see what it does.
+   *
+   * `chunksCapped` says a chunk stopped early and `canopyDelivered` says
+   * nothing at all: the ask is accumulated INSIDE the loop the cap exits, so
+   * both sides of that ratio are truncated together and it reads **1.0008 at
+   * `flyover` in the same report that prints `chunksCapped: 1`**. What was
+   * missing is the SIZE of the hole, and the honest form of it is a pair: the
+   * cells the loop never reached, over the cells the resident chunks offered.
+   *
+   * Both are residency totals in matched `-=`/`+=` pairs like every other
+   * number in this class, so the fraction is a property of the resident set
+   * rather than of the run. `capScaleMin` is the one exception and is labelled
+   * as such: it is the smallest density scale `ScatterCap.canopyCapScale` has
+   * handed out since this scatter was constructed, i.e. a low-water mark and
+   * not a residency total, because the scale is a build-time decision and
+   * nothing remembers it per chunk. 1.0 means no chunk was ever thinned, which
+   * is what separates "no chunk could be capped" from "every capped chunk was
+   * thinned instead of truncated".
+   */
+  capCells = 0;
+  capOfferCells = 0;
+  capScaleMin = 1;
   /** Cells refused for water since boot (DW-28). See WET_REJECT_M. */
   wetCells = 0;
   /** Chunks waiting on the per-update sampling budget. Should settle to 0. */
@@ -146,6 +170,14 @@ export interface ScatterStats {
   chunks: number; buildMs: number; propsPlaced: number; cellsScattered: number;
   groundM2: number; placedPerM2: number; wantedPerM2: number;
   deliveredFraction: number; cellsCapped: number; chunksCapped: number;
+  /** WG-301. The cap's SIZE, which `chunksCapped` cannot say. See the
+   *  counters. `capFair: false` IS the `?capfair=0` control (rule 7). */
+  capCells: number; capOfferCells: number; capCellFrac: number;
+  capScaleMin: number; capFair: boolean;
+  /** WG-295. Where the coarse tail stops, metres of ground, 0 for no tail.
+   *  Read beside `canopyRadiusM` and the material's own reach: the three
+   *  together are the reach ladder this lane is judged on. */
+  canopyTailM: number;
   scatterBacklog: number; chunksRefused: number;
   fairQuantise: boolean; wetCells: number;
   canopyRadiusM: number; canopyShade: boolean; canopyProps: number;
@@ -172,6 +204,10 @@ export interface ScatterStatsDeps {
   /** WG-260. `?midhole=0` and `?midedge=0`. */
   readonly mid: boolean;
   readonly midEdge: boolean;
+  /** WG-301. `?capfair=0` restores the raster-order first-N truncation. */
+  readonly capFair: boolean;
+  /** WG-295. This frame's realised tail reach, metres of ground, or 0. */
+  readonly canopyTailM: number;
 }
 
   /**
@@ -197,6 +233,16 @@ export function scatterStats(c: ScatterCounters, d: ScatterStatsDeps): ScatterSt
       ? Math.round((c.propsPlaced / c.wantedProps) * 1e4) / 1e4 : 0,
     cellsCapped: d.cellsCapped,
     chunksCapped: c.chunksCapped,
+    // WG-301. The pair, and the fraction it makes. Reported beside
+    // `chunksCapped` rather than instead of it: the count says WHETHER and
+    // this says HOW MUCH, and R5 rank 1 was briefed with only the first.
+    capCells: c.capCells,
+    capOfferCells: c.capOfferCells,
+    capCellFrac: c.capOfferCells > 0
+      ? Math.round((c.capCells / c.capOfferCells) * 1e4) / 1e4 : 0,
+    capScaleMin: Math.round(c.capScaleMin * 1e4) / 1e4,
+    capFair: d.capFair,
+    canopyTailM: Math.round(d.canopyTailM * 10) / 10,
     scatterBacklog: c.backlog,
     chunksRefused: c.chunksRefused,
     fairQuantise: d.fair,

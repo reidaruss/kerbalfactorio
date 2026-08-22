@@ -54,6 +54,10 @@ export interface Placed {
   midProps: number;
   midWanted: number;
   midCards: number;
+  /** WG-301. Cells this chunk's loop never reached, and cells it offered, so
+   *  the residency totals can be undone in `drop` like every other pair. */
+  capCells: number;
+  capOfferCells: number;
 }
 
 /** A biome with no understorey draws from this rather than from a null check. */
