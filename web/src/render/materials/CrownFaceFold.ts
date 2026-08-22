@@ -90,11 +90,22 @@
 // close (2.64x against 2.77x) and `UNNEGATE` is the one that carries
 // `forestairnoon` INTO the band (0.1906 against 0.1692 and a floor of 0.18).
 // It also runs a consistently HIGHER specular share at all four poses
-// (+0.023 to +0.033), which is the honest cost and is recorded in
-// rendering.md 2.40.4 rather than buried: `UNNEGATE` lowers `N . V`, Fresnel
-// rises, and the crown's known "too specular, too blue" defect is fed by it.
-// The diffuse evidence outweighs it because the diffuse is the half of `rho`
-// the band wants and the specular has its own routed lane with its own handle.
+// (+0.023 to +0.033), which is the honest cost, and the MECHANISM is worth
+// stating rather than only the share, because it is not a small difference of
+// degree. On a back face the card's authored normal points away from the eye by
+// construction, so `UNNEGATE` puts the shading normal at EXACTLY 90 degrees to
+// the view over the whole back half of the stand: `dotNV` is pinned at zero,
+// which is the grazing ENDPOINT of both the split-sum DFG table
+// (`texture2D(dfgLUT, vec2(roughness, dotNV))`, sampled at its edge) and the
+// IBL reflect direction. Fresnel is at its maximum there and the reflected
+// vector lies in the card's plane. `UPFOLD` instead gives that half a positive
+// `dotNV`. So the shipped arm's extra specular is not "a bit more sky", it is
+// the whole back half sitting on the grazing edge of the BRDF, and the crown's
+// known "too specular, too blue" defect is fed by it. The diffuse evidence
+// outweighs it because the diffuse is the half of `rho` the band wants and the
+// specular has its own routed lane with its own live handle, and because the
+// same pinning is what makes the diffuse view-independent: the two are one
+// property read twice. Recorded in rendering.md 2.40.4 rather than buried.
 //
 // **AND `UNNEGATE` IS THE CANDIDATE 2.39.12 ITEM 1 ALREADY CALLED THE EXACT
 // ONE.** Its two routed fixes were an `abs()` in the shader ("one line") and
@@ -158,7 +169,10 @@
 // negation), so on the shipped path the varying is carried for the `UPFOLD`
 // arm's sake. It is kept rather than deleted because a refused candidate with
 // no reachable arm cannot be re-judged by the next lane, and because a `vec3`
-// varying is affordable here: WebGL2 gives 16 vectors and this program spends
+// varying is affordable here: the GLES 3.0 floor is 15 vectors (16 was an
+// earlier draft's number and is wrong; `MAX_VARYING_VECTORS` is guaranteed 15
+// in WebGL2 and is often higher in practice, but the FLOOR is what a budget is
+// against) and this program spends
 // `vViewPosition`, `vNormal`, one UV set, `vColor` and three cascade shadow
 // coordinates. That is a real resource cost and it is stated rather than
 // assumed away.
@@ -236,9 +250,24 @@ const F_NORMAL = '#include <normal_fragment_begin>';
  */
 const V_MARK = 'OF_CROWNFACE_V';
 const F_MARK = 'OF_CROWNFACE_F';
+/**
+ * AND TWO MORE, FOR THE DECLARATIONS, because the first fix only closed the
+ * trap in one direction (found by the same reviewer, second pass).
+ *
+ * The declaration checks originally looked for `vOfCrownUp` and `uCrownFace`.
+ * Both names ALSO appear in the term bodies (`V_TERM` writes the varying,
+ * `F_TERM` reads the uniform twice), so a lost `#include <common>` anchor with
+ * an intact term anchor would have passed both. That is exactly the masking
+ * this file catalogued as a trap, running the other way: **a check must match a
+ * token that only ONE spliced block emits, in both directions.** Four blocks,
+ * four tokens, four checks that each fail alone.
+ */
+const V_DECL_MARK = 'OF_CROWNFACE_DV';
+const F_DECL_MARK = 'OF_CROWNFACE_DF';
 
 /** The instance's own up, in VIEW space, which is the space `normal` is in. */
 const V_DECL = /* glsl */`
+// ${V_DECL_MARK}
 varying vec3 vOfCrownUp;
 `;
 
@@ -255,6 +284,7 @@ const V_TERM = /* glsl */`
 `;
 
 const F_DECL = /* glsl */`
+// ${F_DECL_MARK}
 varying vec3 vOfCrownUp;
 uniform float uCrownFace;
 `;
@@ -353,12 +383,14 @@ export function injectCrownFaceFold(shader: Splicable): void {
   shader.fragmentShader = shader.fragmentShader
     .replace(V_COMMON, `${V_COMMON}\n${F_DECL}`)
     .replace(F_NORMAL, `${F_NORMAL}\n${F_TERM}`);
-  // FOUR CHECKS, EACH ISOLATING ONE ANCHOR. The declaration tests look for the
-  // varying, which only `V_DECL`/`F_DECL` emit; the term tests look for the
-  // sentinel tokens, which only the term bodies carry. See `V_MARK`.
-  if (!shader.vertexShader.includes('vOfCrownUp')) miss(`vertex:${V_COMMON}`);
+  // FOUR CHECKS, EACH ISOLATING ONE ANCHOR, and each matching a token that
+  // exactly ONE of the four spliced blocks emits. An earlier version tested the
+  // declarations by the varying and the uniform NAME, both of which the term
+  // bodies also carry, so a lost `#include <common>` with an intact term anchor
+  // passed. See `V_DECL_MARK`.
+  if (!shader.vertexShader.includes(V_DECL_MARK)) miss(`vertex:${V_COMMON}`);
   if (!shader.vertexShader.includes(V_MARK)) miss(V_NORMAL);
-  if (!shader.fragmentShader.includes('uCrownFace')) miss(`fragment:${V_COMMON}`);
+  if (!shader.fragmentShader.includes(F_DECL_MARK)) miss(`fragment:${V_COMMON}`);
   if (!shader.fragmentShader.includes(F_MARK)) miss(F_NORMAL);
   compiles++;
 }
@@ -387,11 +419,17 @@ export function noteCrownFaceMaterial(m: THREE.Material, tag: string): void {
  *   `misses`    which anchor was not found, deduplicated. Empty is the claim.
  *   `materials` which batches took the crown hook. `props:canopy` alone is the
  *               scope claim and any second name is a scope leak.
- *   `hazards`   the five material features that would compose badly with the
- *               splice, COUNTED LIVE at call time rather than snapshotted at
- *               install, plus `notDoubleSided`, since three emits the negation
- *               this file corrects only while `side` is `DoubleSide` and emits
- *               `FLIP_SIDED` instead on `BackSide`. All six read 0 today.
+ *   `hazards`   SIX counters, COUNTED LIVE at call time rather than
+ *               snapshotted at install. FOUR are material features that would
+ *               compose badly with the splice (`normalMap`, `bumpMap`,
+ *               `clearcoatNormalMap`, `anisotropy`); `notDoubleSided` is there
+ *               because three emits the negation this file corrects only while
+ *               `side` is `DoubleSide`, and `FLIP_SIDED` instead on
+ *               `BackSide`; and `flatShaded` is there because it is the one
+ *               setting that would delete the term while leaving every other
+ *               reading in this object healthy. All six read 0 today.
+ *               (An earlier draft said "five ... plus one" and then called the
+ *               total six, which was five; corrected with the sixth added.)
  *
  * AND NONE OF THEM IS SUFFICIENT ON ITS OWN. The outcome that settles it is
  * that `?crownface=0` against the shipped default must MOVE PIXELS on a pose
@@ -405,12 +443,12 @@ export function crownFaceState(): {
   misses: string[]; materials: string[];
   hazards: {
     normalMap: number; bumpMap: number; clearcoatNormalMap: number;
-    anisotropy: number; notDoubleSided: number;
+    anisotropy: number; notDoubleSided: number; flatShaded: number;
   };
 } {
   const h = {
     normalMap: 0, bumpMap: 0, clearcoatNormalMap: 0, anisotropy: 0,
-    notDoubleSided: 0,
+    notDoubleSided: 0, flatShaded: 0,
   };
   for (const { m } of crownMats) {
     const s = m as THREE.MeshPhysicalMaterial;
@@ -419,6 +457,17 @@ export function crownFaceState(): {
     if (s.clearcoatNormalMap != null) h.clearcoatNormalMap++;
     if (typeof s.anisotropy === 'number' && s.anisotropy > 0) h.anisotropy++;
     if (m.side !== THREE.DoubleSide) h.notDoubleSided++;
+    // THE ONE HAZARD THAT WOULD REPORT A HEALTHY GREEN OVER A TERM THAT DOES
+    // NOT EXIST, which is why it is counted rather than reasoned about. Under
+    // `flatShading` the `#ifndef FLAT_SHADED` guard compiles `F_TERM` out
+    // entirely, and NOTHING ELSE NOTICES: `compiles` still increments, `misses`
+    // is still empty (the sentinel token is inside the `#ifndef` but the string
+    // check runs on the GLSL source before the preprocessor sees it), and the
+    // readback still publishes a live `mode`. Every green in this file would
+    // be a green over a splice the driver deleted. Found by a fresh-context
+    // reviewer; it is the same shape as the miss detector above, one level
+    // further down.
+    if (s.flatShading === true) h.flatShaded++;
   }
   return {
     raw: RAW, mode: uCrownFace.value, installed: CROWN_FACE_INSTALLED,
