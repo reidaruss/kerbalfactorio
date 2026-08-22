@@ -146,7 +146,7 @@ import * as THREE from 'three';
  * has no authored facing worth preserving.
  *
  * ---------------------------------------------------------------------------
- * ONE BINARY, FOUR SWITCHES (RN-952: every term gets one)
+ * ONE BINARY, THREE NEW SWITCHES (RN-952: every term gets one)
  * ---------------------------------------------------------------------------
  *   `?crownnormal=0`   the crown takes `bendNormals` again, tear and all: the
  *                      EXACT pre-RN-2590 bytes and the negative control for
@@ -157,8 +157,22 @@ import * as THREE from 'three';
  *   `?crowncard=<0..1>` sweeps the out-of-plane mix. `0` restores the in-plane
  *                      degeneracy while keeping everything else, so it isolates
  *                      the COPLANARITY fix alone.
- *   `?foliagenormal=`  still the master gate, unchanged in meaning: `0` is the
- *                      authored glTF bytes for crowns and understorey alike.
+ *
+ * and `?foliagenormal=` is the pre-existing master gate, unchanged in meaning:
+ * `0` is the authored glTF bytes for crowns and understorey alike.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT THIS DOES NOT FIX, AND IT IS THE LARGEST TERM LEFT
+ * ---------------------------------------------------------------------------
+ * `OF_Canopy` is `doubleSided`, so three multiplies the whole shading normal by
+ * `faceDirection` on a back face. A crossed quad is planar, so from any camera
+ * each quad is entirely front- or entirely back-facing, and the per-instance
+ * yaw makes that a coin flip: **about half of every stand's drawn card area is
+ * still lit with the normal below NEGATED, tops for bottoms.** Nothing in this
+ * file can reach it (a single baked vector cannot be sign-stable under a
+ * per-face negation), it is measured at a quarter of the crown's luminance
+ * (rendering.md 2.39.3), and it is routed as the next lane in 2.39.12 item 1.
+ * Read every number this construction produces as the half that is lit right.
  */
 /**
  * THE RIM ANGLE, AND IT IS PINNED BY TWO MEASUREMENTS PULLING OPPOSITE WAYS

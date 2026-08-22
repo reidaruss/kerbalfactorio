@@ -143,9 +143,19 @@ export function apply(r: Reg): void {
       // group and by the same rules as the one above: an absolute WRITE (so a
       // re-run of `apply` on a late texture load is idempotent), `null` on the
       // shipped path (so the lane cannot move a pixel by accident), and AFTER
-      // the colour writes. It is the handle that actually reaches the crown's
-      // specular, which 2.38.4 proved roughness does not. See
-      // CanopySelfShadow.canopyEnvOverride.
+      // the colour writes.
+      //
+      // **IT IS A DEAD SWITCH AND THE WRITE BELOW CANNOT SURVIVE, corrected
+      // 2026-08-22.** The first version of this comment called it "the handle
+      // that actually reaches the crown's specular"; it is not.
+      // `WebGLRenderer.js:2694-2696` overwrites `envMapIntensity` from
+      // `scene.environmentIntensity` every frame for a MeshStandardMaterial
+      // with no own `envMap` while `scene.environment` is set, and
+      // `SkyIbl.ts:133` sets it. The write stays because the request/outcome
+      // pair it publishes is what made the overwrite findable, and because it
+      // becomes live the day the canopy gets an own envMap. The LIVE handle is
+      // `scene.environmentIntensity`. See CanopySelfShadow.canopyEnvOverride
+      // and rendering.md 2.39.10.
       const env = canopyEnvOverride();
       if (env !== null) r.mat.envMapIntensity = env;
     }

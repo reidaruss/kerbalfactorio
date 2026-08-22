@@ -418,13 +418,46 @@ export function canopyRoughnessOverride(): number | null {
  * **58 to 87 per cent SPECULAR** in the guard's own linear-luminance units, and
  * 2.38.4 measured the only handle the project had for it -- roughness -- moving
  * that share by under 2 per cent either way, the WRONG WAY at one of the two
- * binding poses. The block above explains why: in three 0.185.1 the indirect
+ * binding poses. **THAT HELD ONLY IN THE 0.8-TO-1.0 WINDOW IT WAS SWEPT IN, and
+ * the general form of it is false: RN-2590's verifier ran `?canopyrough=0.05`
+ * and the crown's specular rose 1,334 per cent, i.e. roughness reaches this
+ * term 14x over at the sharp end.** What 2.38.4 actually established is that
+ * the fully-rough direction is exhausted, not that the handle is disconnected;
+ * corrected here 2026-08-22.* The block above explains why: in three 0.185.1 the indirect
  * lobe is a SAMPLED split-sum table and is nearly flat in roughness for a
  * dielectric at `F0 = 0.04`, so the crown's specular is almost entirely the sky
  * PMREM lobe scaled by `envMapIntensity`, and NOTHING in this project reached
  * that scalar. RN-952's rule is that a term with no switch is the one candidate
  * no experiment can eliminate, so RN-2590 was required to build it before it
  * could claim its own normal change moved the specular for a reason.
+ *
+ * **IT IS A DEAD SWITCH, AND THAT IS THE FINDING RATHER THAN A DEFECT IN THE
+ * TERM (corrected 2026-08-22 after RN-2590's fresh-context verifier; the first
+ * version of this block claimed the term was INERT and that claim is
+ * WITHDRAWN).** Writing `material.envMapIntensity` cannot survive on this
+ * material, because `WebGLRenderer.js:2694-2696` OVERWRITES the uniform from
+ * `scene.environmentIntensity` on EVERY frame for any
+ * `MeshStandardMaterial` with `material.envMap === null` while
+ * `scene.environment !== null`, and `SkyIbl.ts:133` sets that environment. So
+ * `?canopyenv=0.30` and `?canopyenv=2.0` move the `crowns` rectangle by exactly
+ * 0.000000 not because the environment contributes nothing but because the
+ * write is erased before the draw. **The environment contributes 37.48 per
+ * cent of that rectangle**, measured by the verifier's `?ibldiag=noenv` control
+ * that RN-2590 did not run, so **2.38.4's "the crown's specular is almost
+ * entirely the sky PMREM lobe" STANDS and is corroborated.**
+ *
+ * **THE LIVE HANDLE IS `scene.environmentIntensity`** (or giving the canopy
+ * material an own `envMap`, which takes it out of the overwrite branch). This
+ * function is kept, with this correction attached, because the request/outcome
+ * pair it publishes is what made the dead switch findable at all; it is NOT a
+ * usable amplitude for the crown's specular and must not be quoted as one.
+ *
+ * **AND THE READBACK IS WHY THE FIRST CONCLUSION WAS WRONG.**
+ * `treeline().self.envOverride` proved the QUERY PARSED. It could not prove the
+ * UNIFORM SURVIVED, and the sibling-write control (`?canopyrough=` does move
+ * pixels, so the write path is live) is invalid here because
+ * `envMapIntensity` is the one property in that statement group with a
+ * per-frame renderer override on top of it.
  *
  * IT IS AN ISOLATOR, NOT A LOOK CHANGE. `null` unless `?canopyenv=` is on the
  * URL, so the shipped path writes nothing and three's own default of 1 stands.

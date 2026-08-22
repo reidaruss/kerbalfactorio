@@ -414,11 +414,17 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // commit that introduces it.
   'canopyrough',
   // RN-2590, the crown impostor's `envMapIntensity`, routed to this lane by
-  // 2.38.7 as a REQUIRED isolator. 2.38.2 measured the crown at 58 to 87 per
-  // cent specular and 2.38.4 measured roughness unable to move it, so this is
-  // the handle that actually reaches the sky PMREM lobe. An OVERRIDE like
-  // `canopyrough`: absent, nothing is written and three's own default of 1
-  // stands. Request readable back at `treeline().self.envOverride`.
+  // 2.38.7 as a REQUIRED isolator. An OVERRIDE like `canopyrough`: absent,
+  // nothing is written. **IT IS A DEAD SWITCH AND MOVES NOTHING, corrected
+  // 2026-08-22:** `WebGLRenderer.js:2694-2696` overwrites the uniform from
+  // `scene.environmentIntensity` every frame while the material has no own
+  // `envMap` and `SkyIbl.ts:133`'s environment is set, so a sweep of it
+  // measures exactly 0.000000 for a reason that has nothing to do with the
+  // term's size. The environment is 37.48 per cent of the `crowns` rectangle
+  // (`?ibldiag=noenv`), so 2.38.4's PMREM reading STANDS. The live handle is
+  // `scene.environmentIntensity`. Registered and kept because the
+  // request/outcome pair is what made the overwrite findable; see
+  // rendering.md 2.39.10 before quoting it as an amplitude.
   'canopyenv',
   // RN-2590, the CROWN IMPOSTOR's shading normal, three switches for three
   // separable terms (RN-952). `crownnormal=0` routes the crown card back

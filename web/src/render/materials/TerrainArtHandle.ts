@@ -400,8 +400,9 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
         // never reaches a uniform reports the default") needs a different
         // surface: this publishes what the bake ACTUALLY WROTE beside what was
         // ASKED FOR, so an arm can be proved non-vacuous from the page's own
-        // state. `downVerts` is the sign tear's own signature and reads 4 on
-        // the pre-lane path and 0 on the shipped one. It rides `treeline()`
+        // state. `downVerts` is the sign tear's own signature and reads 3 on
+        // the pre-lane path (one vertex per tree, three trees) and 0 on the
+        // shipped one. It rides `treeline()`
         // rather than a new hook because every probe already captures this
         // object whole, so no probe needs editing to see it.
         crownNormal: { ...crownBakeReport(), ask: crownBend() },
