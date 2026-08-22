@@ -13152,3 +13152,39 @@ is not mistaken for drift: `rn2591ladder` divides each arm by **its own**
 coverage, because `?crownshade=0` changes how many card pixels quantise to
 exactly black, where `rn2570spread` borrows the cards arm's `f` for all of them.
 Every spread in this section is computed on one definition throughout.
+
+### 2.39.6 THE TWO FIXES ARE INDIVIDUALLY NEGATIVE AND JOINTLY POSITIVE, and the bake says so about itself
+
+A registration-time rewrite of a normal attribute has no uniform, so RN-2268's
+remedy for "a flag that never reaches the shader reports the default" needed a
+different surface. `TerrainArtHandle.treeline()` now publishes `crownNormal`:
+what the bake WROTE beside what was ASKED FOR.
+`web/tools/smoke/rn2590norm.mjs` reads it, asserts the pair, and **exits
+nonzero** if the pre-lane arm stops showing the defect or if any two arms bake
+identical normals. On the FINAL build, `forestairnoon`, `?terrainpaint=1`,
+un-hazed, one browser run per arm:
+
+| arm | mean `|up|` | `minAzimuthOut` | `downVerts` | path | `crowns` rect Y |
+|---|---:|---:|---:|---|---:|
+| shipped (`flank 12, card 1`) | 0.9863 | **1.0000** | **0** | crown | **0.001740** |
+| pre-lane (`?crownnormal=0`) | 0.4832 | 0.0000 | **3** | bend | 0.001538 |
+| sign fix alone (`flank=90, card=0`) | 0.4832 | 0.0000 | 0 | crown | 0.001095 |
+| coplanarity alone (`flank=90, card=1`) | 0.4832 | **1.0000** | 0 | crown | 0.000859 |
+| anchor alone (`flank=12, card=0`) | 0.9863 | 0.0000 | 0 | crown | 0.001464 |
+| authored (`?foliagenormal=0`) | 0.0000 | 1.0000 | 0 | authored | 0.000441 |
+
+**READ THE MIDDLE THREE ROWS AGAINST THE FIRST TWO.** Every fix taken on its own
+makes the crown DARKER than the defect did: the sign fix costs 29 per cent, the
+coplanarity fix 44 per cent, the anchor 5 per cent. **Taken together they are
+worth +13 per cent.** That is not a tuning coincidence, it is 2.39.3's third
+degeneracy showing through: the sign tear was compensating for the face
+negation, and removing it only pays once the anchor has rolled the normals near
+enough to vertical that the remaining front-facing area is lit properly.
+Anything that had judged either fix on its own would have refused it.
+
+The two out-of-plane measures earn their keep in the same table. The shipped
+arm reads `minAbsOutOfPlane` **0.0488** and `minAzimuthOut` **1.0000**: the
+normals have left the card plane completely in azimuth and barely at all in
+absolute terms, because they are near-vertical and a vertical card's plane
+contains the vertical. One number could not have said that; it is filed as its
+own trap in `docs/web/NUMBERS.md`.
