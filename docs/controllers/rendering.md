@@ -13457,8 +13457,18 @@ final build, all cropped on the committed `crowns` rectangle at (450,600)
   because it says the roundness this lane traded for guard margin is not
   visible at this range. The angle is worth revisiting only alongside the two
   terms in 2.39.12 items 1 and 2.
-- `RN2590_crowns_signonly_3x.png` (the sign fix alone) is **visibly the darkest
-  of the set**, which is the -29 per cent in 2.39.6 photographed.
+- `RN2590_crowns_signonly_3x.png` (the sign fix alone, with the coplanarity
+  defect intact) is the **coolest and bluest** of the set and reads a shade
+  darker, which is the -29 per cent of 2.39.6 and a still-grazing Fresnel
+  photographed together. It is the most useful of the four crops for seeing
+  what the coplanarity term does, because it is the shipped normal with that
+  one term taken out.
+- **HONEST LIMIT ON ALL OF THIS.** At 3x on a 200x100 rectangle these are
+  small chromatic differences between dark pixels, and dark-pixel hue is
+  exactly the kind of change that survives a linear-space measurement better
+  than an 8-bit screenshot (2.33.7 said the same about RN-2525's own move). The
+  numbers in 2.39.9 are the load-bearing evidence; the crops corroborate their
+  DIRECTION and are not independent of them.
 
 **FIDELITY-GAP section 1, item by item.** Item 5 (vegetation asset fidelity):
 2.38.8 said the crown's radiance cannot be fixed until the impostor's shading
