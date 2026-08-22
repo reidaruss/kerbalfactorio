@@ -854,8 +854,13 @@ const ramp = (x: number, a: number, b: number): number => sstep((x - a) / (b - a
  * sky. The band is not short of ground material; it is short of silhouettes.
  *
  * THE TARGET CURVE AND THE DEFICIT. One curve says how much canopy the world
- * carries at ground range `g`: zero at the prop ring, one at
- * `CANOPY_NEAR_FULL_M`, smootherstep between. `canopyDistanceWeight` already
+ * carries at range `d`: zero at the prop ring, one at `MID_FULL_M` (550 m),
+ * QUADRATIC IN `d` between, for the reason derived four paragraphs down. (An
+ * earlier draft of this block said "smootherstep to `CANOPY_NEAR_FULL_M`" and
+ * that described the shape this lane BUILT AND REFUSED; the sentence is
+ * corrected here rather than left to disagree with the function under it,
+ * because a docstring that names a cause outlives the cause.)
+ * `canopyDistanceWeight` already
  * delivers part of it (nothing below 550 m, a linear ramp to 1 at 690 m), and
  * this tier places exactly the DIFFERENCE. That is `TerrainTreeline`'s own
  * idiom one band in -- paint the density the other layer is not placing -- and
@@ -890,20 +895,32 @@ const ramp = (x: number, a: number, b: number): number => sstep((x - a) / (b - a
  * REPLACES, not against zero: the shipped near ramp runs 0 to 1 over
  * `CANOPY_NEAR_M` to `CANOPY_NEAR_FULL_M`, 140 m, which is SHORTER than one
  * rebuild band, so its whole weight change lands in a single rebuild at 550 to
- * 690 m where a tree is 17 to 21 pixels: V is about 19. This ramp is 2.7 times
- * longer than one band and lands at 12.0. The band gains a population of trees
- * and the worst silhouette step at this seam gets SMALLER.
+ * 690 m where a tree is 13.6 to 17.0 pixels: V is about 17. This ramp is 2.7
+ * times longer than one band and lands at 12.0. The band gains a population of
+ * trees and the worst silhouette step at this seam gets SMALLER.
  *
- * Two shapes were tried against that number and both are worse. A LINEAR ramp
- * over the same span reads V = 175 x 9353 / (380 x g), which is 21.5 at 200 m
- * and 7.9 at 550 m -- the pop is worst exactly where the trees are largest,
- * which is the defect the whole derivation is about. SMOOTHERSTEP (this lane's
- * first build, `docs/screenshots/WG260_sstep_band_3x.png`) is flat at both ends
- * and pays
- * for it with a doubled derivative in the middle: V peaks at 13.7 at 430 m, and
- * because it also holds the weight near zero out to 300 m it put only about a
- * tenth of full density at 300 m and the band still read as a wall by eye. The
- * quadratic carries 0.223 there, 2.1 times as much, at a LOWER peak pop.
+ * Two shapes were tried against that number and both are worse. Quote the PEAK
+ * of V and not V at a convenient sample, which is what a first draft of this
+ * block did twice:
+ *
+ *   * A LINEAR ramp over the shipped 170-to-550 m span reads
+ *     V = 175 x 9353 / (380 g), monotonically falling, so its peak is at the
+ *     INNER end: **25.3 px at 170 m** (21.5 at 200 m, 7.8 at 550 m). The pop is
+ *     worst exactly where the trees are largest, which is the defect the whole
+ *     derivation is about.
+ *   * SMOOTHERSTEP is flat at both ends and pays for it with a doubled
+ *     derivative in the middle: **14.4 px, peaking at 388 m**. (A first draft
+ *     said 13.7 at 430 m, which is V where `w'` peaks; `w'` and `V = 175 w' h f
+ *     / g` do not peak at the same range, because the 1/g factor pulls the
+ *     maximum inward.) It was BUILT AND MEASURED over 170 to 690 m, not over
+ *     the shipped span -- `docs/screenshots/WG260_sstep_band_3x.png` is that
+ *     build -- so its row is a like-for-like comparison of SHAPES and not of
+ *     spans, and that is stated rather than hidden. Holding the weight near
+ *     zero out to 300 m it put about a tenth of full density there and the band
+ *     still read as a wall by eye.
+ *
+ * The quadratic carries 0.223 at 300 m against smootherstep's 0.104, at a LOWER
+ * peak pop, and the ranking 12.0 < 14.4 < 25.3 is what decides it.
  *
  * `MID_FULL_M` is `CANOPY_NEAR_M` and that is the same constant doing the
  * opposite job: 550 m used to be the range at which the impostor tier switched

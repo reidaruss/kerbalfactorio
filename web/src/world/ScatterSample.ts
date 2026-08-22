@@ -269,7 +269,10 @@ export function sampleChunk(
           // to promise that is for both tiers to read one field. What differs
           // is the distance weight, and `midDistanceWeight` is defined as the
           // deficit against the line above's own weight, so the two sum to
-          // one smootherstep and neither can open a seam at the handover.
+          // `midTargetWeight` -- ONE QUADRATIC-IN-RANGE ramp to full density at
+          // `MID_FULL_M` 550 m, not the smootherstep an earlier draft of this
+          // comment named, which is the shape this lane built and refused --
+          // and neither tier can open a seam at the handover.
           //
           // A SEPARATE SALT (12288) rather than a second use of 8192. The two
           // draws run on the same cell hash and the same spec pool, and a
