@@ -401,6 +401,18 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // whether or not it is passed, which is the half RN-150 says must be
   // asserted separately.
   'canopysat',
+  // RN-2570, the crown impostor's ROUGHNESS, which had no switch of any kind
+  // before this lane: `terrainspec` is the terrain's and reaches no prop, and
+  // the value came straight off the glTF (0.800, read live). It is an
+  // OVERRIDE, not a default -- absent, nothing is written and the asset's own
+  // value stands, so the shipped frame is unchanged by construction.
+  // `canopyrough=1.0` is the fully-rough arm this lane built, measured and
+  // REFUSED (it moves the card's specular -1.6 / +2.0 per cent at the two
+  // binding poses). Readable back live off `__ofSurfaces.report()`'s
+  // `roughness` beside `treeline().self.roughOverride`, which is the
+  // request-against-outcome pair RN-2268 asks for. Registered in the same
+  // commit that introduces it.
+  'canopyrough',
   // RN-47, the underwater view. `underwater=0` removes the pass; the other
   // four tune extinction, tint, scatter and the path clamp.
   'underwater', 'uwext', 'uwtint', 'uwscatter', 'uwpath',

@@ -105,7 +105,23 @@ import { BIOME_CANOPY_MU, residentCanopyMu } from '../geometry/ChunkCanopy.js';
  * 3.2 IS CHOSEN INSIDE THAT BAND BY EYE AGAINST THE PASS CONDITION, and this
  * is the measurement that picked it (`forestairnoon`, the Forest site at its
  * own local noon, dot 0.736; `box` luma against the same rectangle in the
- * `?canopy=0` arm, which reads 103.22 -- the clearing):
+ * `?canopy=0` arm, which reads 103.22 -- the clearing).
+ *
+ * **THE PASS CONDITION THIS TABLE WAS JUDGED AGAINST NO LONGER EXISTS, AND THE
+ * TABLE IS KEPT AS THE HISTORY OF A DECISION RATHER THAN AS A LIVE GUARD**
+ * (RN-2570, discharging rendering.md 2.35.9 item 5, which routed this
+ * correction to the lane that owns this file). Two things changed under it.
+ * FIRST, the "wood - clearing" column is a SIGN TEST on 8-bit `box` luma, and
+ * RN-2550 replaced that with a two-sided, LINEARIZED, coverage-corrected ratio
+ * band -- and found, while doing so, that the sign test **was never asserted
+ * anywhere in the project**: `rn2275sweep.mjs` prints and exits 0 whatever it
+ * reads, and no link in `npm run check` renders these poses. The live
+ * instrument is `web/tools/smoke/rn2550guard.mjs`, which is the first one here
+ * that can fail. SECOND, the numbers themselves are pre-`lane/wg-ship`: that
+ * merge moved the planet height field and took this pose's `box` clearing up
+ * 16.2 per cent, so 103.22 describes a planet that no longer exists. Nothing
+ * about K's PHYSICAL bracket (2.5 to 3.5, the paragraph above) depends on
+ * either change, and K is unmoved. The table below reads:
  *
  *   | K   | LAI  | box    | wood - clearing |
  *   |-----|------|--------|-----------------|
@@ -155,8 +171,99 @@ export const CROWN_SELF_K = 3.2;
  * the number it produced would still be multiplied by a guessed sky-view
  * factor. It is one authored constant with its arithmetic written down, and it
  * has a sweep: `?crownshadefloor=`.
+ *
+ * ---------------------------------------------------------------------------
+ * RN-2570. THE ARITHMETIC ABOVE COUNTS ONLY THE SKY, AND THE CANOPY'S OWN
+ * SCATTERED LIGHT IS THE TERM IT OMITS. THE VALUE IS NOT MOVED, AND THE REASON
+ * IT IS NOT MOVED IS MEASURED RATHER THAN CAUTIOUS.
+ *
+ * WHAT IS WRONG WITH 0.08. Every source in the derivation above is the SKY:
+ * `AMBIENT_NOON`, `TERRAIN_SKY_AMBIENT`, a sky irradiance and a sky-view
+ * factor. A crown surface deep in a closed stand is also lit by the light
+ * that has already bounced off the crowns around it, and leaves are not
+ * black -- `LEAF_ALBEDO_RGB` below is (0.08, 0.27, 0.06), so better than a
+ * quarter of every green photon that hits a leaf leaves it again. Omitting
+ * that is single-scattering-only, which is the same class of error an
+ * atmosphere makes when it drops multiple scattering.
+ *
+ * WHAT THE FLOOR WOULD BE IF THE MODEL WERE CLOSED, using only quantities
+ * this repository already holds and no new one. At high sun in a closed stand
+ * the exponential has saturated (0.016 at K = 3.2, the K table above), so
+ * `S -> FLOOR` and the crown's rendered reflectance is `tone * FLOOR`. The
+ * physically correct reflectance of a closed stand is the two-stream
+ * semi-infinite canopy albedo `rInf(w) = (1 - sqrt(1 - w)) / (1 + sqrt(1 - w))`
+ * -- the SAME function, on the SAME `w` triple, that `FoliageTone.ts`'s
+ * `canopy` row already uses to set the crown's HUE, so this is not a new model
+ * being introduced, it is the existing one being asked for a level as well as
+ * a colour. On `LEAF_ALBEDO_RGB` that is (0.020843, 0.078517, 0.015468),
+ * Rec.709 luma **0.061703**; the card's finalised mean rendered albedo, read
+ * live off `treeline().tone`, is (0.056296, 0.169931, 0.025901), luma
+ * **0.135373**. Equating the two:
+ *
+ *     FLOOR_derived = luma(rInf(w)) / luma(tone) = 0.061703 / 0.135373
+ *                   = 0.4558
+ *
+ * i.e. the shipped floor is **5.7x too small**, which is the same order as
+ * N7's independent "the crown's diffuse sits an order of magnitude below the
+ * ground's" (rendering.md 2.34.6) arrived at from a completely different
+ * direction.
+ *
+ * AND IT IS NOT SHIPPED, BECAUSE THE FRAME CANNOT ABSORB IT AND THE PROOF IS
+ * FOUR MEASURED NUMBERS. The RN-2550 guard bands the coverage-corrected crown
+ * reflectance `rho` at 0.18 to 0.75. Measured with the self-shadow removed
+ * entirely and the specular removed with it -- which is the LIMIT any floor
+ * raise can approach, since `S` cannot exceed 1 -- `rho` reads
+ *
+ *     0.3925 / 1.9161 / 0.3995 / 3.2474
+ *
+ * at `forestairnoon` / `forestairlow` / `flyovernoon` / `flyoverlow`. Both
+ * LOW-sun poses are already ABOVE the band's 0.75 ceiling before any light is
+ * added. So raising this floor walks `forestairnoon` up toward 0.39 and walks
+ * `flyoverlow` up toward 3.25 at the same time, and the second leaves the band
+ * long before the first enters it. **The band is 4.2x wide and the spread this
+ * floor would have to fit inside it is 8.3x.** Measured at a real candidate
+ * rather than modelled: at `?crownshadefloor=0.2`, `forestairnoon` is still
+ * 0.0335 SHORT of the band's bottom while `flyoverlow` is already 0.3358 OVER
+ * its top, and both `box` ratchets fail with it. (An earlier draft also quoted
+ * a modelled intermediate, "holding `flyoverlow` at 0.75 caps `forestairnoon`
+ * at 0.117"; it is dropped rather than defended. A fresh-context verifier got
+ * ~0.105 by two obvious routes, the derivation was never written down, and it
+ * UNDERSTATES the infeasibility, so nothing rests on it.)
+ *
+ * THE 8.3x IS NOT THIS CONSTANT'S FAULT AND CANNOT BE FIXED HERE. It is the
+ * crown impostor's SHADING NORMAL: the crown responds to solar elevation quite
+ * differently from the horizontal clearing it is divided by, so as the sun
+ * drops the denominator collapses further than the numerator does. That is why
+ * `rho` reads LIGHTER at low sun than at noon, which is backwards for a canopy.
+ *
+ * **WHICH NORMAL, CORRECTED 2026-08-22 AFTER A FRESH-CONTEXT VERIFIER.** An
+ * earlier draft of this paragraph said the impostor is "drawn as two VERTICAL
+ * planes" and so "has a wall's cosine response". The ASSET half is true --
+ * `build_props_canopy.py` authors exactly that -- but **those authored normals
+ * never reach a draw call**: `PropGeometry.ts:291` runs every `foliage`-bake
+ * rung, `OF_Canopy` included, through RN-1766's `bendNormals`, which
+ * spherifies the normal attribute in place at registration. The SHIPPED mean
+ * `|up|`, recomputed off the `glb` bytes, is **0.4557 to 0.4985, not 0.0000**,
+ * and `?foliagenormal=0` (RN-1766's own control, which restores the authored
+ * bytes) takes the pose spread from 8.3x to **63.5x**. So the wall-versus-floor
+ * picture describes THAT arm and not the shipped frame.
+ *
+ * The shipped defect is that `bendNormals` DEGENERATES on crossed quads: the
+ * base centre it bends away from lies ON both card planes, so the bent normal
+ * ends up inside its own card's plane, and the hemisphere sign term then
+ * resolves on floating-point residue. Both degeneracies are in rendering.md
+ * 2.38.1a and the route is 2.38.7 item 1. Until they are repaired this floor
+ * cannot be given its derived value without failing the guard at two poses,
+ * and moving it part of the way is tuning rather than physics. **The number
+ * stays at 0.08 and the derivation above is the standing statement of what it
+ * should be.**
  */
 export const CROWN_SELF_FLOOR = 0.08;
+
+/* `CROWN_SELF_FLOOR_DERIVED` computes the 0.4558 above from the leaf optics.
+ * It is declared further down, immediately after `LEAF_ALBEDO_RGB`, because it
+ * reads that triple and a module-level `const` cannot be read before it is
+ * initialised. */
 
 /**
  * The floor under `sin(sunElev)`.
@@ -177,6 +284,132 @@ export const CROWN_SUN_MIN = 0.02;
 
 /** Default amplitude. `?crownshade=0` is the exact pre-RN-2275 frame. */
 export const CROWN_SELF_AMP = 1;
+
+/**
+ * RN-2570. THE CROWN IMPOSTOR'S ROUGHNESS: A TERM BUILT, MEASURED AT BOTH ENDS
+ * AND REFUSED, AND THE REFUSAL IS THE FINDING.
+ *
+ * READ THIS FIRST, BECAUSE THE SHIPPED BEHAVIOUR IS THE OPPOSITE OF WHAT THIS
+ * LANE WAS SENT TO DO. Stage 2's accepted shape (the Admin decision in NUMBERS'
+ * RN-2540 row, rendering.md 2.34.10 item 2) was that the crown's radiance raise
+ * would travel WITH a canopy roughness fix, because N7 had shown the impostor
+ * is a specular reflector it should not be and deleting that specular outright
+ * makes the crown darker -- so a roughness correction would PAY for headroom
+ * the raise then spends. **Measured, it pays nothing.** Driving this material
+ * from its authored 0.800 to the fully-rough limit 1.0 moves the crown card's
+ * own specular by **-1.6 per cent at `forestairnoon` and +2.0 per cent at
+ * `flyoverlow`** -- the wrong way at the second -- and leaves its diffuse
+ * unmoved to four digits (rendering.md 2.38.4). So this file ships **no change
+ * to the value** and ships **the switch that was missing**, which is RN-952's
+ * rule: a term with no switch is the one candidate no experiment can eliminate.
+ *
+ * WHY ROUGHNESS CANNOT REACH IT, now that the measurement says so. Roughness
+ * moves three's DIRECT lobe hard (the GGX `D` term peaks as `1/alpha^2`) and
+ * its INDIRECT one barely at all: the split-sum environment BRDF for a
+ * dielectric at `F0 = 0.04` is nearly flat in roughness. In three 0.185.1 that
+ * term is a SAMPLED table, `texture2D(dfgLUT, vec2(roughness, dotNV))` in
+ * `lights_physical_pars_fragment.glsl.js` (lines 377 and 396), not the
+ * analytic `DFGApprox` an earlier draft of this comment named; the reference
+ * is corrected and the conclusion is unchanged, since it rests on the measured
+ * arms below rather than on which implementation supplies the term. The crown card's
+ * specular is therefore almost entirely the sky PMREM lobe, not the sun lobe,
+ * which is also why N7 found it 99.7 per cent of the card's own BLUE -- a sun
+ * lobe would not be blue. Worse, broadening the lobe at a GRAZING sun smears
+ * more sky into the view than a narrow one did, which is exactly the `+2.0 per
+ * cent at flyoverlow` above. **The handle that reaches this term is
+ * `envMapIntensity`, which has no page parameter anywhere in the project
+ * (N7's own note), and it is routed in rendering.md 2.38.7 rather than
+ * guessed at here.**
+ *
+ * WHAT WAS RIGHT ABOUT THE HYPOTHESIS, KEPT, because the geometry argument
+ * stands even though the handle does not. `tools/blender/build_props_canopy.py`
+ * authors `OF_Canopy` as **two crossed quads over the crown and nothing else**
+ * -- its own docstring says exactly that -- yawed per instance, and a GGX lobe
+ * on a whole-crown billboard is reflecting the sky off a plane that is a
+ * DRAWING CONVENTION for a leaf mass rather than a microfacet distribution.
+ *
+ * **BUT THE AUTHORED NORMAL IS NOT THE SHIPPED ONE, CORRECTED 2026-08-22 AFTER
+ * A FRESH-CONTEXT VERIFIER.** An earlier draft of this paragraph said each quad
+ * "carries one flat HORIZONTAL shading normal" and that this makes the crown
+ * respond to solar elevation "like a WALL". That is true of the `glb` and false
+ * of the frame: `PropGeometry.ts:291` runs every `foliage`-bake rung through
+ * RN-1766's `bendNormals`, which spherifies the normal attribute in place at
+ * registration, so the SHIPPED mean `|up|` is **0.4557 to 0.4985, not
+ * 0.0000**, and `?foliagenormal=0` (which restores the authored bytes) takes
+ * the pose spread from 8.3x to **63.5x**. The lane's own best frame,
+ * `RN2570_crowns_noshade_3x.png`, shows bright crown tops over dark bottoms --
+ * a vertical gradient a flat horizontal normal cannot produce.
+ *
+ * The 8.3x spread is still the impostor's shading normal and still the reason
+ * stage 2's target is unreachable; what is wrong with that normal is TWO
+ * DEGENERACIES in `bendNormals` on crossed quads (the base centre lies in both
+ * card planes, so the bent normal is in-plane and the hemisphere sign resolves
+ * on floating-point residue). Both are named in rendering.md 2.38.1a and
+ * routed in 2.38.7 item 1, and the fix belongs in `FoliageNormal.ts` rather
+ * than in the asset or in a new shader term. Its roughness, meanwhile, is a
+ * closed question.
+ *
+ * ---------------------------------------------------------------------------
+ * The historical derivation that motivated the fully-rough arm, kept because
+ * the arm is still reachable and someone will want to know what it meant:
+ *
+ * WHAT THE MEASUREMENT FOUND. N7 built `?propspec=` because three's
+ * `totalSpecular` is the ONE radiance on a stock physical program that is not
+ * multiplied by the albedo, and rendering.md 2.34.10 item 2 measured it at
+ * **99.7 per cent of the crown card's own BLUE and 76 per cent of its own
+ * green**. Re-taken in the guard's own units -- linear-light Rec.709 luminance
+ * on the committed `crowns` rectangle, un-hazed, coverage-corrected -- the
+ * specular is **78.5 / 85.9 / 58.0 / 86.6 per cent of the crown card's WHOLE
+ * radiance** at `forestairnoon` / `forestairlow` / `flyovernoon` / `flyoverlow`
+ * (rendering.md 2.38.2). A crown that is four fifths a mirror of the sun and
+ * the sky is not a crown, it is a wet leaf the size of a tree.
+ *
+ * A leaf mass has no coherent plane: its microfacets are ten thousand leaves
+ * at every orientation, and "no preferred microfacet direction" is the
+ * definition of the fully-rough limit, so 1.0 was the arm to try. The material
+ * arrives from the glTF at roughness **0.800** (read live off
+ * `Surfaces.surfaceReport()`, never assumed from the asset), which is a
+ * defensible number for a LEAF -- a waxy cuticle does have a lobe -- and the
+ * wrong number for the assembly of ten thousand of them that one quad stands
+ * in for. The argument was sound and the instrument it reaches for is not
+ * connected to the term; both halves of that are worth keeping.
+ *
+ * SCOPE, STRUCTURAL RATHER THAN A DISTANCE TEST, and it is the same argument
+ * `updateCanopyCardShade` already makes for the colour write: `OF_Canopy` is
+ * authored at `_LOD3` ALONE (RN-2247) and `PropLibrary.batchFor` clones one
+ * shared `MeshStandardMaterial` per batch key, so this reaches every far crown
+ * card and CANNOT reach a near tree. The near forest interior is `OF_Leaf`
+ * geometry wearing the `leaf` family and is untouched.
+ *
+ * `?canopyrough=1.0` is the refused fully-rough arm; `?canopyrough=` with no
+ * flag is the asset's own value and is the shipped frame, unchanged.
+ */
+export const CANOPY_ROUGHNESS_FULLY_ROUGH = 1.0;
+
+/**
+ * The roughness OVERRIDE, or `null` for "leave the asset's own value alone".
+ *
+ * NULL RATHER THAN A DEFAULT CONSTANT, AND THAT IS THE WHOLE DESIGN. Writing a
+ * shipped default here would put a SECOND copy of the glTF's 0.800 in
+ * TypeScript, and two copies of one constant is the exact shape RN-2249's
+ * palette-hex precedent and MachineMat.ts's scar exist to prevent: the day
+ * texgen re-authors the crown material, the asset moves and this file silently
+ * overrides it back. Returning `null` means the shipped path writes nothing at
+ * all, so this lane is a NO-OP ON THE FRAME BY CONSTRUCTION rather than by a
+ * value that happens to match, and the sweep is still reachable.
+ *
+ * RN-150's dead-default guard still applies to the OVERRIDE: `Number(null)` is
+ * 0 and a roughness of 0 is a MIRROR, so an unparseable or out-of-range ask
+ * returns `null` (no override) rather than 0, and rather than a silent clamp --
+ * a clamped out-of-range ask reports the clamp and the table then describes the
+ * clamp as the request, which is RN-2268's scar.
+ */
+export function canopyRoughnessOverride(): number | null {
+  const raw = new URLSearchParams(self.location.search).get('canopyrough');
+  if (raw === null) return null;
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 && v <= 1 ? v : null;
+}
 
 /**
  * `(amp, K, floor)`, the one packing both halves read.
@@ -378,7 +611,12 @@ export const CROWN_SELF_GLSL = /* glsl */`
  * `?crownspectral=0` shift is +0.2 to +1.0 luma counts at each of the four
  * sites, always in the direction that makes the wood LIGHTER, and none of the
  * four margins (which run 1.76 to 7.31 counts) comes remotely close to
- * closing.
+ * closing. **THOSE FOUR MARGINS ARE THE RETIRED SIGN TEST'S AND ARE QUOTED
+ * HERE AS THE EVIDENCE THAT SATISFIED IT, NOT AS A LIVE GUARD** (RN-2570, the
+ * same correction as the K table above, discharging rendering.md 2.35.9 item
+ * 5). The relation is now a two-sided ratio band on coverage-corrected
+ * `crowns` rho with a separate ratchet on `box`, and the live pins are
+ * `rn2550guard.mjs`'s `BASE` table, not any number in this file.
  *
  * `S` is bounded below by `CROWN_SELF_FLOOR` (0.08), so `S` is never
  * zero and `M` cannot vanish; at `S = 1` (no shading at all) every `u_c` is
@@ -417,6 +655,53 @@ const CROWN_SPECTRAL_K_PHYSICAL: readonly [number, number, number] = ((): [numbe
 
 /** Rec.709 luma weights, the same triple `FoliageTone.applyFoliageTone` reads. */
 const CROWN_LUMA_W: readonly [number, number, number] = [0.2126, 0.7152, 0.0722];
+
+/**
+ * RN-2570. The card's finalised MEAN RENDERED albedo, Rec.709 luma.
+ *
+ * PINNED HERE RATHER THAN READ, and the reason is a cycle rather than a
+ * preference: the live value is `publishCanopyTone`'s, written by
+ * `SurfaceBind.apply` when the `canopy` family's material is finalised, and
+ * `SurfaceBind` already imports THIS module. Reading it back at module scope
+ * would be a cycle and reading it at call time would make a DERIVATION depend
+ * on load order. It is therefore a pinned reading with its provenance:
+ * `treeline().tone` = (0.056296, 0.169931, 0.025901) on the RN-2570 build,
+ * which is 0.2126*0.056296 + 0.7152*0.169931 + 0.0722*0.025901 = 0.135373 --
+ * and that is the same 0.13537 this file's own header quotes from RN-2275,
+ * unmoved across RN-2495 because `FoliageTone`'s saturation term is EXACTLY
+ * luma-preserving (its weights sum to one). Only `val`, which no lane has
+ * touched since RN-345, can move it.
+ */
+const CANOPY_TONE_LUMA = 0.135373;
+
+/**
+ * RN-2570. The floor the leaf optics ask for, exported so the claim in
+ * `CROWN_SELF_FLOOR`'s header is a value a probe can READ rather than a number
+ * in a comment. That distinction is not pedantry here: rendering.md 2.35.2
+ * records that RN-2275's whole guard lived for four lanes as prose in this
+ * file's own K table, and four lanes budgeted against it.
+ *
+ * DERIVED, not authored: the two-stream semi-infinite canopy albedo `rInf` on
+ * `LEAF_ALBEDO_RGB`, Rec.709-weighted, over the card's own tone luma. Every
+ * input is already in this repository and none of them is new.
+ *
+ * DELIBERATELY NOT WIRED INTO `crownShadeFromQuery`. `CROWN_SELF_FLOOR`'s
+ * header measures why: at this value the RN-2550 band fails at `flyoverlow`
+ * (rho -> 0.95) while `forestairnoon` is still short of 0.18, because the
+ * crossed-quad impostor's wall-shaped cosine response spreads the four poses
+ * 8.3x across a band that is 4.2x wide. `?crownshadefloor=0.4558` reaches it
+ * for anyone who wants to look at the frame it makes.
+ */
+export const CROWN_SELF_FLOOR_DERIVED: number = ((): number => {
+  const rInf = (x: number): number => {
+    const s = Math.sqrt(1 - x);
+    return (1 - s) / (1 + s);
+  };
+  const y = CROWN_LUMA_W[0] * rInf(LEAF_ALBEDO_RGB[0])
+    + CROWN_LUMA_W[1] * rInf(LEAF_ALBEDO_RGB[1])
+    + CROWN_LUMA_W[2] * rInf(LEAF_ALBEDO_RGB[2]);
+  return y / CANOPY_TONE_LUMA;
+})();
 
 /** `?crownspectral=0` is the exact pre-lane achromatic frame; see the header
  *  above for why `k_c = 1` degenerates to it algebraically. */
@@ -582,11 +867,25 @@ export function canopySelfNow(): {
   amp: number; k: number; floor: number;
   cardMu: number; sinSun: number; cardShade: number; live: boolean;
   cardShadeRGB: readonly [number, number, number]; spectral: boolean;
+  /** RN-2570. The roughness OVERRIDE this module asked `SurfaceBind` to write
+   *  (`null` on the shipped path, where the asset's own value stands), and the
+   *  floor the leaf optics ask for and this lane declined to write.
+   *  `roughOverride` beside `surfaceReport()`'s own `roughness` is the
+   *  non-vacuity pair RN-2268 requires: this is the REQUEST, that is the
+   *  OUTCOME, and a probe seeing them agree knows the flag reached the
+   *  material instead of reporting the default back at itself. A `null` here
+   *  with `roughness` at the asset's 0.800 is the shipped frame proving it is
+   *  the shipped frame. `floorDerived` is published for the same reason
+   *  `CROWN_SELF_FLOOR_DERIVED` is exported at all -- so the claim that the
+   *  shipped floor is 5.7x too small is a reading rather than a sentence. */
+  roughOverride: number | null; floorDerived: number;
 } {
   return {
     amp: SHADE_CARD[0], k: SHADE_CARD[1], floor: SHADE_CARD[2],
     cardMu: card.mu, sinSun: card.sinSun, cardShade: card.shade,
     live: card.live !== null,
     cardShadeRGB: card.shadeRGB, spectral: SPECTRAL_ON,
+    roughOverride: canopyRoughnessOverride(),
+    floorDerived: CROWN_SELF_FLOOR_DERIVED,
   };
 }

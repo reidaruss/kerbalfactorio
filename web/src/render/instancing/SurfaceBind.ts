@@ -14,7 +14,8 @@ import * as THREE from 'three';
 
 import { applyFoliageTone } from './FoliageTone.js';
 import { publishCanopyTone } from '../materials/TerrainTreeline.js';
-import { publishCanopyCardBase } from '../materials/CanopySelfShadow.js';
+import { canopyRoughnessOverride, publishCanopyCardBase }
+  from '../materials/CanopySelfShadow.js';
 import type { Family } from './SurfaceRoles.js';
 
 export interface Surface {
@@ -109,6 +110,35 @@ export function apply(r: Reg): void {
       // per-frame write is `base * S` rather than a multiply, so a re-run of
       // this function on a late texture load re-captures rather than compounds.
       publishCanopyCardBase(r.mat.color);
+      // RN-2570. THE SWITCH THE CROWN CARD'S ROUGHNESS NEVER HAD, and it is
+      // registered in the same statement group as the other two because this
+      // is the one place the `canopy` family's material is reachable.
+      //
+      // IT WRITES NOTHING ON THE SHIPPED PATH. `canopyRoughnessOverride()`
+      // returns null unless `?canopyrough=` is on the URL, so the asset's own
+      // authored value stands and this lane cannot move a pixel by accident.
+      // That is deliberate rather than timid: the fully-rough arm was built,
+      // measured at both ends and REFUSED on evidence (it moves the card's
+      // specular by -1.6 and +2.0 per cent at the two binding poses, the wrong
+      // way at the second), and what the project actually lacked was the
+      // ISOLATOR -- N7 could not eliminate the crown's specular as a suspect
+      // because `?terrainspec=` reaches no prop and nothing reached this
+      // scalar. See CanopySelfShadow.ts for the whole record.
+      //
+      // AFTER the colour writes and not before, on the same idempotence
+      // argument the block above rests on: `apply` re-runs on a late texture
+      // load, so every line here must be a WRITE of an absolute value rather
+      // than a modification of what is already there. An override is
+      // idempotent; a multiply would not be.
+      //
+      // The family carries no ORM (`s.orm` is undefined for every card family
+      // in the shipped manifest), so `r.mat.roughnessMap` is null a few lines
+      // below and this scalar is the SOLE authority on the card's roughness.
+      // If texgen ever ships a canopy ORM, three MULTIPLIES the map by this
+      // factor and the override becomes a scale rather than a value -- which is
+      // MachineMat.ts's exact scar, so it is written down before it bites.
+      const rough = canopyRoughnessOverride();
+      if (rough !== null) r.mat.roughness = rough;
     }
     r.mat.needsUpdate = true;
     // NO early return (RN-455). A tiling body family carries an albedo AND a
