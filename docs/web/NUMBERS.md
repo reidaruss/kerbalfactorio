@@ -3422,3 +3422,116 @@ all. The corollary for reading old records: a reported whole-frame delta of 0.01
 taken at one repeat per arm is not evidence of anything.
 
 ---
+
+### BT-330: `check:guard` WIRES rn2550guard.mjs INTO SOMETHING THAT RUNS, AND TWO NEW TRAPS ALONG THE WAY (found 2026-08-22 by BT-330, lane `bt-guarddoor`)
+
+`rn2550guard.mjs` (RN-2550, N8) is a real assertion -- a two-sided band on the
+wood/clearing luminance ratio, with a documented negative control -- that
+nothing in the project invoked: not `npm run check` (a fast static gate; a
+full pass here is 24 real browser runs), not CI (there is none), not habit. A
+new `web/tools/smoke/check-guard.mjs` closes that: it refuses a stale `dist`,
+starts its own sentinel-verified `vite preview --strictPort` on a free port,
+runs the guard against it with every argument forwarded, propagates its exit
+code, and kills the server by PID in a `finally` on every path. Registered as
+`npm run check:guard`, kept OUT of `check-all.mjs`'s `ALL_CHECKS`, exposed
+alongside it as `npm run check:full`. Full design and the standing
+`check-invocations.mjs`/`PAGE_PARAMS` gap this lane found and did NOT close
+are in `build-tooling.md`'s BT-330 entry; this entry is the proof matrix and
+the two traps.
+
+**THE PROOF MATRIX, every exit code read directly with no pipe (see the first
+trap below for why that qualifier is not decoration).**
+
+  PASS      full four-pose default, exit 0, run clean and uninterrupted:
+```
+check:guard: vite preview up on http://127.0.0.1:14228/ (pid 21704)
+build: served entry chunk matches dist (6bf2612d62b1787a) and dist is newer than src, wasm and index.html
+
+--- RN-2550 WOOD/CLEARING RATIO BAND (linear-light Y) ---
+BAND (fail outside) 0.18 .. 0.75    CORE (target) 0.25 .. 0.55    both on crowns rho
+
+pose            boxShip  boxSurf | crShip  crSurf       G       f     rho  airlt   verdict
+forestairnoon   0.9737  0.9434 | 0.8052  0.6833  0.5996  0.5161  0.0994  0.3849   OUT OF BAND by -0.0806
+forestairlow    0.9462  0.7741 | 0.9326  0.7524  0.5095  0.4872  0.4363  0.7278   IN CORE
+flyovernoon     0.9344  0.9020 | 0.8356  0.7148  0.5591  0.4941  0.2493  0.4235   IN BAND, -0.0007 from CORE
+flyoverlow      0.9774  0.8884 | 0.9600  0.8172  0.4859  0.4448  0.7019  0.7811   IN BAND, +0.1519 from CORE
+
+rn2550guard: PASS (4 of 4 poses judged, 3 outside CORE)
+```
+    `forestairnoon`'s `OUT OF BAND` line is rn2550guard's own pre-recorded
+    standing violation (`rhoOut: 'low'` in its `BASE` table, section 1's own
+    header), not a regression this run introduced -- the guard's rule is that
+    a standing violation may be repaid, never deepened, and this run neither
+    deepened nor repaid it. PID confirmed gone and port 14228 showing no
+    LISTENING socket (`tasklist`/`netstat`) immediately after.
+  STALE DIST   `touch web/src/main.ts` against a just-built `dist`, no server
+    ever started:
+```
+check:guard: FAIL web/dist is STALE: web/src changed (2026-08-22T08:22:47.677Z) after dist was built (2026-08-22T08:22:40.878Z). Fix: cd web && npm run build
+```
+    (EXIT=1, confirmed unpiped.)
+  DEAD SERVER, shape 1 -- never comes up (the vite binary hidden to force a
+    spawn failure): failed in under a second, naming the exit code and the
+    full child stderr, well inside the wrapper's own 15 s readiness budget:
+```
+check:guard: FAIL vite preview exited (code 1) before it ever answered on port 5042:
+Error: Cannot find module '...\node_modules\vite\bin\vite.js'
+```
+    (EXIT=1.)
+  DEAD SERVER, shape 2 -- killed by PID mid-run (see the second trap below for
+    how this one actually happened): rn2550guard reported honest per-arm
+    `no json (exit 1)` failures for every shot still in flight and exited
+    within roughly a minute, never hanging:
+```
+rn2550guard: FAIL forestairnoon: arm(s) woodSurf (no json (exit 1); ), cardsOnly (no json (exit 1); ), cardsBlack (no json (exit 1); ) did not produce both rectangles with a linear patch mean
+rn2550guard: FAIL only 0 of 4 poses produced a verdict
+rn2550guard: FAIL (5 problem(s))
+```
+    (EXIT=1.) Separately, `rn2550guard.mjs` pointed directly at a closed port
+    (`--url=http://127.0.0.1:1/`) fails in 6.0 s wall-clock, confirming the
+    underlying guard is bounded on its own and not merely by check:guard's
+    20-minute `spawnSync` safety cap.
+  GUARD REGRESSION   the guard's own documented negative control,
+    `--shots=forestairnoon --extra=crownshadefloor=0.30`:
+```
+rn2550guard: FAIL forestairnoon: box Rship 1.0278 is ABOVE its ratchet ceiling 0.9817 + 0.005. The wood got LIGHTER than the shipped frame.
+rn2550guard: FAIL forestairnoon: box Rsurf 1.0317 is ABOVE its ratchet ceiling 0.9826 + 0.005. The wood got LIGHTER on the surface arm.
+rn2550guard: FAIL (2 problem(s))
+```
+    (EXIT=1, confirmed unpiped.)
+  CLEANUP   `netstat -ano`/`tasklist` checked after both a PASS and a FAIL
+    run: the vite preview PID is gone from the process list and the port
+    shows no LISTENING socket (TIME_WAIT entries from already-closed
+    connections only), on every path including the killed-mid-run case.
+
+**TRAP 1: `$?` after a pipe reads the pipe, not the command you meant.** This
+lane's own first attempt at the GUARD REGRESSION proof piped check:guard's
+output through `tail` for readability (`node check-guard.mjs ... | tail -80;
+echo "EXIT=$?"`) and printed `EXIT=0` for a run that had, one line above,
+printed `rn2550guard: FAIL (2 problem(s))`. In POSIX shells `$?` after a
+pipeline is the LAST stage's exit status -- `tail`'s, which exits 0 whether or
+not the thing it summarised failed -- not the producing command's. Every exit
+code in the proof matrix above was re-captured with no pipe in the command at
+all, per the gate rule this brief itself states ("exits read alone"); this is
+the concrete failure that rule exists to prevent, caught on this lane's own
+first pass rather than assumed safe.
+
+**TRAP 2: `vite preview` reads `dist` LIVE, so rebuilding it under a still-running
+server corrupts whatever that server is mid-measuring.** This lane's first
+attempt at the PASS proof ran `npm run build` in a second shell while the
+first full-pass `check:guard` run's `vite preview` was still up and
+mid-sweep. `vite preview` (sirv) serves files off disk per request rather
+than snapshotting at startup for ordinary static assets -- so the rebuild's
+new bytes started being served to the STILL-RUNNING guard immediately, and
+this lane killed that run's server by PID rather than let it produce a
+misleading result. The resulting failure (rn2550guard's `checkServedBuild`
+would have caught the entry-chunk/staleness mismatch had the run continued
+uninterrupted) is what produced the DEAD SERVER shape-2 proof above -- an
+accident repurposed as evidence, not the original plan, and recorded
+separately here so the two are never conflated. **The standing lesson: never
+run `npm run build` against the same `dist` a `vite preview` you still care
+about is serving.** Use a distinct `--outDir` (several probes in this corpus
+already do, e.g. `--outDir dist-gp`/`dist-en`/`dist-ph`) for any build that
+must not disturb a server already in flight.
+
+---
