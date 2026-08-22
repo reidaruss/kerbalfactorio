@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2540 to RN-2549, `lane/n7-bluefloor`, **THE ADDITIVE BLUE FLOOR IS THE AIR, AND THE CROWN IS AN ORDER OF MAGNITUDE TOO DIM TO SURVIVE IT.** N6's routed item 1 (2.33.9), diagnosed; corrected 2026-08-21 by a fresh-context verifier, verdict FIX doc-only, every measurement reproduced to the digit on its own build and its own from-scratch base. **THIS LANE SHIPS NO PIXEL CHANGE:** every committed rectangle at every measured pose is bit-identical between a from-scratch build of the pre-lane source and the lane build (one stated exception, `forestair` `skyBand` red 125.23 against 125.24, run-to-run scatter on a rectangle no term in this lane can reach), proved by a real pair rather than argued from the algebra (2.34.7). **THE ANSWER:** at the committed `crowns` rect at `forestair`, **91.9 per cent of the crown card's own blue is AERIAL IN-SCATTER added over it and 0.03 per cent is its albedo** -- the card's whole diffuse contribution to a 32.05-count blue pixel is **0.01 counts** against the floor's **29.44**, and its green is **1.00 against 20.76**. Turning BOTH aerial terms off takes the whole rectangle's blue **80.67 -> 13.86**. The complementary paint arms close to within 0.65 counts on every channel and the residual is NEGATIVE on all three, which is the signature of edge pixels and post rather than of an unattributed surface. **THE CHARTER'S NAMED SUSPECT IS REFUTED:** `TerrainAmbient`'s blue-dominant `AMBIENT_NOON` costs the crown's blue **0.69 counts of 80.67**, and the whole ambient family (`ambientfill` 0.69, `terrainfloor` 0.33, `skyirr` 0.39, `propsky` 0.00) is under a count and a half; `bloom` 0.00, terrain sky specular 1.24, prop specular 2.92. **AND IT IS RAYLEIGH'S BLUE, NOT M1's AEROSOL:** `?aerosol=0` costs **30.14 counts of RED and 5.05 of blue** (the boundary layer is what makes the frame warm) and `?aerodepth=0` moves the rect by **0.01 of red and 0.00 of green and blue**, an ARMED null (the same flag moves poses whose ground clears the threshold, and moves this pose's whole-frame warm -8.32 -> -7.75), so the od-dependent depth-blue tint has not engaged at crown range. **THE FLOOR IS NOT OVER-STRENGTH:** the crowns sit at 2,278 to 2,850 m slant, the model's own constants give od ~0.19 blue (aerosol ~0.10 through a 400 m layer referenced to the observer's ground, Rayleigh ~0.08) and an airlight share of ~0.17, and the measured airlight there is 0.15 to 0.22 of the horizon band's equilibrium radiance, i.e. Koschmieder-correct; across the whole plausible card-coverage range the card's and the ground's per-pixel floors stay the same size, so nothing is imbalanced between the two surfaces (the data cannot resolve the difference or its sign, 2.34.4). **THE BLUE IS PHYSICALLY RIGHT AND THE CROWNS NEED MORE GREEN LIGHT, AND RN-2275's SIGN TEST FORBIDS IT:** sweeping `?crownshadefloor=` 0.08 -> 0.16 -> 0.30 moves the `forestairnoon` margin -1.76 -> -0.27 -> **+2.14 FLIPPED** while the crown's blue moves **80.67 -> 80.79, 0.12 counts across the whole sweep**; the affordable half-margin buys gx +0.8 of N3's 2.69-count gap. The guard is not a haze artefact (un-hazed margins -1.67/-2.74/-10.93/-3.04, same size or larger), and the crown's diffuse sits an order of magnitude below the ground's total where the visible-band real-world analogue is 2 to 3x. **THE DECISION OWED, RESTATED AS A PRINCIPLE AFTER THE VERIFIER CAUGHT THE FIRST DRAFT MIXING TWO MEASUREMENTS:** adopt in principle that RN-2275's sign test becomes a two-sided RATIO BAND with both patch means LINEARIZED before ratioing, endpoints and full measurement definition remitted to the implementing lane as its first deliverable (green-band linear reflectance supports 0.30 to 0.65), verified against the four existing pairs BEFORE any radiance change lands; and the **guard redefinition ships FIRST AND ALONE** with no pixel change, the radiance raise and the canopy roughness fix together in a SECOND lane because they interact. **FOUR NEW ISOLATORS, two of them RN-952's lesson:** `?terrainhaze=` (the terrain's aerial perspective had NO switch but the global `?atmos=0`), `?terrainpaint=1` / `?proppaint=1` (paint the additive floor alone, which an amplitude cannot do because it moves `col*T` and `Lin` together), and `?propspec=` (three's `totalSpecular` on props had no control of any kind and turns out to be **99.7 per cent of the crown's own blue**). All four registered in `run.mjs` in the same commit and readable back live via `rn2540state.mjs`. **EYE: CROWNS STILL NOT MET**, and the diagnostic crops say why in one look -- the floor painted alone is a flat structureless blue-slate sheet, and the card painted alone is unmistakably dark green. Gates 0, 8 of 8. Full record in section 2.34; frames `docs/screenshots/RN2540_*`.) (Same day: `lane/n6-crownshade` section 2.33; `lane/n4-midobjects` section 2.32; `lane/n3-airview` section 2.31.) THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2560 to RN-2563, `lane/n9-treeline`, **THE FAR TREELINE IS LIVE, AND THE ZERO WAS MEASURED WHERE ITS SUBJECT IS NOT.** The charter asked whether a term measuring exactly 0.00 counts on both sides of its range is dead code or a broken gate. **It is neither.** Painted rather than swept (NUMBERS.md RN-2514: a gated-off term sweeps as WEAK, not as MISSING), the far treeline carries **86.10 per cent of the terrain pixels at `forestair` and 99.20 per cent at `flyover`** -- it is the largest single contributor to both aerial frames this project owns. **THE TWO PUBLISHED ZEROS ARE ONE ZERO, MEASURED TWICE, AT A POSE THAT CONTAINS NONE OF THE TERM'S SUBJECT:** at `meadow` and `meadowfield` **95.55 and 98.04 per cent of the terrain in frame is inside `CANOPY_NEAR_FULL_M` 690 m**, where the term is zero BY DESIGN because TreeField owns that ground, and the band past 690 m is **1,198 and 471 pixels** of a 1,139,800-pixel scan. **THE ARITHMETIC BEHIND THAT IS ONE LINE AND IT GENERALISES:** at a 1.62 m eye the datum horizon is 1,394 m and the ground at 690 m has already dropped 0.397 m below the tangent plane, so the whole band this term owns subtends **0.1016 degrees, about ONE AND A HALF PIXELS** of 900 at a 60 degree field. A rectangle can be on the wrong side of the horizon (RN-2475) and so can a POSE. **THE INSTRUMENT IS THE DELIVERABLE:** `?treelinepaint=1` paints the term's own control flow as five flat hues (which PROGRAM drew the fragment, did the outer gate pass, was Beer-Lambert evaluated, did it return coverage), `=2` paints the coverage, and `=3..7` are five ISOLATE arms with one stage painted and every other terrain fragment exactly black, so an argmax over the five separates the paint from ITSELF rather than from the grass and the sky. It discriminates: one build, one session, **three different reasons for 'nothing here'** -- the `CANOPY_MAX_ALT_M` gate at `vista`/`mtnslope` (stage 1 on every rectangle, which upgrades 2.18.8's negative control from a null to a measurement), the 690 m ring at the plains, and a coherent 12.41-per-cent biome band at `forestair`. **ONE REAL GATE WAS FOUND, PRICED AND REFUTED:** the term shipped inside a `#ifndef OF_SCALED` with no reason in the source, so the band from the ~15 km chunk-depth handover to the 37,947 m horizon -- the far half of its own charter -- never ran it (**1.46 per cent of terrain pixels at `forestair`, 0.74 at `flyover`, +20.17 counts of `flyover.hzBand`**, and a red strip along the horizon in the stage frame). Nothing forced that guard: `pM`, `toCam`, `rd`, `up`, `coverSel` and `vCanopy` are all in scope and in METRES in both programs. So it became a UNIFORM, `?treelinefar=1`, with the one units correction it needs (`footM * uMetresPerUnit`, exactly 1.0 in the near program), and the arm is worth **0.11 counts of luma at the loudest rectangle in any pose** -- an ARMED null, because `hzBand` is 99 per cent airlight out there (RN-2543). It DEFAULTS OFF and should stay off until something makes that band carry more than air. **`TREE_SIN_MIN` IS NOT TOUCHED and the conditional reopening closes on its own numbers:** the 0.02 floor never binds anywhere the term is live (depression 0.33 at the reach, 0.0316 at the horizon from 1,200 m), and where it does bind the term has 1.5 pixels of subject; WG-260's inverted-direction finding stands. **SHIPS NO PIXEL CHANGE, proved by a real pair:** the six source files swapped to `aedc0748`, rebuilt from scratch with its own sentinel and PID, seven poses measured, swapped back and re-measured, and **every committed rectangle at all seven is bit-identical**, `meadownight` included (8.91 / 9.33 / 14.46 / 8.72 / 9.73 / 8.41 / 4.99, night measured not assumed); the levels also reproduce WG-277's published digits exactly. **`world` IS NOT A VALID IDENTITY RECTANGLE** and that is a new instrument note: it spans the HUD, so it carries the frame rate, and on ONE build three fresh processes read `meadow.world` 115.30 / 115.32 / 115.34 while every committed rectangle is bit-identical. **N8's `rn2550guard.mjs` could not be run against these pins:** it needs `<rect>.lin.Y` and a `flyover` `crowns` rect, and neither exists on `aedc0748`. Gates 0, 0, 8 of 8. Full record in section 2.36; frames `docs/screenshots/RN2560_*`.) (Previous: `lane/n7-bluefloor` section 2.34; `lane/n6-crownshade` section 2.33; `lane/n4-midobjects` section 2.32; `lane/n3-airview` section 2.31; `lane/n1-plains` section 2.30.) THIS LINE IS A POINTER: replace it, never append to it.
 
 
 
@@ -11009,3 +11009,411 @@ anywhere.
    small lane rather than a paragraph: a flag that blacks out part of the world
    is either a term with a missing fallback or a control nobody can trust the
    next time it is used as an arm.
+
+---
+
+## 2.36 THE FAR TREELINE IS LIVE, AND THE ZERO WAS MEASURED WHERE ITS SUBJECT IS NOT (RN-2560 to RN-2563, 2026-08-22, `lane/n9-treeline`)
+
+Base `origin/main` at `aedc0748`. One owned `vite preview` on `127.0.0.1:5960`
+`--strictPort`, restarted for every build, with a fresh sentinel token planted
+in that `dist` and fetched back **over the wire and compared on CONTENT** before
+every batch (RN-2540's verifier's trap: `vite preview` answers 200 for any
+missing path, so a status-code check is not a check), the served `index-*.js`
+compared against the built one (RN-2305's trap: `vite preview` snapshots `dist`
+at startup), and the port's owning PID compared against the PID this lane
+started. Four builds, four tokens, PIDs 20812 / 2936 / 6236 / 28436 / 19912 all
+confirmed gone at the end. **This lane ships no pixel change.**
+
+### 2.36.1 THE ONE-LINE ANSWER, and the brief's dichotomy has a third answer
+
+The charter asked whether a term measuring exactly zero on both sides of its
+intended range is **dead code or a broken gate**. It is **neither**. The far
+treeline is the largest single contributor to both aerial frames the project
+owns: painted rather than swept, it carries **86.10 per cent of the terrain
+pixels at `forestair` and 99.20 per cent at `flyover`**.
+
+**The two published zeros are one zero, measured twice, at a pose that contains
+none of the term's subject.** At `meadow` and `meadowfield` **95.55 and 98.04
+per cent of the terrain in the frame is inside `CANOPY_NEAR_FULL_M` 690 m**,
+where the term is identically zero BY DESIGN because `TreeField` owns that
+ground; the band past 690 m is **1,198 and 471 pixels** of a 1,139,800-pixel
+scan. A rectangle that reads 0.00 there is reporting correctly on a term whose
+subject is not in the picture. World-gen's 6.13.8 and 6.14.5 are therefore
+**right in their measurement and wrong in what they concluded is at issue**:
+6.14.5's "even now that the ground reaches past `CANOPY_NEAR_FULL_M`" is the
+sentence that does not hold, and the correction is in 2.36.8.
+
+**ONE REAL GATE WAS FOUND AND IT IS PRICED AND REFUTED.** The term shipped
+inside a `#ifndef OF_SCALED` with no reason written beside it, so the band from
+the ~15 km chunk-depth handover out to the 37,947 m horizon -- the far half of
+this term's own charter -- never ran it. That is real: **1.46 per cent of the
+terrain pixels at `forestair`, 0.74 at `flyover`**. The guard is now a UNIFORM
+(`?treelinefar=1`) so it can be priced one flag apart on one build, and the
+priced arm is worth **0.11 counts of luma at the loudest rectangle in any
+pose**. It defaults OFF and the recommendation is that it stays off.
+
+### 2.36.2 THE INSTRUMENT: PAINT THE BRANCH, and a sweep could not have answered
+
+NUMBERS.md's RN-2514 entry is the whole method here: *a term spliced into a
+`#ifndef OF_SCALED` region is absent from the far ground, and its sweep looks
+like a weak term rather than a missing one*. `?treelineamp=` was available for
+the whole of this question and could never have separated "off" from "small",
+which is exactly the trap that had already cost this term two lanes' worth of
+nulls. So the branch itself is painted:
+
+| flag | what it paints |
+|---|---|
+| `?treelinepaint=1` | the STAGE hue map: five flat categorical colours, one per rung of the term's own control flow |
+| `?treelinepaint=2` | the LEVEL map: `treeK`, the coverage the term actually mixes with, scaled to 0.22 |
+| `?treelinepaint=3` .. `=7` | the ISOLATE arms: stage 0..4 painted 0.20 and every other terrain fragment painted **exactly black** |
+
+The five stages are the five ways this term can decline to act, and naming them
+is most of the finding:
+
+```
+  0  the SCALED program drew this fragment (the term is not in it)
+  1  near program, the outer gate refused (amp 0, reach 0, or vCanopy 0)
+  2  gate passed and treeW == 1, i.e. inside 690 m: zero BY DESIGN
+  3  Beer-Lambert evaluated and returned effectively nothing
+  4  evaluated AND contributing: the term is LIVE here
+```
+
+**Every colour is under 0.25** because this project's grade is an ACES fit that
+compresses everything above about 0.3 into nine counts (NUMBERS.md, RN-2479),
+and they are separated by HUE rather than by level so the lighting multiply
+cannot merge two rungs. **Every arm runs with `?terrainhaze=0`**, and that is
+load-bearing rather than tidy: aerial perspective is `col * T + Lin`, so at
+range the additive floor paints a "black" fragment the colour of the air and the
+exactness of the zero is gone. RN-2540's terrain isolator is what makes the
+stage-0 rung readable at all, and it reaches both programs.
+
+**THE ISOLATE ARMS ARE WHAT TURN THE PICTURE INTO A TABLE.** A hue test on the
+one coloured frame would have to separate the paint from the grass, the props
+and the sky, which are not painted and can wear any colour. The argmax over the
+five isolate arms has to separate the paint only from ITSELF: a fragment that is
+not terrain renders IDENTICALLY in all five arms, so its spread is zero and it
+falls out as `other` rather than being mis-assigned. The threshold is on the
+SPREAD, never on a level.
+
+**The arms are proved non-vacuous from the page's own state** rather than from
+the flag having been typed (RN-2268's scar): `__ofTerrainArt.treeline()` now
+publishes `paint` and `far` as the shader holds them, and every table below
+carries `paintUniform=3/4/5/6/7` off the capture.
+
+### 2.36.3 THE LIVE/DEAD MAP
+
+**Per pixel, argmax over the five isolate arms, HUD excluded (left 210, bottom
+80, pngdiff.mjs's own exclusion).** Both a loose and a strict spread threshold
+are published because the loose one counts grass-edge aliasing as terrain and
+the strict one does not, and the two agree on every conclusion:
+
+| pose | terrain px | s0 SCALED | s1 GATE OFF | s2 <690 m | s3 ZERO | **s4 LIVE** |
+|---|---:|---:|---:|---:|---:|---:|
+| `forestair` (Forest, 1,200 m) | 657,996 | **1.46%** | 12.41% | 0.01% | 0.01% | **86.10%** |
+| `flyover` (Hills, 1,200 m) | 571,429 | **0.74%** | 0.02% | 0.02% | 0.02% | **99.20%** |
+| `meadow` (Plains, 1.6 m eye) | 117,926 | 1.28% | 1.42% | **95.55%** | 0.74% | **1.02%** |
+| `meadowfield` (same site) | 160,241 | 0.62% | 0.32% | **98.04%** | 0.72% | **0.29%** |
+
+(spread 20; at spread 4 the same four rows read 1.59 / 12.14 / 0.03 / 0.03 /
+86.20, 0.82 / 0.04 / 0.04 / 0.04 / 99.07, 3.16 / 1.79 / 93.06 / 0.83 / 1.15 and
+2.66 / 0.42 / 95.64 / 0.89 / 0.39. The stage-0 counts are the ones that move,
+and 2.36.5 does not rest on them.)
+
+**Per committed rectangle, the isolate arms' own luma, one flag apart on one
+build.** A rectangle that lights up on exactly one arm is a rectangle whose
+terrain is entirely at that stage:
+
+**`forestair`** (`reachM` 3,500, `toneLive` true). `box` 8.12 / 13.71 / 8.12 /
+8.13 / **108.37**; `hzBand` 3.44 / 3.44 / 3.44 / 3.44 / **120.60**; `under`
+14.11 x4 / **95.07**; `shadowStep` 24.02 x4 / **104.52**; `crowns` 25.24 x4 /
+**95.56**; `treeIn` 7.11 x4 / **115.66**; `treeOut` 2.02 x4 / **118.88**.
+`skyBand` **153.65 on all five arms** -- the negative control.
+
+**`flyover`**: `box` 16.58 / 16.58 / 16.57 / 16.57 / **109.00**; `hzBand`
+**71.28** / 51.11 / 51.11 / 51.11 / **119.70**, and that first cell is the
+scaled shell showing up in a committed rectangle, **+20.17 counts of stage-0
+terrain in the horizon band**.
+
+**`meadow`**: every rectangle lights up on the `<690 m` arm and on nothing
+else -- `box` 77.70 / 77.70 / **86.65** / 77.70 / 77.70, `nearG` 70.93 / 70.93 /
+**81.61** / 70.93 / 70.93, `shade` 73.19 / 73.19 / **86.67** / 73.19 / 73.19,
+`hzBand` 125.29 / 125.29 / **131.70** / 125.29 / 125.29. With `?grass=0` the
+same shape at three times the amplitude (`nearG` 28.37 / 28.37 / **78.29** /
+28.37 / 28.37, `shade` 30.38 / 30.38 / **100.03** / 30.38 / 30.38), which is the
+same answer with the carpet out of the way.
+
+**`meadowfield`**: the same, with the ONLY live signal in either standing pose
+being `hz` 67.12 -> **67.31** and `midtree` 141.41 -> **141.77** on the s4 arm.
+**0.19 and 0.36 counts. That is the entire far treeline at a standing eye.**
+
+**`vista` (Mountains, a 4.7 km ridge) and `mtnslope`: stage 1 EVERYWHERE**, on
+every rectangle -- `vista` `box` 28.85 / **176.14** / 28.85 / 28.85 / 28.85,
+`hzBand` 4.62 / **175.84** / ..., `mtnslope` `box` 35.51 / **127.50** / 35.51 /
+35.51 / 35.51. `vCanopy` is exactly zero there because the ground is above
+`CANOPY_MAX_ALT_M`, which is 2.18.8's negative control **verified from the
+inside for the first time**: that section could only say the ridge does not
+green, and this says WHY, and says it is the altitude gate rather than a
+coincidence of the palette.
+
+**AND THE INSTRUMENT DISCRIMINATES, which is why the meadow row can be
+believed.** One tool, one build, one session produced three DIFFERENT reasons
+for "the term does nothing here" at four different poses -- the altitude gate at
+the ridges, the 690 m ring at the plains, the biome band at `forestair`'s
+mid-field -- and the LIVE rung at two more. A classifier that could only say
+"nothing" everywhere would be indistinguishable from a broken one.
+
+### 2.36.4 THE ARITHMETIC THAT EXPLAINS THE STANDING-EYE NULL, and it generalises
+
+At a 1.62 m eye on Forge (R = 6e5 m) the datum horizon is
+`sqrt(2 R h)` = **1,394 m**. Ground at 690 m has already dropped
+`690^2 / (2 R)` = **0.397 m** below the tangent plane, so the eye is 1.223 m
+above it and the depression there is `atan(1.223 / 690)` = **0.1016 degrees**.
+The whole band this term owns at a standing eye therefore runs from 0.1016
+degrees of depression to zero. At a 60 degree vertical field over 900 rows that
+is about **1.5 pixels**, and the poses' own pitches put it near frame centre
+where that linearisation is good to a few per cent.
+
+**One and a half pixels.** Everything a standing player can see of this term
+beyond that is risen ground standing ABOVE the horizon line, which is what the
+WG-275 swell adds and what `hz` and `midtree`'s 0.19 and 0.36 counts are. So the
+term is not failing at a standing eye; there is essentially nothing there for it
+to do, and there never was.
+
+**This is the general shape and it is worth having by name:** a rectangle can be
+on the wrong side of the horizon (NUMBERS.md, RN-2475), and so can a POSE. Two
+lanes measured a term at a pose whose whole frame is inside the term's own near
+gate and read the zero as a property of the term.
+
+### 2.36.5 THE ONE REAL GATE: `#ifndef OF_SCALED`, FOUND, PRICED, AND REFUTED
+
+`TerrainTreeline.glsl.ts` wrapped the whole term in `#ifndef OF_SCALED`. Unlike
+every other such guard in this material it carried **no reason in the source**,
+and it is not forced by scope or by units: `pM`, `toCam`, `dist`, `rd`, `up`,
+`coverSel` and `vCanopy` are all computed OUTSIDE the guards in
+`TerrainFragSetup`, in planet-centred **metres in both programs**
+(`pM = (vWorld - uBodyCenter) * uMetresPerUnit`), and `vCanopy` is uploaded for
+far chunks exactly as for near ones because both batches go through
+`ChunkBatch.stitched`.
+
+**It is a real hole and the paint measures it: 1.46 per cent of the terrain
+pixels at `forestair`, 0.74 at `flyover`**, and at `flyover` it is +20.17 counts
+of a committed rectangle (`hzBand`). In the stage frame it is unmistakable: a
+**red strip lying along the horizon** with the whole rest of the ground white.
+It is also the previously unnamed mechanism behind 2.18.8's own honest limit 3
+("the very furthest band is a colour again rather than a landscape"), which had
+been rationalised as "at 20 km a 165 m stand is half a pixel" -- true, but not
+the reason.
+
+**SO IT WAS TURNED INTO A UNIFORM AND PRICED.** `?treelinefar=1`, one flag on
+one build on one program set (RN-843/RN-1000's rule, and a define could not have
+done it). One correction travels with it: `footM` is
+`max(|dFdx(vWorld)|, |dFdy(vWorld)|)` in **vWorld units**, and the mottle's
+retirement compares it against 34 m, so in the scaled scene (1 unit = 1e5 m) the
+mottle would have come back at FULL amplitude at the horizon. `footM` is now
+`footM * uMetresPerUnit`, which is a multiply by exactly 1.0 in the near program
+and therefore bit-identical there.
+
+**THE ARM, and it is an ARMED null rather than a vacuous one** (it moves two
+numbers, and `far=1` is read back off the page):
+
+| pose | rectangle | shipped | `?treelinefar=1` |
+|---|---|---:|---:|
+| `forestair` | `world` | 126.66 / 102.11 | 126.66 / **102.04** |
+| `forestair` | all 12 committed rects | | **bit-identical** |
+| `flyover` | `hzBand` | 183.46 / 6.71 | **183.35** / 6.71 |
+| `flyover` | `world` | 133.25 / 82.64 | 133.24 / 82.64 |
+| `meadow`, `meadowfield`, `vista` | every committed rect | | **bit-identical** (the vista sky rects move inside WG-277's own documented run-index dither, which is present in BOTH arms) |
+
+**0.11 counts at the loudest rectangle in any pose.** The reason is RN-2543's
+own finding one band further out: `hzBand` is 99 per cent airlight, and past
+15 km the ground's albedo is a percent or two of its own pixel however green it
+is. **A guard that removes a term from 1.5 per cent of the terrain pixels and
+costs 0.11 counts to remove is not a defect worth a visual change**, so the flag
+ships OFF and the recommendation is that it stays off until something else makes
+that band matter (thinner haze, a longer near cutoff, or a clear day).
+
+The alternative reading -- ship it on because it is free and correct -- was
+considered and refused for the reason the brief itself gives: turning it on
+makes a term newly live on a band no probe has ever measured, and that is a
+visual lane with hero pairs, guards and an eye verdict, not something a
+diagnosis lane flips on the way past. **The flag is the deliverable; the
+decision is routed in 2.36.11 item 1 with its price attached.**
+
+### 2.36.6 `TREE_SIN_MIN`: NOT TOUCHED, and now for a reason that is measured rather than inherited
+
+WG-260's 6.13.8 refused to change this constant because the term was unreachable
+across 170 to 690 m. That refusal stands and this lane's measurement is a
+stronger version of it, because the term is now known to be reachable somewhere
+and the floor can be asked whether it binds THERE.
+
+**It does not bind anywhere the term is live.** The floor is 0.02 (1.15
+degrees). At `forestair`'s 1,200 m eye the ground's depression is 0.33 at the
+3,500 m reach, 0.06 at 20 km and **0.0316 at the 37,947 m horizon** -- above the
+floor at every range the near program draws, which is what
+`TerrainTreeline.ts`'s own docstring already claims and what is now confirmed
+against a live/dead map rather than against an assumption about where the term
+runs. `flyover` is the same pose height and the same arithmetic.
+
+**Where it DOES bind, the term has 1.5 pixels of subject** (2.36.4): at a 1.62 m
+eye `sin(depression)` is 0.0023 at 690 m and 0.0012 at 1,400 m, both far under
+the floor. So the aerial-versus-ground constant question, reopened by the
+charter conditionally on the term becoming reachable, **closes again on its own
+numbers**: there is no ground pose at which changing this constant can move more
+than a pixel and a half of frame, and WG-260's second finding still holds --
+LOWERING the floor makes the exponent nine to seventeen times larger and the
+cover MORE saturated, so the intuitive "correct the aerial constant for the
+ground eye" hardens the 690 m ring instead of softening it.
+
+**Routed rather than done:** if a later lane wants the far ground graded at a
+standing eye, the lever is a floor that RISES as the eye falls, it needs a
+`?treesinmin=` override so the table stays re-takeable (RN-2495's remedy), and
+**it needs a pose whose subject is bigger than two pixels first**. That pose does
+not exist in the shot set today and 2.36.11 item 2 asks for it.
+
+### 2.36.7 NO PIXEL CHANGE, proved by a real pair rather than by the algebra
+
+The paint sits behind a bare-uniform branch and the shell factor is a
+compile-time literal in the near program, so the algebra says nothing moves. The
+algebra is not the proof. The lane's six source files were swapped to their
+`aedc0748` versions, the tree rebuilt from scratch (`index-BNHzAJVU.js`), a new
+sentinel planted and a new server started and verified, seven poses measured,
+then the files swapped back, rebuilt (`index-CWXEPg5p.js`), re-verified and
+re-measured -- the restore written as a script that takes the ref as an argument
+so running it either way is the same operation (NUMBERS.md, "put the re-apply of
+a negative control in a `finally`").
+
+**Every committed rectangle at all seven poses is bit-identical between the
+from-scratch base build and the lane build**: `forestair` all 13 (`box`
+99.05/31.34, `hzBand` 173.71/8.28, `crowns` 73.89/21.21, `treeIn` 95.79/11.71,
+`treeOut` 107.66/9.55, `skyBand` 153.65/25.47 ...), `flyover` all 5,
+`meadow` all 6 (`box` 84.39/54.98, `hzBand` 130.13/155.83, `mid` 110.11/37.29,
+`nearG` 79.31/52.07, `shade` 83.78/55.89), `meadowfield` all 11 (`midtree`
+143.27/94.55, `midband` 120.42/23.49, `r100` 122.18/36.43, `r250` 114.52/43.91),
+`vista` `box` 174.54/14.33 / `hzBand` 179.28/3.28 / `mid` 175.57/13.97 / `nearG`
+144.84/17.08, `mtnslope` all 7 (127.06/88.55, 80.76/76.19, 73.65/62.43,
+69.32/64.77, 122.60/75.78, 143.02/62.79, 160.79/32.76).
+
+**NIGHT MEASURED, NOT ASSUMED.** `meadownight`, all seven rectangles
+bit-identical on both builds: `world` 8.67/7.78, `box` 8.91/5.93, `skyHi`
+9.33/1.79, `skyHz` 14.46/1.00, `hzBand` 8.72/16.95, `mid` 9.73/5.15, `nearG`
+8.41/5.72, `shade` 4.99/4.43.
+
+**AND THOSE LEVELS ARE WG-277's OWN, TO THE DIGIT**, which is a second,
+independent check that this base is the merged `main` and not something else:
+`meadow` `box` 84.39/54.98, `hzBand` 130.13/155.83, `mid` 110.11/37.29, `nearG`
+79.31/52.07, `shade` 83.78/55.89; `meadowfield` `midtree` 143.27/94.55,
+`midband` 120.42/23.49, `r100` 122.18/36.43, `r250` 114.52/43.91, `box`
+102.15/56.42, `sky` 178.26/16.72; `mtnslope`'s seven; `vista` `box` 174.54.
+
+**TWO CLASSES OF MOVEMENT ARE REPORTED RATHER THAN SUPPRESSED, and neither is a
+committed rectangle.** The `vista` and `meadow` SKY rectangles carry the
+run-index dither WG-277 already documented (`skyHi` 34.45 against 34.52, `skyHz`
+37.07 against 37.28), present in both arms and both builds. And **`world` is not
+a valid identity rectangle at all**, because `stat(0, 0, W, H)` spans the whole
+frame INCLUDING the HUD overlay, whose text carries the frame rate and the
+millisecond timings: on ONE build, three fresh processes, `meadow.world` reads
+115.30 / 115.32 / 115.34 with iqr 103.10 / 103.15 / 103.16 while every committed
+rectangle in the same three captures is bit-identical. The base-versus-lane
+`world` differences (0.06 at `meadow`, 0.09 at `mtnslope`) are that spread, and
+the restored lane build lands inside the base build's own range at both poses.
+
+### 2.36.8 CORRECTIONS, written where the finding is rather than filed elsewhere
+
+1. **world-gen.md 6.14.5's "even now that the ground reaches past
+   `CANOPY_NEAR_FULL_M`" does not hold at `meadow`.** 95.55 per cent of the
+   terrain in that frame is INSIDE 690 m and the band past it is 1,198 pixels of
+   a 1,139,800-pixel scan. The `?treeline=0` reading of 0.00 counts is correct
+   and reproduces here; what it is evidence about is the pose, not the term.
+   6.13.8's own conclusion is untouched and this lane strengthens it.
+2. **2.18.8's honest limit 3 gets its mechanism.** "The very furthest band is a
+   colour again rather than a landscape" is the `#ifndef OF_SCALED` guard, not
+   only the half-pixel stand, and 2.36.5 prices what removing it would buy.
+3. **2.18.8's `vista` negative control is upgraded from a null to a
+   measurement.** The ridge does not green because `vCanopy` is exactly zero
+   there (stage 1 on every rectangle, `box` 28.85 against 176.14 on the
+   gate-refused arm), which is `CANOPY_MAX_ALT_M` doing its job and is the
+   `aHeight`-for-`sampleChunk` substitution confirmed from the inside.
+4. **2.18.4's `TREE_SIN_MIN` note is confirmed rather than merely believed**
+   (2.36.6): the floor never binds on drawn ground at either aerial pose, now
+   checked against a map of where the term actually runs.
+
+### 2.36.9 GUARDS, and one that could not be run
+
+**`rn2550guard.mjs` (lane N8's RN-2550 ratchet) CANNOT RUN AGAINST THIS BASE,
+and that is a fact about the base rather than a choice.** It reads
+`<rect>.lin.Y` -- a per-pixel sRGB-decoded linear luminance the guard's own
+header says is published by `probes/artframe.js`'s `statOn` -- and it needs a
+`crowns` rectangle on `flyover`. Neither exists on `origin/main` at `aedc0748`
+(`grep -c "lin:" probes/artframe.js` is **0**), because both are N8's own
+changes on `lane/n8-guardband` at `b3d80fef`, unmerged. **So the pins this lane
+ran against are not RN-2550's**: the guard here is 2.36.7's from-scratch pair
+over seven poses including night, which is the stronger check for a lane that
+ships no pixel change, and there is by construction nothing for a ratchet to
+catch. When N8 lands, its ratchet inherits a tree this lane did not move.
+
+The eight-link `npm run check` ran as its own step: **8 of 8**.
+
+### 2.36.10 GATES, RAILS AND FILES
+
+`npx tsc --noEmit`, `npm run build` (the `dist`-parity form, which runs
+`sync-wasm`, `sync-assets` and `check:roles` first) and `cd web && npm run check`
+run as SEPARATE steps with each exit status read on its own: **0, 0, 8 of 8**.
+`check:limits` passes, so no file crossed the 400-code-line cap.
+
+Two page params, both registered in `run.mjs`'s `PAGE_PARAMS` **in the same
+commit that introduces them** (RN-152's scar): `treelinepaint`, `treelinefar`.
+Both readable back live off `__ofTerrainArt.treeline()` as `paint` and `far`,
+which is what every table above quotes rather than quoting the flag.
+
+Source touched, six files, all in `web/src/render/materials/`:
+`TerrainTreeline.ts` (two query parsers and their reasons),
+`TerrainTreeline.glsl.ts` (the stage variable, the stage paint, the shell
+uniform replacing the `#ifndef`, the `footM * uMetresPerUnit` correction),
+`TerrainUniformState.ts` and `TerrainProgram.ts` (two uniform holders, shared by
+reference into both materials), `TerrainFragPars.glsl.ts` (two declarations),
+`TerrainArtHandle.ts` (two readback fields).
+
+Four tools, all new, none replacing anything: `tools/smoke/rn2560stage.mjs` (the
+five isolate arms and the hue frames, per pose, every rectangle the capture
+publishes), `rn2560map.mjs` (argmax over the five isolate frames -> the share
+table), `rn2560pair.mjs` (any arms one flag apart, every rectangle, `world`
+first), `rn2560sentinel.mjs` (token content + served bundle name + port owner,
+exit nonzero on any disagreement).
+
+**NOT TOUCHED:** `ScatterTuning.ts` / `ScatterSample.ts`, `CanopySelfShadow.ts`,
+`FoliageTone.ts`, the height field, `web/wasm/*`, `test/expected.json`,
+`assets/textures/dist`, and **no pose row or rectangle in `artframe.js`** -- the
+tools read whatever the existing rows publish, which is why `rn2560pair.mjs`
+enumerates rather than names.
+
+### 2.36.11 OWED AND ROUTED
+
+1. **`?treelinefar=1` is a shipped, priced, DEFAULT-OFF flag and the decision to
+   flip it belongs to a lane with a reason** (2.36.5). It costs 0.11 counts
+   today. It becomes worth revisiting the moment anything makes the 15-to-38 km
+   band carry more than airlight: a thinner boundary layer, a longer
+   `nearDepthCutoff`, or a weather state. Whoever flips it owes hero pairs at
+   `forestair`/`flyover`, the mottle re-checked at the horizon (the
+   `uMetresPerUnit` correction is in place but has never been LOOKED at), and
+   the `vista` negative control re-run.
+2. **THERE IS NO POSE IN THE SHOT SET AT WHICH THE FAR TREELINE IS THE SUBJECT
+   FROM THE GROUND**, and that is why two lanes measured it at a pose where it
+   has 1.5 pixels. What is missing is a standing or low pose looking at risen
+   ground several kilometres away -- the swelled plains horizon that WG-275 put
+   there, from an eye a few tens of metres up, where the band past 690 m is tens
+   of rows rather than one. This is `artframe.js`'s owner's call and it is an
+   ADDITIVE row; this lane deliberately added none.
+3. **`forestair`'s stage-1 band is 12.41 per cent of its terrain and it is a
+   COHERENT HORIZONTAL BAND, not scattered clearings** (see
+   `RN2560_forestair_stage.png`, the blue region, and the same region as black
+   in `RN2560_forestair_cover.png`). Scattered clumps would be the grove field;
+   a band is the shape of a biome edge. `vCanopy` is zero there for one of two
+   reasons -- a non-canopy biome or `canopyWeight` collapsing -- and this lane
+   did not separate them. It is world-gen's field rather than rendering's term,
+   and it is the largest remaining "why is the far ground not wooded" answer
+   after this one.
+4. **`world` should stop being read as a rectangle** (2.36.7). It spans the HUD,
+   so it carries the frame rate. Either the probe should exclude the HUD from it
+   the way `pngdiff.mjs` does, or the reports should stop quoting it to two
+   decimals. Four sections in this file quote `world` deltas under a tenth of a
+   count as though they were signal.
