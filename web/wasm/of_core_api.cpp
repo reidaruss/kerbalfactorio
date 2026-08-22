@@ -496,7 +496,7 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       NOTHING EXISTING CHANGED SIGNATURE OR MEANING. `DockRig::latch`
 //       defaults true, so every ABI 25 caller of `of_fl_dock_*` gets the rig it
 //       already had. The bump is for the five new symbols only.
-// ABI 27 (2026-08-21): ONE new export, `of_body_set_swell_coef` (WG-275), and
+// ABI 27 (2026-08-21): ONE new export, `of_body_set_swell_scale` (WG-275), and
 //       the FIELD ITSELF MOVED, which is the part a version number cannot
 //       express and this note has to. `sampleHeightFieldPlanet` gained the
 //       lowland swell, so every planet height, every biome that reads one,

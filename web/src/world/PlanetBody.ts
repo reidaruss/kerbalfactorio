@@ -123,6 +123,21 @@ export class PlanetBody {
     );
   }
 
+  /**
+   * WG-275, A LATENT TRAP NAMED RATHER THAN LEFT: these two shorthands take no
+   * `swellScale` and have ZERO callers in `web/src` today (`Boot`,
+   * `WorldSession`, `CelestialBake` all call `create` directly). They are
+   * deliberately NOT plumbed, because plumbing a parameter through a function
+   * nothing calls is untested code, and their omission is SAFE in the shipped
+   * direction: `undefined` leaves /core's own default, so a caller of
+   * `PlanetBody.forge` gets the SHIPPED planet.
+   *
+   * What it would cost is a wrong NEGATIVE CONTROL, not a wrong game. The first
+   * consumer that reaches for one of these under `?horizonswell=0` gets a body
+   * carrying the swell while the terrain worker's does not, and the two would
+   * silently disagree about the ground. If either gains a caller, give it the
+   * fifth argument in the same commit, or delete it in favour of `create`.
+   */
   static forge(M: OfCoreModule, seedLo: number, seedHi: number): PlanetBody {
     return PlanetBody.create(M, 0, seedLo, seedHi);
   }

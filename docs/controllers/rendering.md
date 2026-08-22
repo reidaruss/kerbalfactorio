@@ -9310,8 +9310,11 @@ at 6x.** The mid field's own committed rectangles at this pose read 41.78 at r35
 carries" is the 41-to-47 band and 1.5x lands at **43.83**, inside it.
 
 > **CROSS-REFERENCE, added by WG-278 (world-gen, `lane/wg-ship`, 2026-08-21).
-> DOC ONLY: no rendering file was edited and `HORIZON_AN_PLAINS_GAIN` is
-> UNCHANGED.** Two things a reader of this section now needs, both measured in
+> NO RENDERING SOURCE FILE WAS EDITED AND NO RENDERING CONSTANT WAS CHANGED;
+> `HORIZON_AN_PLAINS_GAIN` is UNCHANGED. This note and one line in 2.30.9 are
+> the whole of the edit, and they are in `rendering.md`, which is itself a
+> rendering file, so "doc only" is the wrong way to say it.** Two things a
+> reader of this section now needs, both measured in
 > world-gen.md 6.14.6 with the whole ladder published there.
 >
 > **1. The four figures above are now a `?horizonswell=0` reading.** The planet
