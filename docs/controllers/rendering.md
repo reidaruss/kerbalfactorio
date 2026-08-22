@@ -9309,6 +9309,43 @@ at 6x.** The mid field's own committed rectangles at this pose read 41.78 at r35
 41.41 at r60 and 47.33 at r120, so "the far ground carries what the mid field
 carries" is the 41-to-47 band and 1.5x lands at **43.83**, inside it.
 
+> **CROSS-REFERENCE, added by WG-278 (world-gen, `lane/wg-ship`, 2026-08-21).
+> DOC ONLY: no rendering file was edited and `HORIZON_AN_PLAINS_GAIN` is
+> UNCHANGED.** Two things a reader of this section now needs, both measured in
+> world-gen.md 6.14.6 with the whole ladder published there.
+>
+> **1. The four figures above are now a `?horizonswell=0` reading.** The planet
+> height field gained the lowland swell at WG-275, so on the shipped world this
+> section's ladder reads **29.78 / 35.20 / 41.92** at `?horizonplains=` 0 / 1 /
+> 2 and **12.92** at `?horizon=0`. Every one of the pre-swell figures
+> (17.42 / 32.63 / 43.83 / 53.56) reproduces exactly with `?horizonswell=0`, so
+> this section is correct as written about the world it was written against.
+>
+> **2. THE COUPLING WG-244 ROUTED TO THIS SECTION IS REFUTED AS TO ITS
+> MECHANISM, and that matters here because the sentence is still quoted.**
+> WG-244 wrote that the swell "moves `vRelief`, which is the input to
+> `MASSIF_BAND`, so a height change at a plain silently retunes RN-2480's own
+> gain". The r250 number is exact; the mechanism is not. `hzMsfBand`'s gate
+> starts at `MASSIF_BAND[0]` 0.10 of `uMaxRelief` 6,000 m, i.e. **600 m of
+> relief**, and `world.surfaceHeightM` at this site reads **331.83 m before the
+> swell and 355.86 m after**. Both sit 245 m below the gate, so `hzMsfBand` is
+> **exactly zero on both sides** and the multiplier is 1.5x in both arms;
+> `?horizonmassif=0` moves `r250` by **0.00 counts in BOTH arms**, which is the
+> corroborating measurement. What moved r250 is the ground, whose finest swell
+> octave is 1 km.
+>
+> **3. What is genuinely open, stated so rendering can decide.** On the swelled
+> field this section's own criterion is marginal: the mid-field band is
+> **37.20 to 41.06** (`r18` 37.20, `r35` 38.93, `r27` 41.06) and `r250` is
+> **35.20**, i.e. 2.00 counts under a band 3.86 counts wide, with gain 0.75
+> (`?horizonplains=1.5`) landing at 38.13 inside it and the in-band interval
+> interpolating to roughly g in [0.67, 0.94]. WG-278 did NOT retune, for three
+> reasons: the routed cause does not exist, the target band moved with the same
+> change that moved `r250`, and the shipped and gain-0.75 frames were
+> photographed and cropped at 3x over the `r250` strip and are
+> **indistinguishable**. This is rendering's constant and rendering's call; the
+> numbers are here rather than a routed sentence.
+
 ### 2.30.8 THE NUMBERS, one flag apart on one build, fresh process each
 
 `?horizonplains=0` is the exact before arm with the cell guard and the stand-in
@@ -9350,7 +9387,12 @@ rather than as land, which is the same shape of refusal `MASSIF_A_VALUE`'s own
 note records at 2.50. What is missing is not tone:
 
 1. **The horizon SILHOUETTE is dead straight.** That is the height field, i.e.
-   world-gen's, not a term any material can add.
+   world-gen's, not a term any material can add. **PARTIALLY CLOSED 2026-08-21
+   by WG-275** (world-gen.md 6.14): the lowland swell shipped and the bare-frame
+   boundary spread at this pose goes **4.056 to 15.111 px**. The eye verdict is
+   honest-partial and stays that way: the left ~40 per cent of the frame gains a
+   real shoulder, the right ~60 per cent is still level. Items 2 and 3 below are
+   untouched by it, and item 3 was WG-260's.
 2. **The band is thirteen rows tall**, so nothing painted into it can occupy
    enough screen to read as landscape on its own.
 3. **A real plain carries objects standing on it at that range** -- hedgerows,

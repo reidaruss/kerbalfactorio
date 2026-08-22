@@ -397,7 +397,17 @@ inline double sampleHeightField(const BodyParams& b, const Vec3& dir) {
     const Vec3 wd=domainWarp(b.bodySeed,dir,3.0,0.018,0x57A1u);
     const double L1=ridgedMF(b.bodySeed,wd,24.0,9,23,2.0,0.50,2.0);
     const double L2=fbm(b.bodySeed,dir,2500.0,3,37);
-    double h=L0*0.58+uplift*L1*0.52+L2*0.0021; h*=b.maxReliefM;
+    // WG-275, the lowland swell. Mirrored here like every other layer, and the
+    // CONSTANTS ARE READ FROM of::worldgen RATHER THAN RETYPED: this oracle
+    // exists to prove the optimised valueNoise still composes to the same
+    // field, not to duplicate a tuning table that would then drift.
+    const double LS=fbm(b.bodySeed,dir,of::worldgen::kLowlandSwellFreq,
+                        of::worldgen::kLowlandSwellOct,
+                        of::worldgen::kLowlandSwellChan);
+    const double lowland=1.0-of::worldgen::smoothstep(
+        of::worldgen::kLowlandGate0,of::worldgen::kLowlandGate1,uplift);
+    double h=L0*0.58+uplift*L1*0.52+L2*0.0021
+             +lowland*LS*b.lowlandSwellCoef; h*=b.maxReliefM;
     return h;
   } else {
     // WG-141 re-baseline, exactly as the WG-25 note above describes for the

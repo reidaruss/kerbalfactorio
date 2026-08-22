@@ -103,6 +103,11 @@ export interface SessionDeps {
   /** The world seed, so a new body can be minted on the same world. */
   readonly seedLo: number;
   readonly seedHi: number;
+  /** WG-275. The lowland swell scale, carried for the same reason the seed is:
+   *  a body minted mid-session has to be the same world the session started
+   *  on, and after WG-275 the field is part of what "the same world" means.
+   *  `undefined` is the shipped planet. */
+  readonly swellScale?: number;
 }
 
 export interface RebootReport {
@@ -226,7 +231,8 @@ export class WorldSession {
 
   private newBody(to: BodyId): PlanetBody {
     const old = this.scope.body;
-    const next = PlanetBody.create(this.d.core, to, this.d.seedLo, this.d.seedHi);
+    const next = PlanetBody.create(this.d.core, to, this.d.seedLo, this.d.seedHi,
+                                   this.d.swellScale);
     // Free the OLD handle only once the new one exists. A `_of_body_create` can
     // fail and return 0, and a session that has destroyed its only body before
     // finding that out has nothing to fall back to. `PlanetBody.create` throws

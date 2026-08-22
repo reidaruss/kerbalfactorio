@@ -345,7 +345,7 @@ export async function phaseBodyScope(
   const session = WorldSession.adopt({
     core, events, oracle, origin, build: buildBodyScope,
     observerPos: () => observer.position,
-    seedLo: cfg.seedLo, seedHi: cfg.seedHi,
+    seedLo: cfg.seedLo, seedHi: cfg.seedHi, swellScale: cfg.swellScale,
   }, firstScope, bodyLifetime);
   // CE-20. THE LIVE READ. A rebuild replaces the `TerrainStream` object, so
   // anything holding the old one is holding a terminated worker. Everything

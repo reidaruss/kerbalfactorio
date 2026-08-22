@@ -261,6 +261,31 @@ inline Vec3 latticeDir(int faceId, uint64_t ix, uint64_t iy, int level) {
 // =============================================================================
 enum BodyKind { kPlanet = 0, kMoon = 1 };
 
+// -----------------------------------------------------------------------------
+// WG-275 / WG-243: THE LOWLAND SWELL, the planet stack's fifth term.
+//
+// Declared here rather than beside `sampleHeightFieldPlanet` only because
+// `BodyParams::lowlandSwellCoef` defaults to the coefficient and a default
+// member initialiser has to see it. The DERIVATION lives with the term, at
+// section 2's `sampleHeightFieldPlanet`. In one line: between 240 m (L2's
+// longest octave) and 25 km (L1's shortest reachable one) the plains field
+// carried NOTHING, because `uplift` gates L1 to 0.0314 there, and a 1.62 m eye
+// on a 600 km body wins its skyline at p50 435 m against a threshold of only
+// tens of metres. Four octaves at 8 / 4 / 2 / 1 km fill exactly that annulus.
+//
+// THE AMPLITUDE IS 0.050 AND IT HAS A CEILING WITH A NAME.
+// `test_surface_field.cpp`'s `worstUp <= 0.25 * kVoxelSizeM` is a ground-pinned
+// assertion (world-gen.md 6.12.8 item 3) that reads 0.155941 m here and
+// 0.272946 m at 0.0625, i.e. it goes red somewhere above about 0.055. Raising
+// this constant past 0.050 without first rewriting that assertion over N
+// grounds re-freezes the height field. 0.050*0.9375*6000 = 281 m peak.
+inline constexpr double kLowlandSwellCoef = 0.050;
+inline constexpr double kLowlandSwellFreq = 75.0;  // 8 km top wavelength
+inline constexpr int    kLowlandSwellOct  = 4;     // 8 / 4 / 2 / 1 km
+inline constexpr uint64_t kLowlandSwellChan = 71;
+inline constexpr double kLowlandGate0     = 0.30;
+inline constexpr double kLowlandGate1     = 0.55;
+
 struct BodyParams {
   uint32_t bodyId = 0;
   uint64_t bodySeed = 0;
@@ -331,6 +356,24 @@ struct BodyParams {
   double pondRadiusM = 0.0;     // basin meets the surrounding ground here (m)
   double pondDepthM = 0.0;      // ground drop at the basin centre (m)
   double pondFreeboardM = 0.0;  // water surface sits this far BELOW rim ground
+
+  // --- WG-275: THE LOWLAND SWELL's amplitude, as a per-body FIELD -----------
+  // The coefficient of the `sampleHeightFieldPlanet` swell term (section 2,
+  // `kLowlandSwellCoef`). It lives on the body rather than as a bare constant
+  // for exactly one reason and it is a measurement reason, not a design one:
+  // the swell moves EVERY plains rectangle in the shot manifest, so the
+  // re-baseline needs a one-build negative control (`?horizonswell=0`) rather
+  // than a second binary. A second binary is the arm-table trap in NUMBERS.md
+  // and it has cost this project a table already.
+  //
+  // THE DEFAULT IS THE SHIPPED VALUE, WHICH IS THE SAFE DIRECTION. A consumer
+  // that forgets to plumb the flag gets the FEATURE, not the off arm, so the
+  // failure mode is "the control is contaminated and says so" rather than
+  // RN-150's "the feature shipped OFF and every probe passed". The off arm's
+  // own fixture is that it must reproduce the pre-WG-275 numbers exactly.
+  //
+  // Read only by `sampleHeightFieldPlanet`; the moon stack never consults it.
+  double lowlandSwellCoef = kLowlandSwellCoef;
 };
 
 // Spike §5.1 — planet "Forge".
@@ -760,7 +803,18 @@ inline double craterFieldConfined(uint64_t seed, const Vec3& dir, double freq) {
 //   L0     f=2.5 .. 20      240..30 km    continents          (4 calls)
 //   L1     f=24 .. 6144      25 km..98 m  ridged massifs      (9 calls)
 //   L2     f=2500 .. 10000  240..60 m     ground detail       (3 calls)
-// 19 valueNoise calls against the old 11. That is under 2x on the RAW sampler,
+//   LS     f=75 .. 600        8..1 km     lowland swell       (4 calls) WG-275
+// LS IS THE FIFTH LAYER AND IT EXISTS BECAUSE OF A HOLE IN THIS VERY TABLE.
+// Read the two middle rows against each other on a PLAIN, where `uplift` is
+// 0.0314: L1 is gated to almost nothing and L2 stops at 240 m, so between
+// 240 m and 25 km the field carried no content whatsoever. That annulus is
+// precisely where a standing eye's skyline lives, which is why the plains
+// horizon was a ruler until WG-275. LS is gated on `uplift`'s complement, so
+// it fills the hole where the hole is and is exactly zero where L1 is doing
+// its job. See the term itself for the derivation and the ceiling.
+// 23 valueNoise calls against the old 11 on a plain, and 19 in a massif where
+// LS's gate is zero (the four calls are still made; only their sum is
+// discarded). That is under 2x on the RAW sampler,
 // and biome.h's sampleDesignedHeight, the surface everything actually consumes
 //: gets FASTER, because it used to evaluate this field three times per vertex.
 //
@@ -797,7 +851,34 @@ inline double sampleHeightFieldPlanet(const BodyParams& body, const Vec3& dir) {
   // whole layer) but its top wavelength is 300 m, so it reads as an ~8% local
   // grade: rough natural ground rather than a polished plane.
   const double L2 = fbm(body.bodySeed, dir, 2500.0, 3, 37);
-  double h = L0 * 0.58 + uplift * L1 * 0.52 + L2 * 0.0021;
+  // LS: the LOWLAND SWELL (WG-243, shipped WG-275). The band 240 m to 25 km had
+  // no content at all on a plain, so the ground met the sky along a ruler: the
+  // measured silhouette at the plains hero pose was 4.06 px of standard
+  // deviation delivered as ONE smooth drift, with `step8Px` p95 = 1 px.
+  //
+  // WHY IT SITS ON `uplift`'s OWN COMPLEMENT AND NOT ON `1 - uplift`, and this
+  // distinction IS the safety argument rather than a stylistic one. `uplift` at
+  // the mountain eye is 0.8364, NOT 1, so a bare `1 - uplift` gate would leak
+  // sixteen per cent of this term onto the vista site and move a mountain's
+  // ground. `smoothstep(0.30, 0.55, uplift)` SATURATES at 0.8364, so `lowland`
+  // is EXACTLY ZERO there and the massif sites are bit-identical for any
+  // amplitude by arithmetic. That is RN-2480's complementary-fade idiom moved
+  // from the shading to the geometry. Verified, not assumed: `mtnslope` reads
+  // bit-identical in all seven fields across the term.
+  //
+  // THE OCTAVES ARE LONG ON PURPOSE and the first two attempts were short. Each
+  // octave has to clear the visibility threshold at its own quarter-wavelength
+  // range, and the cost of an octave is the grade it puts underfoot. At 0.050
+  // the four carry 150 / 75 / 37.5 / 18.75 m at 8 / 4 / 2 / 1 km against
+  // thresholds of 47 / 20 / 9.2 / 4.4 m, so every rung clears by 3.2x to 4.3x
+  // and the finest wavelength is still 1 km, which is why the spawn pad's own
+  // 150 m disc sees a plane (pad tilt 2.429 -> 2.881 deg against a 6.0 deg
+  // gate; `test_spawn.cpp` is what holds that).
+  const double LS = fbm(body.bodySeed, dir, kLowlandSwellFreq, kLowlandSwellOct,
+                        kLowlandSwellChan);
+  const double lowland = 1.0 - smoothstep(kLowlandGate0, kLowlandGate1, uplift);
+  double h = L0 * 0.58 + uplift * L1 * 0.52 + L2 * 0.0021
+             + lowland * LS * body.lowlandSwellCoef;
   h *= body.maxReliefM;
   return h;
 }

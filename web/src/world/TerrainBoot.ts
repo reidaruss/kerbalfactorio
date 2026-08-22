@@ -106,6 +106,11 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
       // rather than a second authority.
       bodyId: body.bodyId,
       seedLo: cfg.seedLo, seedHi: cfg.seedHi,
+      // WG-275. The worker meshes the ground the main thread collides against,
+      // so the two have to agree about the height field for the same reason
+      // CE-22 above makes them agree about the body. A missing field here
+      // would not error: it would mesh a swelled planet under a flat walker.
+      swellScale: cfg.swellScale,
       splitRatio: cfg.splitRatio, mergeHysteresis: 0.6,
       maxDepth: cfg.maxDepth,
       minResidentDepth: MIN_RESIDENT_DEPTH,

@@ -30,10 +30,24 @@ export type BodyId = 0 | 1;
  */
 export function createBodyHandle(
   M: OfCoreModule, bodyId: BodyId, seedLo: number, seedHi: number,
+  swellScale?: number,
 ): number {
-  return bodyId === 1
+  const h = bodyId === 1
     ? M._of_body_create_cinder(seedLo >>> 0, seedHi >>> 0)
     : M._of_body_create_forge(seedLo >>> 0, seedHi >>> 0);
+  // WG-275. `swellScale` UNDEFINED MEANS "leave /core's own default alone", and
+  // that asymmetry is deliberate. /core defaults `BodyParams::lowlandSwellCoef`
+  // to the shipped 0.050, so a heap that never learned about the flag streams
+  // the SHIPPED planet rather than a silently flattened one. The failure mode
+  // of a forgotten plumb is therefore a contaminated OFF arm, which the arm's
+  // own fixture catches (it must reproduce the pre-swell rectangles exactly),
+  // and not RN-150's "the feature shipped off and every probe was green".
+  //
+  // It also has to be undefined-by-default because THREE heaps build their own
+  // handle here (main thread, terrain.worker, oracle.worker) and each learns
+  // the flag through a different message.
+  if (h > 0 && swellScale !== undefined) M._of_body_set_swell_scale(h, swellScale);
+  return h;
 }
 
 export class PlanetBody {
@@ -101,9 +115,10 @@ export class PlanetBody {
 
   /** Build whichever body the config chose. The two named factories below are
    *  now shorthands for this, so there is one construction path, not three. */
-  static create(M: OfCoreModule, bodyId: BodyId, seedLo: number, seedHi: number): PlanetBody {
+  static create(M: OfCoreModule, bodyId: BodyId, seedLo: number, seedHi: number,
+                swellScale?: number): PlanetBody {
     return new PlanetBody(
-      M, createBodyHandle(M, bodyId, seedLo, seedHi),
+      M, createBodyHandle(M, bodyId, seedLo, seedHi, swellScale),
       bodyId === 1 ? 'Cinder' : 'Forge', bodyId,
     );
   }

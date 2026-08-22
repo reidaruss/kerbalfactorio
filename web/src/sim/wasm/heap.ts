@@ -30,6 +30,13 @@ export interface OfCoreModule extends OfCoreProgressApi {
   _of_body_create_forge(seedLo: number, seedHi: number): number;
   _of_body_create_cinder(seedLo: number, seedHi: number): number;
   _of_body_destroy(body: number): void;
+  /** WG-275 (ABI 27). Scales the lowland swell on a live handle: 0 is off, 1
+   *  is shipped. A SCALE and not an amplitude, so the shipped 0.050 stays in
+   *  `cubed_sphere.h` and is never transcribed here. Write it BEFORE anything
+   *  samples the body: /core memoises nothing against a handle but this side
+   *  does. Not calling it leaves the FEATURE on, which is the safe direction
+   *  (RN-150's dead-default rule). */
+  _of_body_set_swell_scale(body: number, scale: number): void;
   _of_body_radius(body: number): number;
   _of_body_max_relief(body: number): number;
   _of_body_mu(body: number): number;

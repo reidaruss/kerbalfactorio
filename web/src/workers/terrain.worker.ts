@@ -41,7 +41,7 @@ async function init(msg: TerrainInitMsg): Promise<void> {
   const t0 = performance.now();
   M = await loadOfCore();
   const loadMs = performance.now() - t0;
-  body = createBodyHandle(M, msg.bodyId, msg.seedLo, msg.seedHi);
+  body = createBodyHandle(M, msg.bodyId, msg.seedLo, msg.seedHi, msg.swellScale);
   streamer = M._of_streamer_create(
     body, msg.splitRatio, msg.mergeHysteresis, msg.maxDepth,
     msg.minResidentDepth, msg.skirtFraction, msg.genBudget,
