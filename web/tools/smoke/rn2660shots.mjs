@@ -16,9 +16,12 @@
 // THE CROP IS PLACED ON THE BAND RATHER THAN ON THE CROWNS, which is the whole
 // difference from `rn2646shots`. R5 rank 1 is about rows 329 to 549 at
 // `flyover`, i.e. 15.5 km down to 3.3 km, and `rn2646shots`'s (450,600) crop
-// is the crown-card mass at 2 km and below. The band crop is (240,330) 560x220
-// at 2x: 560 px of width so a 165 m stand (about 3 to 12 px across this span)
-// is judged against several of its neighbours rather than in isolation.
+// is the crown-card mass at 2 km and below. The band crop is (560,330) 900x210
+// at 2x. It starts at x 560 and not at the frame edge because the HUD reaches
+// about x 382 (pngdiff excludes the left 210 and this is wider than that), and
+// it is 900 px across so a 165 m stand (3 to 12 px over this span) and a 760 m
+// grove (15 to 100 px) are both judged against several of their neighbours
+// rather than in isolation. It is the SAME rectangle rn2664scale scores.
 //
 //   node tools/smoke/rn2660shots.mjs --url=http://127.0.0.1:5660/ --shot=flyover
 //   node tools/smoke/rn2660shots.mjs --url=http://127.0.0.1:5660/ \
@@ -47,7 +50,7 @@ const url = argv.get('--url') ?? 'http://127.0.0.1:5660/';
 const shot = argv.get('--shot') ?? 'flyover';
 const sun = argv.get('--sun');
 const sunTol = argv.get('--suntol') ?? '0.03';
-const crop = (argv.get('--crop') ?? '240,330,560,220').split(',');
+const crop = (argv.get('--crop') ?? '560,330,900,210').split(',');
 const scale = argv.get('--scale') ?? '2';
 const outDir = argv.get('--out') === undefined
   ? TRACKED : path.resolve(HERE, argv.get('--out'));

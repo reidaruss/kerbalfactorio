@@ -58,6 +58,21 @@ const ARM_FACTOR = 5;
 // A pair under this is quiet whatever the noise arm says: two loads that
 // happen to agree to the pixel must not make a 0.01 per cent pair a failure.
 const QUIET_FLOOR_PCT = 0.05;
+// AND A QUIET TEST NEEDS A FACTOR FOR THE SAME REASON AN ARMING TEST DOES,
+// WHICH THIS FILE LEARNED BY FAILING. The first version asserted
+// `pair <= max(noise, 0.05)`, a bare comparison between TWO SINGLE DRAWS of
+// the same random quantity. `forestfloor` returned pair 0.53 per cent against
+// noise 0.50 per cent and failed, on a walk pose whose documented two-load
+// scatter is RN-1766's 3.78 per cent. A one-sided `>` between two single
+// draws of one quantity is a coin flip when the true effect is zero, so the
+// test was failing half the time by construction. The repair is a factor, not
+// a wider constant: the noise estimate is one pair, so allow it to be off by
+// 2x. That is still a real test -- the term is skipped entirely below 690 m,
+// so a leak here would repaint the whole visible mid-ground, not 0.03 per
+// cent of it -- and RN-1766's measured 3.78 per cent stands as a second,
+// absolute bound that a 2x factor can never widen past.
+const QUIET_FACTOR = 2;
+const WALK_TWO_LOAD_PCT = 3.78;
 
 const POSES = [
   // shot, scenario, must, evalargs extras
@@ -114,10 +129,14 @@ for (const [shot, scenario, must, extra] of POSES) {
   console.log(`${tag.padEnd(20)} ${must.padEnd(6)} pair moved ${String(j.moved).padStart(7)} px`
     + ` (${String(j.pct).padStart(6)}%)  darker ${j.darker} / lighter ${j.lighter}`
     + `  meanDelta ${j.meanDelta}   own two-load noise ${String(jn.pct).padStart(6)}%`);
-  if (must === 'quiet' && j.pct > Math.max(jn.pct, QUIET_FLOOR_PCT)) {
-    fails.push(`${tag}: the flag pair moved ${j.pct}% against this pose's own`
-      + ` two-load noise of ${jn.pct}%. The term reached a pose all three of its`
-      + ' zeros say it cannot reach.');
+  if (must === 'quiet') {
+    const bound = Math.max(jn.pct * QUIET_FACTOR, QUIET_FLOOR_PCT);
+    if (j.pct > bound || j.pct > WALK_TWO_LOAD_PCT) {
+      fails.push(`${tag}: the flag pair moved ${j.pct}% against a bound of`
+        + ` ${bound.toFixed(2)}% (this pose's own two-load noise ${jn.pct}% times`
+        + ` ${QUIET_FACTOR}) and RN-1766's ${WALK_TWO_LOAD_PCT}% walk floor. The`
+        + ' term reached a pose all three of its zeros say it cannot reach.');
+    }
   }
   if (must === 'moved') {
     if (j.pct <= Math.max(jn.pct * ARM_FACTOR, QUIET_FLOOR_PCT)) {
