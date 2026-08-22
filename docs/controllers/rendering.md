@@ -13350,3 +13350,28 @@ stands, exactly as briefed.
    here depends on that being wrong, but a lane that re-authors `_impostor` to
    span the crown alone would move `R / H` and therefore the meaning of
    `CROWN_FLANK_DEG`, and the constant's own block should be re-read then.
+5. **SEVEN RATCHET CEILINGS FELL AND THIS LANE DID NOT LOWER THEM, WHICH IS AN
+   ADMIN DECISION AND IS FLAGGED RATHER THAN TAKEN.** `rn2550guard`'s own header
+   says "a lane that darkens the wood LOWERS the constant in the same commit",
+   and 2.39.8 measures `flyoverlow` boxSurf falling 0.8884 to **0.8446** and
+   `flyoverlow` boxShip 0.9774 to 0.9655, with four smaller falls beside them.
+   Re-pinning them would tighten the guard for every later lane by a large step
+   on the strength of one build; not re-pinning them leaves that gain
+   surrenderable. It is not taken here because the same table has one ceiling
+   RISING (`flyovernoon`, inside tolerance), because five of the eight are
+   already provisional pending 2.35.7's unanswered decision request, and because
+   `BASE` is a measured baseline with provenance rather than a scratch pad.
+   **The same question applies to `forestairnoon`'s `rho` pin**, which this lane
+   repays from 0.0992 to 0.1016: left un-re-pinned, the repayment can be given
+   back without the guard noticing.
+6. **`rho0` AND THE `D`/`P` SPLIT HAVE A COVERAGE CONVENTION AND IT IS NOT
+   2.38.2's.** `rn2591ladder` divides each arm by ITS OWN exactly-black count,
+   `rn2570spread` divides every arm by the CARDS arm's. Neither is unbiased:
+   coverage is measured by counting exactly-black pixels, so a DARKER arm
+   under-counts its own coverage and over-states its per-pixel level, while
+   borrowing a brighter arm's count under-states it. The direction is known and
+   the sizes are not, so **every comparison in 2.39 is taken between two arms
+   under ONE convention** and the absolute levels are not quoted across
+   sections. A lane that needs the absolute per-crown-pixel radiance should fix
+   the coverage instrument first; `?terrainpaint=1` plus a NON-zero paint colour
+   would remove the threshold-at-zero problem entirely.
