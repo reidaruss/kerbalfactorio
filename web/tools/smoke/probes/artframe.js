@@ -128,6 +128,21 @@
 //     --evalfile=tools/smoke/probes/artframe.js --evalargs='{"shot":"smelternight"}' \
 //     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
 //
+// AND ONE MORE AT RN-2585 (WORLD AUDIT R5 PREP), because the shot set had a
+// standing eye and a 1,200 m aerial eye and NOTHING in between:
+//   forestaircanopy  `forestair`'s own site at a 60 m eye instead of 1,200 m,
+//                so the far treeline's 690 m-to-horizon band spans tens of
+//                rows (measured 57.23) instead of the 0.515 px a standing eye
+//                sees. Its own manifest row has the trigonometry and the
+//                rectangle derivation. Takes the FLY dispatch branch by name
+//                prefix, `forestair`'s own precedent.
+//
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=surface \
+//     --width=1600 --height=900 \
+//     --evalfile=tools/smoke/probes/artframe.js \
+//     --evalargs='{"shot":"forestaircanopy"}' \
+//     | node tools/smoke/writeshot.mjs docs/screenshots/<name>.png
+//
 // ==========================================================================
 // WHY THIS FILE EXISTS AT ALL, given `artshot.js` and the `*shot.js` family
 // ==========================================================================
@@ -1106,6 +1121,110 @@
         crowns: [0.28125, 0.666667, 0.40625, 0.777778],
       },
       why: 'the MID-ALTITUDE FLIGHT VIEW at 1,200 m over FOREST, not the spawn',
+    },
+    // RN-2585 (WORLD AUDIT R5 PREP). THE POSE THAT CAN SEE THE TREELINE, and
+    // the shot set had no such thing.
+    //
+    // rendering.md 2.36.4/2.36.11 item 2 and NUMBERS.md's "a pose can be on
+    // the wrong side of a term's range" both name the same hole: every ground
+    // pose in this file stands at a 1.62 m walking eye, where the far
+    // treeline's own band (690 m `CANOPY_NEAR_FULL_M` out to the datum
+    // horizon) is **0.515 px of 900** in EYE-FRAME depression. Two lanes read
+    // that half-pixel null as a property of the term. `forestair`/`flyover`
+    // are the opposite failure: correct subject (86.10 / 99.20 per cent LIVE,
+    // 2.36.3's map), wrong eye class -- a 1,200 m aerial, not a ground pose.
+    // This shot is additive because it is the one case the two families
+    // between them never covered: GROUND-ADJACENT and still able to SEE the
+    // band.
+    //
+    // SITE: `forestair`'s own lat/lon, TO THE DIGIT (-19.85, -72.7853), the
+    // Forest biome WG-227 surveyed as canopy-to-horizon. Same longitude band,
+    // same ground, lower eye -- the live/dead map's 86.10 per cent LIVE at
+    // 1,200 m is the reason to expect subject here rather than the altitude
+    // gate (`vista`) or the biome edge (WG-285's own routed band) that empty
+    // a term at OTHER sites for OTHER reasons.
+    //
+    // THE EYE HEIGHT IS SOLVED, NOT GUESSED, off the same eye-frame
+    // trigonometry rendering.md 2.36.4 derived for the shader's own geometry
+    // (Forge R = 6e5 m): at eye height h, the depression to ground at range s
+    // is `s/(2R) + h/s` radians and the horizon's own dip is `sqrt(2h/R)`, so
+    // the band this term owns is the DIFFERENCE, evaluated at s = 690 m:
+    //
+    //   band(h) = 690/(2R) + h/690 - sqrt(2h/R)          (radians)
+    //
+    // Solving band(h) = 2 degrees (0.034907 rad), the brief's own floor for
+    // "worth a pose", gives h = 30.6 m. Doubling that for margin against the
+    // brief's own "tens of rows" bar (30 rows at 900 px / 60 degree FOV) and
+    // against this being a first attempt at a class of pose the file has none
+    // of: h = 60 m. At h = 60, band(60) = 4.20491 degrees of eye-frame
+    // depression (d(690 m) 5.01519 minus horizon dip 0.81028), well clear of
+    // the floor, and the horizon itself sits at `sqrt(2Rh)` = 8,485 m --
+    // comfortably inside the ~15 km near-program chunk-depth handover
+    // (2.36.5/2.36.11 item 1), so this pose does not touch the `#ifndef
+    // OF_SCALED` band or its default-off `?treelinefar=1` flag at all.
+    //
+    // THE ROW COUNT IS NOT band(h) TIMES 15 PX/DEGREE, AND THAT IS THE SAME
+    // CATEGORY ERROR 2.36.4 NAMED ONE LEVEL UP: 15 px/degree is only the
+    // scale AT FRAME CENTRE. A perspective camera maps angle to `tan`, not
+    // linearly, so the exact row for a given depression is solved from
+    // `of.look`'s own convention (`forestair`'s comment: a pixel at vertical
+    // NDC v looks down at `pitch - atan(v * tan(30 deg))`, v = 1 - 2*yFrac)
+    // and inverted per rung. At P = 2.5 degrees pitch: the 690 m boundary
+    // lands at yFrac 0.538041 (row 484.24) and the horizon at yFrac 0.474453
+    // (row 427.01) -- **57.23 rows**, not the 63.1 the linear approximation
+    // gives, comfortably inside "tens of rows" either way. Pitch 2.5 degrees
+    // was chosen, not solved, to put the two rungs close to frame centre with
+    // room below for the near, TreeField-owned ground and room above for sky;
+    // the row COUNT is essentially pitch-independent in this regime (checked
+    // at pitch 1 through 4 degrees, all read 36.6 rows at h = 40 -- the
+    // pitch-sensitivity is in WHERE the band sits, not how tall it is).
+    //
+    // THE RECTANGLES ARE HAND-PLACED FROM THIS ARITHMETIC AND NOT FROM
+    // `rangeRects`, DELIBERATELY: `rangeRects`' own `rangeAtRow` (this file,
+    // below) inverts a FLAT PLANE with no `R` term at all, which is exactly
+    // the approximation 2.32.3 measured an order of magnitude out past 100 m
+    // at grazing incidence -- and this pose exists BECAUSE it sits at grazing
+    // incidence over kilometres, the one regime that formula is known wrong
+    // in. So the rectangles below are placed from the curvature-correct
+    // formula above and then PROVEN, not trusted: RN-2585's own report reads
+    // them back with a centre-column (x [795, 805)) ladder over the
+    // `?treelinepaint=3+stage` isolate arms, 2.32.3's own methodology ("a
+    // wide-x row means smear") applied to the treeline term's own stage
+    // rather than to a generic `dist` paint, because the stage IS the
+    // question here (s2 "<690 m" against s4 "LIVE") and needs no separate
+    // instrument.
+    //
+    //   box       (`farBand`, in substance) the 690 m-to-horizon band this
+    //             pose exists to see. y [0.474453, 0.538041] (rows 427-484),
+    //             x [0.20, 0.80] on the 60-per-cent-width convention
+    //             `forestair`'s own bands use.
+    //   ctrl690   the control, fully inside 690 m by construction: the 250 m
+    //             to 300 m ring (rows 605.22 to 573.08, y [0.636754,
+    //             0.672466]), picked with 89+ rows of margin from the 690 m
+    //             boundary so no plausible measurement noise moves it across
+    //             the line. Expected majority stage: s2 (gate passed, inside
+    //             `CANOPY_NEAR_FULL_M`, zero BY DESIGN) -- the harvest ring's
+    //             own ground, the same reason `midfield`/`meadowfield` read
+    //             zero here.
+    //
+    // ADDITIVE ONLY: this is a new key, nothing above it moved, and it takes
+    // the FLY dispatch branch by NAME PREFIX ("forestair") rather than by a
+    // new branch, on the dispatch guard's own documented contract (this
+    // file's "IS NEVER POSED" comment above the guard) -- `startsWith`
+    // matches it without a source change anywhere in the dispatch chain.
+    forestaircanopy: {
+      scenario: 'surface', needsSandbox: false, fly: true,
+      lat: -19.85, lon: -72.7853, altM: 60,
+      yaw: 300, pitch: -2.5,
+      sunDot: 0.55, sunTol: 0.06,
+      box: [0.20, 0.474453, 0.80, 0.538041],
+      extra: {
+        ctrl690: [0.20, 0.636754, 0.80, 0.672466],
+      },
+      why: 'the GROUND-ADJACENT eye (60 m) over the same Forest site as '
+        + '`forestair`, framed so the far treeline\'s own 690 m-to-horizon '
+        + 'band spans tens of rows instead of the half a pixel a standing eye '
+        + 'sees (rendering.md 2.36.4/2.36.11 item 2)',
     },
     limb: {
       scenario: 'orbit', needsSandbox: false, fly: true,
