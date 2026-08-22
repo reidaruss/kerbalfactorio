@@ -11214,16 +11214,24 @@ legitimately reaches 0.18, and the proposal's own asymmetry ran the wrong way
 cent of slack while the named bottom carried none, and for a necessary condition
 the tail risk lives at the dark end).
 
-**FOUR PHYSICAL TERMS ARE CONFLATED IN ONE SCALAR AND THE GUARD SAYS SO RATHER
-THAN ASSUMING THEM AWAY.** Rsurf mixes canopy optics, crown coverage `f`,
-between-crown gap shadowing, and pose phase angle. With a perfectly black canopy
-and no gap shadow the patch ratio can only reach `1 - f`, so **an upper bound of
-0.75 is unreachable below f = 0.25 whatever the optics do**; and canopy
-backscatter makes a near-antisolar pose read 1.3x to 2.0x lighter in red than a
-cross-lit one. `artframe.js`'s own `crowns` comment says the same thing from the
-other side: the `box` rect "averages crowns together with the clearings between
-them". Neither `f` nor phase angle is measured here. That is the honest limit of
-a one-scalar guard, and it is routed as owed work in 2.35.9 rather than buried.
+**BOTH ENDPOINTS ARE JUDGED WHERE THEY WERE DERIVED, AND STAGE 1 DID NOT DO
+THAT.** These are CLOSED-CANOPY REFLECTANCES. They therefore belong on `rho`,
+the crown's own luminance against its clearing, and on nothing else. Stage 1
+applied them to a raw patch ratio on `box`, a rectangle `artframe.js`'s own
+comment calls "nearly blind to the cards", which is the same "right number for
+the wrong quantity" error this lane was correcting in the first place. 2.35.5
+records what that cost.
+
+**A PATCH RATIO IS A MIXTURE, AND THE MIXTURE IS NOW INVERTED RATHER THAN
+LAMENTED.** With crown coverage `f` and between-crown ground at `s` of the
+clearing, `Rsurf = f*rho + (1 - f)*s`, so a raw patch ratio is bounded below by
+`(1 - f)*s`: a perfectly black canopy still reads `1 - f`, which is a statement
+about how many crowns are in the rectangle and not about their optics.
+`artframe.js`'s `crowns` comment says the same from the other side, that a band
+rect "averages crowns together with the clearings between them". The guard now
+measures the other two terms and divides them out (2.35.5), so **the banded
+quantity is the canopy's own optics and `f` no longer bounds the ceiling.**
+Phase angle remains unseparated and is routed in 2.35.9 item 3.
 
 ### 2.35.5 THE FOUR SHIPPED PAIRS, LINEARIZED, AND THE BAND IS ON THE UN-HAZED ARM
 
@@ -11425,47 +11433,77 @@ by RN-2275 and N7. No em dash anywhere.
 
 ### 2.35.9 OWED, ROUTED
 
-1. **THE LINEAR SCENE-RT READOUT IS NOW BLOCKING, NOT CONVENIENT** (was 2.34.10
-   item 3). Every ratio here is display-linear: the sRGB encode is undone but
-   ACES and the grade are not. The un-hazed arm is read far down the tone curve
-   from the shipped arm, so `Rsurf` and `Rship` are not on one scale, and the
-   `forestairnoon` airlight share coming back at **1.22** -- outside [0,1], so
-   not a share at all -- is that mismatch showing itself rather than a property
-   of the atmosphere. A filmic toe compresses shadow contrast, which flatters a
-   dark frame's ratio toward 1, so the true surface ratios are probably **lower
-   than printed** and the band is conservative in the safe direction. It cannot
-   be quantified from an 8-bit frame. **A probe that reads the HalfFloat scene
-   RT before the composite would make every number in 2.35.5 scene-referred and
-   would settle this in a division.**
-2. **THE CROWN COVERAGE `f` AT THE `box` RECT IS UNMEASURED AND BOUNDS THE
-   BAND.** With a black canopy and no gap shadow the patch ratio can only reach
-   `1 - f`, so if `f` at `box` is below 0.25 the 0.75 ceiling is arithmetically
-   unreachable and stage 2 would be chasing an impossible target. N7 measured
-   `f` ~ 0.42 at the much tighter `crowns` rect; `box` is 216,000 px against
-   20,000 and averages far more open ground, so its `f` is certainly lower and
-   plausibly below 0.25. **This must be measured before stage 2 commits to a
-   target**, and the arms already exist (`?proppaint=1&prophaze=0` renders the
-   cards exactly black, so `f = 1 - rect(cards black) / rect(canopy=0)`, N7's
-   own method).
-3. **THE BAND IS ONE SCALAR OVER FOUR PHYSICAL TERMS** (2.35.4). Canopy optics,
-   coverage, gap shadowing and phase angle are not separable by it, so a
-   violation is evidence of *a* modelling error and not specifically of a canopy
-   albedo error. Decomposing it needs item 2 plus a phase-angle term.
+1. **THE LINEAR SCENE-RT READOUT IS OWED, AND STAGE 1 WRONGLY CALLED IT
+   BLOCKING** (it is 2.34.10 item 3, unchanged in priority). **CORRECTED
+   2026-08-21 after the stage-1b verifier.** Stage 1 argued the tone curve had
+   broken the additive-airlight model, citing `forestairnoon`'s derived airlight
+   share of 1.2204 as the evidence. That was not evidence of anything. **`a` =
+   1.2204 is forced arithmetic:** `a = (Rship - Rsurf) / (1 - Rsurf)` exceeds 1
+   whenever `Rsurf > 1 > Rship`, which is exactly the box-rect configuration
+   stage 1 was in, so the out-of-range share and the "inversion" were **one
+   finding reported as two**. On `crowns`, where the band actually belongs, the
+   same pose gives **a = 0.387, a proper share, and the additive model closes**.
+   **AND THE BIAS DIRECTION STAGE 1 CLAIMED IS NOT KNOWABLE.** It asserted that
+   a filmic toe compresses shadow contrast, so the un-hazed ratios were
+   flattered toward 1 and the band was conservative in the safe direction. That
+   is only one of the terms: the ACES fit's **subtractive black term** gives a
+   deep-shadow log-log slope of about **1.23, which EXPANDS ratios**, and
+   `uContrast` expands as well, both opposing the `CompositeGlsl` lift that
+   argument rested on. **The net direction is unknowable from an 8-bit frame**,
+   which is the honest statement and is still a good reason to want the scene-RT
+   readout, just not a blocking one.
+2. **THE ROUTED `f` METHOD DOES NOT WORK, AND IT WAS RUN RATHER THAN ASSUMED.**
+   Stage 1 routed `f = 1 - rect(cards black) / rect(canopy=0)`. Measured at
+   `box` it returns **f = -0.0301 linear and +0.0632 in 8-bit**: the cards-black
+   arm is **BRIGHTER** than the `?canopy=0` arm, which violates the mixture law
+   the formula assumes, and `--propspec=0` changes nothing. **The cause is that
+   `?canopy=0` removes the far treeline PAINT as well as the cards**, so the two
+   arms differ by more than the cards and the subtraction is not a coverage.
+   **A working method must survive the treeline paint, and this lane built one:**
+   count EXACTLY-BLACK pixels on a paint arm, which never touches `?canopy=0` at
+   all. The cards are alpha-tested, so there is no partial coverage to smear and
+   the count is exact:
+   `?terrainpaint=1` blacks the terrain, so `f = 1 - blackFrac`; `?proppaint=1`
+   blacks the cards, so `f = blackFrac`. **Two independent counts of the same
+   geometry, and the guard fails if they disagree** (`statOn`'s new `blackFrac`,
+   2.35.5's cross-check table). This also **dissolves stage 1's "the 0.75 ceiling
+   is unreachable below f = 0.25"**: that bound applies to the RAW patch ratio,
+   and the guard now bands the coverage-corrected `rho`, which is independent of
+   `f`. Small `f` still amplifies noise by `1/f`, which is why the guard carries
+   an `F_MIN`.
+3. **PHASE ANGLE IS THE REMAINING UNSEPARATED TERM.** Coverage and gap shadowing
+   are now measured and divided out (`f` and `G`), so `rho` is the crown's own
+   luminance against the clearing and no longer a mixture. Phase angle is not:
+   canopy backscatter makes a near-antisolar pose read 1.3x to 2.0x lighter in
+   red than a cross-lit one, and the four poses sit at four different sun
+   angles under one band. A per-pose phase term would tighten the band; until
+   then the band is deliberately wide enough to hold all four.
 4. **`CanopySelfShadow.ts` STILL DESCRIBES THE OLD GUARD IN ITS OWN COMMENTS**
    and this lane is barred from editing it. Its K table quotes the `?canopy=0`
    clearing at 103.22 and a "wood - clearing" column of +13.94 / -0.30 from
    RN-2275's build, and a later block calls -1.76 a "guard margin". Both are now
    stale in framing and in value. **The stage-2 lane owns that file and should
    correct them in the same commit that moves the radiance.**
-5. **WORLD-AUDIT-R2 section 3.10's STANDING CLAIM IS NARROWED, NOT FALSIFIED.**
-   It says the frame "puts the wood darker than its clearing in all four sun
-   arms". That remains true of the shipped 8-bit frame. It is **not** true of
-   the linearized airlight-free arm at `forestairnoon` (Rsurf 1.0479). The audit
-   is a dated snapshot and is deliberately left unedited; the disposition is
-   recorded here instead.
+5. **WORLD-AUDIT-R2 section 3.10's STANDING CLAIM STANDS.** It says the frame
+   "puts the wood darker than its clearing in all four sun arms", and that is
+   true of the shipped frame and true on `crowns` un-hazed as well. **Stage 1
+   recorded this item as "narrowed, not falsified" on the strength of its
+   `forestairnoon` box-rect Rsurf of 1.0479; that qualification is WITHDRAWN**
+   (2.35.1). The audit needed no amendment and has none.
 6. **THE GUARD IS NOT IN `npm run check` AND CANNOT BE YET.** It needs a built
-   app on a live server and sixteen browser runs, and the eight-link aggregate
-   is a fast static gate that boots once. Wiring a browser-probe gate into
-   `check` (or into the CI that does not yet exist) is a build-tooling decision,
-   not a rendering one. **Until then the guard is only as good as the lanes that
-   remember to run it**, which is the same failure mode 2.35.2 documents.
+   app on a live server and **twenty-four** browser runs, and the eight-link
+   aggregate is a fast static gate that boots once. Wiring a browser-probe gate
+   into `check` (or into the CI that does not yet exist) is a build-tooling
+   decision, not a rendering one. **Until then the guard is only as good as the
+   lanes that remember to run it**, which is the same failure mode 2.35.2
+   documents.
+7. **THE SHARED-SUBJECT RE-PINNING RULE, ADOPTED BY ADMIN, 2026-08-21.** This
+   lane's pins and `lane/wg-ship`'s terrain change **share a subject**: both
+   move the ground the clearing arm measures. **Whichever of the two merges
+   SECOND must re-measure and re-pin all four `clearY` values** (now eight, box
+   and crowns) before its merge is complete, because a pin measured against the
+   other lane's pre-merge ground is a pin against a frame that no longer
+   exists. **Re-pinning may NOT raise a ratchet ceiling without a logged
+   decision:** a re-pin restates the denominator, and if the wood has genuinely
+   got lighter that is the guard firing correctly and not a stale pin. The
+   guard's clearing-pin failure is deliberately loud for exactly this handover.

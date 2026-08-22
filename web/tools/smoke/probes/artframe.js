@@ -961,6 +961,42 @@
         hzBand: [0.2000, 0.3500, 0.8000, 0.3750],
         under: [0.3500, 0.8500, 0.6500, 0.9800],
         shadowStep: [0.1875, 0.5900, 0.5625, 0.6444],
+        // RN-2550 (lane N8, stage 1b). THE CROWN MASS, ADDED SO THE GUARD BAND
+        // CAN BE READ HERE AND NOT ONLY AT `forestair`. RN-2495 put a `crowns`
+        // rect on `forestair` alone, so the two sun arms over HILLS had no
+        // card-bearing rectangle at all and the band had to be judged on `box`,
+        // which this file already says is "nearly blind to the cards".
+        //
+        // IT IS `forestair`'s RECT VERBATIM, AND THAT IS THE PLACEMENT
+        // DECISION. This shot and `forestair` are deliberately one variable
+        // apart -- read the block above `forestair`: "EVERY FIELD BUT lat/lon
+        // IS `flyover`'s, TO THE DIGIT ... and all five rectangles", so the two
+        // frames' numbers are directly comparable. `crowns` was added to the
+        // copy and never propagated back; putting the SAME rectangle here
+        // restores the symmetry the pair was built on. A second, differently
+        // placed rectangle would have made the one comparison this pair exists
+        // for impossible.
+        //
+        // VERIFIED AGAINST A PAINT, NOT ASSUMED, which is RN-1839's rule. The
+        // cards-only arm (`?terrainpaint=1&terrainhaze=0&prophaze=0`) renders
+        // the terrain EXACTLY black, so below the horizon a non-black pixel IS
+        // a card and coverage is a pixel count rather than a radiometric
+        // estimate. Inside this rectangle that count reads **45.95 per cent at
+        // `flyovernoon`** against **52.25 per cent at `forestairnoon`** -- the
+        // same instrument on comparable card mass, and Hills is the sparser
+        // canopy by design (72 stems a hectare against Forest's 230), so the
+        // ordering is the one the biome tables predict.
+        //
+        // WHAT THE PAINT ALSO SAID, RECORDED RATHER THAN ACTED ON: a sliding
+        // 200x100 window over the same capture finds DENSER card mass further
+        // left and lower (88.86 per cent at `forestairnoon`, 95.49 per cent at
+        // `flyovernoon`, both hard against the frame edge). The rect was NOT
+        // moved there. Matching the committed instrument is worth more than
+        // maximising coverage, `forestair`'s rect is out of this lane's scope
+        // to change, and a rectangle on the frame edge is one bad reframe from
+        // measuring nothing. A lane that wants a denser crown rect should move
+        // BOTH and re-pin, as one decision.
+        crowns: [0.28125, 0.666667, 0.40625, 0.777778],
       },
       why: 'the MID-ALTITUDE FLIGHT VIEW at 1,200 m over the spawn',
     },
@@ -3058,11 +3094,13 @@
     let sr = 0; let sg = 0; let sb = 0; let ssat = 0;
     let lo = 0; let hi = 0;
     let lr = 0; let lg = 0; let lb = 0;
+    let blk = 0;
     const lum = new Float64Array(n);
     for (let i = 0; i < n; ++i) {
       const r = d[i * 4]; const g = d[i * 4 + 1]; const b = d[i * 4 + 2];
       sr += r; sg += g; sb += b;
       lr += SRGB_LIN[r]; lg += SRGB_LIN[g]; lb += SRGB_LIN[b];
+      if ((r | g | b) === 0) blk++;
       const mx = Math.max(r, g, b); const mn = Math.min(r, g, b);
       ssat += mx === 0 ? 0 : (mx - mn) / mx;
       const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -3083,6 +3121,16 @@
       loFrac: r3(lo / n), hiFrac: r3(hi / n),
       lin: { Y: r6((0.2126 * lr + 0.7152 * lg + 0.0722 * lb) / n),
         rgb: [r6(lr / n), r6(lg / n), r6(lb / n)] },
+      // RN-2550 stage 1b. EXACTLY-BLACK PIXEL FRACTION, and it is a COVERAGE
+      // instrument, not a tone one. On a paint arm one surface is rendered
+      // exactly black while the rest of the frame is untouched, and the cards
+      // are alpha-tested so there is no partial coverage to smear: the count of
+      // (0,0,0) pixels is then that surface's screen coverage EXACTLY, as a
+      // pixel count rather than a radiometric estimate. That matters because
+      // the radiometric route does not work here -- `?canopy=0` removes the far
+      // treeline PAINT along with the cards, so the mixture law it assumes is
+      // violated and it returned a NEGATIVE coverage at `box` (2.35.9 item 2).
+      blackFrac: r6(blk / n),
       col: colOn(d, w, h),
     };
   };
