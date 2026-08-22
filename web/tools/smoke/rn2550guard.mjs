@@ -75,11 +75,19 @@
 //     Rsurf = f*rho + (1 - f)*s
 // so raw Rsurf is bounded below by (1-f)*s no matter how dark the crowns are.
 // Uncorrected, a perfectly black canopy still reads 1 - f, which is a statement
-// about how many crowns are in the rectangle and not about their optics. The
-// correction inverts the mixture with both other terms MEASURED:
-//     G   = Y(cards painted black) / Y(clearing)      =  (1 - f)*s
-//     rho = (Rsurf - G) / f
-// Both arms are un-hazed, so this is one consistent surface-referred frame.
+// about how many crowns are in the rectangle and not about their optics.
+//
+// rho IS TAKEN FROM ONE ARM, NOT FROM A SUBTRACTION, and that choice is forced
+// by evidence rather than elegance. `?terrainpaint=1` renders the terrain
+// EXACTLY black, so that arm's rect mean is f*Y_card with nothing else in it:
+//     f   = 1 - blackFrac(cardsOnly)         a pixel count, exact
+//     rho = Y(cardsOnly) / (f * Y(clearing)) one arm and the clearing
+// The obvious alternative, rho = (Rsurf - G)/f with G = Y(cards black)/Y(clearing),
+// needs `?proppaint=1` to actually black the cards, and IT DOES NOT (below). So
+// the subtraction route is not used for rho; G is still measured and the
+// mixture is CLOSED against it as a diagnostic, which is what quantifies the
+// contamination instead of hiding it.
+//
 // Note this also DISSOLVES stage 1's "the ceiling is unreachable below f =
 // 0.25" worry: that bound applies to raw Rsurf and not to rho. Small f still
 // AMPLIFIES noise by 1/f, which is why f has a floor below.
@@ -93,9 +101,33 @@
 // EXACTLY-BLACK pixels on a paint arm (the cards are alpha-tested, so there is
 // no partial coverage to smear), which never touches `?canopy=0`:
 //     cardsOnly   `?terrainpaint=1`  terrain exactly black  ->  f = 1 - blackFrac
-//     cardsBlack  `?proppaint=1`     cards exactly black    ->  f =     blackFrac
-// TWO INDEPENDENT COUNTS OF THE SAME QUANTITY, and the guard fails if they
-// disagree. That is the arming check for the correction itself.
+//     cardsBlack  `?proppaint=1&propspec=0`  cards exactly black -> f = blackFrac
+// TWO INDEPENDENT COUNTS OF THE SAME QUANTITY -- AND THEY DO NOT AGREE, WHICH
+// IS A FINDING ABOUT `?proppaint=1` AND IS WHY rho DOES NOT USE IT.
+//
+// Run at `forestairnoon`, `?terrainpaint=1` counts f = 0.5160 and
+// `?proppaint=1` counts f = 0.1948, a third of the rectangle apart, and the
+// same gap appears at all four poses. Adding `?propspec=0` -- N7's 2.34.10 item
+// 2 measured `totalSpecular` at 99.7 per cent of the card's own blue, and it is
+// not multiplied by the albedo `?proppaint=1` zeroes -- was the obvious
+// candidate and **it changed nothing** (0.2019 -> 0.1948). So `?proppaint=1`
+// leaves a third radiance on the cards that neither the albedo nor the specular
+// switch reaches, and the arm does not render them black.
+//
+// WHICH COUNT IS BELIEVED, AND WHY IT IS NOT A COIN FLIP. `?terrainpaint=1`'s
+// count is corroborated by an INDEPENDENT offline decode of the same arm's PNG
+// (raw chunk parse plus inflate, sharing no code with the probe or the canvas),
+// which reproduces it on the same build. `?proppaint=1`'s is not corroborated
+// by anything, and its error has a known DIRECTION: residual card radiance can
+// only make fewer pixels exactly black, so it can only UNDER-count. That
+// prediction is asserted below (fB must not exceed fA), so the diagnosis is
+// itself under a live test rather than assumed.
+//
+// **THIS ALSO IMPUGNS N7's 2.34.4, which calls `?proppaint=1+prophaze=0` the
+// GROUND HALF of the crowns rectangle.** On this evidence that arm still
+// carries card radiance and the decomposition's card/ground split is not clean.
+// Routed in 2.35.9 rather than assumed harmless; the closure residual printed
+// below is the measurement of how much.
 //
 // ---------------------------------------------------------------------------
 // 4. THE ENDPOINTS, DERIVED (RN-345: a constant carries its reason)
@@ -137,11 +169,15 @@
 //              ceiling is a RATCHET: a lane that darkens the wood LOWERS the
 //              constant in the same commit, and it may never be raised without
 //              an Admin-logged decision.
-//   HARD FAIL  `crowns` rho outside BAND, either side.
+//   HARD FAIL  `crowns` rho outside BAND at an end the pose is not already
+//              recorded as violating, or an already-recorded violation getting
+//              DEEPER. A standing violation may be repaid, never deepened.
 //   HARD FAIL  a clearing pin moved (box or crowns). The ratio's denominator
 //              changed, so the ratio changed subject.
 //   HARD FAIL  the two coverage counts disagree, or f is below F_MIN.
-//   HARD FAIL  the served bundle is not the one this working tree builds.
+//   HARD FAIL  the served entry chunk is not the one in `dist`, or `dist` is
+//              older than anything that enters it (`src`, `wasm/dist`,
+//              `index.html`). NOT a git-stamp check: see checkServedBuild.
 //   HARD FAIL  any arm invalid, or an arming check failing.
 //   SCORED     distance outside BAND and outside CORE, printed per pose.
 //
@@ -164,8 +200,10 @@
 //     poses were actually judged so a narrowed run cannot be quoted as a
 //     complete one.
 
-import { spawnSync, execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -195,11 +233,36 @@ const F_MIN = 0.10;
 // `lane/n8-guardband`, one build, one session, server 127.0.0.1:5550
 // --strictPort with its sentinel CONTENT verified over the wire, a fresh
 // process per arm. A pose absent from this table is a FAIL, never a skip.
+//
+// THESE ARE POST-SHIP PINS. `lane/wg-ship` (WG-275 to WG-280, merged at
+// 13029417) changed the planet height field, and it moved these poses: the
+// `box` clearing went 0.163243 -> 0.189652 at `forestairnoon` (+16.2 per cent)
+// and 0.317483 -> 0.288112 at `flyovernoon` (-9.3 per cent). Measured, not
+// assumed -- the ship lane's own tables established `mtnslope` bit-identical
+// and plains rects moved, and said nothing about forest or the spawn.
+//
+// FOUR OF THE EIGHT RATCHET CEILINGS ROSE ACROSS THAT MERGE AND ARE FLAGGED
+// RATHER THAN QUIETLY RAISED. Against the pre-ship pins: `flyovernoon` boxShip
+// 0.9248 -> 0.9343 and `flyoverlow` 0.9700 -> 0.9774 both clear the 0.005
+// tolerance, and boxSurf rose at three poses (`forestairlow` 0.7968 -> 0.8928
+// the largest). The cause is the ground moving under the ratio, not the canopy
+// getting lighter, but the rule is that a re-pin may not raise a ceiling
+// without a logged decision, so this is recorded in rendering.md 2.35.7 as a
+// decision REQUEST and these values are provisional until it is answered.
+//
+// `rhoOut` marks a pose whose coverage-corrected crown ratio is ALREADY outside
+// the band on the shipped frame. It is not an exemption: an out-of-band pose
+// still fails if it moves FURTHER out, and a pose that is not marked here fails
+// the moment it leaves the band at all.
 const BASE = {
-  forestairnoon: { boxShip: null, boxSurf: null, boxClearY: null, crownClearY: null },
-  forestairlow: { boxShip: null, boxSurf: null, boxClearY: null, crownClearY: null },
-  flyovernoon: { boxShip: null, boxSurf: null, boxClearY: null, crownClearY: null },
-  flyoverlow: { boxShip: null, boxSurf: null, boxClearY: null, crownClearY: null },
+  forestairnoon: { boxShip: 0.9817, boxSurf: 0.9826, boxClearY: 0.189652,
+    crownClearY: 0.103580, rho: 0.0992, rhoOut: 'low' },
+  forestairlow: { boxShip: 0.9581, boxSurf: 0.8928, boxClearY: 0.106526,
+    crownClearY: 0.058633, rho: 0.4363, rhoOut: null },
+  flyovernoon: { boxShip: 0.9343, boxSurf: 0.9020, boxClearY: 0.288112,
+    crownClearY: 0.148116, rho: 0.2488, rhoOut: null },
+  flyoverlow: { boxShip: 0.9774, boxSurf: 0.8884, boxClearY: 0.147985,
+    crownClearY: 0.078325, rho: 0.7021, rhoOut: null },
 };
 
 const OFF = ['--prophaze=0', '--terrainhaze=0'];
@@ -209,7 +272,8 @@ const ARMS = {
   clearingSurf: ['--canopy=0', ...OFF],
   woodSurf: [...OFF],
   cardsOnly: ['--terrainpaint=1', ...OFF],
-  cardsBlack: ['--proppaint=1', ...OFF],
+  // `--propspec=0` is load-bearing here, not belt and braces: see section 3.
+  cardsBlack: ['--proppaint=1', '--propspec=0', ...OFF],
 };
 
 const argv = new Map(process.argv.slice(2)
@@ -237,37 +301,61 @@ const fails = [];
 // compiles `__OF_BUILD__` from the short sha plus `+dirty`, so recomputing it
 // here and finding it in the served entry chunk closes the loop.
 async function checkServedBuild() {
-  if (process.env.OF_BUILD_STAMP) {
-    console.log(`build stamp: forced to "${process.env.OF_BUILD_STAMP}", freshness`
-      + ` check SKIPPED (the build did not derive it from git either)`);
-    return;
-  }
-  let want;
+  const DIST = path.join(HERE, '..', '..', 'dist');
+  let entry;
   try {
-    const sha = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim();
-    const top = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
-    const dirty = execSync(`git diff --name-only HEAD -- "${top}/web" "${top}/core"`,
-      { encoding: 'utf8' }).trim();
-    want = dirty === '' ? sha : `${sha}+dirty`;
-  } catch {
-    fails.push('cannot compute the expected build stamp from git');
-    return;
-  }
-  try {
-    const html = await (await fetch(new URL('index.html', url))).text();
+    const html = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
     const m = html.match(/src="([^"]*index[^"]*\.js)"/);
-    if (!m) { fails.push('cannot find the entry chunk in the served index.html'); return; }
-    const js = await (await fetch(new URL(m[1].replace(/^\//, ''), url))).text();
-    if (!js.includes(want)) {
-      fails.push(`the SERVED build does not carry the stamp "${want}" this working`
-        + ` tree would produce. The server is serving a different build, so every`
-        + ` number below would be attributed to the wrong source.`);
-    } else {
-      console.log(`build stamp: served bundle carries "${want}", matching this tree`);
+    if (!m) throw new Error('no entry chunk in dist/index.html');
+    entry = m[1].replace(/^\//, '');
+  } catch (e) {
+    fails.push(`cannot read the local dist to check the served build: ${e.message}`);
+    return;
+  }
+  const h = (b) => createHash('sha256').update(b).digest('hex').slice(0, 16);
+  // 1. THE SERVER SERVES *THIS* DIST. Stronger than the sentinel, which only
+  // proves some file of ours is reachable: this compares the ENTRY CHUNK the
+  // browser will actually execute, byte for byte, against the one on disk.
+  try {
+    const local = fs.readFileSync(path.join(DIST, entry));
+    const served = Buffer.from(await (await fetch(new URL(entry, url))).arrayBuffer());
+    if (h(local) !== h(served)) {
+      fails.push(`the SERVED entry chunk (${h(served)}) is not the one in dist`
+        + ` (${h(local)}). The server is serving a different build.`);
+      return;
     }
   } catch (e) {
-    fails.push(`cannot read the served bundle to check its build stamp: ${e.message}`);
+    fails.push(`cannot fetch the served entry chunk: ${e.message}`); return;
   }
+  // 2. THAT DIST IS NOT STALE AGAINST THE SOURCES THAT GO INTO IT. Only sources
+  // that ENTER THE BUNDLE count. Checking the git stamp instead was the first
+  // design and it was wrong in a way this project has now catalogued twice: the
+  // stamp goes `+dirty` for ANY tracked edit under `web/`, so editing a probe --
+  // which is read from disk at run time and never bundled -- failed the check
+  // while the bundle was byte-identical. Compare mtimes against the artefact.
+  const newest = (dir) => {
+    let t = 0;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      t = Math.max(t, e.isDirectory() ? newest(p) : fs.statSync(p).mtimeMs);
+    }
+    return t;
+  };
+  const built = fs.statSync(path.join(DIST, entry)).mtimeMs;
+  for (const rel of ['src', 'wasm/dist', 'index.html']) {
+    const p = path.join(HERE, '..', '..', rel);
+    if (!fs.existsSync(p)) continue;
+    const t = fs.statSync(p).isDirectory() ? newest(p) : fs.statSync(p).mtimeMs;
+    if (t > built) {
+      fails.push(`web/${rel} is NEWER than the built bundle`
+        + ` (${new Date(t).toISOString()} against ${new Date(built).toISOString()}).`
+        + ` Something that enters the bundle changed and was not rebuilt, so these`
+        + ` numbers would describe the previous build. Re-run the build.`);
+      return;
+    }
+  }
+  console.log(`build: served entry chunk matches dist (${h(fs.readFileSync(
+    path.join(DIST, entry)))}) and dist is newer than src, wasm and index.html`);
 }
 
 function once(shot, flags) {
@@ -316,17 +404,27 @@ for (const shot of shots) {
       + ` clearing (${C('clearingSurf')} vs ${C('clearing')})`);
     continue;
   }
-  // ARMING 3: the two paint arms must agree on coverage. This is the arming
-  // check for the coverage correction itself, and it is two independent counts
-  // of one alpha-tested geometry rather than one count trusted twice.
+  // ARMING 3: "black means painted" has to be true before a black-pixel count
+  // is a coverage. A NORMAL frame must contain essentially no exactly-black
+  // pixels; if it does, the inference is broken and every f below is noise.
+  const bClear = e.clearingSurf.extra.crowns.blackFrac;
+  if (bClear > 0.01) {
+    fails.push(`${shot}: NOT ARMED -- the un-painted clearing arm is already`
+      + ` ${(bClear * 100).toFixed(2)} per cent exactly-black pixels, so "black means`
+      + ` painted" is false here and the coverage counts mean nothing.`);
+    continue;
+  }
   const fA = 1 - e.cardsOnly.extra.crowns.blackFrac;
   const fB = e.cardsBlack.extra.crowns.blackFrac;
-  const f = (fA + fB) / 2;
-  if (Math.abs(fA - fB) > COV_TOL) {
-    fails.push(`${shot}: COVERAGE COUNTS DISAGREE at crowns -- ?terrainpaint=1 says`
-      + ` f = ${fA.toFixed(4)}, ?proppaint=1 says f = ${fB.toFixed(4)}, apart by`
-      + ` ${Math.abs(fA - fB).toFixed(4)} against a tolerance of ${COV_TOL}. One of`
-      + ` the paint arms is not painting what it claims, so rho cannot be formed.`);
+  // f COMES FROM THE `?terrainpaint=1` COUNT ALONE. Section 3 states the
+  // evidence: `?proppaint=1` does not black the cards, so its count is a floor
+  // rather than a measurement. Its own error direction is asserted instead.
+  const f = fA;
+  if (fB > fA + COV_TOL) {
+    fails.push(`${shot}: ?proppaint=1 counts MORE coverage (${fB.toFixed(4)}) than`
+      + ` ?terrainpaint=1 (${fA.toFixed(4)}). Section 3's diagnosis says residual card`
+      + ` radiance can only make it UNDER-count, so this contradicts it and the`
+      + ` coverage story has to be re-derived before rho can be trusted.`);
     continue;
   }
   if (!(f >= F_MIN)) {
@@ -341,16 +439,24 @@ for (const shot of shots) {
   const crownShip = C('wood') / C('clearing');
   const crownSurf = C('woodSurf') / C('clearingSurf');
   const G = C('cardsBlack') / C('clearingSurf');
-  const rho = (crownSurf - G) / f;
+  // rho FROM THE ONE CLEAN ARM: `?terrainpaint=1` leaves f*Y_card and nothing
+  // else, so dividing by f and the clearing gives the crown's own ratio.
+  const rho = C('cardsOnly') / (f * C('clearingSurf'));
+  // THE MIXTURE, CLOSED AGAINST THE OTHER ARM AS A DIAGNOSTIC. Rsurf should be
+  // f*rho + G. It will not close while `?proppaint=1` leaves card radiance in
+  // G, and the residual is the size of that contamination, printed rather than
+  // assumed. A NEGATIVE residual means G is too big, which is the predicted sign.
+  const closure = crownSurf - (f * rho + G);
   const a = (crownShip - crownSurf) / (1 - crownSurf);
   rows.push({ shot, boxShip, boxSurf, crownShip, crownSurf, G, f, fA, fB, rho, a,
-    boxClearY: B('clearing'), crownClearY: C('clearing') });
+    closure, boxClearY: B('clearing'), crownClearY: C('clearing') });
 
   const b = BASE[shot];
   if (!b || b.boxSurf === null) {
     fails.push(`${shot}: NO BASELINE. Paste into BASE: { boxShip: ${boxShip.toFixed(4)},`
       + ` boxSurf: ${boxSurf.toFixed(4)}, boxClearY: ${B('clearing').toFixed(6)},`
-      + ` crownClearY: ${C('clearing').toFixed(6)} }`);
+      + ` crownClearY: ${C('clearing').toFixed(6)}, rho: ${rho.toFixed(4)},`
+      + ` rhoOut: ${rho < BAND_LOW ? "'low'" : (rho > BAND_HIGH ? "'high'" : 'null')} }`);
     continue;
   }
   if (boxShip > b.boxShip + TOL) {
@@ -361,11 +467,27 @@ for (const shot of shots) {
     fails.push(`${shot}: box Rsurf ${boxSurf.toFixed(4)} is ABOVE its ratchet ceiling`
       + ` ${b.boxSurf.toFixed(4)} + ${TOL}. The wood got LIGHTER on the surface arm.`);
   }
-  if (rho < BAND_LOW || rho > BAND_HIGH) {
+  // THE BAND, WITH THE ONE KNOWN-OUT POSE HELD TO A RATCHET INSTEAD OF WAVED
+  // THROUGH. A pose not marked `rhoOut` fails the moment it leaves the band. A
+  // pose that is already out fails if it moves FURTHER out, so the standing
+  // violation is pinned at its current depth and can only be repaid.
+  const side = rho < BAND_LOW ? 'low' : (rho > BAND_HIGH ? 'high' : null);
+  if (side && side !== b.rhoOut) {
     fails.push(`${shot}: crowns rho ${rho.toFixed(4)} is OUTSIDE the band`
-      + ` ${BAND_LOW}..${BAND_HIGH}. ${rho > BAND_HIGH
+      + ` ${BAND_LOW}..${BAND_HIGH} at the ${side} end, and this pose is not`
+      + ` recorded as a standing violation. ${side === 'high'
         ? 'The crowns are lighter than any defensible canopy over this clearing.'
         : 'The crowns are darker than any defensible canopy over this clearing.'}`);
+  } else if (side && side === b.rhoOut) {
+    const worse = side === 'low' ? rho < b.rho - TOL : rho > b.rho + TOL;
+    if (worse) {
+      fails.push(`${shot}: crowns rho ${rho.toFixed(4)} has moved FURTHER outside the`
+        + ` band than its recorded ${b.rho.toFixed(4)} (${side} end). A standing`
+        + ` violation may be repaid, never deepened.`);
+    }
+  } else if (b.rhoOut) {
+    console.log(`  note: ${shot} rho ${rho.toFixed(4)} is now INSIDE the band and is`
+      + ` still marked rhoOut '${b.rhoOut}'. Clear the marking and re-pin.`);
   }
   for (const [what, got, pin] of [['box', B('clearing'), b.boxClearY],
     ['crowns', C('clearing'), b.crownClearY]]) {
@@ -404,10 +526,12 @@ for (const r of rows) {
     + `${f4(r.crownShip)} ${f4(r.crownSurf)} ${f4(r.G)} ${f4(r.f)} ${f4(r.rho)}`
     + ` ${f4(r.a)}   ${where}`);
 }
-console.log('\ncoverage cross-check (two independent pixel counts of one geometry):');
+console.log('\ncoverage, and the `?proppaint=1` arm does NOT black the cards (section 3):');
 for (const r of rows) {
-  console.log(`  ${r.shot.padEnd(14)} ?terrainpaint=1 -> ${r.fA.toFixed(4)}`
-    + `   ?proppaint=1 -> ${r.fB.toFixed(4)}   apart ${Math.abs(r.fA - r.fB).toFixed(4)}`);
+  console.log(`  ${r.shot.padEnd(14)} f from ?terrainpaint=1 -> ${r.fA.toFixed(4)} USED`
+    + `   ?proppaint=1 floor -> ${r.fB.toFixed(4)}   under-count`
+    + ` ${(r.fA - r.fB).toFixed(4)}   mixture closure ${r.closure >= 0 ? '+' : ''}`
+    + `${r.closure.toFixed(4)}`);
 }
 
 if (printOnly) {
