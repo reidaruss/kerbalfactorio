@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2540 to RN-2549, `lane/n7-bluefloor`, **THE ADDITIVE BLUE FLOOR IS THE AIR, AND THE CROWN IS AN ORDER OF MAGNITUDE TOO DIM TO SURVIVE IT.** N6's routed item 1 (2.33.9), diagnosed; corrected 2026-08-21 by a fresh-context verifier, verdict FIX doc-only, every measurement reproduced to the digit on its own build and its own from-scratch base. **THIS LANE SHIPS NO PIXEL CHANGE:** every committed rectangle at every measured pose is bit-identical between a from-scratch build of the pre-lane source and the lane build (one stated exception, `forestair` `skyBand` red 125.23 against 125.24, run-to-run scatter on a rectangle no term in this lane can reach), proved by a real pair rather than argued from the algebra (2.34.7). **THE ANSWER:** at the committed `crowns` rect at `forestair`, **91.9 per cent of the crown card's own blue is AERIAL IN-SCATTER added over it and 0.03 per cent is its albedo** -- the card's whole diffuse contribution to a 32.05-count blue pixel is **0.01 counts** against the floor's **29.44**, and its green is **1.00 against 20.76**. Turning BOTH aerial terms off takes the whole rectangle's blue **80.67 -> 13.86**. The complementary paint arms close to within 0.65 counts on every channel and the residual is NEGATIVE on all three, which is the signature of edge pixels and post rather than of an unattributed surface. **THE CHARTER'S NAMED SUSPECT IS REFUTED:** `TerrainAmbient`'s blue-dominant `AMBIENT_NOON` costs the crown's blue **0.69 counts of 80.67**, and the whole ambient family (`ambientfill` 0.69, `terrainfloor` 0.33, `skyirr` 0.39, `propsky` 0.00) is under a count and a half; `bloom` 0.00, terrain sky specular 1.24, prop specular 2.92. **AND IT IS RAYLEIGH'S BLUE, NOT M1's AEROSOL:** `?aerosol=0` costs **30.14 counts of RED and 5.05 of blue** (the boundary layer is what makes the frame warm) and `?aerodepth=0` moves the rect by **0.01 of red and 0.00 of green and blue**, an ARMED null (the same flag moves poses whose ground clears the threshold, and moves this pose's whole-frame warm -8.32 -> -7.75), so the od-dependent depth-blue tint has not engaged at crown range. **THE FLOOR IS NOT OVER-STRENGTH:** the crowns sit at 2,278 to 2,850 m slant, the model's own constants give od ~0.19 blue (aerosol ~0.10 through a 400 m layer referenced to the observer's ground, Rayleigh ~0.08) and an airlight share of ~0.17, and the measured airlight there is 0.15 to 0.22 of the horizon band's equilibrium radiance, i.e. Koschmieder-correct; across the whole plausible card-coverage range the card's and the ground's per-pixel floors stay the same size, so nothing is imbalanced between the two surfaces (the data cannot resolve the difference or its sign, 2.34.4). **THE BLUE IS PHYSICALLY RIGHT AND THE CROWNS NEED MORE GREEN LIGHT, AND RN-2275's SIGN TEST FORBIDS IT:** sweeping `?crownshadefloor=` 0.08 -> 0.16 -> 0.30 moves the `forestairnoon` margin -1.76 -> -0.27 -> **+2.14 FLIPPED** while the crown's blue moves **80.67 -> 80.79, 0.12 counts across the whole sweep**; the affordable half-margin buys gx +0.8 of N3's 2.69-count gap. The guard is not a haze artefact (un-hazed margins -1.67/-2.74/-10.93/-3.04, same size or larger), and the crown's diffuse sits an order of magnitude below the ground's total where the visible-band real-world analogue is 2 to 3x. **THE DECISION OWED, RESTATED AS A PRINCIPLE AFTER THE VERIFIER CAUGHT THE FIRST DRAFT MIXING TWO MEASUREMENTS:** adopt in principle that RN-2275's sign test becomes a two-sided RATIO BAND with both patch means LINEARIZED before ratioing, endpoints and full measurement definition remitted to the implementing lane as its first deliverable (green-band linear reflectance supports 0.30 to 0.65), verified against the four existing pairs BEFORE any radiance change lands; and the **guard redefinition ships FIRST AND ALONE** with no pixel change, the radiance raise and the canopy roughness fix together in a SECOND lane because they interact. **FOUR NEW ISOLATORS, two of them RN-952's lesson:** `?terrainhaze=` (the terrain's aerial perspective had NO switch but the global `?atmos=0`), `?terrainpaint=1` / `?proppaint=1` (paint the additive floor alone, which an amplitude cannot do because it moves `col*T` and `Lin` together), and `?propspec=` (three's `totalSpecular` on props had no control of any kind and turns out to be **99.7 per cent of the crown's own blue**). All four registered in `run.mjs` in the same commit and readable back live via `rn2540state.mjs`. **EYE: CROWNS STILL NOT MET**, and the diagnostic crops say why in one look -- the floor painted alone is a flat structureless blue-slate sheet, and the card painted alone is unmistakably dark green. Gates 0, 8 of 8. Full record in section 2.34; frames `docs/screenshots/RN2540_*`.) (Same day: `lane/n6-crownshade` section 2.33; `lane/n4-midobjects` section 2.32; `lane/n3-airview` section 2.31.) THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2550 to RN-2554, `lane/n8-guardband`, **RN-2275's SIGN TEST BECOMES A TWO-SIDED, LINEARIZED, COVERAGE-CORRECTED BAND, AND FOR THE FIRST TIME IT IS AN ASSERTION.** N7's routed item 1 (2.34.10) and the Admin decision in NUMBERS' RN-2540 row, implemented, then **substantially CORRECTED after a fresh-context verifier**. **THE LARGEST FINDING IS THAT THE GUARD WAS NEVER A GUARD:** before this lane NOTHING in the project asserted the wood-vs-clearing relation. `rn2275sweep.mjs` has no `process.exit`, no threshold and no verdict token and its own comment says "the pass condition, printed rather than eyeballed"; `run.mjs`'s `smoke: PASS` means "no console errors, no failed requests" and is blind to the probe's content, so a `valid:false` report exits 0; none of the eight links in `npm run check` renders these poses; **there is no CI in the repository at all**. Four lanes budgeted against a sentence in a comment, which is two NUMBERS scars at once. **STAGE 1 THEN PUT THE BAND ON THE WRONG RECTANGLE AND ALL THREE OF ITS HEADLINES WERE ARTEFACTS OF IT, WITHDRAWN IN 2.35.1:** "the shipped frame fails the band at all four pairs" (it does not), "the inversion is still there at `forestairnoon`" (there is none; the un-hazed crowns wood is a third DARKER than its clearing), and "what is out of band is the canopy, not the air" (not established by that evidence). A fourth goes with them, the airlight share of 1.2204 offered as tone-curve evidence: it is **forced arithmetic** whenever `Rsurf > 1 > Rship`, so the inversion and the impossible share were **one finding reported as two**, and on `crowns` the same pose gives a proper share of 0.3848 with the additive model closing. Every stage-1 NUMBER reproduced, including on an independent PNG decoder; the CONCLUSIONS did not. `box` is "nearly blind to the cards" by `artframe.js`'s own comment, so a band on it was a band on the terrain paint. **THE SPLIT THAT FIXES IT:** the RATCHET stays on `box` (regression protection, continuity with RN-2275, no physics claim); the BAND and CORE move to `crowns`, **COVERAGE-CORRECTED**. **THE DEFINITION, pinned so two implementations agree to the digit:** per pixel decode each channel with the exact IEC 61966-2-1 inverse EOTF **including the toe**, form Rec.709 LINEAR-LIGHT luminance, then average. **DECODE PER PIXEL THEN AVERAGE, priced not asserted:** averaging first costs up to **0.0285** and always flatters the higher-variance wood, decoding the luma scalar costs under **0.0016**, and the spread across the four defensible routes is **0.0230** at `forestairnoon`, larger in that pose's terms than the **1.76 counts** the old sign test lived on. **A PATCH RATIO IS A MIXTURE AND IS NOW INVERTED RATHER THAN LAMENTED:** `Rsurf = f*rho + (1-f)*s`, so a black canopy still reads `1 - f`; `rho` comes from the one clean arm (`?terrainpaint=1` leaves `f*Y_card` and nothing else) with `f` a **PIXEL COUNT** of exactly-black pixels on a paint arm, which never touches `?canopy=0`. **THE ROUTED `f` METHOD DOES NOT WORK AND WAS RUN RATHER THAN ASSUMED:** `1 - rect(cards black)/rect(canopy=0)` returns **f = -0.0301** at `box`, because `?canopy=0` removes the far treeline PAINT as well as the cards. **THE ENDPOINTS:** the named 0.30-to-0.65 is CONFIRMED as a green-band REFLECTANCE band and is not this guard's quantity; translated to linear luminance against a substrate clearing (0.82x shift, and the clearing is the largest and most ambiguous term) it becomes **CORE 0.25 to 0.55** and **BAND 0.18 to 0.75**, judged where they were derived. **THE ANSWER, post-ship:** rho reads **0.0992 / 0.4363 / 0.2488 / 0.7021**; **three of four poses are INSIDE the band and `forestairnoon` is outside at the DARK end**, the opposite failure from the one stage 1 reported and consistent with N7's order-of-magnitude finding. **The spread is a factor of seven across four poses of one canopy model, ordered, with LOW sun reading LIGHTER than noon at both sites**, which is backwards for a path-length argument and is what N7's floor-limited-at-noon note predicts; stage 2 must explain the spread, not only raise a level. **THIS DARK-END RESULT IS NEW AND UNVERIFIED and should be re-measured by someone who did not build the instrument.** **THE CONTROL GOES RED AND FOUND THE BEST RESULT IN THE LANE:** `--extra=crownshadefloor=0.30` exits **1** on both `box` ratchets and **simultaneously lifts `forestairnoon`'s rho from 0.0992 to 0.1940, INTO the band** -- the arm that breaks the old guard is the arm that repairs the physics, which is this lane's thesis demonstrated rather than argued. **THE TERRAIN MOVED UNDER THIS LANE, MEASURED NOT ASSUMED:** `lane/wg-ship` (13029417, ABI 27) moved the `box` clearing **+16.2 per cent at `forestairnoon`** and **-9.3 at `flyovernoon`**, so every pin here is post-ship; **five of eight ratchet ceilings would rise and are FLAGGED as a DECISION REQUEST rather than raised on this lane's authority** (2.35.9 item 9). **NO PIXEL CHANGE:** nothing under `web/src/`, and base and lane both hash to `fc644c0b...` across every `dist` file with the BT-27 stamp forced (the unforced comparison does NOT match, which is a new catalogue entry, not a rendering change). **NEW OWED:** `?proppaint=1` does NOT leave the cards exactly black (two coverage counts a third of the rectangle apart, `?propspec=0` changes nothing), **which impugns 2.34.4's "ground half"**; the closure residual is positive and sub-count, so its MEAN is probably sound and only its use as a coverage instrument is refuted. Gates 0, 0, **8 of 8**. Full record in section 2.35.) (Previous: `lane/n7-bluefloor` section 2.34; `lane/n6-crownshade` section 2.33; `lane/n4-midobjects` section 2.32; `lane/n3-airview` section 2.31.) THIS LINE IS A POINTER: replace it, never append to it.
 
 
 
@@ -10,7 +10,7 @@
 
 
 >
-> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2525 to RN-2539, `lane/n6-crownshade`, **THE CROWN SHADE GOES SPECTRAL: N3's routed follow-up, taken.** N3 found `CanopySelfShadow.updateCanopyCardShade` and the far treeline paint both multiplying the finalised canopy colour by ONE achromatic scalar (`cardShade` 0.1025), which is why a crown reads dark blue-violet rather than dark green. This lane replaces the scalar with a per-channel triple, `shade_c = S^k_c`, `k_c` **A DELIBERATE STYLISATION, NOT A DERIVATION -- corrected by a fresh-context verifier after an earlier draft of this line said "derived":** shipped exponents **1.493802 red, 0.298760 green, 2.240702 blue** are `1/t_c`-proportional, not the Beer-Lambert `tau_c = -ln(t_c)` relation (honest Beer-Lambert would be 1.183283/0.640180/1.320107, two-stream 1.035589/0.922476/1.046785); the DIRECTION matches the leaf optics, the MAGNITUDE is 2.71x more aggressive than Beer-Lambert and kept on purpose (the honest exponents close only 40.9 per cent of the gx shortfall against the shipped 65.8, section 2.33.9), applied to BOTH halves through the one `CanopySelfShadow`/`SurfaceBind` seam. **THE PIN, STATED PRECISELY:** the Rec.709-weighted mean of the shade triple collapses algebraically to `S` for every `S` (confirmed live: `cardShadeRGB` (0.014397, 0.171380, 0.003062) against `cardShade` 0.125853, weighted sum 0.125853 to the digit) -- but **that is not the same as the rendered pixel's luma being unchanged**, since the base colour is not neutral; measured drift is small (+0.004 linear at the Forest site) and reported rather than hidden. `?crownspectral=0` is the exact pre-lane achromatic frame by the same identity (`k_c = 1` for all three), registered in `run.mjs`. **THE SCORE, committed `crowns` rectangle:** gx **+1.87 -> +3.64** against a clearing at +4.56, **65.8 per cent of the shortfall closed**; luma moves **+0.66**, honestly NOT the digit-identical hold hoped for, explained in 2.33.3/2.33.4 rather than tuned away. **THE GUARD, RE-MEASURED rather than trusted to algebra:** RN-2275's four clearing/wood pairs all still invert (`forestairnoon` -1.76, `forestairlow` -1.99, `flyovernoon` -7.31, `flyoverlow` -1.83 against a pre-lane -2.80/-2.28/-8.07/-2.05 on this SAME build's `?crownspectral=0` arm); margins shrink by 0.10 to 1.04 counts and none comes close to flipping. Four ground poses bit-identical; aerial `world` warm/sat shifts 0.10 to 0.29 counts at every pose, same class as the guard. **`warm` (R-B) moves the "wrong" way** (-16.32 -> -16.66 at `crowns`) because both red's and blue's exponents exceed the achromatic 1 (blue's more), which is explained arithmetic rather than a regression: `warm` is blind to green by construction (RN-2495's own finding) and is not this fix's instrument. **EYE VERDICT: still PARTIAL, not MET, closer than before.** At 1x the frame is close to indistinguishable from N3's own shipped frame; at 3x the crowns read a shade less blue-violet but do not read as "unmistakably green" the way `?crownshadecard=0` (shade fully OFF) does. Determinism and every number reproduced to the digit across a full clean rebuild. Full record in section 2.33; frames `docs/screenshots/RN2525_*`.) (Same day: `lane/n4-midobjects` section 2.32; `lane/wg-fixtures` world-gen.md 6.12; earlier same-day sections 2.28 to 2.31.) THIS LINE IS A POINTER: replace it, never append to it.
+> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-21 (RN-2540 to RN-2549, `lane/n7-bluefloor`, **THE ADDITIVE BLUE FLOOR IS THE AIR, AND THE CROWN IS AN ORDER OF MAGNITUDE TOO DIM TO SURVIVE IT.** N6's routed item 1 (2.33.9), diagnosed; corrected 2026-08-21 by a fresh-context verifier, verdict FIX doc-only, every measurement reproduced to the digit on its own build and its own from-scratch base. **THIS LANE SHIPS NO PIXEL CHANGE:** every committed rectangle at every measured pose is bit-identical between a from-scratch build of the pre-lane source and the lane build (one stated exception, `forestair` `skyBand` red 125.23 against 125.24, run-to-run scatter on a rectangle no term in this lane can reach), proved by a real pair rather than argued from the algebra (2.34.7). **THE ANSWER:** at the committed `crowns` rect at `forestair`, **91.9 per cent of the crown card's own blue is AERIAL IN-SCATTER added over it and 0.03 per cent is its albedo** -- the card's whole diffuse contribution to a 32.05-count blue pixel is **0.01 counts** against the floor's **29.44**, and its green is **1.00 against 20.76**. Turning BOTH aerial terms off takes the whole rectangle's blue **80.67 -> 13.86**. The complementary paint arms close to within 0.65 counts on every channel and the residual is NEGATIVE on all three, which is the signature of edge pixels and post rather than of an unattributed surface. **THE CHARTER'S NAMED SUSPECT IS REFUTED:** `TerrainAmbient`'s blue-dominant `AMBIENT_NOON` costs the crown's blue **0.69 counts of 80.67**, and the whole ambient family (`ambientfill` 0.69, `terrainfloor` 0.33, `skyirr` 0.39, `propsky` 0.00) is under a count and a half; `bloom` 0.00, terrain sky specular 1.24, prop specular 2.92. **AND IT IS RAYLEIGH'S BLUE, NOT M1's AEROSOL:** `?aerosol=0` costs **30.14 counts of RED and 5.05 of blue** (the boundary layer is what makes the frame warm) and `?aerodepth=0` moves the rect by **0.01 of red and 0.00 of green and blue**, an ARMED null (the same flag moves poses whose ground clears the threshold, and moves this pose's whole-frame warm -8.32 -> -7.75), so the od-dependent depth-blue tint has not engaged at crown range. **THE FLOOR IS NOT OVER-STRENGTH:** the crowns sit at 2,278 to 2,850 m slant, the model's own constants give od ~0.19 blue (aerosol ~0.10 through a 400 m layer referenced to the observer's ground, Rayleigh ~0.08) and an airlight share of ~0.17, and the measured airlight there is 0.15 to 0.22 of the horizon band's equilibrium radiance, i.e. Koschmieder-correct; across the whole plausible card-coverage range the card's and the ground's per-pixel floors stay the same size, so nothing is imbalanced between the two surfaces (the data cannot resolve the difference or its sign, 2.34.4). **THE BLUE IS PHYSICALLY RIGHT AND THE CROWNS NEED MORE GREEN LIGHT, AND RN-2275's SIGN TEST FORBIDS IT:** sweeping `?crownshadefloor=` 0.08 -> 0.16 -> 0.30 moves the `forestairnoon` margin -1.76 -> -0.27 -> **+2.14 FLIPPED** while the crown's blue moves **80.67 -> 80.79, 0.12 counts across the whole sweep**; the affordable half-margin buys gx +0.8 of N3's 2.69-count gap. The guard is not a haze artefact (un-hazed margins -1.67/-2.74/-10.93/-3.04, same size or larger), and the crown's diffuse sits an order of magnitude below the ground's total where the visible-band real-world analogue is 2 to 3x. **THE DECISION OWED, RESTATED AS A PRINCIPLE AFTER THE VERIFIER CAUGHT THE FIRST DRAFT MIXING TWO MEASUREMENTS:** adopt in principle that RN-2275's sign test becomes a two-sided RATIO BAND with both patch means LINEARIZED before ratioing, endpoints and full measurement definition remitted to the implementing lane as its first deliverable (green-band linear reflectance supports 0.30 to 0.65), verified against the four existing pairs BEFORE any radiance change lands; and the **guard redefinition ships FIRST AND ALONE** with no pixel change, the radiance raise and the canopy roughness fix together in a SECOND lane because they interact. **FOUR NEW ISOLATORS, two of them RN-952's lesson:** `?terrainhaze=` (the terrain's aerial perspective had NO switch but the global `?atmos=0`), `?terrainpaint=1` / `?proppaint=1` (paint the additive floor alone, which an amplitude cannot do because it moves `col*T` and `Lin` together), and `?propspec=` (three's `totalSpecular` on props had no control of any kind and turns out to be **99.7 per cent of the crown's own blue**). All four registered in `run.mjs` in the same commit and readable back live via `rn2540state.mjs`. **EYE: CROWNS STILL NOT MET**, and the diagnostic crops say why in one look -- the floor painted alone is a flat structureless blue-slate sheet, and the card painted alone is unmistakably dark green. Gates 0, 8 of 8. Full record in section 2.34; frames `docs/screenshots/RN2540_*`.) (Same day: `lane/n6-crownshade` section 2.33; `lane/n4-midobjects` section 2.32; `lane/n3-airview` section 2.31.) THIS LINE IS A POINTER: replace it, never append to it.
 
 ## 1. Mission
 Make surface→orbit→interplanetary→surface look seamless and run fast. Own the "rendering magic" that sells continuous traversal, plus the techniques that let a dense 3D factory render without melting the GPU.
@@ -5597,6 +5597,24 @@ of the apply-point (see 2.19.7) and it has a sweep, `?crownshadefloor=`.
 
 ### 2.19.4 THE PASS CONDITION, and the instrument needs no hand-placed rectangle
 
+> **SUPERSEDED AS THE PASS CONDITION, 2026-08-21, BY LANE N8 (RN-2550): THE
+> SIGN TEST BELOW IS NO LONGER THE GUARD. See section 2.35 for the definition
+> that replaces it.** What stands here is the INSTRUMENT -- `?canopy=0` on the
+> same rectangle at the same pose, common-mode by construction, nothing placed
+> by eye -- and 2.35 keeps it unchanged. What does not stand is the PASS
+> CONDITION. "Wood minus clearing is negative" is a boolean on 8-bit code
+> values with no budget: N6 spent 37 per cent of the `forestairnoon` margin in
+> one pass (2.33.9 item 2) and N7 proved the entire remaining margin buys 0.12
+> counts of crown blue while the crown's diffuse sits an order of magnitude
+> below the ground's, i.e. **the sign was being satisfied at roughly ten times
+> the correct magnitude** (2.34.6, 2.34.10 item 1). 2.35 replaces it with a
+> two-sided band on a ratio of PER-PIXEL-LINEARIZED patch means, measured on an
+> airlight-free arm, and asserts it in code for the first time. **Also note
+> what the table below is not: these four rows were taken at RN-2275's own
+> build and the frame has moved since** (the shipped pairs now read
+> -1.76 / -1.99 / -7.31 / -1.83 against clearings 110.27 / 84.18 / 149.20 /
+> 107.32, reproduced to the digit by N8 on its own build; 2.34.7, 2.35.4).
+
 `?canopy=0` is the clearing: the same rectangle, the same pose, the same range,
 haze, sun and lighting, with no vegetation of any kind. So "wood minus clearing"
 is a **sign** read off one rectangle with everything else common-mode by
@@ -10712,8 +10730,16 @@ FRESH-CONTEXT VERIFIER; an earlier draft of this paragraph said "within 8 per
 cent, and in the right direction", which is true at ONE value of `f` and not
 across the range this lane itself quotes.** Converting either half to a
 per-pixel radiance needs the card coverage `f`, and `f` is only recoverable
-from these same arms as a per-channel estimate: **0.404 blue, 0.420 green,
-0.436 red** (from `1 - rect(cards black) / rect(canopy=0)`), a spread the gaps'
+from these same arms as a per-channel estimate: **0.436 red, 0.404 green,
+0.421 blue** (from `1 - rect(cards black) / rect(canopy=0)`) -- **CHANNEL LABELS
+CORRECTED 2026-08-21 BY LANE N8 (RN-2550), on the nit the RN-2540 verifier
+recorded for the guard lane; an earlier draft read "0.404 blue, 0.420 green,
+0.436 red", transposing green and blue and quoting the set's own MEAN in place
+of blue. Arithmetic, from this section's own two tables: red 1 - 42.15/74.73 =
+0.436, green 1 - 49.83/83.60 = 0.404, blue 1 - 48.27/83.34 = 0.421. The VALUE
+SET is unchanged to the digit and every conclusion below stands**, since the
+mean is 0.420 either way and the range endpoints 0.404 and 0.436 are the same
+two numbers -- a spread the gaps'
 own neighbour-shadowing explains and the arms cannot narrow. At the mean 0.420
 the per-pixel floors are (42.3, 49.4, 70.1) on the cards against (45.8, 52.8,
 73.8) on the ground, an 8 per cent gap; **at `f` = 0.404 the blue comparison
@@ -10816,8 +10842,18 @@ GROUND's TOTAL, per-pixel (each half divided by its own coverage), sRGB-decoded
 with the piecewise toe: **26x to 34x depending on how the near-black decode and
 the coverage are taken**, which is why it is quoted as an order of magnitude
 rather than as a number. It is also not a like-for-like ratio (diffuse against
-total), so it is a LOWER bound on how dark the crown's albedo path is, not an
-upper one.
+total), so it is an **UPPER** bound on how dark the crown is, not a lower one.
+**BOUND DIRECTION CORRECTED 2026-08-21 BY LANE N8 (RN-2550), on the nit the
+RN-2540 verifier recorded for the guard lane; this sentence said "a LOWER
+bound".** The numerator is the crown's DIFFUSE alone while the denominator is
+the ground's TOTAL, and the crown's own total is far larger than its diffuse
+(2.34.10 item 2: `totalSpecular` is 99.7 per cent of the card's own blue and 76
+per cent of its own green), so a like-for-like total-against-total ratio is
+SMALLER than 26x-to-34x. The figure therefore overstates the darkness, which
+makes it an upper bound. **The direction does not weaken the finding**: even the
+like-for-like ratio stays far above the visible-band 2x-to-3x below, and it is
+the reason the fix is a roughness correction paired with a raise rather than a
+deletion.
 
 **THE REAL-WORLD FIGURE IS A VISIBLE-BAND RATIO AND HAS TO BE.** Conifer canopy
 against green grass is about **2.1x** broadband-visible, and a closed canopy in
@@ -11009,3 +11045,623 @@ anywhere.
    small lane rather than a paragraph: a flag that blacks out part of the world
    is either a term with a missing fallback or a control nobody can trust the
    next time it is used as an arm.
+
+## 2.35 RN-2275 GOES LINEAR: THE SIGN TEST BECOMES A TWO-SIDED BAND, AND FOR THE FIRST TIME IT IS ASSERTED (RN-2550 to RN-2554, 2026-08-21, `lane/n8-guardband`)
+
+> N7's routed item 1 (2.34.10), taken, and the Admin decision recorded in
+> NUMBERS' RN-2540 row. Base `origin/main` at `b084d08e`. Branch
+> `lane/n8-guardband`, pushed, **not merged to main**. Server
+> `127.0.0.1:5550`, `--strictPort`, sentinel `dist/of-sentinel-rn2550.txt`
+> whose **CONTENT** was fetched back over the wire and compared, never its
+> status code -- the RN-2540 verifier's own new trap is that `vite preview`
+> SPA-falls-back with HTTP 200 for any missing path, and this lane confirmed it
+> live (a request for a path that does not exist returned 200 and an HTML
+> document). Server PID 21720, owned by this lane and killed by this lane.
+> `npx tsc --noEmit`, `npx vite build` and `cd web && npm run check` run as
+> SEPARATE steps with each exit status read on its own.
+>
+> **THIS LANE SHIPS NO PIXEL CHANGE, PROVED BY BUNDLE IDENTITY:** it touches no
+> file under `web/src/` at all, and with the BT-27 build stamp forced to the
+> same value on both sides the whole `dist` tree is byte-identical across all
+> 170 files. The unforced comparison does NOT match, for a reason that is a new
+> catalogue entry rather than a rendering change (2.35.7).
+
+### 2.35.1 THE ONE-LINE ANSWER, AND STAGE 1's THREE HEADLINES ARE WITHDRAWN
+
+> **CORRECTION, 2026-08-21, after a fresh-context verifier. STAGE 1 PUT THE
+> PHYSICAL BAND ON THE WRONG RECTANGLE AND ALL THREE OF ITS HEADLINES WERE
+> ARTEFACTS OF THAT CHOICE.** Every NUMBER stage 1 published reproduced exactly,
+> including on an independent PNG decoder sharing no code with the project. The
+> CONCLUSIONS drawn from them did not survive being taken on `crowns`, the
+> rectangle RN-2495 committed precisely because `artframe.js`'s own comment says
+> a band rect like `box` is "nearly blind to the cards". Banding a rectangle
+> that cannot see the canopy was a band on the terrain paint. Named, so nobody
+> reads the old claims from a summary:
+>
+> - **"The shipped frame fails the physical band at all four pairs" -- WRONG.**
+>   Coverage-corrected on `crowns`, three of four poses are inside the band and
+>   one is outside at the OPPOSITE end from the one stage 1 named (2.35.5).
+> - **"At `forestairnoon` the inversion is still there" -- WRONG.** That rested
+>   on `box` Rsurf 1.0479. On `crowns` the un-hazed wood is **33 per cent
+>   DARKER** than its clearing at the same pose (verifier, pre-ship; this lane
+>   measures 0.6831 post-ship). There is no inversion. WORLD-AUDIT-R2 section
+>   3.10's standing claim needed no amendment, and stage 1's amendment of it is
+>   withdrawn (2.35.9 item 6).
+> - **"What is out of band is the canopy, not the air" -- NOT ESTABLISHED BY
+>   THAT EVIDENCE.** It was inferred from ratios that could not see the canopy.
+>   A version of it survives, but it is a different claim resting on the
+>   coverage-corrected numbers below, and it is one pose rather than four.
+>
+> **A fourth stage-1 claim goes with them:** the derived airlight share of
+> **1.2204** at `forestairnoon`, offered as evidence that the tone curve had
+> broken the additive model. It is **forced arithmetic** -- `a` exceeds 1
+> whenever `Rsurf > 1 > Rship` -- so the "inversion" and the "impossible share"
+> were **one finding reported as two**. On `crowns` the same pose gives
+> **a = 0.385, a proper share, and the additive model closes** (2.35.9 item 1).
+
+**THE ANSWER, ON THE RIGHT RECTANGLE AND THE POST-SHIP TERRAIN.** With crown
+coverage measured and divided out, the crowns' own luminance against their own
+clearing reads **0.0992 / 0.4363 / 0.2488 / 0.7021** against a derived band of
+**0.18 to 0.75** and a target core of **0.25 to 0.55**. **Three of four poses
+are inside the band; `forestairnoon` is outside it at the DARK end**, its crowns
+about ten times darker than the clearing where the optics support five and a
+half at most. That is the opposite failure from the one stage 1 reported, and it
+is consistent with N7's independent finding that the crown's diffuse sits an
+order of magnitude below the ground's.
+
+**THE SPREAD IS THE OTHER FINDING AND IT IS LARGER THAN THE BAND.** The same
+canopy model over four poses spans **0.0992 to 0.7021, a factor of seven**, and
+it is ordered: both Forest poses sit below both Hills poses, and at each site
+the LOW sun reads lighter than local noon. A canopy that gets lighter as the sun
+gets lower is backwards for a path-length argument, and it is what N7's "a
+closed wood at noon is FLOOR-limited, not K-limited" predicts. **Stage 2 has to
+explain the spread, not only raise a level.**
+
+**THIS RESULT IS NEW AND HAS NOT BEEN INDEPENDENTLY VERIFIED.** The verifier's
+counter-measurement established that `crowns` raw Rsurf is inside the band; the
+coverage correction it also specified is what moves `forestairnoon` out at the
+dark end, and that step is this lane's own. Given this lane has already been
+wrong once about which quantity to trust, the dark-end failure should be
+re-measured by someone who did not build the instrument before stage 2 acts on
+it.
+
+### 2.35.2 THE LARGEST FINDING IS THAT THE GUARD WAS NEVER A GUARD
+
+**Before this lane there was no assertion of the wood-vs-clearing relation
+anywhere in the project.** Searched exhaustively by a fresh-context agent:
+
+- `tools/smoke/rn2275sweep.mjs` is the only script that measures the four
+  pairs, and it has **no `process.exit`, no threshold and no verdict token**.
+  Its own comment says "the pass condition, printed rather than eyeballed" --
+  *printed*, and it exits 0 whatever it reads.
+- `run.mjs`'s `smoke: PASS` means "no console errors, no failed requests" and
+  is **blind to the probe's content**: an `artframe.js` report with
+  `valid:false` exits 0 and prints PASS.
+- None of the eight links in `npm run check` renders these poses. `check:boot`
+  boots one default pose. **There is no CI in the repository at all.**
+- The relation survives only as prose: `CanopySelfShadow.ts`'s K table,
+  `artframe.js`'s `crowns` comment, 2.19.4, and WORLD-AUDIT-R2 section 3.10.
+
+That is NUMBERS.md's own scar -- *a probe that prints and never asserts passes
+forever* -- sitting live under a guard four lanes have been budgeting against,
+and *a sentence in a comment is not an invariant* is the second scar in the same
+file. `web/tools/smoke/rn2550guard.mjs` is therefore not a replacement
+instrument; it is the first one that can fail.
+
+### 2.35.3 THE MEASUREMENT DEFINITION, precise enough that two implementations agree to the digit
+
+**RECTANGLE.** The committed `box` rect of the shot's own manifest row. For all
+four guard poses that is `[0.2500, 0.4500, 0.7500, 0.7500]` of the frame, i.e.
+**x 400 to 1200, y 405 to 675, 216,000 px at the canonical 1600x900**. Nothing
+is placed by eye and no rectangle is added: `?canopy=0` is the SAME rectangle in
+the SAME pose at the same range, sun, haze and lighting, so everything but the
+vegetation is common-mode by construction. 2.19.4's instrument is kept exactly;
+only its pass condition is replaced.
+
+**PATCH MEAN.** Per pixel: decode each 8-bit channel with the exact IEC
+61966-2-1 inverse EOTF **including the toe** --
+
+```
+c = c8 / 255
+lin(c) = c / 12.92                        if c <= 0.04045
+lin(c) = ((c + 0.055) / 1.055) ^ 2.4      otherwise
+```
+
+-- then form that pixel's luminance with the **Rec.709 LINEAR-LIGHT** weights
+`Y = 0.2126*lin(R) + 0.7152*lin(G) + 0.0722*lin(B)`, then take the **arithmetic
+mean of Y over the rectangle**. Published as `box.lin.Y` from `statOn` in
+`probes/artframe.js`, which is the only place in the project where the pixels
+exist. **The ratio is `Y(wood) / Y(clearing)`**, one pose, one rectangle, one
+build, one session, a fresh process per arm.
+
+**DECODE PER PIXEL, THEN AVERAGE. NEVER AVERAGE, THEN DECODE.** The decode is
+convex, so by Jensen the mean of the decoded pixels exceeds the decode of the
+mean, by a term that grows with the patch's own **variance**. The two arms do
+not have equal variance -- on this build `box` iqr reads **34.70 on the wood
+against 27.92 on the clearing** at `forestairnoon`, and **61.83 against 51.93**
+at `flyovernoon` -- so the Jensen term is larger on the wood and **does not
+cancel in the ratio**. Averaging first would systematically flatter the wood.
+It is also not the mean radiance of the patch, which is what a ratio of patch
+means is supposed to be.
+
+**PER CHANNEL, NEVER ON THE LUMA SCALAR.** Luminance is a linear functional of
+LINEAR radiance, so the decode belongs on R, G and B and the weights belong on
+the decoded values. Decoding the 8-bit luma scalar applies a channel EOTF to an
+already-mixed quantity, which is not a radiometric number at all.
+
+**THIS IS NOT A DETAIL, AND 2.35.5's SECOND TABLE PRICES IT.** The routes to
+"the same" ratio differ by up to **0.023** at `forestairnoon`, which in that
+pose's own terms is larger than the entire **1.76-count** margin the old sign
+test lived on. An unpinned definition would have let a later lane pick the
+flattering one without noticing it had.
+
+**WHAT THIS QUANTITY IS NOT.** It is **display-linear, not scene-linear**. The
+frame is post-ACES and post-grade and only the display encode is undone. So
+`lin.Y` is a luminance in display space, and 2.34.10 item 3's HalfFloat scene-RT
+readout is still the only thing that would make it scene-referred. 2.35.9 item 1
+promotes that from convenient to blocking, with the reason measured.
+
+### 2.35.4 THE ENDPOINTS, DERIVED, AND THE NAMED RANGE IS THE RIGHT NUMBER FOR THE WRONG QUANTITY
+
+The optics, from 2.34.6 and re-derived independently by a fresh-context reviewer
+against published canopy reflectances: a closed canopy in the **green band** runs
+**1.8x to 3.3x** darker than green grass (conifer ~0.035 over grass ~0.12 =
+**0.29**; deciduous ~0.07 over ~0.12 = **0.58**), conifer ~2.1x broadband-visible.
+**Inverted, that is a green-band reflectance band of 0.30 to 0.65, which is
+exactly the range Admin named, and it is CONFIRMED -- as a green-band
+REFLECTANCE band.**
+
+**IT IS NOT THIS GUARD'S QUANTITY, AND THE TRANSLATION IS THE DELIVERABLE.**
+This guard measures linear **luminance** against a clearing that is the site's
+own bare **substrate**, not green grass. Two corrections, both derived:
+
+1. **LUMA IS DARKER THAN THE GREEN BAND HERE, NOT LIGHTER.** A canopy is
+   green-peaked and red/blue-suppressed, both because chlorophyll absorbs there
+   and because structural trapping is strongest where leaf single-scattering
+   albedo is lowest. Against a spectrally flat or red-RISING substrate -- which
+   duff and soil are -- luminance therefore shows MORE darkening than the green
+   band. Worked against brown soil the shift is **0.82x**; against dry litter
+   **0.81x**. (Against grass it would be 1.05x and cancel, which is precisely
+   why the substrate matters.) **An earlier draft of this lane's own reasoning
+   had this correction pointing the wrong way** and would have widened the top
+   endpoint on it; it narrows the top endpoint instead.
+2. **THE CLEARING IS THE LARGEST TERM IN THE PROBLEM, NOT A FOOTNOTE.**
+   Swapping a duff/soil clearing for the grass the optics reference can move the
+   ratio anywhere from **0.5x to 2.4x**, and the direction is genuinely
+   **ambiguous**: dark moist humus roughly halves the denominator and drives the
+   ratio toward and past 1, while dry litter at 650 nm is five to eight times
+   brighter than green grass and drives it down hard. **A ratio is
+   uninterpretable without its denominator**, which is why the clearing's own
+   absolute `lin.Y` is pinned and asserted per pose (2.35.6) instead of being
+   left implicit.
+
+So, for this guard's quantity:
+
+| | low | high | what it is |
+|---|---:|---:|---|
+| **CORE**, the target | **0.25** | **0.55** | the green-band 0.30-to-0.65 core carried through the 0.82x luminance shift |
+| **BAND**, the fail condition | **0.18** | **0.75** | the NECESSARY condition, substrate pinned to a mid-tone forest floor |
+
+**THE DEVIATION FROM THE NAMED 0.30-to-0.65 IS FLAGGED LOUDLY AND IT IS A
+TRANSLATION, NOT A PREFERENCE.** Applying Admin's range unchanged to linear
+luminance against a substrate clearing would be the same class of error 2.34.10
+was itself corrected for: the right number for the wrong quantity. The BAND is
+deliberately wider than the CORE because a guard's job is to exclude the
+unphysical, not to certify the physical: dark conifer over pale litter
+legitimately reaches 0.18, and the proposal's own asymmetry ran the wrong way
+(1.8x-to-3.3x inverts to 0.30-to-0.56, so the named top already carried 16 per
+cent of slack while the named bottom carried none, and for a necessary condition
+the tail risk lives at the dark end).
+
+**BOTH ENDPOINTS ARE JUDGED WHERE THEY WERE DERIVED, AND STAGE 1 DID NOT DO
+THAT.** These are CLOSED-CANOPY REFLECTANCES. They therefore belong on `rho`,
+the crown's own luminance against its clearing, and on nothing else. Stage 1
+applied them to a raw patch ratio on `box`, a rectangle `artframe.js`'s own
+comment calls "nearly blind to the cards", which is the same "right number for
+the wrong quantity" error this lane was correcting in the first place. 2.35.5
+records what that cost.
+
+**A PATCH RATIO IS A MIXTURE, AND THE MIXTURE IS NOW INVERTED RATHER THAN
+LAMENTED.** With crown coverage `f` and between-crown ground at `s` of the
+clearing, `Rsurf = f*rho + (1 - f)*s`, so a raw patch ratio is bounded below by
+`(1 - f)*s`: a perfectly black canopy still reads `1 - f`, which is a statement
+about how many crowns are in the rectangle and not about their optics.
+`artframe.js`'s `crowns` comment says the same from the other side, that a band
+rect "averages crowns together with the clearings between them". The guard now
+measures the other two terms and divides them out (2.35.5), so **the banded
+quantity is the canopy's own optics and `f` no longer bounds the ceiling.**
+Phase angle remains unseparated and is routed in 2.35.9 item 4.
+
+### 2.35.5 THE FOUR SHIPPED PAIRS, LINEARIZED, AND THE BAND IS ON THE UN-HAZED ARM
+
+**WHY TWO RATIOS.** The rendered patch carries an additive aerial in-scatter
+term common to both arms. With airlight share `a` and surface ratio `rho`, the
+rendered ratio is `R = rho + a*(1 - rho)`: monotone toward 1 in `a`, and at
+N7's measured `a` = 0.83 over the crowns nothing passes any physical band
+however dark the canopy. So the guard reads the shipped pair AND the pair with
+`?prophaze=0&terrainhaze=0` on both arms, and **the band goes on the second**.
+
+**AND "RELAXING" THE BAND ON THE HAZED FRAME IS THE SAME TEST, WHICH IS THE
+ARGUMENT FOR PUTTING IT ON THE UN-HAZED ARM RATHER THAN A PREFERENCE.** Widening
+the endpoint per pose to `rho_max + a*(1 - rho_max)` collapses: since
+`Rship = Rsurf + a*(1 - Rsurf)` by construction, the condition reduces for
+`a < 1` to `Rsurf <= rho_max` **exactly**. The two designs are algebraically
+identical; one hides its assumption in a per-pose constant and the other states
+it. Correcting Rship by an `a` derived FROM Rship would also be circular, which
+is the same circularity 2.34.4 was corrected for.
+
+**THE TABLE. Post-ship terrain, one build, one session, a fresh process per
+arm, twenty-four browser runs.** Taken on merged `main` including
+`lane/wg-ship` (13029417, plains swell, wasm ABI 27), because that lane merged
+first and the pins rule makes re-measurement mine.
+
+| pose | box Rship | box Rsurf | cr Rship | cr Rsurf | `G` | `f` | **rho** | `a` | against the band |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `forestairnoon` | 0.9817 | 0.9826 | 0.8051 | 0.6831 | 0.5996 | 0.5160 | **0.0992** | 0.3848 | **OUT at the DARK end by 0.0808** |
+| `forestairlow` | 0.9581 | 0.8928 | 0.9326 | 0.7524 | 0.5095 | 0.4872 | **0.4363** | 0.7278 | IN CORE |
+| `flyovernoon` | 0.9343 | 0.9020 | 0.8354 | 0.7144 | 0.5591 | 0.4941 | **0.2488** | 0.4237 | IN BAND, 0.0012 below CORE |
+| `flyoverlow` | 0.9774 | 0.8884 | 0.9600 | 0.8170 | 0.4859 | 0.4447 | **0.7021** | 0.7812 | IN BAND, 0.1521 above CORE |
+
+**THE `box` AND `crowns` COLUMNS DISAGREE ABOUT THE FRAME, WHICH IS THE WHOLE
+CORRECTION.** At `forestairnoon` `box` Rsurf reads 0.9826 (a wood barely darker
+than its clearing) while `crowns` Rsurf reads 0.6831 (a wood a third darker) and
+the coverage-corrected crowns themselves read 0.0992. One rectangle says the
+canopy is nearly invisible and the other says it is nearly black. `box` is the
+one that cannot see cards.
+
+**EVERY DERIVED AIRLIGHT SHARE IS NOW A PROPER SHARE**, 0.38 to 0.78, so the
+additive model `R = rho + a(1 - rho)` closes at all four poses. Stage 1's
+out-of-range 1.2204 was an artefact of the box rect and is withdrawn (2.35.1).
+
+**THE TERRAIN MOVED UNDER THIS LANE, MEASURED RATHER THAN ASSUMED.**
+`lane/wg-ship`'s tables established `mtnslope` bit-identical and plains rects
+moved, and said nothing about forest or the spawn. Both moved, in opposite
+directions: the `box` clearing went **0.163243 -> 0.189652 at `forestairnoon`
+(+16.2 per cent)** and **0.317483 -> 0.288112 at `flyovernoon` (-9.3 per
+cent)**, with `forestairlow` +12.7 and `flyoverlow` -7.4. All four are far
+outside the 1 per cent clearing pin, which is exactly the case that pin exists
+to catch.
+
+**THE COVERAGE, AND THE ARM THAT MEASURES IT.** `f` is a PIXEL COUNT on the
+cards-only paint, not a radiometric estimate: `?terrainpaint=1` renders the
+terrain exactly black, the cards are alpha-tested so there is no partial
+coverage to smear, and the count of non-black pixels in the rectangle IS the
+coverage.
+
+| pose | `f` from `?terrainpaint=1` (used) | `?proppaint=1` count | under-count | mixture closure |
+|---|---:|---:|---:|---:|
+| `forestairnoon` | **0.5160** | 0.1948 | 0.3212 | +0.0323 |
+| `forestairlow` | **0.4872** | 0.2796 | 0.2076 | +0.0302 |
+| `flyovernoon` | **0.4941** | 0.2283 | 0.2657 | +0.0324 |
+| `flyoverlow` | **0.4447** | 0.2950 | 0.1497 | +0.0189 |
+
+**THE TWO COUNTS DISAGREE BY A THIRD OF THE RECTANGLE AND THAT IS A FINDING, NOT
+A NUISANCE** (2.35.9 item 3). `?proppaint=1` does not leave the cards at
+EXACTLY zero, so a black-pixel count on that arm is not a coverage; adding
+`?propspec=0` changed it by 0.007 and did not close it. The
+`?terrainpaint=1` count is the one used, and it is corroborated by an
+INDEPENDENT offline decode of the same arm's PNG (raw chunk parse plus inflate,
+sharing no code with the probe or the canvas). **The mixture still closes to
+within 0.02 to 0.03**, and the residual is POSITIVE at every pose, i.e. the
+parts sum to slightly LESS than the whole -- the same sign and the same size as
+N7's own closure residual at this rectangle, which it attributed to
+alpha-tested edge pixels plus the post chain's neighbourhood operators. **That
+matters for how far to push the accusation:** a sub-count residual on a painted
+card destroys an exactly-zero PIXEL COUNT while barely moving a MEAN, so
+`?proppaint=1`'s mean is probably still sound and only its use as a coverage
+instrument is refuted. This lane's own first draft of that diagnosis predicted a
+negative closure residual and got a positive one; the prediction was wrong and
+the narrower conclusion is what the data supports.
+
+**WHY THE DEFINITION HAD TO BE PINNED, priced.** Four routes to "the same"
+ratio, every one of them defensible-sounding, on the same pixels. These are the
+PRE-SHIP `box` figures, kept because they are what priced the decision and
+because an independent PNG decoder reproduced them:
+
+**WHY THE DEFINITION HAD TO BE PINNED, priced.** Four routes to "the same"
+ratio, every one of them defensible-sounding, on the same pixels:
+
+| pose | 8-bit (the old guard) | decode the luma scalar | mean, then decode | **per pixel, then mean (THE DEFINITION)** |
+|---|---:|---:|---:|---:|
+| `forestairnoon` | 0.9840 | 0.9664 | 0.9680 | **0.9894** |
+| `forestairlow` | 0.9764 | 0.9521 | 0.9518 | **0.9542** |
+| `flyovernoon` | 0.9510 | 0.8959 | 0.8963 | **0.9248** |
+| `flyoverlow` | 0.9829 | 0.9642 | 0.9638 | **0.9700** |
+
+**The two error terms separate cleanly and only one of them is large.**
+Decoding the luma scalar instead of the channels costs at most **0.0016**
+(0.9664 against 0.9680) -- wrong in principle, small in practice. **Averaging
+before decoding costs up to 0.0285** (`flyovernoon`, 0.8963 against 0.9248):
+that is the Jensen term, it is an order of magnitude bigger, and it always
+flatters the wood because the wood is the higher-variance patch. At
+`forestairnoon` the spread across the four routes is **0.0230**, which is larger
+in that pose's own terms than the 1.76 counts of margin the old sign test lived
+on. **A band with an unpinned decode order would have been a band a later lane
+could satisfy by choosing how to average.**
+
+### 2.35.6 THE GRACE MECHANISM: A RATCHET, A PINNED DENOMINATOR, AND A SCORED TARGET
+
+One pose is out of band on the shipped frame, so a band that simply failed would
+be red on `main` from the day it lands, and a guard that is already red cannot
+tell the next lane's regression from the standing problem. What ships instead,
+in `rn2550guard.mjs`, is one implementation with these behaviours and no
+duplicated constants:
+
+- **HARD FAIL, THE RATCHET, AND IT STAYS ON `box`.** `box` Rship or Rsurf above
+  its own recorded ceiling plus `TOL` = 0.005. `box` keeps this job for two
+  reasons: it is the rectangle RN-2275 read, so the ratchet is continuous with
+  the guard it replaces, and regression protection wants the WIDE rectangle
+  precisely because it averages the whole wood. It carries no physics claim.
+  The wood may never read lighter than the best this project has ever shipped; a
+  lane that darkens it **lowers the constant in the same commit**, and it can
+  never be raised without an Admin-logged decision. `TOL` = 0.005 is a fraction
+  of a count at these levels, and since 2.34.7 proved these rects bit-identical
+  across a full from-scratch rebuild the real scatter is **zero**.
+- **HARD FAIL, THE BAND, ON `crowns` rho.** Outside **0.18 to 0.75** at an end
+  the pose is not already recorded as violating. `forestairnoon` IS recorded, at
+  the dark end, at 0.0992 -- **and that is a pinned depth, not an exemption: it
+  fails if it goes deeper.** A standing violation may be repaid, never deepened.
+- **HARD FAIL, THE DENOMINATOR MOVED.** The clearing arm's own absolute `lin.Y`
+  off its per-pose pin by more than 1 per cent, on `box` and on `crowns`.
+  2.35.4 is the reason: if the substrate changes, the ratio changed subject.
+  This is the check that stops the guard from being satisfied by brightening the
+  clearing, and it is the check that caught the ship lane's terrain move.
+- **HARD FAIL, THE COVERAGE.** `f` below `F_MIN` = 0.10 (rho divides by `f`, so
+  a small `f` amplifies noise by `1/f`), or the `?proppaint=1` count exceeding
+  the `?terrainpaint=1` count, which would contradict the stated direction of
+  that arm's known error and mean the coverage story needs re-deriving.
+- **HARD FAIL, THE BUILD IS NOT THE ONE ON DISK.** The served entry chunk must
+  hash-match `dist`, and `dist` must be newer than `src`, `wasm/dist` and
+  `index.html`. Stage 1 tried to do this with the git build stamp and it was
+  wrong in the way this project has now catalogued: the stamp goes `+dirty` for
+  any tracked edit under `web/`, so editing a PROBE -- read from disk at run
+  time, never bundled -- failed a check about the bundle.
+- **SCORED, NOT FAILED.** Distance outside the band and outside the core,
+  printed per pose. Stage 1 claimed to score the core distance and did not
+  print it; it does now, so "IN BAND" can never be misread as "on target".
+- **ARMED, so it cannot pass vacuously.** `?canopy=0` must actually reduce the
+  triangle count (otherwise both arms are the same frame and the ratio is a
+  tautological 1.0); the haze-off arms must actually darken the frame; and
+  **the un-painted clearing arm must contain essentially no exactly-black
+  pixels**, without which "black means painted" is false and every coverage
+  count is noise. A pose missing from the baseline table is a **FAIL, never a
+  skip**. These are the direct answer to NUMBERS' "a control whose arming step
+  silently fails is indistinguishable from a passing control", and one of them
+  **fired on its first run and found a real defect** (2.35.9 item 3).
+
+**AND THE GUARD IS SHOWN TO GO RED.** `--extra=` re-runs every arm with an
+added page parameter, and it exists for exactly one job: `--extra=
+crownshadefloor=0.30` is the setting 2.34.6 proved breaks the old sign test
+(`forestairnoon` -1.76 -> +2.14). 2.35.7 records what the band version does on
+it. A guard nobody has watched fail is indistinguishable from one that cannot.
+
+### 2.35.7 NO PIXEL CHANGE, PROVED BY BUNDLE IDENTITY, AND THE CONTROL GOES RED
+
+**THE NO-PIXEL-CHANGE PROOF IS BY BUNDLE IDENTITY, WHICH IS STRONGER THAN A
+RECT PAIR AND CHEAPER, because this lane touches no file that enters the
+bundle.** Everything it edits is a probe, a tool, or a document; `web/src/` is
+untouched entirely. So the claim is settled by hashing the artefact: the `dist`
+tree, 170 files, excluding this lane's own sentinel.
+
+**AND THE FIRST ATTEMPT AT THIS FAILED, WHICH IS THE PART WORTH WRITING DOWN.**
+The pre-lane tree hashes to `5f0a7649...`; the lane tree, built the same way,
+hashed to `63c66a68...`. A lane that edited no `web/src/` file had moved the
+bundle. Chased rather than explained away: a per-file diff (after fixing a
+path-prefix bug in the diff itself, which had reported all 170 files as
+differing) showed **exactly three files changed -- the main entry chunk, its
+source map, and the `index.html` that names the chunk by its content hash.**
+The cause is `vite.config.ts`'s build stamp (BT-27): it defines `__OF_BUILD__`
+from `git rev-parse --short HEAD` plus a `+dirty` suffix whenever
+`git diff --name-only HEAD -- web core` is non-empty. This lane has tracked
+edits under `web/tools/`, so its stamp read `b084d08e+dirty` against the clean
+tree's `b084d08e`, and that six-character string is the whole delta.
+
+**PROVED, not asserted, and RE-PROVED ON THE POST-SHIP BASE.** Build both sides
+with the stamp forced to the same value and the difference disappears. Re-run
+after the rebase onto merged `main` at `aedc0748`: the base tree and the lane
+tree, each built with `OF_BUILD_STAMP=PIN`, both hash to
+
+```
+fc644c0b4e0d6f852d68a9c47f225e970c4a37f0460f17d92d44b0407eeac260
+```
+
+**byte-identical across every file.** (The pre-ship pair did the same at
+`5f0a7649...`; the hash differs from it only because the ship lane changed the
+wasm and the terrain sources.) The base side is taken by stashing the lane's
+source (`git stash push -u`), rebuilding, and restoring immediately, which is
+also what establishes that `vite build` is deterministic here and therefore that
+the hash is a valid instrument. **The lane's whole diff is five files, none
+under `web/src/`:** two docs, two smoke tools and one new one.
+
+**THE TRAP IS NOW IN THE CATALOGUE**, because a dist-hash identity test is
+otherwise an excellent instrument and this makes it report a false positive for
+every lane that edits a tracked file outside `src/`.
+
+**MEASURED ANYWAY, because a hash is an argument about the artefact and not
+about the frame.** The full twenty-four-arm table of 2.35.5 was taken twice in
+two independent sessions on the same post-ship build and **reproduces to the
+digit**, and the assert run reproduces the bootstrap run exactly. On the
+PRE-SHIP base the same lane also reproduced RN-2275's four shipped pairs at
+**-1.76 / -1.99 / -7.31 / -1.83**, identical to 2.34.7 to the digit, which is
+the identity check that the instrument was reading N7's frame before the ship
+lane moved the ground. **The stated exception class is inherited, not new:**
+2.34.7's `forestair` `skyBand` red at 125.23 against 125.24 is one hundredth of
+a count of run-to-run scatter.
+
+**THE CONTROL GOES RED, AND IT FOUND THE MOST USEFUL RESULT IN THE LANE.** Re-run
+with `--extra=crownshadefloor=0.30`, the setting 2.34.6 proved breaks the old
+sign test, the guard **exits 1** on both `box` ratchets:
+
+| `forestairnoon`, control arm | value | against |
+|---|---:|---|
+| box `Rship` | **1.0355** | ceiling 0.9817, FAIL |
+| box `Rsurf` | **1.0691** | ceiling 0.9826, FAIL |
+| crowns **rho** | **0.1940** | was 0.0992, and this is **INSIDE the band** |
+
+**THE ARM THAT BREAKS THE OLD GUARD IS THE ARM THAT REPAIRS THE PHYSICS.**
+`crownshadefloor=0.30` fails RN-2275's sign test, fails this lane's `box`
+ratchet, and simultaneously lifts `forestairnoon`'s coverage-corrected crown
+ratio from **0.0992 to 0.1940, out of a dark-end violation and into the band**.
+The guard says so in its own words, unprompted: *"rho 0.1940 is now INSIDE the
+band and is still marked rhoOut 'low'. Clear the marking and re-pin."* That is
+this lane's thesis demonstrated rather than argued -- **the sign test was
+forbidding the fix** -- and it is a direction for stage 2 that came out of a
+control rather than out of a preference. It is one pose and one knob, and the
+other three poses are not measured on that arm, so it is a signpost and not a
+prescription.
+
+**AND THE TWO GUARDS DISAGREE ABOUT WHY.** Both reject this arm, but the sign
+test rejects it for making the wood lighter, while the band rejects only the
+`box` ratchet and records the crowns as IMPROVED. A guard that cannot tell those
+two apart is the guard this lane replaced.
+
+### 2.35.8 Rails and boundaries held
+
+**TOUCHED:** `web/tools/smoke/probes/artframe.js` (the additive `lin` and
+`blackFrac` fields on `statOn` plus their rationale, an `r6` helper, a pointer
+on the `crowns` comment, and **one rectangle ADDED**: `flyover` gains a `crowns`
+rect, `forestair`'s verbatim, which is the placement the pair's own design
+implies and which a cards-only paint verifies at 49.41 per cent card coverage
+against `forestair`'s 51.60 (merge-time correction of stale pre-ship figures 45.95/52.25). **No existing rectangle, pose row or manifest row
+edited**),
+`web/tools/smoke/rn2550guard.mjs` (new file, new name, no existing probe
+overwritten -- NUMBERS' "a probe file has no registry" scar),
+`web/tools/smoke/rn2275sweep.mjs` (header pointer only, saying it is not the
+guard and never was), and this file plus `docs/web/NUMBERS.md`.
+
+**NOT TOUCHED, and this is the whole no-pixel-change claim:** nothing under
+`web/src/` at all. No `CanopySelfShadow.ts`, no `FoliageTone.ts`, no
+`TerrainTreeline*`, no `Scatter*`, no height field, no `web/wasm/dist`, no
+`assets/textures/dist`, no `test/expected.json`. No shading constant of any
+kind. `run.mjs` needed no new `PAGE_PARAMS` because every arm this lane uses
+(`canopy`, `prophaze`, `terrainhaze`, `terrainpaint`, `proppaint`, `propspec`,
+`crownshadefloor`) was already registered by RN-2275 and N7. No em dash
+anywhere.
+
+**BASE, AND THE MERGE ORDER.** Rebased onto `origin/main` at `aedc0748`, which
+contains `lane/wg-ship`'s merge at `13029417` (the plains swell, wasm ABI 27).
+Every pin in this section is measured on that terrain with a fresh build; the
+pre-ship figures are kept only where they are the history of a decision and are
+labelled as such. This lane merges second, so 2.35.9 item 8's re-pinning duty
+fell to it and was discharged.
+
+### 2.35.9 OWED, ROUTED
+
+1. **THE LINEAR SCENE-RT READOUT IS OWED, AND STAGE 1 WRONGLY CALLED IT
+   BLOCKING** (it is 2.34.10 item 3, unchanged in priority). **CORRECTED
+   2026-08-21 after the stage-1b verifier.** Stage 1 argued the tone curve had
+   broken the additive-airlight model, citing `forestairnoon`'s derived airlight
+   share of 1.2204 as the evidence. That was not evidence of anything. **`a` =
+   1.2204 is forced arithmetic:** `a = (Rship - Rsurf) / (1 - Rsurf)` exceeds 1
+   whenever `Rsurf > 1 > Rship`, which is exactly the box-rect configuration
+   stage 1 was in, so the out-of-range share and the "inversion" were **one
+   finding reported as two**. On `crowns`, where the band actually belongs, the
+   same pose gives **a = 0.3848, a proper share, and the additive model closes**.
+   **AND THE BIAS DIRECTION STAGE 1 CLAIMED IS NOT KNOWABLE.** It asserted that
+   a filmic toe compresses shadow contrast, so the un-hazed ratios were
+   flattered toward 1 and the band was conservative in the safe direction. That
+   is only one of the terms: the ACES fit's **subtractive black term** gives a
+   deep-shadow log-log slope of about **1.23, which EXPANDS ratios**, and
+   `uContrast` expands as well, both opposing the `CompositeGlsl` lift that
+   argument rested on. **The net direction is unknowable from an 8-bit frame**,
+   which is the honest statement and is still a good reason to want the scene-RT
+   readout, just not a blocking one.
+2. **THE ROUTED `f` METHOD DOES NOT WORK, AND IT WAS RUN RATHER THAN ASSUMED.**
+   Stage 1 routed `f = 1 - rect(cards black) / rect(canopy=0)`. Measured at
+   `box` it returns **f = -0.0301 linear and +0.0632 in 8-bit**: the cards-black
+   arm is **BRIGHTER** than the `?canopy=0` arm, which violates the mixture law
+   the formula assumes, and `--propspec=0` changes nothing. **The cause is that
+   `?canopy=0` removes the far treeline PAINT as well as the cards**, so the two
+   arms differ by more than the cards and the subtraction is not a coverage.
+   **A working method must survive the treeline paint, and this lane built one:**
+   count EXACTLY-BLACK pixels on a paint arm, which never touches `?canopy=0` at
+   all. The cards are alpha-tested, so there is no partial coverage to smear and
+   the count is exact:
+   `?terrainpaint=1` blacks the terrain, so `f = 1 - blackFrac`; `?proppaint=1`
+   blacks the cards, so `f = blackFrac`. **Two independent counts of the same
+   geometry, and the guard fails if they disagree** (`statOn`'s new `blackFrac`,
+   2.35.5's cross-check table). This also **dissolves stage 1's "the 0.75 ceiling
+   is unreachable below f = 0.25"**: that bound applies to the RAW patch ratio,
+   and the guard now bands the coverage-corrected `rho`, which is independent of
+   `f`. Small `f` still amplifies noise by `1/f`, which is why the guard carries
+   an `F_MIN`.
+3. **`?proppaint=1` DOES NOT RENDER THE CARDS BLACK, AND N7's 2.34.4 RESTS ON
+   THE ASSUMPTION THAT IT DOES.** Found by this lane's own coverage
+   cross-check, which fired the first time it ran. Counting exactly-black
+   pixels in the `crowns` rect: `?terrainpaint=1` says the cards cover
+   **0.5160** of it at `forestairnoon` while `?proppaint=1` says **0.1948**, a
+   third of the rectangle apart, and the same gap appears at all four poses.
+   **`?propspec=0` was the obvious candidate and changed nothing** (0.2019 ->
+   0.1948), so it is not the specular N7 identified: there is a third radiance
+   on a painted card that neither the albedo switch nor the specular switch
+   reaches. **2.34.4 calls `?proppaint=1+prophaze=0` the GROUND HALF of that
+   rectangle and closes its decomposition to within 0.65 counts on that
+   basis**; on this evidence the arm still carries card radiance, so the
+   card/ground split is not as clean as the closure suggested. This lane
+   therefore does NOT use that arm to form `rho` (it takes `rho` from the one
+   clean arm instead) and prints the mixture closure residual so the
+   contamination is measured rather than assumed. **Owed: find the third term,
+   and re-check 2.34.4's split once it has a switch.**
+4. **PHASE ANGLE IS THE REMAINING UNSEPARATED TERM.** Coverage and gap shadowing
+   are now measured and divided out (`f` and `G`), so `rho` is the crown's own
+   luminance against the clearing and no longer a mixture. Phase angle is not:
+   canopy backscatter makes a near-antisolar pose read 1.3x to 2.0x lighter in
+   red than a cross-lit one, and the four poses sit at four different sun
+   angles under one band. A per-pose phase term would tighten the band; until
+   then the band is deliberately wide enough to hold all four.
+5. **`CanopySelfShadow.ts` STILL DESCRIBES THE OLD GUARD IN ITS OWN COMMENTS**
+   and this lane is barred from editing it. Its K table quotes the `?canopy=0`
+   clearing at 103.22 and a "wood - clearing" column of +13.94 / -0.30 from
+   RN-2275's build, and a later block calls -1.76 a "guard margin". Both are now
+   stale in framing and in value. **The stage-2 lane owns that file and should
+   correct them in the same commit that moves the radiance.**
+6. **WORLD-AUDIT-R2 section 3.10's STANDING CLAIM STANDS.** It says the frame
+   "puts the wood darker than its clearing in all four sun arms", and that is
+   true of the shipped frame and true on `crowns` un-hazed as well. **Stage 1
+   recorded this item as "narrowed, not falsified" on the strength of its
+   `forestairnoon` box-rect Rsurf of 1.0479; that qualification is WITHDRAWN**
+   (2.35.1). The audit needed no amendment and has none.
+7. **THE GUARD IS NOT IN `npm run check` AND CANNOT BE YET.** It needs a built
+   app on a live server and **twenty-four** browser runs, and the eight-link
+   aggregate is a fast static gate that boots once. Wiring a browser-probe gate
+   into `check` (or into the CI that does not yet exist) is a build-tooling
+   decision, not a rendering one. **Until then the guard is only as good as the
+   lanes that remember to run it**, which is the same failure mode 2.35.2
+   documents.
+8. **THE SHARED-SUBJECT RE-PINNING RULE, ADOPTED BY ADMIN, 2026-08-21.** This
+   lane's pins and `lane/wg-ship`'s terrain change **share a subject**: both
+   move the ground the clearing arm measures. **Whichever of the two merges
+   SECOND must re-measure and re-pin all four `clearY` values** (now eight, box
+   and crowns) before its merge is complete, because a pin measured against the
+   other lane's pre-merge ground is a pin against a frame that no longer
+   exists. **Re-pinning may NOT raise a ratchet ceiling without a logged
+   decision:** a re-pin restates the denominator, and if the wood has genuinely
+   got lighter that is the guard firing correctly and not a stale pin. The
+   guard's clearing-pin failure is deliberately loud for exactly this handover.
+9. **DECISION REQUESTED: FOUR RATCHET CEILINGS ROSE ACROSS THE SHIP MERGE, AND
+   THIS LANE HAS NOT RAISED THEM ON ITS OWN AUTHORITY.** Item 8 forbids that, so
+   the post-ship values are recorded and flagged instead. Pre-ship against
+   post-ship, on the `box` rect:
+
+   | pose | boxShip pre | post | boxSurf pre | post |
+   |---|---:|---:|---:|---:|
+   | `forestairnoon` | 0.9894 | 0.9817 | 1.0479 | **0.9826** |
+   | `forestairlow` | 0.9542 | **0.9581** | 0.7968 | **0.8928** |
+   | `flyovernoon` | 0.9248 | **0.9343** | 0.8813 | **0.9020** |
+   | `flyoverlow` | 0.9700 | **0.9774** | 0.8636 | **0.8884** |
+
+   Five of the eight would rise beyond the 0.005 tolerance (`forestairlow`
+   boxShip by 0.0039, inside it). **The cause is the ground moving under the
+   ratio, not the canopy getting lighter:** the clearing itself moved +16.2 and
+   +12.7 per cent at the Forest poses and -9.3 and -7.4 at the spawn (2.35.5),
+   and the movement is CROSS-POSE incoherent (`forestairnoon` fell while the
+   other three rose), which a canopy change could not do; the decisive evidence
+   is the `?canopy=0` clearing arm itself moving 7 to 16 per cent, an arm that
+   contains no canopy by construction. (Merge-time correction: this sentence
+   first claimed the two forestairnoon ceilings moved in opposite directions;
+   both fell.) **The lane's own view is that these should be
+   adopted as the new ceilings**, since the pre-ship numbers describe a planet
+   that no longer exists. **But that is Admin's call, not this lane's**, and
+   until it is logged the committed values are provisional. Nothing else in the
+   guard depends on the answer: the band, the coverage correction and the
+   arming checks are all independent of the ratchet.
