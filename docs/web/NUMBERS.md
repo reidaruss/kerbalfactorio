@@ -3503,3 +3503,40 @@ off vertical the vertex was put. A single number could not have scored either
 term without lying about the other.
 
 ---
+
+### A READBACK PROVES THE QUERY PARSED, NOT THAT THE UNIFORM SURVIVED, AND A RENDERER CAN OVERWRITE YOUR WRITE EVERY FRAME (found 2026-08-22 by RN-2590's fresh-context verifier, lane N12)
+
+RN-2590 built the `envMapIntensity` isolator RN-952's rule demanded, swept it
+sixteen-fold, measured the `crowns` rectangle moving by **exactly 0.000000**,
+and concluded the environment contributes nothing to the crown card. It had two
+things this file usually calls sufficient: the REQUEST read back off the page
+(`treeline().self.envOverride` returning `{env 0.3}`), and a SIBLING-WRITE
+control (`?canopyrough=`, written two lines away onto the same material, does
+move pixels).
+
+**Both were true and the conclusion was false.**
+`WebGLRenderer.js:2694-2696` overwrites `envMapIntensity` from
+`scene.environmentIntensity` on every frame for any `MeshStandardMaterial` with
+`material.envMap === null` while `scene.environment !== null`. The write landed
+on the material and was erased before the draw. The control that settles it,
+`?ibldiag=noenv`, removes the environment outright and moves the same rectangle
+**-37.48 per cent**: the term the sweep called absent is over a third of the
+pixel.
+
+**Three rules, and the third is the one that generalises furthest.**
+1. **A request readback is not an outcome readback.** RN-2268's remedy is that a
+   flag reaching the page is not the same as a flag reaching the shader; this is
+   the next link along, and it needs the value read where the DRAW sees it, not
+   where the setter wrote it.
+2. **A sibling-write control is only valid for properties with the same
+   downstream.** `roughness` and `envMapIntensity` sit in the same statement
+   group and look interchangeable; exactly one of them has a per-frame renderer
+   override on top of it.
+3. **An EXACT zero is a stronger claim than a small number and deserves more
+   suspicion, not less.** Real terms are rarely 0.000000 to six digits at two
+   independent poses. That precision was read as a clean refutation when it was
+   the signature of a write that never arrived. **When a sweep returns an exact
+   zero, the next arm is not a wider sweep, it is a control that DELETES the
+   suspected source** and must move something.
+
+---
