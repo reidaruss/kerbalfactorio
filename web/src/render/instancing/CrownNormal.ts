@@ -179,22 +179,35 @@ import * as THREE from 'three';
  * **MONOTONE, WITH NO KNEE.** The layer statement is satisfied better the
  * smaller the angle gets, and its limit is a flat plate. So it gives no value.
  *
- * THE TWO BOUNDS THAT DO. Above, `rn2550guard`'s standing violation at
- * `forestairnoon` may be repaid and never deepened, and at `crowncard=1` the
- * pose's `rho` reads 0.1124 / 0.1016 / 0.0938 / 0.0865 at 12 / 25 / 35 / 45
- * degrees against a floor of 0.0942, so **anything past about 30 degrees fails
- * the guard**. Below, the crown stops reading as a rounded mass: at 12 degrees
- * the baked mean `|up|` is 0.986 and the top-to-flank gradient that
- * `RN2570_crowns_noshade_3x.png` reads as a canopy is nearly gone.
+ * WHAT DOES GIVE A VALUE IS THAT `rn2550guard`'s TWO CONSTRAINTS BRACKET IT
+ * FROM OPPOSITE SIDES, which was not expected and is the reason this block is
+ * this long.
  *
- * **12 degrees is chosen inside those bounds for the guard margin the 0.005
- * tolerance demands (+0.0132 of repayment against +0.0024 at 25 degrees), and
- * the roundness it trades is published rather than argued: RN-2590's own
- * `RN2590_crowns_round45_3x.png` is the 45-degree crop, which the guard
- * refuses.** A later lane that buys headroom at `forestairnoon` should raise
- * this angle first, and the crop is what it should raise it against.
+ *  - **FROM ABOVE, the `crowns` band at `forestairnoon`.** That pose's standing
+ *    violation may be repaid and never deepened, so `rho` must stay at or above
+ *    0.0992 - 0.005 = **0.0942**. At `crowncard=1` it reads 0.1124 / 0.1016 /
+ *    0.0961 / 0.0938 / 0.0865 at 12 / 25 / 32 / 35 / 45 degrees, so **past
+ *    about 33 degrees the crown is too dark and the guard fails.**
+ *  - **FROM BELOW, the `box` RATCHET at `flyovernoon`.** Correcting the normal
+ *    makes the crown BRIGHTER at a high sun, and `box` is a one-sided darkness
+ *    ratchet with no upper derivation, so the same fix that moves that pose's
+ *    `rho` from 0.2488 (just outside the CORE) to 0.2968 (inside it) also
+ *    raises `boxShip`. Measured on one build: **0.9403 at 12 degrees, over the
+ *    0.9343 + 0.005 ceiling and a HARD FAIL**, against 0.9377 at 25 and 0.9361
+ *    at 32. **Below about 22 degrees the crown is too bright and the guard
+ *    fails.** The two constraints disagree about the same change at the same
+ *    pose, which is filed as its own finding in rendering.md 2.39.7.
+ *
+ * **25 degrees is inside that bracket with the largest usable margin on the
+ * binding side and a repayment rather than a deepening on the other**: `rho`
+ * 0.1016 at `forestairnoon`, 0.0074 clear of the floor and 0.0024 ABOVE the
+ * recorded violation, with `flyovernoon` `boxShip` 0.0016 and `boxSurf` 0.0018
+ * clear of their ceilings on an instrument this lane's own control reproduced
+ * to four decimals exactly. The roundness given up at the small end is
+ * published rather than argued: `RN2590_crowns_round45_3x.png` is the
+ * 45-degree crop, which the band refuses.
  */
-export const CROWN_FLANK_DEG = 12;
+export const CROWN_FLANK_DEG = 25;
 /**
  * ONE, AND IT IS AN ENDPOINT RATHER THAN A TUNING. See the header's own
  * paragraph: at `c = 1` the azimuth is the card's authored normal at every

@@ -13117,17 +13117,21 @@ cent** at every pose). `forestairnoon`, whose recorded standing violation is
 | 12 | 0.35 | 0.0943 | -0.0049 | 0.986 |
 | 12 | 0.6 | 0.0994 | +0.0002 | 0.986 |
 | 12 | 0.8 | 0.1075 | +0.0083 | 0.986 |
-| **12** | **1.0** | **0.1124** | **+0.0132 REPAID** | 0.986 |
+| 12 | 1.0 | 0.1124 | +0.0132 | 0.986 |
 | 8 | 0.7 | 0.1083 | +0.0091 | 0.993 |
 | 6 | 0.35 | 0.1041 | +0.0049 | 0.996 |
-| 25 | 1.0 | 0.1016 | +0.0024 | 0.947 |
+| **25** | **1.0** | **0.1016** | **+0.0024 REPAID** | 0.947 |
+| 32 | 1.0 | 0.0961 | -0.0031 | 0.913 |
 | 35 | 1.0 | 0.0938 | -0.0054 **FAIL** | 0.902 |
 | 45 | 1.0 | 0.0865 | -0.0127 **FAIL** | 0.845 |
 
-Two shapes in that table decided the constants. **`crowncard` is NON-MONOTONE
-with a shallow minimum at 0.35**, where the radial azimuth and the card azimuth
-half cancel, and its best value is the endpoint 1.0. **`crownflank` is monotone
-and the guard caps it at about 30 degrees.** `rho` at `flyoverlow`, the pose
+Two shapes in that table decided `crowncard`. **It is NON-MONOTONE with a
+shallow minimum at 0.35**, where the radial azimuth and the card azimuth half
+cancel, and its best value is the endpoint 1.0, which is also the value with no
+free parameter left in it (2.39.4 item 3). **`crownflank` is monotone here and
+this column alone caps it at about 33 degrees**; the OTHER bound on it, which is
+the one that decided 25 over 12, is the `box` ratchet in 2.39.7. `rho` at
+`flyoverlow`, the pose
 2.38.7 warned the shipped bend was the only thing holding inside the band, moves
 the safe way at every one of these settings: 0.7021 pre-lane against 0.3303 /
 0.3572 / 0.3784 / **0.3896** / 0.3743 at `crownflank=12` with `c` = 0 / 0.6 /
@@ -13188,3 +13192,93 @@ normals have left the card plane completely in azimuth and barely at all in
 absolute terms, because they are near-vertical and a vertical card's plane
 contains the vertical. One number could not have said that; it is filed as its
 own trap in `docs/web/NUMBERS.md`.
+
+### 2.39.7 THE GUARD'S TWO CONSTRAINTS DISAGREE ABOUT THE SAME CHANGE AT THE SAME POSE, AND THAT IS WHAT PINNED THE ANGLE
+
+The first candidate this lane built was `crownflank=12, crowncard=1.0`, chosen
+because the `rho0` spread is monotone in the angle and 12 gave the smallest
+(2.23x) and the largest repayment at `forestairnoon` (+0.0132). **The full guard
+refused it**, and not on the band:
+
+```
+rn2550guard: FAIL flyovernoon: box Rship 0.9403 is ABOVE its ratchet ceiling 0.9343 + 0.005.
+rn2550guard: FAIL flyovernoon: box Rsurf 0.9080 is ABOVE its ratchet ceiling 0.9020 + 0.005.
+```
+
+**READ WHAT ELSE THAT RUN SAID ABOUT THE SAME POSE.** `flyovernoon`'s `crowns`
+`rho` moved 0.2488 to 0.3187, i.e. from "IN BAND, 0.0012 from CORE" to **IN
+CORE**. The band, which is derived from closed-canopy optics, calls that an
+improvement. The ratchet, which is a one-sided darkness pin with no upper
+derivation, calls the identical pixels a regression. **Both are correct on their
+own terms and they cannot both be satisfied by a shading normal**, because
+correcting a crown's response to a HIGH sun necessarily makes the wood lighter
+at a high-sun pose. Per 2.35.9 item 8 the refusal is reported and **no ratchet
+ceiling is raised, moved or re-derived.**
+
+So the angle is bracketed from BOTH sides, measured with `rn2572cand` (which
+judges `box` and `crowns` together, reading the ceilings out of the guard's own
+`BASE` rather than retyping them), all at `crowncard=1.0`, one build, a fresh
+process per arm:
+
+| `crownflank` | `flyovernoon` boxShip | boxSurf | `flyovernoon` `rho` | `forestairnoon` `rho` |
+|---:|---:|---:|---:|---:|
+| pre-lane (`?crownnormal=0`) | 0.9343 | 0.9020 | 0.2488 | 0.0992 |
+| 12 | **0.9403 FAIL** | **0.9080 FAIL** | 0.3187 | 0.1124 |
+| **25** | **0.9377** | **0.9052** | **0.2968 IN CORE** | **0.1016** |
+| 32 | 0.9361 | 0.9035 | 0.2807 IN CORE | 0.0961 |
+
+with ceilings of 0.9343 + 0.005 = 0.9393 and 0.9020 + 0.005 = 0.9070, and a
+`forestairnoon` floor of 0.0992 - 0.005 = 0.0942. The pre-lane row reproduces
+BOTH `box` pins **to the digit**, which is what makes the other rows a
+comparison rather than two samples. **25 degrees is the value with the largest
+usable margin on the binding side** (0.0016 and 0.0018 of `box` headroom at
+`flyovernoon`, 0.0074 of `rho` headroom at `forestairnoon`) **and it repays the
+standing violation rather than merely holding it** (0.1016 against 0.0992).
+32 buys `box` margin and spends the `rho` margin down to 0.0019; 12 fails.
+
+### 2.39.11 OWED, ROUTED, with the sizes measured
+
+1. **THE THIRD DEGENERACY IS THE NEXT LANE, AND IT IS THE LARGEST SINGLE TERM
+   LEFT IN THE CROWN.** `OF_Canopy` is `doubleSided`, three negates the whole
+   shading normal on a back face, and a planar quad is entirely front- or
+   entirely back-facing from any camera, so **about half of every stand's drawn
+   card area is lit with its normal upside down**. 2.39.3 sizes it: removing the
+   sign tear at RN-1766's own anchor, which changes nothing else, costs
+   `forestairnoon` **a quarter of the crown's luminance**, and the only way an
+   inverted normal can be SUPPLYING light is by being the correct one on the
+   face where every other normal is wrong. Two candidate fixes, both outside a
+   bake-only lane:
+   - **A fragment-stage `normal.y = abs(normal.y)` scoped to `OF_Canopy`.** One
+     line, and it is the canopy-layer statement in shader form: a crown card's
+     shading normal should never point downward. The obstacle is structural
+     rather than hard, and it is `PropWind`'s own note: a material holds ONE
+     `onBeforeCompile` and the foliage props have spent theirs on the wind, so
+     this has to enter that shared hook behind a `define` set on the canopy
+     material alone. It is a per-fragment cost, so it needs WG-189 timing pairs
+     that this lane's bake did not.
+   - **Duplicate the four triangles with reversed winding and move the material
+     to `FrontSide`.** Exact rather than approximate, and it costs 4 triangles
+     per impostor geometry with no change in fill (each pair contributes exactly
+     one drawn face). `SharedIndex.ts` already carries this pattern's own
+     precedent and its price note.
+
+   **Whoever takes it should re-run `rn2591ladder` first**, because the
+   arithmetic says the fix roughly DOUBLES the crown's diffuse, and the diffuse
+   is the half of `rho` the band actually wants (2.39.8).
+2. **`envMapIntensity` IS BUILT AND IT IS NOT SPENT.** `?canopyenv=` ships as an
+   OVERRIDE returning `null`, so the shipped path writes nothing and three's own
+   default of 1 stands; the arms in 2.39.8 are the first measurement of the
+   term this project has ever had. It is the handle that reaches the sky PMREM
+   lobe, which 2.38.4 proved roughness does not.
+3. **NO GROUND-LEVEL POSE MEASURES THE FAR CANOPY'S NORMAL, and the coplanarity
+   fix is aimed at exactly that case.** `crowncard` raises `N . V` most for a
+   card viewed HEAD-ON, which is a standing or low-flying eye, and every pose in
+   the guard is a 1,200 m aerial where the anchor term does most of the work.
+   N11's `forestaircanopy` (2.37, a 60 m eye at `forestair`'s own site) is the
+   pose that could see it and this lane did not add a rectangle to it.
+4. **THE CROWN IMPOSTOR IS FITTED TO THE WHOLE TREE BOX, TRUNK INCLUDED**
+   (2.39.2 item 3), so the "crown" the anchor is derived against is 10.5 to
+   16.5 m tall rather than the 40 per cent of it the foliage occupies. Nothing
+   here depends on that being wrong, but a lane that re-authors `_impostor` to
+   span the crown alone would move `R / H` and therefore the meaning of
+   `CROWN_FLANK_DEG`, and the constant's own block should be re-read then.
