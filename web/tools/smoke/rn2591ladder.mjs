@@ -165,7 +165,21 @@ for (const shot of shots) {
       + `  ${rho.toFixed(4)}  ${(rho - b.rho >= 0 ? '+' : '')}${(rho - b.rho).toFixed(4)}`
       + `    ${rho0 === null ? '  --  ' : rho0.toFixed(4)}   ${where}`
       + (cn ? `   [meanUp ${cn.meanUp.toFixed(3)} outPlane`
-        + ` ${cn.minAbsOutOfPlane.toFixed(3)} down ${cn.downVerts}]` : ''));
+        + ` ${cn.minAbsOutOfPlane.toFixed(3)} down ${cn.downVerts}]` : '')
+      // THE MATERIAL-SIDE REQUESTS, READ BACK OFF THE PAGE. RN-2268: an arm
+      // that changes nothing is only interesting once the ask is proved to have
+      // arrived, and `?canopyenv=` measures as an exact zero (2.39.9), so this
+      // column is what separates "the term is absent" from "the flag was
+      // dropped".
+      + (() => {
+        const s = (e.treeline ?? {}).self ?? null;
+        if (s === null) return '';
+        const bits = [];
+        if (s.envOverride !== null && s.envOverride !== undefined) bits.push(`env ${s.envOverride}`);
+        if (s.roughOverride !== null && s.roughOverride !== undefined) bits.push(`rough ${s.roughOverride}`);
+        if (s.floor !== undefined) bits.push(`floor ${s.floor}`);
+        return bits.length > 0 ? `   {${bits.join(', ')}}` : '';
+      })());
   }
   if (verifyClear && lastFlags !== null && lastFlags.length > 0) {
     const c2 = arm(shot, ['--canopy=0', ...OFF, ...lastFlags]);
