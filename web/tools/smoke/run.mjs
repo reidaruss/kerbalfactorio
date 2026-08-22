@@ -610,6 +610,14 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // no control of any kind before this lane -- `?terrainspec=` is the terrain's
   // and reaches no prop, and `envMapIntensity` has no page parameter anywhere.
   'propspec',
+  // RN-2635. The biome-id paint arm (src/render/materials/BiomeIdPaint.ts):
+  // `biomeid=1` renders ONLY a fixed, saturated debug colour keyed on the
+  // terrain's raw classifier index, replacing `lit` after aerial perspective
+  // so the reading survives the ~92 per cent additive floor at range. Proves
+  // WHICH biome class a rectangle actually is before any BiomePalette.ts row
+  // is touched. Registered in the same commit that introduces it, per this
+  // list's own rule.
+  'biomeid',
   // RN-2385, standing rule 7, and TWO flags because the change makes two
   // claims. World audit R3's rank 3: a running furnace at night put its own
   // frame BELOW an empty meadow, because every emissive in the game was a

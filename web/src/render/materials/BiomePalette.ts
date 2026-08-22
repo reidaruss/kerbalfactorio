@@ -100,9 +100,76 @@ export const BIOME_NAMES = [
  * together; there is no registered page-param for this hex (it is a table
  * lookup, not a uniform, and `?splat=0`/`?canopy=0` already isolate the terms
  * that read it).
+ *
+ * RN-2635 (World Audit R5 rank 3, THE DRY SEA IS A CHROMA BOUNDARY). Forge has
+ * no ocean, so the OLD `0x14406e` painted a dry seabed the colour of deep
+ * water: a saturated cool blue sitting inside a warm aerial frame, which is
+ * simultaneous contrast doing the eye's own work -- a 260-px-apart, same-row
+ * instrument (docs/web/WORLD-AUDIT-R5-2026-08-22.md section 3.3,
+ * `forestair` row 372) read the plate as only 14.63 counts less warm than a
+ * nearby cream patch the audit LABELLED "Beach", and concluded the boundary
+ * was subtle. A biome-id paint arm (BiomeIdPaint.ts, `?biomeid=1`) built
+ * BEFORE this row was touched (the R5 verifier's binding rule; R4's rank 1
+ * died of an unproven rectangle) found the audit's own cream window sampled
+ * FOREST, not Beach: at row 372 the true class sequence, walked column by
+ * column, is Ocean (x<1290) -> Beach (x 1300-1410) -> a thin Plains sliver
+ * (~x1420) -> Forest (x>1440), and the TRUE Ocean/Beach warm step at that row
+ * is **25.46 screen counts** (14.23 at Ocean x[1150,1280) to 39.69 at Beach
+ * x[1300,1400)), bigger than what the audit measured, not smaller, because
+ * its own window was one class too far out.
+ *
+ * TARGETED IN ALBEDO, per the verifier's rule that a screen count is not an
+ * albedo count once the ~92 per cent additive airlight floor (RN-2540) is in
+ * the pixel. Isolated with the EXISTING isolator, `?terrainpaint=1` (zeroes
+ * the source radiance, leaving airlight alone): at row 372 the airlight's own
+ * warm is nearly IDENTICAL at both true patches (27.11 at Ocean's x[1150,1280),
+ * 28.33 at Beach's x[1300,1400), a 1.22-count spread, because the sky/haze
+ * direction is nearly the same for both) so the additive floor cancels almost
+ * completely out of the DIFFERENCE and the screen warm gap is carried by the
+ * surface term almost exactly (measured surface-term warm -12.88 at Ocean,
+ * +11.36 at Beach, summing with the two airlight readings to 14.23 and 39.69
+ * to the digit). Converting the old hex to linear sRGB gives Ocean's own
+ * albedo warm (R-B) at **-0.1489** against Beach's **+0.2200**, a 0.3689
+ * linear-albedo gap.
+ *
+ * TWO CANDIDATES WERE BUILT AND MEASURED, because the ACES tonemap + grade
+ * between albedo and screen is not linear and a one-shot prediction is not a
+ * verification. Candidate A took Beach's own hue (HSV 36.85 deg) and only
+ * lowered value/saturation (0.702->0.42, 0.262->0.15): 44.6 per cent of the
+ * ALBEDO warm gap remained (0.1647 of 0.3689), but on
+ * screen the row-372 warm step fell from 25.46 to **2.25 counts (8.8 per
+ * cent)** -- the nonlinearity compresses harder than the linear estimate near
+ * Beach's own bright end, and 2.25 counts reads as FLATTENED rather than
+ * "a gentler boundary", failing the "must still be legible from the air"
+ * half of the brief. The shipped value below is candidate B: the midpoint,
+ * in LINEAR albedo, between the old Ocean and candidate A (warm -0.0472,
+ * luma 0.0912, 72.4 per cent of the albedo gap left against Beach), which
+ * measured on screen at the same row-372 windows: warm step
+ * **25.46 -> 12.60 counts (49.5 per cent)**, luma step 23.78 -> 17.14 counts
+ * (72.1 per cent), Beach's own two windows bit-identical to the digit on both
+ * builds (39.69/39.81/39.91 warm across three builds is float noise, not
+ * drift -- Beach's row is untouched). Ocean stays the coolest, darkest class
+ * on the palette (sRGB 80,85,100: still visibly blue-grey, not sand-toned)
+ * while no longer reading as SATURATED deep water, which is what makes it
+ * defensible under EITHER of Reid's pending coastline rulings (section
+ * 7.1/7.4 of the R5 audit, water vs desert): a cool, damp-toned grey-mud
+ * reads as a dry lakebed today and loses nothing if the class is later
+ * flooded. Luma 0.0912 sits below every other dry biome (Forest's 0.0534 is
+ * the next-darkest), which keeps Ocean legible as its OWN class rather than
+ * merging into Hills/Plains' own band. BEACH'S OWN ROW IS UNCHANGED: the fix
+ * is Ocean moving part of the way toward the frame's general warmth, not the
+ * two rows meeting in the middle, so a biome that reads "sand" today keeps
+ * reading that way and only the ex-water class moves. `pondside`'s REAL
+ * water (a different material entirely, RN-57's wet band) is untouched
+ * because this row is read by ONE place, `TerrainVertex.glsl.ts`'s
+ * `uBiomeColor[bi]`, which no water-surface shader consumes.
  */
 const HEX = [
-  0x14406e, // Ocean
+  0x505564, // RN-2635: dry seabed, candidate B (see the block comment above):
+            // the linear-albedo midpoint between the old blue and a
+            // Beach-hue candidate that overshot into flattening; cool,
+            // dark, no longer SATURATED deep-water blue. Was 0x14406e
+            // (R5 audit rank 3, "the dry sea is a chroma boundary").
   0xb3a184, // Beach: sand, a stop darker and less golden
   0x6d6a47, // Plains: dry turf over pale soil, not a lawn
   0x4a4030, // Forest: RN-2320, duff-and-moss over soil (was 0x41392b, RN-347)

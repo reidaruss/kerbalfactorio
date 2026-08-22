@@ -12,6 +12,7 @@ import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 import { FAR_SCALE } from '../Scenes.js';
 import { EMIT_UNIFORMS } from './EmissiveLight.js';
 import { uApAmp, uApPaint } from './AerialDiag.js';
+import { uBiomeIdPaint } from './BiomeIdPaint.js';
 import type { TerrainMaterialOptions } from './TerrainMaterialTypes.js';
 import type { TerrainUniformState } from './TerrainUniformState.js';
 
@@ -100,6 +101,10 @@ export function makeTerrainMaterial(
     // so routing them through the uniform-state phase would only add a hop.
     uApAmp,
     uApPaint,
+    // RN-2635. The biome-id paint arm's toggle, bound into BOTH programs on
+    // uApPaint's own precedent: the far ground the dry-sea plate sits in is
+    // drawn by whichever program the pose is looking at, near or scaled.
+    uBiomeIdPaint,
     // RN-2160. The splat. The two vectors are wrapped; the six samplers are
     // passed THROUGH as the shared holders, exactly as uGroundTex is, so a map
     // that finishes loading after the material is built reaches the near

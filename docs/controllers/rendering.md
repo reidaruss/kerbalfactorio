@@ -1,16 +1,19 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2590 to RN-2593, `lane/n12-crownnormal`, **THE CROWN IMPOSTOR GETS THE CANOPY LAYER'S NORMAL: THE POSE SPREAD FALLS 8.41x TO 5.20x, THREE OF FOUR POSES ENTER THE CORE, AND THE GUARD'S OWN TWO CONSTRAINTS TURN OUT TO OPPOSE EACH OTHER.** 2.38.7 item 1, taken. `CrownNormal.ts` gives `OF_Canopy` and only `OF_Canopy` a canopy-LAYER shading normal: a dome anchored `q = R / tan(CROWN_FLANK_DEG)` BELOW the crown base, split into its POLAR angle and its AZIMUTH, with the azimuth mixed toward the card's own authored normal. **BOTH DEGENERACIES GO BY CONSTRUCTION, NOT BY AN EPSILON:** there is no sign ternary at all (`downVerts` 3 of 24 on the pre-lane path, **0** on the shipped one) and at `crowncard = 1` the azimuth IS the card normal, so `minAzimuthOut` goes 0.0000 to **1.0000**. Constants `CROWN_FLANK_DEG = 25` and `CROWN_CARD_MIX = 1.0`, both pinned by a measured ladder with the argument beside them. **SCOPED BY MATERIAL NAME, so `FoliageNormal.ts` IS NOT EDITED AT ALL** and the understorey's bytes are identical by construction. **THE SHIPPED BYTES WERE RE-READ FROM THE `glb` WITH A MANUAL PARSE** and 2.38.1a is sharpened: the tear is ONE VERTEX PER TREE (v7, `up` -0.8944 on the Broadleaf), the residue is `hw * cos(pi/2)` at 2.572e-16 / 1.179e-16 / 8.879e-17 per species, and quad A's `z` is EXACTLY zero so only the yawed quad tears. **THREE FINDINGS THE BRIEF DID NOT CONTAIN.** **(1) A THIRD DEGENERACY:** `OF_Canopy` is `doubleSided`, three negates the WHOLE normal on a back face and a planar quad is entirely front- or back-facing from any camera, so about half of every stand's drawn card area is lit upside down. It is why **the sign fix taken alone, as 2.38.7 routed it, COSTS A QUARTER OF THE CROWN'S LUMINANCE** (`rho` 0.0992 to 0.0748): the tear was the only correctly-lit normal on a back-facing quad. The three arms measure **-29 / -44 / -11 per cent alone and +1.8 per cent together**, so neither fix could have been landed on its own and 2.38.7's "low-risk and SEPARABLE" is withdrawn. **(2) THE GUARD'S TWO CONSTRAINTS OPPOSE EACH OTHER:** correcting the normal makes the crown respond properly to a HIGH sun, which moves `flyovernoon` INTO the CORE and simultaneously trips that pose's one-sided `box` darkness ratchet. The first candidate (`crownflank=12`, spread 2.23x) was **REFUSED on boxShip 0.9403 against 0.9343 + 0.005**, reported as a FAIL and NOT re-pinned; the shipped angle is bracketed from ABOVE by the band and from BELOW by the ratchet. **(3) `envMapIntensity` IS A DEAD SWITCH, NOT AN INERT TERM (this item was first published the other way round and a fresh-context verifier refuted it; the withdrawal is retracted):** the required isolator is built and a sixteen-fold change moves the `crowns` rectangle by **exactly 0.000000** at both binding poses, and the reason is that `WebGLRenderer.js:2694-2696` OVERWRITES the uniform from `scene.environmentIntensity` every frame while the material has no own `envMap` and `SkyIbl.ts:133`'s environment is set, so the write never reaches the draw. The readback proved the query PARSED, not that the uniform SURVIVED, and the sibling-write control is invalid because `envMapIntensity` is the one property in that group with a per-frame renderer override. The control this lane did not run, `?ibldiag=noenv`, moves the same rectangle **-37.48 per cent**, so the environment is a LARGE term in the crown and **2.38.4's PMREM reading is CORROBORATED** (honestly: that control removes environment DIFFUSE and SPECULAR together, so it establishes the environment's size and not the specular's share of it, and 2.38.4's stronger "almost entirely" form is supported rather than proved). The LIVE handle is `scene.environmentIntensity` or an own `envMap`. Roughness is live at the sharp end too: `?canopyrough=0.05` moves the crowns RECTANGLE **+1,334 per cent** (0.001566 to 0.022454, the whole rectangle and not the specular alone) and `?canopyrough=1.0` moves it **-24.97 per cent**, so 2.38.4 refuses the fully-rough DIRECTION and its 0.8-to-1.0 window is NARROWED rather than upheld. Both withdrawals are annotated at their own sites (2.38.4 and 2.38.7 item 1). **ACCEPTANCE: `rn2550guard` EXIT 0**, and its own verdict line goes from **3 of 4 poses outside the CORE to 1**: `rho` 0.0992/0.4363/0.2488/0.7021 to **0.1016 / 0.3747 / 0.2968 / 0.5126**, with `forestairlow`, `flyovernoon` and `flyoverlow` all IN CORE and `forestairnoon`'s standing violation **REPAID** rather than deepened. **NO ratchet ceiling raised, moved, lowered or re-derived**; **SIX of eight FELL and TWO rose** (`flyoverlow` boxSurf 0.8884 to 0.8446 the largest fall; `flyovernoon` boxShip AND boxSurf both up, inside tolerance), all reported. **ADMIN HAS ANSWERED: the post-N12 pins are NOT adopted** (the 6/2 split makes re-pinning selective, the movement is a reshaping a one-sided ratchet would freeze, and the numbers are already stale on merged main where WG-285 moves `forestairlow` boxSurf to 0.7704); the ratchet re-measure on merged main is routed to `check:guard`'s owner as an instrument job. **THE SPREAD: `rho0` 8.41x to 5.20x and `rho` 7.08x to 5.05x**, and the mechanism shows in the split, where the crown's DIFFUSE now rises at both noon poses (+23%, +29%) and FALLS at both low-sun poses (-22%, -22%) -- the canopy-layer statement coming true. **THE BAND'S FLOOR AT `forestairnoon` IS NOT REACHED (0.1016 against 0.18) AND IS PROVED UNREACHABLE FROM THE SHADING NORMAL AT ALL** (`rho = rho0 * Smeas + P/Y_clear`, `Smeas` 0.0544 fixed by the shade law, `rho0` capped at the flat-plate limit 0.4578), **but what CAN reach it is measured**: with the `crownflank=12` normal, `?crownshadefloor=0.30` puts BOTH binding poses inside the band (0.2190 and 0.6940), which 2.38.3 proved impossible with the shipped normal. Routed, not taken, and **Admin has since REFUSED that route as the next lane** because it drives the wood brighter than its own clearing (1.0287 / 1.0327). **THE NEXT LANE IS THE THIRD DEGENERACY** (largest term, roughly doubles the diffuse, does not spend the `box` ratchet), then the specular reopened with the right handle. **EYE: PARTIAL, residual named** -- the specks lose their blue-violet cast and read greener, the mass is still slate-green, and the residual is `Smeas` crushing the diffuse to a twentieth plus the face negation throwing away half of what is left. **NO PER-FRAME COST**, all five arms 226,133 triangles / 27 calls / 53 programs / 114.8 MB identical to the digit. **NIGHT AND THE UNDERSTOREY UNTOUCHED, ASSERTED:** `meadownight` 0.04 per cent of pixels and `forestfloor` 0.68 per cent (far crown cards, balanced darker/lighter) against RN-1766's 3.78 per cent two-page-load floor. Four new probes, four new `PAGE_PARAMS` registered in the same commit, **four** new NUMBERS traps. **CORRECTED 2026-08-22 after a fresh-context verifier, verdict FIX: claims A, B, C and E all reproduced to the digit on an independent build; claim D (the isolator) is the one refuted, and its correction is item 3 above.** `CROWN_SELF_K`, `CROWN_SELF_FLOOR`, the spectral split, `FoliageTone` and `artframe.js` all untouched. Gates 0, 0, **9 of 9**, guard 0. Full record in section 2.39; frames `docs/screenshots/RN2590_*`.) (Previous: `lane/n10-crownlight` section 2.38; `lane/n11-treelinepose` section 2.37; `lane/n9-treeline` section 2.36; `lane/n8-guardband` section 2.35.) THIS LINE IS A POINTER: replace it, never append to it.
-
-
-
-
-
-
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2635 to RN-2644, `lane/n14-drysea`, **THE DRY SEA'S CHROMA STEP IS FIXED IN ALBEDO AND MEASURABLY HALVED, AND A BIOME-ID PAINT ARM BUILT BEFORE THE ALBEDO ROW WAS TOUCHED FOUND THE R5 AUDIT'S OWN "BEACH CREAM" SAMPLE WAS FOREST.** R5 rank 3, taken under the verifier's binding constraints (rendering.md 2.40.6, NUMBERS RN-2635 row). **CONSTRAINT 1 DISCHARGED FIRST, AND IT REVISED THE DEFECT'S OWN GEOMETRY:** a new paint arm (`BiomeIdPaint.ts`, `?biomeid=1`) renders ONLY a fixed, saturated debug colour keyed on the terrain's raw `/core` Biome index, deliberately independent of `BiomePalette.ts`'s own suspect HEX table, spliced in AFTER both aerial-perspective calls in `TerrainFragLight.glsl.ts` so the reading survives RN-2540's ~92 per cent additive floor at range. Walking `forestair` row 372 column by column (`docs/screenshots/RN2635_forestair_biomeid1.png`) gives the true class sequence Ocean (x<1290) -> Beach (x 1300-1410) -> a thin Plains sliver (~x1420) -> Forest (x>1440): **the audit's own "Beach" window, x[1430,1480), sampled FOREST**, one class too far out, and the TRUE Ocean/Beach warm step at that row is **25.46 screen counts (14.23 to 39.69), bigger than the published 14.63, not smaller.** **CONSTRAINT 2, TARGETED IN ALBEDO:** `?terrainpaint=1` (the existing airlight isolator) shows the additive floor's own warm is nearly IDENTICAL at both true patches (27.11 vs 28.33), so it cancels almost completely out of the DIFFERENCE and the screen warm gap is carried by the surface term almost exactly; old Ocean's linear-albedo warm is **-0.1489** against Beach's **+0.2200** (a 0.3689 gap). TWO CANDIDATES WERE BUILT AND MEASURED rather than shipped off one prediction: candidate A (Beach's own hue, value/saturation only lowered) left 44.6 per cent of the ALBEDO gap but the SCREEN warm step fell to **2.25 counts (8.8 per cent)** -- the tonemap+grade nonlinearity compresses harder near Beach's bright end than a linear estimate predicts, and 2.25 counts reads as FLATTENED, not legible. The shipped hex, `0x505564`, is candidate B, the LINEAR-albedo midpoint between old Ocean and candidate A: measured screen warm step **25.46 -> 12.60 counts (49.5 per cent)**, luma step 23.78 -> 17.14 (72.1 per cent), Beach's own two windows bit-identical across three builds (39.69/39.81/39.91 is float noise). Ocean stays the darkest, coolest class on the palette (luma 0.0912, below Forest's 0.0534's neighbour Hills/Plains band) so it keeps its own identity rather than merging into either. **CONSTRAINT 3 HELD:** only the Ocean row moved; Beach's `0xb3a184` is untouched, `pondside`'s real water (a different material, RN-57's wet band) is structurally unreachable by this row, and the new hex is a cool grey-mud defensible whether Ocean later floods or stays dry. **GUARDS: `meadow` proved BIT-IDENTICAL by an actual stash-and-rebuild pair** (not asserted from the single-table-entry argument alone, though that argument also holds structurally for every non-Ocean pose), `rn2550guard` exit 0 with the four pinned `rho` values unmoved (0.1019/0.3747/0.2974/0.5130, the same pins 2.40.3 reproduced), `npm run check` **9 of 9**. **EYE, HONESTLY: STILL READS AS WATER AT 1x.** The before/after 3x crops at the row-372 boundary (`RN2635_crop_before_3x.png` / `_after_3x.png`) show the SAME smooth, boundary-distinct, value-dipped plate shape; even candidate A's 91-per-cent chroma closure barely changed the impression (`RN2635_crop_candA_3x.png`). **This is a new finding, not a shortfall to hide: the "lake" read is carried at least as much by the plate's SHAPE and flat, untextured VALUE DIP as by its hue**, and no hue-only fix inside `BiomePalette.ts`'s two rows can fully discharge "no longer reads as water" while the class has no relief/splat texture of its own. Routed to Admin as an open item rather than claimed solved. Gates 0, 0, **9 of 9**, guard 0. Full record in section 2.41; frames `docs/screenshots/RN2635_*`.) (Previous: `lane/n12-crownnormal` section 2.39.) THIS LINE IS A POINTER: replace it, never append to it.
 
 >
-> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2570 to RN-2573, `lane/n10-crownlight`, **THE SPREAD IS GEOMETRIC, AND IT LIVES IN A SPHERIFICATION THAT DEGENERATES ON CROSSED QUADS, AND R4 STAGE 2's TARGET IS UNREACHABLE WITH THE KNOBS IT WAS GIVEN.** N8's routed stage-2 brief, taken; **BOTH HALVES OF THE ACCEPTED SHAPE FAIL ON MEASUREMENT AND THE LANE SHIPS NO PIXEL CHANGE**, which is the result rather than a shortfall. **THE SPREAD IS EXPLAINED AND IT IS TWO DIFFERENT TERMS, NEITHER THE ONE EXPECTED.** The SITE ordering is the self-shadow law working correctly: `residentCanopyMu` is **0.6918** at Forest against **0.2996** at Hills, so Beer-Lambert puts `S` at 0.1254 against 0.3959 and the Forest crowns are properly darker. The SUN ordering (low sun LIGHTER than noon, backwards for path length) is **not a canopy term at all**: `?crownshade=0` with the specular also off gives a crown reflectance `rho0` of **0.3925 / 1.9161 / 0.3995 / 3.2474** -- **at NOON both sites land dead centre of the CORE and at LOW sun both are already ABOVE the band's 0.75 ceiling before one photon is added.** The cause is geometric and lives in the impostor's SHADING NORMAL: `Y_clear` falls **6.8x and 9.6x** from noon to low sun while the crown's unshaded diffuse falls **1.40x and 1.18x**, so the clearing loses irradiance **4.9x and 8.1x faster** than the crown does. **CORRECTED 2026-08-22 AFTER A FRESH-CONTEXT VERIFIER (verdict FIX, all text; every measurement reproduced and the refusal CONFIRMED and extended -- even TOTAL specular removal cannot satisfy the band).** Two errors: the unshaded diffuse was written "1.40x and 0.73x (it RISES at Hills)" against this lane's own table (0.016152 / 0.019077 = 0.8466, a FALL); and the mechanism was attributed to the ASSET's flat horizontal normal, which is true of the `glb` and **false of the frame** -- `PropGeometry.ts:291` runs every `foliage`-bake rung through RN-1766's `bendNormals`, so the SHIPPED mean `|up|` is **0.4557 to 0.4985, not 0.0000**, and `?foliagenormal=0` takes the spread from **8.3x to 63.5x**. The lane's own best frame refuted it and went unread: bright crown tops over dark bottoms is a vertical gradient a flat normal cannot render. **THE REAL DEFECTS ARE TWO DEGENERACIES IN `FoliageNormal.ts` ON CROSSED QUADS:** COPLANARITY (the base centre lies in both card planes, so at `amount = 1.0` the bent normal is entirely in-plane and `N . V` is near zero head-on) and a SIGN TEAR caused by it (`n . d` is exactly zero, so the sign resolves on +/-2.6e-16 of residue and verts 6/7 on the SAME top edge take `up` +0.994 / -0.994, i.e. **one of every crown impostor's four triangles is lit as if it faced the ground** -- a live shipping defect, not this lane's, and separable). **SO NO VALUE OF `CROWN_SELF_FLOOR` SATISFIES THE GUARD, PROVED AT A MEASURED CANDIDATE:** at `crownshadefloor=0.2`, `forestairnoon` is still **0.0335 SHORT** of the band's bottom while `flyoverlow` is already **0.3358 OVER** its top, and both `box` ratchets fail (boxSurf 1.0271 against a 0.9826 ceiling). **The band is 4.2x wide and the pose spread is 8.3x.** Per 2.35.9 item 8 that is reported as a **FAIL, and NO ratchet ceiling is raised, moved or re-derived.** **THE ROUGHNESS FIX WAS BUILT, MEASURED AT BOTH ENDS AND REFUSED.** The crown is **58 to 87 per cent SPECULAR** in the guard's own linear-luminance units (N7's blue-channel 99.7 per cent, re-taken on the whole pixel), but driving the material from its authored **0.800** to the fully-rough 1.0 moves that specular **-1.6 per cent at `forestairnoon` and +2.0 per cent at `flyoverlow`, the wrong way at the second**, with the diffuse unmoved to four digits. The reason is that the split-sum environment BRDF at `F0 = 0.04` is nearly flat in roughness, so the crown's specular is the **sky PMREM lobe** and not the sun lobe -- which is also why it is blue -- and broadening the lobe under a grazing sun smears MORE sky into view. **`envMapIntensity` is the handle and has no page parameter anywhere**; routed, not guessed at. **SO THE VALUE IS UNCHANGED AND THE MISSING SWITCH SHIPS:** `?canopyrough=` is an OVERRIDE returning `null`, so the shipped path writes nothing and the asset's own value stands, a no-op BY CONSTRUCTION rather than by a literal that happens to match the glTF. **THE FLOOR'S DERIVATION IS CLOSED AND THE SHIPPED VALUE IS 5.7x TOO SMALL:** the existing 0.08 counts only the SKY, and the omitted term is the canopy's own scattered light; closing it with the two-stream `rInf(w)` **already in `FoliageTone.ts` for the crown's HUE** gives luma 0.061703 over the card's own tone luma 0.135373 = **0.4558**, exported as `CROWN_SELF_FLOOR_DERIVED` and published on `canopySelfNow()` so a claim of that size is a value a probe can read rather than prose in a comment (2.35.2's own scar). It is deliberately NOT wired in. **ACCEPTANCE: `rn2550guard` exit 0 on the base build AND on the final build, all four poses bit-identical** (rho 0.0992 / 0.4363 / 0.2488 / 0.7021, eight clearing pins inside 1 per cent), which is also the no-pixel-change proof by frame since a dist-hash test is unavailable to a lane that edits `web/src/`. **EYE: CROWNS STILL NOT MET**, and the crops say why: the refused fully-rough arm is indistinguishable from shipped, the refused raise adds a faint teal edge on a still-slate mass, and **`?crownshade=0` is unmistakably GREEN sunlit crown tops reading as a real aerial canopy** -- the crown's unshaded optics are already right at noon, and one term cannot both supply that and hold the low-sun poses down while the impostor's normal keeps them 8.3x apart. **2.35.9 item 5 DISCHARGED** (the K table and the "margins" block now say the sign test they were judged against no longer exists and that their numbers are pre-`lane/wg-ship`); K unmoved at 3.2, `CROWN_SELF_FLOOR` unmoved at 0.08, N6's spectral split extended and never rewritten, `FoliageTone`'s sat 1.08 untouched, no `artframe.js` rectangle or pose row added. **NEW OWED:** **`FoliageNormal.ts`'s two degeneracies are the next lane, and it must NOT be briefed as "reconstruct a crown-outward normal in the prop shader" because RN-1766 already did that and it ships**; two risks travel with it (`bendNormals` is shared by grass/leaf/canopy and bought +7.4 per cent of `forestfloor` frame `iqr`, so scope to the canopy bake or measure the understorey both arms; and the shipped bend is the only thing keeping `flyoverlow` in the band, 0.7021 with against 0.9024 without, so a noon fix can push low sun out), the sign-tear fix is low-risk and separable while the coplanarity fix moves the aerial look, and **`envMapIntensity` joins that lane as a required isolator rather than its own allocation**; `envMapIntensity` needs an isolator before it is judged; the display-linear tone exponent is measured at **~1.40** (`D` scales as `S^1.40`, four poses agreeing 1.36 to 1.46), which anyone predicting a radiance change must use and which independently corroborates 2.35.9 item 1's "the deep-shadow slope EXPANDS ratios"; `flyoverlow`'s `sinSun` jitters **0.2051 against 0.2141** between runs of one build, worth pinning since that pose sits 0.036 from a band ceiling; and **the stage-2 premise itself needs an Admin correction**, since neither half of "the raise travels with the roughness fix, which pays for the headroom" survived contact. Gates 0, 0, **9 of 9**, guard 0. Full record in section 2.38 (renumbered from 2.36; N9's 2.36 is merged on main); frames `docs/screenshots/RN2570_*`.) (Previous: `lane/n8-guardband` section 2.35; `lane/n7-bluefloor` section 2.34; `lane/n6-crownshade` section 2.33; `lane/n4-midobjects` section 2.32.) (Same day: `lane/n11-treelinepose` section 2.37; `lane/n9-treeline` section 2.36.) THIS LINE IS A POINTER: replace it, never append to it.
+> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2590 to RN-2593, `lane/n12-crownnormal`, **THE CROWN IMPOSTOR GETS THE CANOPY LAYER'S NORMAL: THE POSE SPREAD FALLS 8.41x TO 5.20x, THREE OF FOUR POSES ENTER THE CORE, AND THE GUARD'S OWN TWO CONSTRAINTS TURN OUT TO OPPOSE EACH OTHER.** 2.38.7 item 1, taken. `CrownNormal.ts` gives `OF_Canopy` and only `OF_Canopy` a canopy-LAYER shading normal: a dome anchored `q = R / tan(CROWN_FLANK_DEG)` BELOW the crown base, split into its POLAR angle and its AZIMUTH, with the azimuth mixed toward the card's own authored normal. **BOTH DEGENERACIES GO BY CONSTRUCTION, NOT BY AN EPSILON:** there is no sign ternary at all (`downVerts` 3 of 24 on the pre-lane path, **0** on the shipped one) and at `crowncard = 1` the azimuth IS the card normal, so `minAzimuthOut` goes 0.0000 to **1.0000**. Constants `CROWN_FLANK_DEG = 25` and `CROWN_CARD_MIX = 1.0`, both pinned by a measured ladder with the argument beside them. **SCOPED BY MATERIAL NAME, so `FoliageNormal.ts` IS NOT EDITED AT ALL** and the understorey's bytes are identical by construction. **THE SHIPPED BYTES WERE RE-READ FROM THE `glb` WITH A MANUAL PARSE** and 2.38.1a is sharpened: the tear is ONE VERTEX PER TREE (v7, `up` -0.8944 on the Broadleaf), the residue is `hw * cos(pi/2)` at 2.572e-16 / 1.179e-16 / 8.879e-17 per species, and quad A's `z` is EXACTLY zero so only the yawed quad tears. **THREE FINDINGS THE BRIEF DID NOT CONTAIN.** **(1) A THIRD DEGENERACY:** `OF_Canopy` is `doubleSided`, three negates the WHOLE normal on a back face and a planar quad is entirely front- or back-facing from any camera, so about half of every stand's drawn card area is lit upside down. It is why **the sign fix taken alone, as 2.38.7 routed it, COSTS A QUARTER OF THE CROWN'S LUMINANCE** (`rho` 0.0992 to 0.0748): the tear was the only correctly-lit normal on a back-facing quad. The three arms measure **-29 / -44 / -11 per cent alone and +1.8 per cent together**, so neither fix could have been landed on its own and 2.38.7's "low-risk and SEPARABLE" is withdrawn. **(2) THE GUARD'S TWO CONSTRAINTS OPPOSE EACH OTHER:** correcting the normal makes the crown respond properly to a HIGH sun, which moves `flyovernoon` INTO the CORE and simultaneously trips that pose's one-sided `box` darkness ratchet. The first candidate (`crownflank=12`, spread 2.23x) was **REFUSED on boxShip 0.9403 against 0.9343 + 0.005**, reported as a FAIL and NOT re-pinned; the shipped angle is bracketed from ABOVE by the band and from BELOW by the ratchet. **(3) `envMapIntensity` IS A DEAD SWITCH, NOT AN INERT TERM (this item was first published the other way round and a fresh-context verifier refuted it; the withdrawal is retracted):** the required isolator is built and a sixteen-fold change moves the `crowns` rectangle by **exactly 0.000000** at both binding poses, and the reason is that `WebGLRenderer.js:2694-2696` OVERWRITES the uniform from `scene.environmentIntensity` every frame while the material has no own `envMap` and `SkyIbl.ts:133`'s environment is set, so the write never reaches the draw. The readback proved the query PARSED, not that the uniform SURVIVED, and the sibling-write control is invalid because `envMapIntensity` is the one property in that group with a per-frame renderer override. The control this lane did not run, `?ibldiag=noenv`, moves the same rectangle **-37.48 per cent**, so the environment is a LARGE term in the crown and **2.38.4's PMREM reading is CORROBORATED** (honestly: that control removes environment DIFFUSE and SPECULAR together, so it establishes the environment's size and not the specular's share of it, and 2.38.4's stronger "almost entirely" form is supported rather than proved). The LIVE handle is `scene.environmentIntensity` or an own `envMap`. Roughness is live at the sharp end too: `?canopyrough=0.05` moves the crowns RECTANGLE **+1,334 per cent** (0.001566 to 0.022454, the whole rectangle and not the specular alone) and `?canopyrough=1.0` moves it **-24.97 per cent**, so 2.38.4 refuses the fully-rough DIRECTION and its 0.8-to-1.0 window is NARROWED rather than upheld. Both withdrawals are annotated at their own sites (2.38.4 and 2.38.7 item 1). **ACCEPTANCE: `rn2550guard` EXIT 0**, and its own verdict line goes from **3 of 4 poses outside the CORE to 1**: `rho` 0.0992/0.4363/0.2488/0.7021 to **0.1016 / 0.3747 / 0.2968 / 0.5126**, with `forestairlow`, `flyovernoon` and `flyoverlow` all IN CORE and `forestairnoon`'s standing violation **REPAID** rather than deepened. **NO ratchet ceiling raised, moved, lowered or re-derived**; **SIX of eight FELL and TWO rose** (`flyoverlow` boxSurf 0.8884 to 0.8446 the largest fall; `flyovernoon` boxShip AND boxSurf both up, inside tolerance), all reported. **ADMIN HAS ANSWERED: the post-N12 pins are NOT adopted** (the 6/2 split makes re-pinning selective, the movement is a reshaping a one-sided ratchet would freeze, and the numbers are already stale on merged main where WG-285 moves `forestairlow` boxSurf to 0.7704); the ratchet re-measure on merged main is routed to `check:guard`'s owner as an instrument job. **THE SPREAD: `rho0` 8.41x to 5.20x and `rho` 7.08x to 5.05x**, and the mechanism shows in the split, where the crown's DIFFUSE now rises at both noon poses (+23%, +29%) and FALLS at both low-sun poses (-22%, -22%) -- the canopy-layer statement coming true. **THE BAND'S FLOOR AT `forestairnoon` IS NOT REACHED (0.1016 against 0.18) AND IS PROVED UNREACHABLE FROM THE SHADING NORMAL AT ALL** (`rho = rho0 * Smeas + P/Y_clear`, `Smeas` 0.0544 fixed by the shade law, `rho0` capped at the flat-plate limit 0.4578), **but what CAN reach it is measured**: with the `crownflank=12` normal, `?crownshadefloor=0.30` puts BOTH binding poses inside the band (0.2190 and 0.6940), which 2.38.3 proved impossible with the shipped normal. Routed, not taken, and **Admin has since REFUSED that route as the next lane** because it drives the wood brighter than its own clearing (1.0287 / 1.0327). **THE NEXT LANE IS THE THIRD DEGENERACY** (largest term, roughly doubles the diffuse, does not spend the `box` ratchet), then the specular reopened with the right handle. **EYE: PARTIAL, residual named** -- the specks lose their blue-violet cast and read greener, the mass is still slate-green, and the residual is `Smeas` crushing the diffuse to a twentieth plus the face negation throwing away half of what is left. **NO PER-FRAME COST**, all five arms 226,133 triangles / 27 calls / 53 programs / 114.8 MB identical to the digit. **NIGHT AND THE UNDERSTOREY UNTOUCHED, ASSERTED:** `meadownight` 0.04 per cent of pixels and `forestfloor` 0.68 per cent (far crown cards, balanced darker/lighter) against RN-1766's 3.78 per cent two-page-load floor. Four new probes, four new `PAGE_PARAMS` registered in the same commit, **four** new NUMBERS traps. **CORRECTED 2026-08-22 after a fresh-context verifier, verdict FIX: claims A, B, C and E all reproduced to the digit on an independent build; claim D (the isolator) is the one refuted, and its correction is item 3 above.** `CROWN_SELF_K`, `CROWN_SELF_FLOOR`, the spectral split, `FoliageTone` and `artframe.js` all untouched. Gates 0, 0, **9 of 9**, guard 0. Full record in section 2.39; frames `docs/screenshots/RN2590_*`.) (Previous: `lane/n10-crownlight` section 2.38; `lane/n11-treelinepose` section 2.37; `lane/n9-treeline` section 2.36; `lane/n8-guardband` section 2.35.) THIS LINE IS A POINTER: replace it, never append to it.
+
+
+
+
+
+
+
+> *(the pointer before that, `lane/n10-crownlight` section 2.38, is no longer kept inline per the one-deep rule; see git history or section 2.38 itself.)*
+
 
 ## 1. Mission
 Make surface→orbit→interplanetary→surface look seamless and run fast. Own the "rendering magic" that sells continuous traversal, plus the techniques that let a dense 3D factory render without melting the GPU.
@@ -13951,3 +13954,204 @@ Servers `127.0.0.1:5946` and `:5947`, `--strictPort`, sentinel-verified on
 CONTENT over the wire plus served bundle name plus owning PID before every
 batch; PIDs **27740** and **29828**, both killed by PID after confirming the
 port's owner was this lane's.
+
+## 2.41 THE DRY SEA'S CHROMA STEP, FIXED IN ALBEDO, AND A PAINT ARM THAT REVISED THE DEFECT'S OWN GEOMETRY (RN-2635 to RN-2644, 2026-08-22, `lane/n14-drysea`)
+
+Charter: World Audit R5 rank 3 (rendering.md 2.40.6, `docs/web/WORLD-AUDIT-R5-2026-08-22.md`
+section 3.3), constraints from the R5 verifier (NUMBERS RN-2635 row): prove the
+subject before touching any albedo row; target in ALBEDO, not screen counts;
+do not commit the water-vs-desert coastline identity. Frames `docs/screenshots/RN2635_*`.
+
+### 2.41.1 THE ONE-LINE ANSWER
+
+**Built the biome-id paint arm before touching any hex, and it found the audit's
+own "Beach cream" sample was FOREST; the TRUE Ocean/Beach warm step at
+`forestair` row 372 is 25.46 screen counts, not 14.63; the shipped fix
+(`BiomePalette.ts`'s Ocean row, `0x14406e` -> `0x505564`) was chosen in LINEAR
+ALBEDO and cuts that true step to 12.60 (49.5 per cent); and the eye still
+reads the plate as water at 1x, because the "lake" impression is carried by
+the plate's SHAPE and flat value dip at least as much as by its hue, which a
+two-row palette edit cannot reach.**
+
+### 2.41.2 CONSTRAINT 1: THE BIOME-ID PAINT ARM, AND WHAT IT ACTUALLY PROVED
+
+`web/src/render/materials/BiomeIdPaint.ts` is a new diagnostic file on
+`AerialDiag.ts`'s own precedent (RN-2540): `?biomeid=1` renders ONLY a fixed,
+maximally-saturated debug colour keyed on the terrain's raw `/core` Biome
+index (Ocean red, Beach green, Plains blue, Forest yellow, Hills magenta,
+...), deliberately reading NOTHING from `BiomePalette.ts`'s own `uBiomeColor`
+table -- painting the classifier through the suspect table would beg rank 3's
+own question. The override sits in `TerrainFragLight.glsl.ts` AFTER both
+aerial-perspective calls, replacing `lit` outright, so the debug colour
+survives RN-2540's ~92 per cent additive floor at 1,200 m instead of being
+washed toward grey by it. Wiring: `TerrainVertex.glsl.ts` passes the already-
+decoded `bi` through as a new varying `vBiomeIdx` (no new attribute, no new
+uniform table); `TerrainFragPars.glsl.ts` declares the varying and the
+`uBiomeIdPaint` toggle; `TerrainProgram.ts` binds it into both programs on
+`uApPaint`'s pattern; `biomeid` is registered in `run.mjs`'s `PAGE_PARAMS` in
+this same commit. OUTCOME readback: `window.__ofBiomeIdPaint.report()`
+publishes `{active, flag}` so a claim that the flag reached the shader is a
+value a probe can read, not prose in a comment (RN-2268's scar).
+
+**Non-vacuous proof, `forestair`, `?biomeid=1`:** at row 372 the plate reads
+r=245/g=44/b=21 (unambiguously Ocean's red) across its whole span; the
+audit's own cream window, x[1430,1480), reads ~(200,218,131), which matches
+neither Beach's calibrated signature (g clearly dominant, r noticeably lower;
+measured directly on `beachground`'s near-field ground, `?biomeid=1`,
+(147,196,99) held flat across 40 rows) nor Ocean's, but DOES match Forest's
+calibrated signature (r approximately equal to g, b lower; measured on
+`forestfloor`'s own box, `?biomeid=1`, dominant fill (204,223,120)). A
+column-by-column scan of row 372 (`tools/smoke/rn2635rowscan.mjs`, x
+1150-1500 step 10) resolves the true class sequence: **Ocean (x<1290) ->
+Beach (x 1300-1410) -> a thin Plains sliver (~x1420) -> Forest (x>1440)**. The
+audit's own "Beach" window sampled one class too far out.
+
+**Re-measured on the SHIPPED (non-paint) frame at the TRUE windows**
+(`tools/smoke/rn2510rows.mjs`, single-row average): Ocean x[1150,1280) warm
+14.23 at luma 159.03 (audit's x[1170,1210) reproduces to the digit: 164.55/
+151.00/157.81); TRUE Beach x[1300,1400) warm **39.69** at luma **182.81**; the
+Forest patch the audit mislabelled, x[1440,1490), warm 28.00 at luma 162.88
+(this is the figure the audit published as "+28.18"). **The TRUE Ocean/Beach
+warm step is 25.46 counts at a 23.78-count LUMA step, bigger and less
+"constant-brightness" than the published 14.63 at 5.06.**
+
+### 2.41.3 CONSTRAINT 2: TARGETED IN ALBEDO, VERIFIED ON SCREEN
+
+Isolated with the EXISTING isolator, `?terrainpaint=1` (zeroes the source
+radiance, leaving the additive airlight+aerosol alone -- no new instrument
+needed). At the three true windows the airlight's own warm is nearly
+IDENTICAL (27.11 Ocean, 28.33 Beach, 27.86 Forest -- a ~1.2-count spread,
+because the sky/haze direction barely differs at this range), so it cancels
+almost completely out of any DIFFERENCE between two nearby classes: the
+screen warm gap is carried by the surface (albedo-driven) term almost
+exactly (surface-term warm -12.88 Ocean, +11.36 Beach, +0.14 Forest, summing
+with the airlight readings to 14.23 / 39.69 / 28.00 to the digit). This
+REFINES the verifier's "92 per cent airlight" framing rather than
+contradicting it: the ABSOLUTE pixel is airlight-dominated, but the
+DIFFERENCE between two classes at similar range is not, because the additive
+floor is nearly class-independent and subtracts out.
+
+Converting the shipped hexes to linear sRGB: Ocean `0x14406e` warm (R-B)
+**-0.1489**, luma 0.0494; Beach `0xb3a184` warm **+0.2200**, luma 0.3674 -- a
+0.3689 linear-albedo gap.
+
+**Two candidates were built and MEASURED rather than shipped off one
+prediction**, because the ACES tonemap plus grade between albedo and screen
+is not linear:
+- Candidate A took Beach's own hue (HSV 36.85 deg) and only lowered value and
+  saturation (0.702 -> 0.42, 0.262 -> 0.15) -> `0x6d6558`, linear warm
+  +0.0553 (44.6 per cent of the albedo gap remains). On screen this measured
+  Ocean warm 37.66 against Beach's 39.91 -- the true step fell to **2.25
+  counts (8.8 per cent)**. The tonemap/grade compresses harder near Beach's
+  bright end than a linear estimate predicts. **Rejected**: at 3x crop
+  (`RN2635_crop_candA_3x.png`) the plate is visibly unchanged from shipped --
+  this is FLATTENING, not "a gentler boundary", and fails "must still be
+  legible from the air".
+- Candidate B, **shipped**, `0x505564`: the LINEAR-albedo MIDPOINT between old
+  Ocean and candidate A (warm -0.0472, luma 0.0912, 72.4 per cent of the
+  albedo gap against Beach remains). On screen: Ocean warm 27.21 against
+  Beach's unchanged 39.81 -- true step **12.60 counts (49.5 per cent)**, luma
+  step 23.78 -> 17.14 (72.1 per cent). Beach's own two windows read
+  39.69/39.81/39.91 warm across the three builds measured (original, A, B) --
+  float noise, not drift, confirming Beach's row was never touched.
+
+Ocean's new luma, 0.0912, stays BELOW every other dry biome (Forest's 0.0534
+is next-darkest), which is what keeps it legible as its own class rather than
+folding into the Hills/Plains band (0.13-0.14) candidate A's hue-matching
+approach would have risked.
+
+### 2.41.4 CONSTRAINT 3: THE COASTLINE IDENTITY WAS NOT COMMITTED
+
+Only `HEX[0]` (Ocean) moved; Beach's `0xb3a184` is byte-identical before and
+after (measured, not merely asserted: three separate builds all read Beach's
+row 372 window to within 0.22 counts of warm, which is float/render noise).
+`pondside`'s REAL water is a different material entirely (RN-57's wet band,
+`uWetBand`/`uWetDir` in `TerrainFragLight.glsl.ts`) and is structurally
+unreachable by a change to `uBiomeColor[0]`, which only `TerrainVertex.
+glsl.ts` reads. The new hex, a cool grey-mud (sRGB 80,85,100), is defensible
+under EITHER of Reid's pending rulings (R5 audit 7.1/7.4): it reads as
+parched, damp-toned lakebed sediment today, and loses nothing in character if
+the class is later flooded, because it was never pushed toward Beach's warm
+sand hue (that was candidate A, rejected).
+
+### 2.41.5 GUARDS
+
+- `meadow` (Plains, no Ocean pixels) proved **BIT-IDENTICAL by an actual
+  stash-and-rebuild pair**, not asserted from the single-table-entry argument
+  alone: `git stash` reverted to the pre-lane tree, rebuilt, captured
+  (`RN2635_meadow_BASELINE.png`, box 72.94/92.61/48.26, warm 24.68, luma
+  85.23, all six extra rects), `git stash pop` restored this lane's changes,
+  rebuilt (sentinel-verified same bundle hash as the shipped candidate-B
+  build), recaptured (`RN2635_meadow_after.png`) -- every printed number
+  matched to the digit.
+- `rn2550guard` (`check:guard`, its own isolated `vite preview` + sentinel),
+  run TWICE across this lane's edits: **exit 0 both times**, four poses
+  judged, `forestairnoon` the one pre-existing standing violation (rendering.md
+  2.35/2.40), the four pinned `rho` values UNMOVED at
+  0.1019/0.3747/0.2974/0.5130 -- the same pins 2.40.3 reproduced, confirming
+  structurally that no crown/wood/clearing rectangle sees the Ocean row at
+  all.
+- `npm run check`: **9 of 9**. `npx tsc --noEmit`: exit 0. `npm run build`:
+  exit 0, sentinel-verified served bundle matches disk on every rebuild
+  (`index-uCuiskWV.js` both for the shipped candidate-B build and its
+  identical re-derivation after the stash round-trip).
+- Every non-Ocean pose is unreachable by construction: `BiomeIdPaint.ts`'s new
+  code paths are gated behind `uBiomeIdPaint > 0.5` (default/absent = 0, the
+  branch never executes, `lit` untouched), and the palette edit is one array
+  entry read by exactly one line (`TerrainVertex.glsl.ts`'s
+  `uBiomeColor[bi]`).
+
+### 2.41.6 THE HONEST EYE, AND A FINDING NOT CLAIMED SOLVED
+
+`RN2635_crop_before_3x.png` / `RN2635_crop_after_3x.png` (`forestair`,
+x[1100,1600) y[320,420), 3x) at the row-372 boundary: the plate **still reads
+as a lake with a sand shore** in the after crop. The measured 49.5 per cent
+chroma-step reduction is real (verified on screen, not asserted from albedo
+alone) but visually subtle, and even candidate A's 91-per-cent closure barely
+changed the impression at this crop (`RN2635_crop_candA_3x.png`). **This says
+the "reads as water" perception is carried by the plate's SHAPE (a smooth,
+sharply-bounded, roughly elliptical depression) and its flat, untextured
+VALUE DIP at least as much as by its hue** -- a real desert basin at this
+altitude would still show some of the terrain's own relief/splat noise
+matching its surroundings, and the Ocean class currently has none. **No
+hue-only edit inside `BiomePalette.ts`'s two rows can fully discharge "no
+longer reads as water" while that is true**, and reaching further into hue
+alone (candidate A, or further) trades away legibility without reliably
+buying the eye test, per 2.41.3's tonemap-compression finding. **Routed to
+Admin as an open item, not claimed solved**: whether Ocean/dry-basin terrain
+should carry its own relief/splat variation is a question for whichever lane
+or ruling eventually answers "is Ocean water or desert" (R5 audit 7.1/7.4),
+since a desert answer would want visible ripple/crack texture and a water
+answer would want the class replaced outright.
+
+### 2.41.7 FILES AND RAILS
+
+**TOUCHED:** `web/src/render/materials/BiomePalette.ts` (Ocean's `HEX[0]`
+only, plus its own documentation block; Beach and every other row byte-for-
+byte unchanged), `web/src/render/materials/BiomeIdPaint.ts` (new),
+`web/src/render/materials/TerrainVertex.glsl.ts` (`vBiomeIdx` varying, one
+assignment line), `web/src/render/materials/TerrainFragPars.glsl.ts`
+(`vBiomeIdx` + `uBiomeIdPaint` declarations), `web/src/render/materials/
+TerrainFragLight.glsl.ts` (the paint override, after both aerial-perspective
+calls, before `gl_FragColor`), `web/src/render/materials/TerrainProgram.ts`
+(binds `uBiomeIdPaint`), `web/tools/smoke/run.mjs` (`biomeid` registered in
+`PAGE_PARAMS`), `docs/web/NUMBERS.md` (the RN-2635 row), this file. Two new
+ad hoc measurement tools kept on `AerialDiag`'s/`rn2510rows.mjs`'s own
+precedent: `web/tools/smoke/rn2635rowscan.mjs` (coarse per-column readout of
+one row, used to resolve the row-372 class sequence) and `web/tools/smoke/
+rn2635hist.mjs` (distinct-colour histogram over a rectangle, used to confirm
+a paint-arm fill is solid rather than a boundary blend).
+
+**NOT TOUCHED:** `web/src/render/materials/BiomeMaterial.ts`, any canopy or
+foliage term, `Atmosphere*`, the horizon rung, `web/wasm/dist/*`,
+`test/expected.json`, any other biome row.
+
+Gates as separate steps, no pipe: `npx tsc --noEmit` 0, `npm run build` 0,
+`cd web && npm run check` **9 of 9**, `node tools/smoke/check-guard.mjs`
+**0** (PASS, 4 of 4 poses judged, 1 pre-existing standing violation, run
+twice across this lane's edits). Server `127.0.0.1:5960`, `--strictPort`,
+sentinel-verified on served bundle hash over the wire before every capture
+batch (`index-DwaMe1ep.js` pre-lane baseline build, `index-2fEZR7tZ.js` the
+git-stash pre-lane rebuild, `index-uCuiskWV.js` the shipped candidate-B
+build, confirmed identical across the stash round trip); PID **6032**, killed
+by PID after this record was written.

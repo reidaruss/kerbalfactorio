@@ -44,6 +44,11 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     uniform float uTime;
     uniform float uFadeDur;
     varying vec3 vBiomeColor;
+    // RN-2635. The raw /core Biome enum index, float-encoded for the varying
+    // interpolator exactly as vMatW/vRelW already are. Read by the biome-id
+    // paint arm ONLY (BiomeIdPaint.ts); every other consumer still reads
+    // vBiomeColor or the per-biome tables below.
+    varying float vBiomeIdx;
     varying vec4 vMatW;
     varying vec4 vRelW;
     varying vec4 vGrain;
@@ -72,6 +77,7 @@ export function terrainVertexShader(depth: DepthPolicy): string {
       // aBiome.x is the /core Biome enum as an unnormalized uint8.
       int bi = int(aBiome.x + 0.5);
       vBiomeColor = uBiomeColor[bi];
+      vBiomeIdx = float(bi);
       // RN-78: texture weights, interpolated across biome edges as vBiomeColor is.
       vMatW = uBiomeMat[bi];
       // RN-148: relief weights ride the same interpolation, same argument.
