@@ -13,7 +13,9 @@
 // apparent cycle costs nothing at runtime.
 
 import { readSlot, slotKey, writeSlot } from './SaveGame.js';
-import { rescueBefore } from './FactoryRescue.js';
+import { keepRescue, rescueBefore } from './FactoryRescue.js';
+import { clearedBodyHalf, fieldGenReport, fieldGenVerdict, fieldStampFor,
+  forgetFieldGen, noteFieldGen } from './FieldStamp.js';
 import { noteSave, saveInhibit } from '../sim/SaveInhibit.js';
 import { adoptWorldFor, keepWorlds } from './SaveWorlds.js';
 import { worldScopeReport } from './WorldScope.js';
@@ -84,6 +86,15 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
     // inferred from a count that happens not to have changed. `frozen` false is
     // every shipped path. See WorldScope.ts.
     world: worldScopeReport(),
+    // PS-53. WHICH GENERATION OF THE HEIGHT FIELD THIS WRITE IS ADDRESSED IN,
+    // and what the last LOAD decided about it, beside `version` and `world` for
+    // the reason PH-366 gave for `version`: a probe has no other way to read
+    // either, so "the stamp is written" and "the pre-swell half was cleared"
+    // have to be checkable rather than claimed. `fieldGen` here is the value in
+    // the BYTES THAT WERE WRITTEN, which after a PS-49 freeze is the frozen
+    // world's and not the live field's.
+    fieldGen: slot.fieldGen ?? null,
+    fieldGenLoad: fieldGenReport(),
     vessels: slot.vessels?.length ?? 0,
     dockedVessels: (slot.vessels ?? []).filter((v) => v.docked !== undefined)
       .length,
@@ -99,10 +110,79 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
   } : null;
 }
 
+/**
+ * PS-53. THE BODY-SCOPED HALF IS CLEARED WHEN THE PLANET UNDER IT HAS MOVED,
+ * AND THE GLOBAL HALF LOADS.
+ *
+ * WHY CLEAR AND NOT REFUSE, with the player's experience for each, because two
+ * of the three options are defensible and the losing ones are recorded here
+ * rather than in a commit message.
+ *
+ *   REFUSE THE WHOLE SLOT, which is what a `SAVE_VERSION` bump does: the world
+ *     slot is unusable but honest. The player loses the pack, the research, the
+ *     milestones, the vessels and the time of day, none of which is about a
+ *     place and all of which is still exactly right. REJECTED, and it is the
+ *     option this whole mechanism exists to avoid: PS-40 and PS-49 separated
+ *     the two halves precisely so this is not the only answer available.
+ *
+ *   REFUSE ONLY THE BODY HALF AND KEEP THE STORED BYTES, freezing the write the
+ *     way PS-49 freezes a switched body: the player keeps the global half, sees
+ *     an empty planet, and NOTHING THEY BUILD ON IT IS EVER SAVED AGAIN.
+ *     REJECTED. PS-49's freeze is reachable only from a debug verb and lasts
+ *     one session; this one would fire at boot for every player on their real
+ *     world and would leave them playing a planet that cannot be saved, which
+ *     is a broken game rather than a preserved one. It is also barely a refusal
+ *     in this container: the autosave writes the same key 20 seconds later, so
+ *     "refuse but leave the bytes" only means anything while something stops
+ *     the write, and stopping the write is the broken part.
+ *
+ *   CLEAR THE BODY HALF, which is what this does: the player keeps research,
+ *     pack, hotbar, vessels, the day and their vitals, and their edits,
+ *     buildings, structures, pads, stations, antennas and depletion on THIS
+ *     body are gone, with a message saying so. That is strictly more of their
+ *     world than a refusal keeps, and it is the only option that leaves them
+ *     with a planet they can go on playing.
+ *
+ * THE COPY IS TAKEN FIRST, and FS-79's machinery is reused verbatim because
+ * this is the same event one migration later: a load-time decision that eats a
+ * base is unrecoverable, and the copy goes in FS-79's own separate database so
+ * nothing that sweeps the save store can take the backup with it.
+ *
+ * IT IS BEST EFFORT HERE AND IT IS A PRECONDITION THERE, and the difference is
+ * worth stating because the contract is FS-79's. A rescale that cannot be
+ * backed up simply does not run, and the world loads unmigrated, which is a
+ * legal state. There is no such state here: the stored body half describes a
+ * surface that does not exist, so "do not clear" would mean loading buildings
+ * into the air. So the copy is attempted, its success is REPORTED rather than
+ * required, and a failure changes the message and not the decision.
+ */
+async function fieldGenAdopt(g: Gameplay, stored: SaveSlot,
+                             view: SaveSlot): Promise<SaveSlot> {
+  const live = fieldStampFor(g.core, g.bodyHandle);
+  const verdict = fieldGenVerdict(view.fieldGen, live);
+  const base = { verdict, body: g.bodyId, stored: view.fieldGen ?? null, live };
+  if (verdict === 'match') {
+    noteFieldGen({ ...base, cleared: false, rescue: '' });
+    return view;
+  }
+  const rescue = await keepRescue('fieldgen', slotKey(g.mode.mode), stored);
+  noteFieldGen({ ...base, cleared: true, rescue });
+  // Loud, never silent (PS-49's rule): the console line carries the numbers and
+  // the rescue key, which the toast has no room for and which is what makes the
+  // copy findable rather than a copy nobody can locate.
+  console.warn(`[of] the height field has changed since this world's body ${g.bodyId} `
+    + `half was saved (stored ${view.fieldGen ?? 'none'}, live ${live}); it is CLEARED `
+    + `and the global half is kept. Copy of the old slot: ${rescue || 'NOT WRITTEN'}`);
+  return clearedBodyHalf(view, g.bodyId, live);
+}
+
 export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
   // PS-41. CLEARED FIRST, so every exit that is not an accept leaves nothing
   // behind, including one added later (SaveWorlds.ts).
   keepWorlds([]);
+  // PS-53, PS-41's own rule one field over: a boot that never got as far as the
+  // field-generation question must not report the previous boot's answer.
+  forgetFieldGen();
   const read = await readSlot(g.mode.mode);
   const slot = read.slot;
   // DW-31. A slot refused for its MODE is said out loud rather than dropped: a
@@ -122,7 +202,11 @@ export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
   // cannot be done by halves. `apply` is handed a slot whose body-scoped half is
   // THIS body's world; every other body's is held for the next write. Nothing
   // below knows a second body exists: the twelve restore steps are untouched.
-  const { view, ...carried } = adoptWorldFor(slot, g.bodyId);
+  const { view: bodyView, ...carried } = adoptWorldFor(slot, g.bodyId);
+  // PS-53. AND IS IT ADDRESSED IN THE PLANET THAT EXISTS? The line above chose
+  // which body's world to read; this decides whether that world can still be
+  // read at all. See `fieldGenAdopt` below for the whole argument.
+  const view = await fieldGenAdopt(g, slot, bodyView);
   // FS-79. THE RESCUE COPY, TAKEN BEFORE `apply` TOUCHES ANYTHING, and returning
   // '' both when none was needed and when one could not be written. Passing it in
   // is what makes it a PRECONDITION: `restorePlan` will not re-space a plan
@@ -134,6 +218,20 @@ export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
   g.hotbarBar.invalidate();
   g.panel.invalidate();
   const dug = g.restored.voxels.cells;
+  // PS-53. THE FIELD-GENERATION MESSAGE IS THE LAST ONE WRITTEN AND IT REPLACES
+  // THE COUNTS, because `GameHud.flash` overwrites the toast rather than
+  // queueing: a "restored 0 buildings, 0 items" written after this one would
+  // hide the only sentence that explains it, and "0 buildings" with no reason
+  // is exactly the silent-empty-world alarm DW-31 says never to give. The
+  // counts are still on the ledger and on the save receipt for a probe.
+  const gen = fieldGenReport();
+  if (gen !== null && gen.cleared) {
+    g.hud.flash('this world was saved on an older version of this planet, so its '
+      + 'buildings and tunnels here were not restored; your items and research '
+      + `are intact${gen.rescue === '' ? ' (the old save could NOT be copied aside)'
+        : ' and the old save was copied aside'}`, 8);
+    return g.restored;
+  }
   g.hud.flash(`restored ${g.restored.buildings} buildings, `
     + `${g.restored.packUnits} items`
     + (dug > 0 ? `, ${dug} m³ of tunnel` : ''), 2.6);

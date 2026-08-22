@@ -36,6 +36,7 @@ import { saveAntennas, restoreAntennas, rebuildRevealMarkers } from './AntennaSa
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
   type VoxelPort, type TerrainDigPort } from './VoxelSave.js';
 import { keptWorlds } from './SaveWorlds.js';
+import { fieldStampFor } from './FieldStamp.js';
 import { slotForBody } from './WorldScope.js';
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
 import { discAbi } from '../sim/wasm/discabi.js';
@@ -156,6 +157,14 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     // beside `seed` and `mode` because they are the same kind of fact and this
     // is the one place a slot is built. See SaveWorlds.ts for all of it.
     body: bodyId,
+    // PS-53. WHICH GENERATION OF THE HEIGHT FIELD THE FIFTEEN FIELDS BELOW ARE
+    // ADDRESSED IN, read off the LIVE body handle, which is the same handle the
+    // ground under them was built from. Beside `body` because it is the same
+    // kind of fact: `body` says which planet, this says which version of it.
+    // A frozen world (PS-49) overrides it below with the stamp captured at the
+    // freeze, which is the right one for exactly the same reason the frozen
+    // fields are: it was read while the populations were still that body's.
+    fieldGen: fieldStampFor(M, bodyHandle),
     others: keptWorlds(),
     // DW-31. The mode is written into the slot as well as deciding its key, so
     // a world can always answer what it is without anybody consulting where it
