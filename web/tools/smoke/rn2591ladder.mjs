@@ -166,11 +166,21 @@ for (const shot of shots) {
       + `    ${rho0 === null ? '  --  ' : rho0.toFixed(4)}   ${where}`
       + (cn ? `   [meanUp ${cn.meanUp.toFixed(3)} outPlane`
         + ` ${cn.minAbsOutOfPlane.toFixed(3)} down ${cn.downVerts}]` : '')
-      // THE MATERIAL-SIDE REQUESTS, READ BACK OFF THE PAGE. RN-2268: an arm
-      // that changes nothing is only interesting once the ask is proved to have
-      // arrived, and `?canopyenv=` measures as an exact zero (2.39.10), so this
-      // column is what separates "the term is absent" from "the flag was
-      // dropped".
+      // THE MATERIAL-SIDE REQUESTS, READ BACK OFF THE PAGE, AND THE THING THIS
+      // COLUMN CANNOT DO. RN-2268: an arm that changes nothing is only worth
+      // reading once the ask is proved to have arrived. **BUT AN ARRIVED ASK
+      // AND A SURVIVING VALUE ARE NOT THE SAME THING, and an earlier version of
+      // this comment said this column separates "the term is absent" from "the
+      // flag was dropped", which is a FALSE DICHOTOMY and cost RN-2590 a wrong
+      // conclusion.** There is a third case and `?canopyenv=` is in it: the
+      // flag parsed, the write reached the material, and
+      // `WebGLRenderer.js:2694-2696` overwrote the uniform from
+      // `scene.environmentIntensity` before the draw. This column proves the
+      // REQUEST, never the OUTCOME. When an arm measures an exact zero, the next
+      // step is a control that DELETES the suspected source (here
+      // `?ibldiag=noenv`, which moves the same rectangle -37.48 per cent), not a
+      // wider sweep and not this readback. See rendering.md 2.39.10 and
+      // NUMBERS.md's "a readback proves the query parsed" trap.
       + (() => {
         const s = (e.treeline ?? {}).self ?? null;
         if (s === null) return '';

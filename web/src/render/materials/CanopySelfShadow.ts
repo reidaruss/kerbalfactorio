@@ -303,7 +303,30 @@ export const CROWN_SELF_AMP = 1;
  * to the value** and ships **the switch that was missing**, which is RN-952's
  * rule: a term with no switch is the one candidate no experiment can eliminate.
  *
- * WHY ROUGHNESS CANNOT REACH IT, now that the measurement says so. Roughness
+ * WHY ROUGHNESS CANNOT REACH IT, now that the measurement says so.
+ *
+ * **BOTH OF THIS BLOCK'S TWO CLAIMS ARE NOW QUALIFIED, corrected 2026-08-22 by
+ * RN-2590 and its fresh-context verifier, and it is annotated here rather than
+ * only at the sibling block 110 lines below because a reader arriving at this
+ * heading must not take it at face value.** (a) "Roughness cannot reach it"
+ * held only in the **0.8-to-1.0 window** it was swept in, and not even there on
+ * the current build: `?canopyrough=0.05` moves the `crowns` rectangle **+1,334
+ * per cent** (0.001566 to 0.022454) and `?canopyrough=1.0` moves it **-24.97
+ * per cent**, where 2.38.4 read -1.6 per cent of the specular at that same
+ * endpoint on the PRE-LANE normal. The handle reaches the term; what is refused
+ * is the fully-rough DIRECTION. (b) "`envMapIntensity` is the handle" is FALSE
+ * as an actionable statement: RN-2590 built it and it is a DEAD SWITCH, because
+ * `WebGLRenderer.js:2694-2696` overwrites the uniform from
+ * `scene.environmentIntensity` every frame while the material has no own
+ * `envMap` and `SkyIbl.ts:133`'s environment is set. **The PMREM DIAGNOSIS
+ * below is CORROBORATED** -- `?ibldiag=noenv` removes the environment and moves
+ * the same rectangle -37.48 per cent -- **with one honest limit: that control
+ * deletes the environment's DIFFUSE and its SPECULAR together, so it proves the
+ * environment is a LARGE term and does not by itself prove the "almost
+ * entirely" below.** The live handle is `scene.environmentIntensity` or an own
+ * `envMap`. See rendering.md 2.39.10.
+ *
+ * Roughness
  * moves three's DIRECT lobe hard (the GGX `D` term peaks as `1/alpha^2`) and
  * its INDIRECT one barely at all: the split-sum environment BRDF for a
  * dielectric at `F0 = 0.04` is nearly flat in roughness. In three 0.185.1 that
@@ -419,11 +442,15 @@ export function canopyRoughnessOverride(): number | null {
  * 2.38.4 measured the only handle the project had for it -- roughness -- moving
  * that share by under 2 per cent either way, the WRONG WAY at one of the two
  * binding poses. **THAT HELD ONLY IN THE 0.8-TO-1.0 WINDOW IT WAS SWEPT IN, and
- * the general form of it is false: RN-2590's verifier ran `?canopyrough=0.05`
- * and the crown's specular rose 1,334 per cent, i.e. roughness reaches this
- * term 14x over at the sharp end.** What 2.38.4 actually established is that
- * the fully-rough direction is exhausted, not that the handle is disconnected;
- * corrected here 2026-08-22.* The block above explains why: in three 0.185.1 the indirect
+ * not cleanly even there. RN-2590's verifier ran `?canopyrough=0.05` and the
+ * `crowns` RECTANGLE rose 1,334 per cent (0.001566 to 0.022454); it ran
+ * `?canopyrough=1.0` and the same rectangle FELL 24.97 per cent, against
+ * 2.38.4's -1.6 per cent of the SPECULAR at that endpoint on the pre-lane
+ * normal.** Note the quantity: those are the whole rectangle, the same quantity
+ * the -37.48 per cent environment control is a fraction of, and NOT the
+ * specular in isolation, whose own rise at 0.05 must be larger still if the
+ * diffuse held fixed. What survives of 2.38.4 is that the FULLY-ROUGH direction
+ * is exhausted; the handle is not disconnected. Corrected 2026-08-22.* The block above explains why: in three 0.185.1 the indirect
  * lobe is a SAMPLED split-sum table and is nearly flat in roughness for a
  * dielectric at `F0 = 0.04`, so the crown's specular is almost entirely the sky
  * PMREM lobe scaled by `envMapIntensity`, and NOTHING in this project reached
