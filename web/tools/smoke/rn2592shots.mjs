@@ -36,8 +36,14 @@ const url = argv.get('--url') ?? 'http://127.0.0.1:5590/';
 const ARMS = {
   shipped: [],
   prelane: ['--crownnormal=0'],
-  card035: ['--crowncard=0.35'],
+  card0: ['--crowncard=0'],
   signonly: ['--crownflank=90', '--crowncard=0'],
+  // THE ROUNDNESS ARM, and it is here because the constant it sweeps is the one
+  // the numbers alone cannot pin. A large flank angle keeps the crown's
+  // top-to-flank gradient (the thing `RN2570_crowns_noshade_3x.png` reads as a
+  // canopy) and a small one trades it for pose-invariance; the spread and the
+  // guard both want small and only the eye wants large, so the eye gets a crop.
+  round45: ['--crownflank=45'],
 };
 
 let bad = 0;

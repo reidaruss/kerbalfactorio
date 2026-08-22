@@ -116,6 +116,18 @@ import * as THREE from 'three';
  * leaves `cosT` untouched by construction, so `c` costs nothing in the one
  * quantity that compresses the pose spread.
  *
+ * AND AT `c = 1` THE CONSTRUCTION HAS NO FREE AZIMUTH LEFT, which is why the
+ * shipped value is 1 rather than a tuned fraction. The plan radial then enters
+ * ONLY through its magnitude, as `sinT`; the direction is the card's own
+ * authored normal at every vertex. In one sentence: **the dome says how far off
+ * vertical, the card says which way that tilt faces.** Nothing arbitrary is left
+ * to choose, `minAzimuthOut` is 1.0 at every vertex (the coplanarity is gone
+ * entirely rather than reduced), and the interior values are worse on the frame
+ * as well as on the argument: at `crownflank=12`, `forestairnoon` `rho` reads
+ * 0.0954 / 0.0943 / 0.0994 / 0.1075 / 0.1124 at `c` = 0 / 0.35 / 0.6 / 0.8 / 1.0,
+ * a shallow MINIMUM at 0.35 where the two azimuths half cancel and a maximum at
+ * the endpoint.
+ *
  * `n` is used EXACTLY AS AUTHORED. No hemisphere ternary, no epsilon, no tie:
  * quad A's eight components are `(0,0,1)` and quad B's are `(1,0,0)`, constant
  * per quad because the impostor is flat-shaded, so the construction is
@@ -148,8 +160,49 @@ import * as THREE from 'three';
  *   `?foliagenormal=`  still the master gate, unchanged in meaning: `0` is the
  *                      authored glTF bytes for crowns and understorey alike.
  */
-export const CROWN_FLANK_DEG = 42;
-export const CROWN_CARD_MIX = 0.30;
+/**
+ * THE RIM ANGLE, AND IT IS PINNED BY TWO MEASUREMENTS PULLING OPPOSITE WAYS
+ * RATHER THAN BY A DERIVATION, which is stated plainly because pretending
+ * otherwise is how a look constant acquires a fake pedigree.
+ *
+ * WHAT THE DERIVATION GIVES IS A DIRECTION, NOT A VALUE. "The impostor samples
+ * the canopy LAYER" is the statement that its reflectance should not depend on
+ * the pose, and that is measurable: the four-pose spread of `rho0`, the crown's
+ * unshaded unspecular diffuse ratio. Measured on one build, one session, a
+ * fresh process per arm (`rn2591ladder --rho0=1`):
+ *
+ *   pre-lane (`?crownnormal=0`)   8.41x   (0.3719 / 1.7814 / 0.4114 / 3.1268)
+ *   `crownflank=42, card 0.35`    5.48x   (0.3573 / 1.2186 / 0.5010 / 1.9570)
+ *   `crownflank=25, card 0.35`    3.75x   (0.4122 / 1.0374 / 0.5523 / 1.5444)
+ *   `crownflank=12, card 0`       2.23x   (0.4578 / 0.7779 / 0.5857 / 1.0205)
+ *
+ * **MONOTONE, WITH NO KNEE.** The layer statement is satisfied better the
+ * smaller the angle gets, and its limit is a flat plate. So it gives no value.
+ *
+ * THE TWO BOUNDS THAT DO. Above, `rn2550guard`'s standing violation at
+ * `forestairnoon` may be repaid and never deepened, and at `crowncard=1` the
+ * pose's `rho` reads 0.1124 / 0.1016 / 0.0938 / 0.0865 at 12 / 25 / 35 / 45
+ * degrees against a floor of 0.0942, so **anything past about 30 degrees fails
+ * the guard**. Below, the crown stops reading as a rounded mass: at 12 degrees
+ * the baked mean `|up|` is 0.986 and the top-to-flank gradient that
+ * `RN2570_crowns_noshade_3x.png` reads as a canopy is nearly gone.
+ *
+ * **12 degrees is chosen inside those bounds for the guard margin the 0.005
+ * tolerance demands (+0.0132 of repayment against +0.0024 at 25 degrees), and
+ * the roundness it trades is published rather than argued: RN-2590's own
+ * `RN2590_crowns_round45_3x.png` is the 45-degree crop, which the guard
+ * refuses.** A later lane that buys headroom at `forestairnoon` should raise
+ * this angle first, and the crop is what it should raise it against.
+ */
+export const CROWN_FLANK_DEG = 12;
+/**
+ * ONE, AND IT IS AN ENDPOINT RATHER THAN A TUNING. See the header's own
+ * paragraph: at `c = 1` the azimuth is the card's authored normal at every
+ * vertex, nothing arbitrary is left to choose, the coplanarity is gone entirely
+ * (`minAzimuthOut` 1.0 rather than reduced), and the interior values measure
+ * WORSE on the frame as well (a shallow minimum at 0.35).
+ */
+export const CROWN_CARD_MIX = 1.0;
 
 const num = (key: string, def: number, lo: number, hi: number): number => {
   const raw = new URLSearchParams(self.location.search).get(key);

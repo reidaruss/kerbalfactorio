@@ -12964,3 +12964,191 @@ rewritten), `FoliageTone.ts` (`sat 1.08` stands; not edited at all), any
 row -- this lane added none, not even an additive one). **No ratchet ceiling
 raised, moved or re-derived; the one candidate that would have required it is
 reported as a FAIL in 2.38.3.** No em dash anywhere.
+
+## 2.39 THE CROWN IMPOSTOR GETS THE CANOPY LAYER'S NORMAL, THE POSE SPREAD COLLAPSES FROM 8.41x TO 2.23x, AND FIXING THE NORMAL PROVES THE BAND UNREACHABLE FROM THE NORMAL TOO (RN-2590 to RN-2593, 2026-08-22, `lane/n12-crownnormal`)
+
+> 2.38.7 item 1, taken. Base `origin/main` at `9bd891ca`. Branch
+> `lane/n12-crownnormal`, pushed, **not merged to main**. Server
+> `127.0.0.1:5590`, `--strictPort`, sentinel `dist/of-sentinel-rn2590.txt` whose
+> **CONTENT** was fetched back over the wire on each of four builds (tokens
+> `RN2590-BASE-Q7T`, `RN2590-CAND-M3W`, `RN2590-CAND2-P8H`, `RN2590-FINAL-Z6R`),
+> never a status code. PIDs 26240 / 28684 / 26908 / 29468, all owned by this
+> lane and killed by it. `npx tsc --noEmit`, `npm run build` and
+> `cd web && npm run check` run as SEPARATE steps with each exit status read on
+> its own.
+
+### 2.39.2 THE DEFECT, RE-CONFIRMED FROM THE SHIPPED BYTES, AND THE TEAR IS EXACTLY ONE VERTEX PER TREE
+
+2.38.1a's two degeneracies were re-derived from `props_canopy.glb` with a manual
+glTF parse (JSON chunk plus BIN chunk, accessors read directly) that shares no
+code with three, the loader or the render path. Every `OF_Canopy` part is
+`_impostor()`'s two crossed quads: **8 vertices, 4 triangles, flat-shaded**,
+`cx` and `cz` exactly 0, `lo` exactly 0. The Broadleaf, verbatim:
+
+| vert | position | authored normal | `n . d` | `sgn` | baked `up` |
+|---|---|---|---:|---:|---:|
+| v0 | (-4.20, 0.00, 0.00) | (0,0,1) | 0.000e+0 | +1 | 0.0000 |
+| v1 | (+4.20, 0.00, 0.00) | (0,0,1) | 0.000e+0 | +1 | 0.0000 |
+| v2 | (+4.20, 10.50, 0.00) | (0,0,1) | 0.000e+0 | +1 | 0.9285 |
+| v3 | (-4.20, 10.50, 0.00) | (0,0,1) | 0.000e+0 | +1 | 0.9285 |
+| v4 | (-0.00, 0.00, +5.25) | (1,0,0) | **-2.572e-16** | **-1** | 0.0000 |
+| v5 | (+0.00, 0.00, -5.25) | (1,0,0) | +2.572e-16 | +1 | 0.0000 |
+| v6 | (+0.00, 10.50, -5.25) | (1,0,0) | +2.572e-16 | +1 | +0.8944 |
+| v7 | (-0.00, 10.50, +5.25) | (1,0,0) | **-2.572e-16** | **-1** | **-0.8944** |
+
+Three things this adds to 2.38.1a, all of them from the bytes:
+
+1. **THE RESIDUE IS `cos(pi/2)` TIMES THE HALF-WIDTH, and it is per-species.**
+   `harvest_common.crossed_quads` builds the second quad at `ang = a + pi/2`, so
+   its `x` is `hw * cos(pi/2)` = `hw * 6.123e-17`: **2.572e-16** on the Broadleaf
+   (`hw` 4.20), **1.179e-16** on the Pine, **8.879e-17** on the Fir. Quad A's `z`
+   is EXACTLY zero, `0 < 0` is false, and quad A therefore resolves `+1`
+   uniformly and does not tear. **Only the yawed quad tears, and it tears
+   because of a number the asset never intended to author.**
+2. **THE TEAR IS ONE VERTEX PER TREE, NOT ONE TRIANGLE IN FOUR.** `v7` is the
+   only vertex with a NEGATIVE baked `up`; `v4` is also inverted but sits at the
+   base where `up` is 0 either way, so it inverts a horizontal radial rather
+   than a vertical. The bake readback counts **`downVerts` 3 of 24** across the
+   three trees. Both of quad B's triangles carry an inverted vertex, and the
+   interpolated normal across `(4,6,7)` sweeps from `+0.994` up to `-0.994` down
+   along one top edge.
+3. **THE IMPOSTOR SPANS THE WHOLE TREE, NOT THE CROWN.** `_impostor` builds the
+   quad from `z0 = height * crown_lo` upward, but `pc.build_atlas` refits it to
+   the same box as LOD0, so the shipped card runs `lo = 0` to `hi = height`. The
+   "crown height" the anchor is derived against is therefore the tree's height.
+
+### 2.39.3 A THIRD DEGENERACY, FOUND BY FIXING THE SECOND, AND IT IS WHY THE SIGN FIX MEASURES AS A REGRESSION
+
+`OF_Canopy` is `doubleSided: true` in the glTF (`of_lib.DOUBLE_SIDED` carries
+`Canopy`), so three multiplies the WHOLE shading normal by `faceDirection` on a
+back face. A crossed quad is planar, so from any camera each quad is entirely
+front-facing or entirely back-facing, and the per-instance yaw makes that a coin
+flip: **about half of every stand's drawn card area is lit with its baked normal
+NEGATED, tops for bottoms.**
+
+That is a third degeneracy, it is not in 2.38.1a, and it is what makes the sign
+fix look like a regression. Isolated on one build with one flag
+(`?crownflank=90&crowncard=0` against `?crownnormal=0`, i.e. RN-1766's own
+anchor with the tie removed and nothing else changed), `forestairnoon` `rho`
+falls **0.0992 to 0.0748, a quarter of the crown's luminance**. The reason is
+that on a back-facing quad every correctly-signed normal points down and
+contributes nothing, and the one INVERTED vertex was the only one pointing up.
+**The tear was accidentally supplying the light the face negation was taking
+away.** Two wrongs were making a partial right. It is filed as its own trap in
+`docs/web/NUMBERS.md`.
+
+**IT IS NOT FIXED HERE, AND THE REASON IS SCOPE RATHER THAN DIFFICULTY.** The
+two candidate fixes both leave the bake: a fragment-stage `normal.y =
+abs(normal.y)` scoped to `OF_Canopy` by a define (the canopy has no
+`onBeforeCompile` of its own, so it would have to enter `PropWind`'s shared
+hook), or duplicating the four triangles with reversed winding and moving the
+material to `FrontSide`. The first is one line and a per-fragment cost the brief
+excluded; the second doubles the impostor's triangles. **Routed in 2.39.10 item
+1 with the measurement that sizes it.**
+
+### 2.39.4 THE CONSTRUCTION, AND THE TWO ANSWERS IT IS NOT
+
+The full derivation, with the arithmetic, is in
+`web/src/render/instancing/CrownNormal.ts`'s header, which is where a constant's
+argument belongs. The short form is that neither obvious answer works:
+
+- **NOT the card's own normal.** That is `?foliagenormal=0`: two vertical walls,
+  `cos(elevation)` against the clearing's `sin(elevation)`, and 2.38.1a measured
+  the pose spread exploding to 63.5x.
+- **NOT the crown's own SURFACE normal either.** Fit a spheroid to the Fir
+  impostor's own box (mean plan half-extent 1.275 m against 16.5 m of height)
+  and the implicit gradient `(rx/A^2, (y-yc)/B^2, rz/A^2)` is horizontal-
+  dominated everywhere off the pole, because `A << B`. A slender conifer's true
+  surface normal really is nearly horizontal, and adopting it walks straight
+  back into the wall.
+
+What the impostor is a sample of is the canopy **LAYER**, which is also the
+quantity `rn2550guard`'s band is derived on: 0.18 to 0.75 is a CLOSED-CANOPY
+reflectance against a clearing, a property of a rough horizontal layer seen from
+above and not of one leaf mass seen from the side. So:
+
+```
+dome(p) = normalize( px - cx,  (py - lo) + q,  pz - cz )      q = R / tan(theta)
+cosT    = dome.y            sinT = |dome.xz|
+a       = normalize( dome.xz * (1 - c) + n.xz * c )
+crown(p)= ( a.x * sinT,  cosT,  a.z * sinT )
+```
+
+with `R` the part's own mean plan half-extent (measured off the vertices, which
+for a crossed quad is exactly `(ax + az)/2`), `theta = CROWN_FLANK_DEG` the angle
+from UP the shading normal takes at the widest rim, and `c = CROWN_CARD_MIX`.
+Three properties are worth stating because each answers a specific defect:
+
+1. **DETERMINISTIC BY CONSTRUCTION, NOT BY EPSILON.** There is no sign ternary.
+   `dome` is taken outward from a point BELOW the base, which is the only
+   hemisphere a crown has; `n` is used exactly as authored and is constant per
+   quad because the impostor is flat-shaded. The tie that produced the tear is
+   not resolved, it is absent, and `downVerts` is 0 by construction.
+2. **THE ANCHOR CANNOT FIX THE COPLANARITY AND THE CARD MIX CANNOT FIX THE
+   SPREAD, so both terms are needed.** Any anchor ON THE AXIS gives an in-plane
+   `d`, because a plane through the axis contains every direction from every
+   point of that axis; a raised centroid included. And `n` is horizontal on
+   every impostor quad, so mixing it into the whole vector spends the up
+   component it is trying to keep (measured: at `crownflank=25` the baked mean
+   `|up|` fell 0.947 to 0.871 as a straight `dome*(1-c) + n*c` went from 0 to
+   0.3). Splitting the dome's POLAR angle from its AZIMUTH and mixing only the
+   azimuth makes the two terms orthogonal.
+3. **`c = 1` IS AN ENDPOINT, NOT A TUNING.** At `c = 1` the plan radial enters
+   only through its magnitude and the azimuth is the card's authored normal at
+   every vertex: the dome says how far off vertical, the card says which way
+   that tilt faces. Nothing arbitrary is left to choose, `minAzimuthOut` is 1.0
+   at every vertex, and the interior values measure worse on the frame as well.
+
+### 2.39.5 THE SEARCH, one build, one session, a fresh process per arm
+
+`web/tools/smoke/rn2591ladder.mjs` takes `rn2550guard`'s own `rho` in ONE
+browser run per candidate (the clearing is a `?canopy=0` arm and every knob here
+is a canopy setting, so it is measured once per pose and reused, with
+`--verifyclear=1` re-measuring it under the last candidate: **crowns 0.000 per
+cent** at every pose). `forestairnoon`, whose recorded standing violation is
+`rho` 0.0992 and whose guard floor is therefore **0.0942**:
+
+| `crownflank` | `crowncard` | `rho` | against the pin | baked mean `|up|` |
+|---:|---:|---:|---:|---:|
+| pre-lane (`?crownnormal=0`) | | 0.0992 | reproduces the pin **to the digit** | 0.483 |
+| 90 | 0 | 0.0748 | -0.0244 **FAIL** (the sign fix alone; see 2.39.3) | 0.483 |
+| 18 | 0.35 | 0.0896 | -0.0096 **FAIL** | 0.971 |
+| 12 | 0 | 0.0954 | -0.0038 | 0.986 |
+| 12 | 0.35 | 0.0943 | -0.0049 | 0.986 |
+| 12 | 0.6 | 0.0994 | +0.0002 | 0.986 |
+| 12 | 0.8 | 0.1075 | +0.0083 | 0.986 |
+| **12** | **1.0** | **0.1124** | **+0.0132 REPAID** | 0.986 |
+| 8 | 0.7 | 0.1083 | +0.0091 | 0.993 |
+| 6 | 0.35 | 0.1041 | +0.0049 | 0.996 |
+| 25 | 1.0 | 0.1016 | +0.0024 | 0.947 |
+| 35 | 1.0 | 0.0938 | -0.0054 **FAIL** | 0.902 |
+| 45 | 1.0 | 0.0865 | -0.0127 **FAIL** | 0.845 |
+
+Two shapes in that table decided the constants. **`crowncard` is NON-MONOTONE
+with a shallow minimum at 0.35**, where the radial azimuth and the card azimuth
+half cancel, and its best value is the endpoint 1.0. **`crownflank` is monotone
+and the guard caps it at about 30 degrees.** `rho` at `flyoverlow`, the pose
+2.38.7 warned the shipped bend was the only thing holding inside the band, moves
+the safe way at every one of these settings: 0.7021 pre-lane against 0.3303 /
+0.3572 / 0.3784 / **0.3896** / 0.3743 at `crownflank=12` with `c` = 0 / 0.6 /
+0.8 / 1.0 and at `crownflank=8, c=0.7`.
+
+And the four-pose spread of `rho0`, the crown's unshaded unspecular diffuse
+ratio and the quantity 2.38.3's "8.3x" is a spread OF (`--rho0=1`, four poses,
+`forestairnoon` / `forestairlow` / `flyovernoon` / `flyoverlow`):
+
+| arm | `rho0` spread | the four values |
+|---|---:|---|
+| pre-lane | **8.41x** | 0.3719 / 1.7814 / 0.4114 / 3.1268 |
+| `crownflank=42, c=0.35` | 5.48x | 0.3573 / 1.2186 / 0.5010 / 1.9570 |
+| `crownflank=25, c=0.35` | 3.75x | 0.4122 / 1.0374 / 0.5523 / 1.5444 |
+| `crownflank=12, c=0` | **2.23x** | 0.4578 / 0.7779 / 0.5857 / 1.0205 |
+
+`rho`'s own spread over the same four poses goes **7.08x to 3.46x** on the same
+pair of arms. The pre-lane column reproduces 2.38.2's table on a different
+build with a different script; the small differences (8.41x here against 8.28x
+there, `rho0` 0.3719 against 0.3925) are one definitional choice, stated so it
+is not mistaken for drift: `rn2591ladder` divides each arm by **its own**
+coverage, because `?crownshade=0` changes how many card pixels quantise to
+exactly black, where `rn2570spread` borrows the cards arm's `f` for all of them.
+Every spread in this section is computed on one definition throughout.
