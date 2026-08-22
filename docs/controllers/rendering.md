@@ -13375,3 +13375,40 @@ stands, exactly as briefed.
    sections. A lane that needs the absolute per-crown-pixel radiance should fix
    the coverage instrument first; `?terrainpaint=1` plus a NON-zero paint colour
    would remove the threshold-at-zero problem entirely.
+
+### 2.39.12 GATES, RAILS AND FILES
+
+**TOUCHED:** `web/src/render/instancing/CrownNormal.ts` (NEW, the construction,
+its derivation, the three switches and the bake readback),
+`web/src/render/instancing/PropGeometry.ts` (one parameter on `normalize` and
+the crown branch inside the existing `bake === 'foliage'` arm),
+`web/src/render/instancing/PropLibrary.ts` (one imported predicate and one
+argument), `web/src/render/instancing/SurfaceBind.ts` (one guarded
+`envMapIntensity` write inside the existing `canopy` branch),
+`web/src/render/materials/CanopySelfShadow.ts` (`canopyEnvOverride` and one
+`canopySelfNow()` field, both additive),
+`web/src/render/materials/TerrainArtHandle.ts` (one additive `treeline()`
+field), `web/tools/smoke/run.mjs` (four `PAGE_PARAMS`, same commit as the code
+that reads them), four new probes (`rn2590norm.mjs`, `rn2591ladder.mjs`,
+`rn2592shots.mjs`, `rn2593untouched.mjs`, all new names, no existing probe
+overwritten, NUMBERS' "a probe file has no registry" scar), this file,
+`docs/web/NUMBERS.md` and `docs/screenshots/RN2590_*`.
+
+**NOT TOUCHED:** `FoliageNormal.ts` (**not edited at all**, which is what makes
+the understorey's bytes identical by construction rather than by measurement),
+`CanopySelfShadow`'s shade law in every part (`CROWN_SELF_K` 3.2,
+`CROWN_SELF_FLOOR` 0.08, `CROWN_SELF_AMP`, `CROWN_SUN_MIN`,
+`crownSpectralSplit`, `CROWN_SPECTRAL_K`, `CROWN_SELF_FLOOR_DERIVED`, the GLSL,
+and `updateCanopyCardShade`), `FoliageTone.ts` (untouched), any `Scatter*`, any
+height field, `web/wasm/dist`, `assets/textures/dist`, `assets/models`
+(the `glb` is READ by this lane's dump and not rewritten), `test/expected.json`,
+and `artframe.js` (no pose row, no rectangle, no manifest row, not even an
+additive one). **`rn2550guard.mjs`'s `BASE` is untouched: no ratchet ceiling
+raised, moved, lowered or re-derived, and the one that rose is reported in
+2.39.8 as a fact rather than absorbed.** No em dash anywhere.
+
+**PER-FRAME COST: NONE, and it is measured rather than asserted.** The bake runs
+once at registration, and `rn2592shots` reads the render counters back on every
+arm of one build. `shipped`, `prelane`, `card0` and `signonly` all report
+**226,133 triangles / 27 draw calls / 53 programs / 114.8 MB** with `p50`
+7.9 to 8.4 ms, which is the WG-189 pair this change would need if it had one.
