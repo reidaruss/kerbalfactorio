@@ -526,6 +526,23 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // value control (same program, term multiplied by zero) and it is the arm
   // that shows why a distant instanced forest without it reads as pepper.
   'prophaze',
+  // RN-2540, and the first two are RN-952's lesson applied: the TERRAIN's copy
+  // of that same aerial-perspective pair had no isolator at all, only the
+  // global `atmos=0` that deletes the sky with it, so the half of every crown
+  // rectangle that the far treeline PAINT draws could be neither charged nor
+  // exonerated for the blue four audits photographed. `terrainhaze=0` is the
+  // value control (one uniform, same program, `mix` at 1 is the identity);
+  // `terrainpaint=1` and `proppaint=1` zero the SOURCE radiance before the two
+  // calls so the fragment renders the additive floor ALONE, which an amplitude
+  // cannot do because it moves `col*T` and `Lin` together. See
+  // `src/render/materials/AerialDiag.ts`.
+  'terrainhaze', 'terrainpaint', 'proppaint',
+  // RN-2540. `propspec=0` removes three's `totalSpecular` from every prop
+  // program (both lobes: the sun's and the sky PMREM's). It is the OTHER
+  // radiance on a canopy card that is not multiplied by the albedo, and it had
+  // no control of any kind before this lane -- `?terrainspec=` is the terrain's
+  // and reaches no prop, and `envMapIntensity` has no page parameter anywhere.
+  'propspec',
   // RN-2385, standing rule 7, and TWO flags because the change makes two
   // claims. World audit R3's rank 3: a running furnace at night put its own
   // frame BELOW an empty meadow, because every emissive in the game was a
