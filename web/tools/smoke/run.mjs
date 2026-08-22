@@ -438,6 +438,27 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // need a page load and cannot have a runtime pair; all three are readable
   // back against what the bake WROTE at `treeline().crownNormal`.
   'crownnormal', 'crownflank', 'crowncard',
+  // RN-2605, the THIRD degeneracy: `OF_Canopy` is `doubleSided` and three
+  // negates the WHOLE shading normal on a back face, so about half of every
+  // stand's drawn card area takes RN-2590's dome normal upside down. FOUR
+  // STATES, on `?propsky=`'s precedent, because the term adds both a VALUE and
+  // a per-fragment COST and one flag cannot separate them:
+  //   `off` the splice is NOT INSTALLED (the pre-RN-2605 programs exactly, and
+  //         the arm the COST is measured against)
+  //   `0`   installed and inert (same program, one uniform apart, and the arm
+  //         the VALUE is measured against)
+  //   `1`   SHIPPED, `UNNEGATE`: the back face keeps the normal the bake wrote,
+  //         which is also rendering.md 2.39.12 item 1's reversed-winding plus
+  //         `FrontSide` candidate's pixel, priced without building the geometry
+  //   `2`   `UPFOLD`, the refused candidate: three's negation kept and the
+  //         result reflected in the tree's own horizontal plane, so the azimuth
+  //         turns toward the viewer. Measured worse on the pose spread of the
+  //         crown's own unspecular diffuse (3.90x against 2.46x); kept
+  //         reachable so the refusal can be re-judged
+  // Read at PROGRAM COMPILE, so it needs a page load and has no runtime pair.
+  // Readable back at `treeline().crownFace` as the live uniform value, the
+  // spliced PROGRAM count, the anchor misses and the material scope.
+  'crownface',
   // RN-47, the underwater view. `underwater=0` removes the pass; the other
   // four tune extinction, tint, scatter and the path clamp.
   'underwater', 'uwext', 'uwtint', 'uwscatter', 'uwpath',

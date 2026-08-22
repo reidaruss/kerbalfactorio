@@ -106,6 +106,8 @@ import { ATMOSPHERE_PARS } from './Atmosphere.glsl.js';
 import { TERRAIN_SKY_AMBIENT } from './TerrainAmbient.js';
 import { injectEmissiveLight } from './EmissiveLight.js';
 import { aerialDiagAmp, uPropPaint } from './AerialDiag.js';
+import { CROWN_FACE_INSTALLED, injectCrownFaceFold, noteCrownFaceMaterial }
+  from './CrownFaceFold.js';
 
 /**
  * THREE STATES, on `StockFill`'s and RN-1201's precedent, because the two
@@ -489,6 +491,38 @@ function hook(shader: Splicable): void { injectPropSkyAmbient(shader, false); }
 function hookFoliage(shader: Splicable): void {
   injectPropSkyAmbient(shader, true);
 }
+/**
+ * RN-2605. The same again, for the CROWN CARD, and it exists only so that
+ * `?wind=0` does not silently drop the face fold.
+ *
+ * `PropWind.hookCrown` is the shipped path: the crown card is foliage, so the
+ * wind owns its one `onBeforeCompile` and chains into here. With `?wind=0` the
+ * wind never installs a hook at all and this standalone one is what the crown
+ * gets, so the fold has to be reachable from both. A fourth module-scope
+ * function object, never a closure, for this file's own program-cache reason.
+ */
+function hookCrown(shader: Splicable): void {
+  injectPropSkyAmbient(shader, true);
+  crownFold(shader);
+}
+/**
+ * RN-2605. AND A FIFTH, for `?wind=0&propsky=off` ALONE.
+ *
+ * Both of those are negative controls, so a reader will ask why the pair is
+ * worth a function. Because with both off there is no hook anywhere and the
+ * fold would be SILENTLY dropped: a later lane measuring `?propsky=off` against
+ * `?propsky=off&wind=0` would be comparing two arms that also differ in the
+ * crown's shading normal, and nothing in either frame would say so. Found by a
+ * fresh-context reviewer before it shipped. The fold is a separate term from
+ * the sky ambient and its own `?crownface=off` is the way to remove it.
+ */
+function hookCrownOnly(shader: Splicable): void { crownFold(shader); }
+function crownFold(shader: Splicable): void {
+  injectCrownFaceFold(shader as unknown as {
+    uniforms: Record<string, THREE.IUniform>;
+    vertexShader: string; fragmentShader: string;
+  });
+}
 
 /**
  * Install the standalone hook, and ONLY where the slot is free. Returns false
@@ -497,15 +531,35 @@ function hookFoliage(shader: Splicable): void {
  * are what say whether it did.
  */
 export function applyPropSkyAmbient(m: THREE.Material, tag: string,
-                                    foliage = false): boolean {
-  if (!PROP_SKY_INSTALLED) return false;
+                                    foliage = false, crown = false): boolean {
   if (m.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile) {
     chained.push(tag);
     return false;
   }
-  const fn = (foliage ? hookFoliage : hook) as unknown;
+  // RN-2605. THE CROWN'S FOLD IS NOT PART OF THE SKY AMBIENT AND MUST NOT BE
+  // TURNED OFF BY IT. This test is ABOVE the `PROP_SKY_INSTALLED` gate rather
+  // than below it: with `?wind=0&propsky=off` there is no other hook anywhere
+  // and the fold would vanish with no report. See `hookCrownOnly`.
+  if (!PROP_SKY_INSTALLED) {
+    if (!(crown && CROWN_FACE_INSTALLED)) return false;
+    m.onBeforeCompile =
+      hookCrownOnly as unknown as THREE.Material['onBeforeCompile'];
+    m.needsUpdate = true;
+    noteCrownFaceMaterial(m, tag);
+    installed.push(tag);
+    return true;
+  }
+  // RN-2605. `crown` implies `foliage`; the pair is passed rather than derived
+  // because the caller already holds both predicates and deriving one from the
+  // other here would be a second copy of "which material is the crown card".
+  // `?crownface=off` falls back to the ordinary foliage hook, so the arm is the
+  // pre-lane program SET and not just the pre-lane program text. `PropWind`'s
+  // `applyWind` carries the full note.
+  const useCrown = crown && CROWN_FACE_INSTALLED;
+  const fn = (useCrown ? hookCrown : foliage ? hookFoliage : hook) as unknown;
   m.onBeforeCompile = fn as THREE.Material['onBeforeCompile'];
   m.needsUpdate = true;
+  if (useCrown) noteCrownFaceMaterial(m, tag);
   installed.push(tag);
   return true;
 }

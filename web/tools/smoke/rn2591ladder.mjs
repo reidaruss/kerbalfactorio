@@ -166,6 +166,18 @@ for (const shot of shots) {
       + `    ${rho0 === null ? '  --  ' : rho0.toFixed(4)}   ${where}`
       + (cn ? `   [meanUp ${cn.meanUp.toFixed(3)} outPlane`
         + ` ${cn.minAbsOutOfPlane.toFixed(3)} down ${cn.downVerts}]` : '')
+      // RN-2605. THE BACK-FACE FOLD's OUTCOME READBACK, on every row, so an arm
+      // that silently failed to reach a program is visible in the table rather
+      // than in a separate run. `mode` is the live uniform value three uploads,
+      // `cmp` is the splice-call count (0 with a nonzero mode is the vacuous
+      // green) and `miss` is the anchor count. It is still not sufficient on
+      // its own: see the note above about requests against outcomes. What
+      // settles it is that mode 0 and mode 1 read different `rho`.
+      + (() => {
+        const cf = (e.treeline ?? {}).crownFace ?? null;
+        return cf ? `   [face ${cf.mode} cmp ${cf.compiles}`
+          + ` miss ${cf.misses.length}]` : '';
+      })()
       // THE MATERIAL-SIDE REQUESTS, READ BACK OFF THE PAGE, AND THE THING THIS
       // COLUMN CANNOT DO. RN-2268: an arm that changes nothing is only worth
       // reading once the ask is proved to have arrived. **BUT AN ARRIVED ASK

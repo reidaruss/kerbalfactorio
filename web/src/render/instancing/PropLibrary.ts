@@ -385,8 +385,14 @@ export class PropLibrary {
     // WIND (RN-97): plants only, the same imported predicate the bake uses,
     // so a rock can never inherit a breeze. Design and ?wind=0 semantics live
     // in PropWind.ts's header.
+    // RN-2605. `crown` picks `PropWind`'s second shared hook, which chains the
+    // back-face normal fold on top of the wind and the sky ambient. Same
+    // imported predicate as the bake five lines up, so "which material is the
+    // crown card" has one definition in the whole file. See CrownFaceFold.ts.
+    const crownCard = isCrownImpostorMaterial(role);
     if (isFoliageMaterial(role)) {
-      applyWind(material as THREE.MeshStandardMaterial, `props:${key}`);
+      applyWind(material as THREE.MeshStandardMaterial, `props:${key}`,
+        crownCard);
     }
     // RN-2201. THE SKY AMBIENT (PropSkyAmbient.ts). Foliage batches already
     // spent their one `onBeforeCompile` on the wind and take the term by that
@@ -395,7 +401,8 @@ export class PropLibrary {
     // it reads the material's current hook to decide which case it is in, and
     // it is a no-op with `?wind=0` on a foliage batch only in the sense that
     // the standalone hook is then the one that carries the term.
-    applyPropSkyAmbient(material, `props:${key}`, isFoliageMaterial(role));
+    applyPropSkyAmbient(material, `props:${key}`, isFoliageMaterial(role),
+      crownCard);
     const cap0 = this.growable ? START_CAPACITY : LEGACY_CAPACITY;
     const mesh = new THREE.BatchedMesh(cap0, MAX_VERTS, MAX_VERTS * 3, material);
     mesh.name = `props:${key}`;

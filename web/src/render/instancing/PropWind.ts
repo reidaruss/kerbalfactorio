@@ -40,6 +40,8 @@
 
 import type * as THREE from 'three';
 import { injectPropSkyAmbient } from '../materials/PropSkyAmbient.js';
+import { CROWN_FACE_INSTALLED, injectCrownFaceFold, noteCrownFaceMaterial }
+  from '../materials/CrownFaceFold.js';
 
 /** Tip displacement scale in metres. Peak per-axis excursion is ~1.5x this. */
 const AMP_M = 0.045;
@@ -116,15 +118,52 @@ function hook(shader: { uniforms: Record<string, { value: unknown }>;
 }
 
 /**
+ * RN-2605. THE CROWN CARD'S HOOK, AND IT IS A SECOND FUNCTION OBJECT ON PURPOSE.
+ *
+ * `OF_Canopy` is `doubleSided` and three negates the whole shading normal on a
+ * back face, so about half of every stand's drawn card area takes RN-2590's
+ * dome normal upside down. `CrownFaceFold.ts` has the derivation and the arms.
+ *
+ * A SEPARATE MODULE-SCOPE FUNCTION OBJECT IS THE SCOPE. Three's program cache
+ * key stringifies `onBeforeCompile`, which the note above treats as a cost to
+ * be avoided; here it is the mechanism. The crown gets its own program and the
+ * understorey's is byte-identical to the pre-lane one BY CONSTRUCTION, so the
+ * `rn2593untouched` pngdiff is a confirmation rather than the proof. It is one
+ * extra program on one material, not one per batch, because this is a module
+ * scope constant exactly like `hook` above.
+ */
+function hookCrown(shader: { uniforms: Record<string, { value: unknown }>;
+                            vertexShader: string; fragmentShader: string }): void {
+  hook(shader);
+  injectCrownFaceFold(shader as unknown as {
+    uniforms: Record<string, THREE.IUniform>;
+    vertexShader: string; fragmentShader: string;
+  });
+}
+
+/**
  * Hook one batch material. Returns whether it was hooked, and the caller does
  * not need to check: with `?wind=0` this is a no-op and the material keeps its
  * stock program. ONE shared function object is assigned everywhere, so three's
  * program cache key (which stringifies onBeforeCompile) is identical across
  * all hooked materials and same-state materials still share one program.
+ *
+ * `crown` picks the second shared object, `hookCrown`. See its own note.
+ *
+ * AND `?crownface=off` FALLS BACK TO `hook`, WHICH IS WHAT MAKES IT A TRUE
+ * PRE-LANE CONTROL. Leaving `hookCrown` assigned with its splice disabled would
+ * still be a distinct `onBeforeCompile` object, so three's program cache would
+ * still build the crown a program of its own and the `programs` count in the
+ * cost pair would read one high for a shader that is character-for-character
+ * the understorey's. The COST arm has to be able to say "the pre-lane program
+ * SET", not "the pre-lane program text".
  */
-export function applyWind(m: THREE.MeshStandardMaterial, tag: string): boolean {
+export function applyWind(m: THREE.MeshStandardMaterial, tag: string,
+                          crown = false): boolean {
   if (!enabled) return false;
-  m.onBeforeCompile = hook;
+  const useCrown = crown && CROWN_FACE_INSTALLED;
+  m.onBeforeCompile = useCrown ? hookCrown : hook;
+  if (useCrown) noteCrownFaceMaterial(m, tag);
   hooked.push(tag);
   return true;
 }
