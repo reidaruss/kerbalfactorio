@@ -369,6 +369,7 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
     // not been bound yet and the ground is painting the fallback.
     treeline(): {
       amp: number; mottle: number; reachM: number; paint: number; far: number;
+      floorShade: number; stand: number; floorLaw: number;
       tone: { r: number; g: number; b: number; live: boolean };
       self: ReturnType<typeof canopySelfNow> & { uniform: [number, number, number] };
       crownNormal: ReturnType<typeof crownBakeReport>
@@ -385,6 +386,12 @@ export function installTerrainArtHandle(s: TerrainUniformState): void {
         // flag having been typed (RN-2268's scar, AerialDiag's remedy).
         paint: s.treelinePaint.value,
         far: s.treelineFar.value,
+        // RN-2661. The arms as the SHADER holds them, on
+        // `paint`'s own reason one line up: an arm proved from the page's
+        // state rather than from the flag having been typed.
+        floorShade: s.treelineMod.value.x,
+        stand: s.treelineMod.value.y,
+        floorLaw: s.treelineMod.value.z,
         tone: {
           r: s.treelineTone.value.x, g: s.treelineTone.value.y,
           b: s.treelineTone.value.z, live: canopyToneNow().live,

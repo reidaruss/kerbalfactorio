@@ -414,6 +414,98 @@ const F_MIN = 0.10;
 // re-pinned because it is the pose the debt is ON and a partial repayment that
 // is not written into the constant is not a repayment.
 //
+// ===========================================================================
+// RN-2661, 2026-08-22. THE RESIDUE IS PAID OUT OF THE PAINT'S COVERAGE, NOT
+// ITS FLOOR. `boxSurf` IS DISCHARGED AND OVER-PAID; `boxShip` IS 84 PER CENT
+// PAID AND THE 0.0036 THAT IS LEFT IS REPORTED AS A SHORTFALL WITH THE ARM
+// THAT PRICES IT.
+// ===========================================================================
+// RN-2645 measured that no ambient-floor handle on either half could close
+// this and routed the residue (0.0225 boxShip / 0.0223 boxSurf against
+// RN-2605's pre-raise 0.9343 / 0.9020) to the paint's ALBEDO or COVERAGE.
+// RN-2661 is that lane. It found a surface the term was lighting WRONG rather
+// than a constant to turn down: over the ground the far canopy does NOT hide,
+// the treeline paint left the bare biome albedo at full sun, i.e. it lit a
+// wood's floor like a clearing. It now multiplies it by the same
+// `ofCrownSelfShade` the crowns take, on the same missing density
+// `vCanopy * (1 - w)`, so the term is identically 1 at the 690 m harvest ring
+// and there is no new ring and no new constant.
+//
+// THE PRE-LANE BASELINE WAS RE-MEASURED IN THIS WORKTREE FIRST and reproduces
+// RN-2645's whole four-pose table to the digit (0.9808/0.9499/0.1890,
+// 0.9429/0.7669/0.2996, 0.9568/0.9243/0.4762, 0.9618/0.8347/0.4016), so every
+// delta below is against a number this lane watched arrive.
+//
+//   at `flyovernoon`                          boxShip / boxSurf
+//   pre-lane                                  0.9568 / 0.9243
+//   the floor shade ALONE (RN-2661)           0.9379 / 0.8823
+//   SHIPPED, floor shade + RN-2665's mottle   0.9448 / 0.8918
+//   ?treelinefloor=0 (the exact pre-lane arm) 0.9568 / 0.9243
+//   ?treelinefloorlaw=1 (leaf-area K*mu)      0.9058 / 0.8071
+//   RN-2605's pre-raise, the debt's target    0.9343 / 0.9020
+//
+// **THE FLOOR SHADE ALONE PAYS -0.0189 / -0.0420, which is 84 and 188 PER
+// CENT of the residue. RN-2665's STAND MOTTLE THEN GIVES BACK +0.0069 /
+// +0.0095 of it, 31 and 43 per cent of what the floor shade bought, and the
+// SHIPPED frame pays -0.0120 / -0.0325, i.e. 53 and 146 PER CENT.** boxSurf is
+// still DISCHARGED with 0.0102 in hand; boxShip is 53 per cent paid with a
+// SHORTFALL of 0.0105.
+//
+// **THE GIVE-BACK IS PHYSICS AND NOT A LEAK, AND IT IS THE INTERACTION THE
+// BRIEF ASKED THIS LANE TO STATE AND MEASURE.** The mottle is mean-preserving
+// in the DENSITY, by construction (each factor is divided by its own measured
+// mean). But cover is `1 - exp(-mu / sinDep)`, which is CONCAVE in mu, so by
+// Jensen a mean-preserving modulation LOWERS the mean COVER. Less cover is
+// more ground showing, and floor-shaded ground is brighter than crown tone, so
+// the wood gets slightly lighter. That is what a wood with clearings in it IS,
+// against a uniformly closed one of the same mean density. **The trade is one
+// flag apart on this build**: `?treelinestand=0&treelinegrove=0` recovers the
+// full 0.9379 / 0.8823 for a lane or an Admin that wants the payment over the
+// structure.
+//
+// **THE PIN BELOW IS THE LANE'S FINAL SHIPPED FRAME AND IS SET ONCE, WHICH IS
+// WHY NO CEILING IS RAISED AT ANY POINT IN THIS LANE'S HISTORY.** The
+// intermediate floor-shade-only build reads 0.9379 / 0.8823, below this pin,
+// and passes against it; the shipped build reads exactly it. Setting 0.9379
+// in the first commit and then moving it to 0.9448 in the second would have
+// been a RAISE of a constant inside one lane, which this file's own rule
+// forbids without a logged decision, and no decision is needed for a change
+// that never has to happen.
+//
+// THE SHORTFALL IS NOT A SHORTFALL OF EFFORT AND THE ARM THAT PROVES IT IS
+// `?treelinefloorlaw=1`, which reads 0.9058 / 0.8071, i.e. 227 and 526 per
+// cent of the debt. That arm runs the sun ray on the LEAF-AREA depth `K * mu`
+// (the crown half's homogeneous model) instead of the crown PLAN index. It was
+// built first, measured on its own build, and REFUSED: `ofTreeCoverMu`, the
+// view-side half of the same expression, is a Boolean crown-overlap law on the
+// plan index, and running the sun ray through a homogeneous leaf soup two
+// lines away would be two different woods in one term. The refusal is a
+// physics decision that costs 0.0036 of a ratchet, and it is written here so
+// the next reader sees the price rather than only the choice.
+//
+// `rho` IS UNMOVED TO FOUR DECIMALS AT ALL FOUR POSES (0.1890 / 0.2996 /
+// 0.4762 / 0.4016 before and after), which is RN-2645's second logged decision
+// measured rather than trusted: it predicted the paint cannot reach `rho`
+// because `rho` is coverage-corrected on the `?terrainpaint=1` arm, and a lane
+// that moved the paint by 0.042 of `boxSurf` has now confirmed it. `f` is
+// likewise unmoved (0.6029 / 0.4447 / 0.5120 / 0.4084).
+//
+// THE OTHER THREE POSES ALSO FELL, FURTHER, AND ARE NOT RE-PINNED, on the
+// precedent rendering.md 2.39.12 item 5 records Admin setting: re-pinning a
+// fall tightens the guard for every later lane on the strength of one build.
+// `flyovernoon` is re-pinned because it is the pose the debt is ON. The other
+// three poses' measured post-lane values are in rendering.md 2.44's four-pose
+// table; they are not copied here, because a number in two files is a number
+// that can disagree with itself.
+//
+// ONE INSTRUMENT INTERACTION IS WORTH THE NEXT LANE'S ATTENTION. Darkening the
+// terrain pushes more of it toward exactly black, so `?proppaint=1`'s
+// blackFrac (`fB`, the arm section 3 already refutes as a coverage
+// instrument) RISES: at `forestairlow` it goes 0.2796 -> 0.4022 against an
+// `fA` of 0.4447. The `fB <= fA + COV_TOL` assertion still holds with 0.0425
+// of margin, but a further darkening of the far paint could trip it, and the
+// failure would be the instrument rather than the frame.
+//
 // Every value below marked RN-2605 was measured on `lane/n13-backface`'s final
 // build, server 127.0.0.1:5605 --strictPort, sentinel CONTENT verified over the
 // wire, served entry chunk `f01db459b1d657f0` verified against `dist`, a fresh
@@ -434,7 +526,13 @@ const BASE = {
   // 0.0225 boxShip and 0.0223 boxSurf are still owed against RN-2605's
   // pre-raise 0.9343 / 0.9020. See the RN-2645 block below for why it is a
   // ceiling and not a shortfall of effort.
-  flyovernoon: { boxShip: 0.9568, boxSurf: 0.9243, boxClearY: 0.288112,
+  // RN-2661/RN-2665: both LOWERED again, in the tightening direction, once,
+  // at the lane's FINAL shipped frame. boxSurf is the debt DISCHARGED (146 per
+  // cent) and boxShip is 53 per cent of it with a 0.0105 shortfall reported
+  // rather than renegotiated. See the RN-2661 block above for the two-step
+  // arithmetic and for why the mottle gives 31 and 43 per cent of the floor
+  // shade's payment back.
+  flyovernoon: { boxShip: 0.9448, boxSurf: 0.8918, boxClearY: 0.288112,
     crownClearY: 0.148116, rho: 0.2488, rhoOut: null },
   flyoverlow: { boxShip: 0.9774, boxSurf: 0.8884, boxClearY: 0.147985,
     crownClearY: 0.078325, rho: 0.7021, rhoOut: null },

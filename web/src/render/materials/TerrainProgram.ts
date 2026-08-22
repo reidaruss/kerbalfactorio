@@ -41,7 +41,7 @@ export function makeTerrainMaterial(
     artCoarseM, midAmp, midM, reliefSwing, reliefCell, reliefCellNoise,
     horizonOcc, bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, treelinePaint,
-    treelineFar, crownShade,
+    treelineFar, treelineMod, crownShade,
     phaseProbe, horizonAmp, horizonEco, horizonCell, horizonPlains, emitGround,
     massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff,
@@ -133,6 +133,9 @@ export function makeTerrainMaterial(
     // both programs; the near one's copy is stripped at link time because the
     // near shell factor is a compile-time literal.
     uTreelineFar: treelineFar,
+    // RN-2661. (wood-floor shade, reserved, floor law).
+    // Already an IUniform holder, so passed through rather than re-wrapped.
+    uTreelineMod: treelineMod,
     // RN-2275. Inter-crown self-shadowing, (amp, K, floor). Shared by
     // reference like every other holder here, and holding the SAME three
     // numbers the canopy card's per-frame colour update reads.

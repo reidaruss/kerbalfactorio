@@ -256,6 +256,17 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // treeline, which a `#ifndef OF_SCALED` had removed it from since RN-2265.
   // Registered in the same commit that introduces it.
   'treelinefar',
+  // RN-2661. `treelinefloor=0` restores the pre-RN-2661 frame: the ground the
+  // view ray reaches BETWEEN the far crowns, lit as if it were a clearing.
+  // The shipped 1 shades it with the same `ofCrownSelfShade` the crowns take,
+  // on the density the instances are not placing. Registered in the same
+  // commit that introduces it.
+  'treelinefloor',
+  // RN-2661. `treelinefloorlaw=1` runs that shade on the LEAF-AREA depth K*mu
+  // (the crown half's homogeneous model) instead of the shipped crown PLAN
+  // index (the geometry the term's own view ray already uses). Registered in
+  // the same commit that introduces it.
+  'treelinefloorlaw',
   // RN-2275. Inter-crown self-shadowing: the exact off control, and the two
   // numbers the law is chosen on. Registered in the commit that introduces
   // them (RN-152's scar).

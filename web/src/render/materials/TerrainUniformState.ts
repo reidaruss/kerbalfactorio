@@ -32,6 +32,7 @@ import { fineMFromQuery, horizonOccFromQuery, reliefCellFromQuery,
   reliefSwingFromQuery } from './TerrainReliefQuery.js';
 import type { TerrainMaterialOptions } from './TerrainMaterialTypes.js';
 import { onCanopyTone, treelineAmpFromQuery, treelineFarFromQuery,
+  treelineFloorFromQuery, treelineFloorLawFromQuery,
   treelineMottleFromQuery, treelinePaintFromQuery } from './TerrainTreeline.js';
 import { SHADE } from './CanopySelfShadow.js';
 import { phaseProbeFromQuery } from './TerrainPhase.js';
@@ -267,6 +268,15 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
   // pre-RN-2560 frame to the bit; the NEAR program never reads it, because
   // there the shell factor is a compile-time 1.
   const treelineFar: THREE.IUniform<number> = { value: treelineFarFromQuery() };
+  // RN-2661. (wood-floor shade, reserved, floor law), the first
+  // two 1 in the shipped frame and the law 0. Shared by reference into both
+  // materials on splatFarAmp's reason;
+  // the SCALED program compiles the whole branch out unless `?treelinefar=1`,
+  // so its copy is stripped at link time in every shipped frame.
+  const treelineMod: THREE.IUniform<THREE.Vector3> = {
+    value: new THREE.Vector3(treelineFloorFromQuery(), 1,
+      treelineFloorLawFromQuery()),
+  };
   onCanopyTone((r, g, b) => { treelineTone.value.set(r, g, b); });
   // RN-2275. INTER-CROWN SELF-SHADOWING, (amp, K, floor). Built FROM the same
   // `SHADE` triple the canopy card's per-frame update reads, so the near cards
@@ -296,7 +306,7 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
     midAmp, midM, reliefSwing, reliefCell, reliefCellNoise, horizonOcc,
     bounceLit, wetBand, wetDir, cascades, splits,
     splatAmp, splatFade, splatFarAmp, treeline, treelineTone, treelinePaint,
-    treelineFar, crownShade,
+    treelineFar, treelineMod, crownShade,
     phaseProbe, horizonAmp, horizonEco, horizonCell, horizonPlains, emitGround,
     massifAmp, massifM, massifFade,
     splatGrass, splatDirt, splatRock, splatCliff, splatScree, splatSnow,

@@ -67,8 +67,47 @@ export const TERRAIN_TREELINE_PARS = /* glsl */`
   //
   // OF_TREE_SIN_MIN floors the depression so the exponent cannot blow up on a
   // ray that is exactly tangent; see TerrainTreeline.ts for the value's reason.
+  // RN-2661 SPLIT THIS IN TWO AND CHANGED NEITHER HALF'S ARITHMETIC. The law
+  // above is written on the MISSING density mu(1-w), so the missing density has
+  // to be nameable on its own for the floor shade below to take it too.
+  // ofTreeCover is left with the identical body it always had, expressed
+  // through the split.
+  float ofTreeCoverMu(float muMissing, float sinDep) {
+    return 1.0 - exp(-muMissing / max(sinDep, OF_TREE_SIN_MIN));
+  }
   float ofTreeCover(float mu, float w, float sinDep) {
-    return 1.0 - exp(-mu * (1.0 - w) / max(sinDep, OF_TREE_SIN_MIN));
+    return ofTreeCoverMu(mu * (1.0 - w), sinDep);
+  }
+
+  // RN-2661. THE SAME TWO-STREAM LAW ON THE SUN RAY, FOR THE GROUND BETWEEN THE
+  // CROWNS, and the only decision in it is which optical depth the sun ray
+  // takes through the SAME canopy the view ray just crossed.
+  //
+  // law 0, SHIPPED, THE PLAN INDEX. ofTreeCoverMu one function up is the
+  // BOOLEAN crown-overlap law on the plan-area index mu: it asks how often a
+  // ray misses every crown, treating crowns as discrete objects. The sun ray
+  // crosses that same field of discrete crowns, so it gets the same geometry:
+  // the sunlit ground fraction is exp(-mu / sinSun), and a ray that DOES hit a
+  // crown is effectively stopped (one vertical crown crossing is K = 3.2 of
+  // leaf-area depth, transmittance 0.041). Modelling the canopy as discrete
+  // crowns for the view ray and as a homogeneous leaf soup for the sun ray, two
+  // lines apart in one expression, would be two different woods.
+  //
+  // law 1, ?treelinefloorlaw=1, THE LEAF-AREA DEPTH K*mu. This is the crown
+  // half's own homogeneous model (CanopySelfShadow's K is defined as
+  // G * LAI / mu precisely to convert plan area into leaf-area depth), applied
+  // unchanged to the floor. It is BUILT AND MEASURED rather than argued about,
+  // on ?crownshadelaw=1's precedent, and rendering.md 2.44 carries what it
+  // costs at all four poses. It is roughly two and a half times the darkening,
+  // because it spreads a closed stand's whole LAI over the gaps as well.
+  //
+  // THE TWO HALVES OF THE CANOPY MODEL THEREFORE DISAGREE, and that is stated
+  // rather than smoothed over: this term's VIEW ray and its SUN ray now both
+  // use the plan index, while the CROWN's self-shade still uses K*mu. Whether
+  // the crown half should follow is a CanopySelfShadow question with its own
+  // calibration table behind it, and it is routed rather than taken here.
+  float ofTreeFloorShade(float muPlan, float sinSun, vec3 p, float law) {
+    return ofCrownSelfShade(mix(muPlan / max(p.y, 1e-3), muPlan, law), sinSun, p);
   }
 
   // RN-2560. THE STAGE PAINT, and it is a categorical map rather than a level:
@@ -162,6 +201,10 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
           float treeG = length(toCam - up * dot(toCam, up));
           float treeW = ofTreeInstanceW(treeG, uTreeline.z);
           if (treeW < 1.0) {
+            // RN-2661. THE MISSING DENSITY, named once and now used TWICE: the
+            // view term below asks what fraction of the ground it hides, and
+            // the floor term asks how much sun it stops. Same layer, two rays.
+            float treeMu = vCanopy * (1.0 - treeW);
             // sin(depression) of the view ray against the LOCAL up. The
             // geometric normal is deliberately not used: this is a question
             // about the path length through a canopy layer standing on the
@@ -170,7 +213,7 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
             // coverSel, shared with every other cover term in this material,
             // is what keeps a cliff face and a scree slope out of it.
             float treeK = clamp(uTreeline.x * coverSel
-                                * ofTreeCover(vCanopy, treeW, treeS), 0.0, 1.0);
+                                * ofTreeCoverMu(treeMu, treeS), 0.0, 1.0);
             // THE MOTTLE, retired at its OWN wavelength's Nyquist point on the
             // curve every other fade in this material uses (0.125 to 0.333 of
             // the wavelength, fully out at a third against a fold at a half).
@@ -230,7 +273,60 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
             // were RE-MEASURED rather than assumed protected by algebra alone.
             vec3 treeTone = uTreelineTone
               * ofCrownSpectralSplit(ofCrownSelfShade(vCanopy, treeSun, uCrownShade));
-            albedo = mix(albedo,
+            // RN-2661. THE WOOD'S FLOOR IS IN THE WOOD'S SHADOW, and until this
+            // line the term lit it like a clearing.
+            //
+            // WHAT WAS WRONG. treeK is the fraction of the ground the canopy
+            // HIDES. Over the complement, the ground the view ray reaches
+            // between the crowns, this term left albedo exactly as the bare
+            // biome painted it: full sun, no canopy overhead. That is a
+            // clearing, and the one thing a wood is not is a clearing with some
+            // green dots on it. At 3.4 km over Hills the complement is about
+            // 43 per cent of the fragment, so a plainly wrong illumination was
+            // being applied to nearly half of the far band's ground.
+            //
+            // AND THE RIGHT NUMBER WAS ALREADY BEING COMPUTED, one line up, for
+            // the wrong surface. rendering.md 2.43.7 states the shipped shade
+            // law's own defect precisely: exp(-tau / sinSun) is the
+            // transmittance at the BASE OF THE CANOPY LAYER, while the card it
+            // multiplies is a whole-crown impostor that wants the layer MEAN.
+            // The surface that actually sits at the base of the layer is THE
+            // GROUND. So this lane spends the quantity the shipped law already
+            // computes on the one surface it is exactly right for, and adds no
+            // constant to do it: same function, same uCrownShade, same floor.
+            //
+            // THE ARGUMENT IS THE MISSING DENSITY AGAIN, and that is what keeps
+            // the handover exact. treeMu is vCanopy * (1 - w), so at the
+            // harvest ring (w = 1) this is identically 1 and there is no dark
+            // ring at 690 m; past the realised reach it is the full layer. The
+            // instances' OWN shadow is the cascade's job where the cascade
+            // reaches, so painting only the canopy the instances are not
+            // placing is the same complementarity ofTreeCover is built on.
+            // It is an UNDER-count past the last cascade split, where the
+            // instances stand in no shadow at all; that is stated rather than
+            // corrected, because correcting it means using the full vCanopy
+            // and that puts back the ring.
+            //
+            // INDEPENDENCE, NOT A HOT SPOT. A ground point is visible because
+            // no crown lay on the VIEW ray and lit because no crown lay on the
+            // SUN ray, and the two are treated as independent. That is exactly
+            // wrong at the retro-reflection peak, where the two rays coincide
+            // and every visible point is also sunlit; the shot set has no such
+            // pose (at flyovernoon the sun is near the local up and the view
+            // ray is 5 to 20 degrees below the horizontal), so the hot spot is
+            // out of frame rather than ignored.
+            //
+            // GATED BY THE SAME PRODUCT treeK CARRIES, which is what keeps
+            // every existing zero exactly zero: uTreeline.x is 0 under
+            // ?treeline=0, so that arm is still the pre-RN-2265 frame to the
+            // bit, and coverSel is 0 on a cliff or a scree slope, which is
+            // the same reason the cover term carries it (a face too steep to
+            // hold cover has no canopy over it to cast anything).
+            float treeGap = clamp(uTreeline.x * coverSel, 0.0, 1.0);
+            float treeFloorS = mix(1.0,
+              ofTreeFloorShade(treeMu, treeSun, uCrownShade, uTreelineMod.z),
+              treeGap * uTreelineMod.x);
+            albedo = mix(albedo * treeFloorS,
                          treeTone * (1.0 + uTreeline.y * treeM), treeK);
             // RN-2560. 0.002 of coverage is a quarter of a count on a 255 axis
             // at this term's own contrast, i.e. below anything a rectangle can
