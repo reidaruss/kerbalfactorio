@@ -32,7 +32,8 @@ import { fineMFromQuery, horizonOccFromQuery, reliefCellFromQuery,
   reliefSwingFromQuery } from './TerrainReliefQuery.js';
 import type { TerrainMaterialOptions } from './TerrainMaterialTypes.js';
 import { onCanopyTone, treelineAmpFromQuery, treelineFarFromQuery,
-  treelineFloorFromQuery, treelineFloorLawFromQuery,
+  treelineFloorFromQuery, treelineFloorLawFromQuery, treelineGroveFromQuery,
+  treelineStandFromQuery,
   treelineMottleFromQuery, treelinePaintFromQuery } from './TerrainTreeline.js';
 import { SHADE } from './CanopySelfShadow.js';
 import { phaseProbeFromQuery } from './TerrainPhase.js';
@@ -268,14 +269,15 @@ export function buildTerrainUniformState(o: TerrainMaterialOptions) {
   // pre-RN-2560 frame to the bit; the NEAR program never reads it, because
   // there the shell factor is a compile-time 1.
   const treelineFar: THREE.IUniform<number> = { value: treelineFarFromQuery() };
-  // RN-2661. (wood-floor shade, reserved, floor law), the first
+  // RN-2661/RN-2665. (wood-floor shade, stand octave, floor law, grove
+  // octave), the first
   // two 1 in the shipped frame and the law 0. Shared by reference into both
   // materials on splatFarAmp's reason;
   // the SCALED program compiles the whole branch out unless `?treelinefar=1`,
   // so its copy is stripped at link time in every shipped frame.
-  const treelineMod: THREE.IUniform<THREE.Vector3> = {
-    value: new THREE.Vector3(treelineFloorFromQuery(), 1,
-      treelineFloorLawFromQuery()),
+  const treelineMod: THREE.IUniform<THREE.Vector4> = {
+    value: new THREE.Vector4(treelineFloorFromQuery(), treelineStandFromQuery(),
+      treelineFloorLawFromQuery(), treelineGroveFromQuery()),
   };
   onCanopyTone((r, g, b) => { treelineTone.value.set(r, g, b); });
   // RN-2275. INTER-CROWN SELF-SHADOWING, (amp, K, floor). Built FROM the same

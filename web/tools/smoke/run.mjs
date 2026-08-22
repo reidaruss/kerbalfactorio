@@ -267,6 +267,18 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // index (the geometry the term's own view ray already uses). Registered in
   // the same commit that introduces it.
   'treelinefloorlaw',
+  // RN-2665. `treelinestand=0` restores the pre-RN-2665 far canopy density: no
+  // stand-scale modulation of the density the instance tier is not placing.
+  // The shipped 1 re-imposes world-gen's own `dense(standAt)` factor at
+  // STAND_M, which the terrain mesh has averaged away by 2,630 m of eye
+  // distance. Registered in the same commit that introduces it.
+  'treelinestand',
+  // RN-2665. `treelinegrove=0` removes the SECOND of world-gen's two averaged-
+  // away density factors, the 760 m landscape one. Separate from
+  // `treelinestand` because the two retire at different ranges and the finding
+  // that produced this one is that the stand octave reaches 4.3 km of a
+  // 15.5 km band. Registered in the same commit that introduces it.
+  'treelinegrove',
   // RN-2275. Inter-crown self-shadowing: the exact off control, and the two
   // numbers the law is chosen on. Registered in the commit that introduces
   // them (RN-152's scar).

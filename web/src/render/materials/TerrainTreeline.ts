@@ -188,9 +188,8 @@ export function treelineMottleFromQuery(): number {
  * is a one-flag-apart pair on one build. `=0` is the pre-RN-2661 frame exactly.
  *
  * The GLSL half is in `uTreelineMod.x`. It is a vec3 and not three scalars
- * because its other components are the floor law below and a component held
- * for the structure half of this lane, and all three are read in the same
- * three lines of one branch.
+ * because its other components are RN-2665's stand mottle and the floor law
+ * below, and all three are read in the same three lines of one branch.
  */
 export function treelineFloorFromQuery(): number {
   const raw = new URLSearchParams(self.location.search).get('treelinefloor');
@@ -216,6 +215,39 @@ export function treelineFloorLawFromQuery(): number {
     ? 1 : 0;
 }
 
+/**
+ * RN-2665. `?treelinestand=`, THE STAND MOTTLE'S ARM, 0 to 1, shipped at 1.
+ *
+ * It scales the field's FADE rather than its amplitude, so `=0` returns
+ * `ofTreeStandMod` to exactly 1.0 and the pre-RN-2665 density to the bit; the
+ * field's contrast is world-gen's own and is not a knob (see
+ * TerrainStandMottle.ts). Intermediate values exist so the eye pair can be
+ * taken at half strength if the full field reads as curdling, which is the
+ * failure mode `TREE_MOTTLE`'s own header names for a field pushed past its
+ * source's contrast.
+ */
+export function treelineStandFromQuery(): number {
+  const raw = new URLSearchParams(self.location.search).get('treelinestand');
+  if (raw === null) return 1;
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 ? Math.min(1, v) : 1;
+}
+
+/**
+ * RN-2665. `?treelinegrove=`, THE 760 m OCTAVE'S ARM, 0 to 1, shipped at 1.
+ *
+ * It is a SEPARATE flag from `?treelinestand=` and not a second amplitude on
+ * one, because the two octaves retire at different ranges and the whole
+ * finding that produced the second one is that the first reaches 4.3 km of a
+ * 15.5 km band. A lane that cannot turn them off one at a time cannot
+ * reproduce that finding.
+ */
+export function treelineGroveFromQuery(): number {
+  const raw = new URLSearchParams(self.location.search).get('treelinegrove');
+  if (raw === null) return 1;
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 ? Math.min(1, v) : 1;
+}
 
 /**
  * RN-2560. `?treelinefar=1`, THE SCALED SHELL'S ARM.

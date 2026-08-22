@@ -7,6 +7,11 @@
 import {
   TREE_CROWN_M, TREE_EDGE_W, TREE_MOTTLE, TREE_NEAR_M, TREE_SIN_MIN,
 } from './TerrainTreeline.js';
+// RN-2665. The stand mottle's law, scale and normaliser travel WITH the term,
+// on this file's own precedent and CrownSkyView's: one authority, in
+// TypeScript, emitting its own GLSL and asserting itself against world-gen's
+// live field at module load.
+import { TREE_STAND_GLSL } from './TerrainStandMottle.js';
 // RN-2275. The self-shadow law travels WITH the term that consumes it, on this
 // file's own precedent: one authority, in TypeScript, emitting its own GLSL.
 // RN-2525 adds the spectral split beside it, same precedent, same file.
@@ -15,6 +20,7 @@ import { CROWN_SELF_GLSL, CROWN_SPECTRAL_GLSL } from './CanopySelfShadow.js';
 export const TERRAIN_TREELINE_PARS = /* glsl */`
   ${CROWN_SELF_GLSL}
   ${CROWN_SPECTRAL_GLSL}
+  ${TREE_STAND_GLSL}
   #define OF_TREE_NEAR_M ${TREE_NEAR_M.toFixed(1)}
   #define OF_TREE_EDGE_W ${TREE_EDGE_W.toFixed(5)}
   #define OF_TREE_CROWN_M ${TREE_CROWN_M.toFixed(2)}
@@ -68,10 +74,10 @@ export const TERRAIN_TREELINE_PARS = /* glsl */`
   // OF_TREE_SIN_MIN floors the depression so the exponent cannot blow up on a
   // ray that is exactly tangent; see TerrainTreeline.ts for the value's reason.
   // RN-2661 SPLIT THIS IN TWO AND CHANGED NEITHER HALF'S ARITHMETIC. The law
-  // above is written on the MISSING density mu(1-w), so the missing density has
-  // to be nameable on its own for the floor shade below to take it too.
-  // ofTreeCover is left with the identical body it always had, expressed
-  // through the split.
+  // above is written on the MISSING density mu(1-w), and the stand mottle
+  // (RN-2665) modulates exactly that quantity before it reaches the law, so
+  // the missing density has to be nameable on its own. ofTreeCover is left
+  // with the identical body it always had, expressed through the split.
   float ofTreeCoverMu(float muMissing, float sinDep) {
     return 1.0 - exp(-muMissing / max(sinDep, OF_TREE_SIN_MIN));
   }
@@ -201,10 +207,42 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
           float treeG = length(toCam - up * dot(toCam, up));
           float treeW = ofTreeInstanceW(treeG, uTreeline.z);
           if (treeW < 1.0) {
+            // RN-2560. footM is in vWorld units and every comparison below is
+            // in METRES: one multiply in the near program (uMetresPerUnit is
+            // exactly 1 there, so this is bit-identical) and a factor of 1e5 in
+            // the scaled one. RN-2665 hoisted it out of the crown mottle
+            // because the stand mottle needs the same quantity three lines
+            // earlier; the crown mottle's own expression is unchanged.
+            float treeFootM = footM * uMetresPerUnit;
+            // RN-2665. THE STAND AND GROVE MOTTLE, each retired at ITS OWN
+            // Nyquist point on the curve every other fade in this material
+            // uses (0.125 to 0.333 of the wavelength). At OF_TREE_STAND_M =
+            // 165 m that is a footprint of 20.6 to 55.0 m per pixel and at
+            // OF_TREE_GROVE_M = 760 m it is 95 to 253 m, so the two together
+            // carry world-gen's product across the whole band the paint has
+            // any luma authority over. The 34 m crown mottle retires at 11.3 m
+            // and is identically zero across every row World Audit R5 sampled.
+            // MEASURED, the stand octave reaches about 4.3 km at the 1,200 m
+            // aerial pose against the 7.0 km its own smooth-datum arithmetic
+            // predicts, because real relief tilts a hillside away from the eye
+            // and stretches footM past the sphere's own value. That is why
+            // there are two octaves and not one; TerrainStandMottle.ts carries
+            // the measurement and the derivation of both.
+            float treeStandF = 1.0 - smoothstep(OF_TREE_STAND_M * 0.125,
+                                                OF_TREE_STAND_M * 0.333,
+                                                treeFootM);
+            float treeGroveF = 1.0 - smoothstep(OF_TREE_GROVE_M * 0.125,
+                                                OF_TREE_GROVE_M * 0.333,
+                                                treeFootM);
             // RN-2661. THE MISSING DENSITY, named once and now used TWICE: the
             // view term below asks what fraction of the ground it hides, and
-            // the floor term asks how much sun it stops. Same layer, two rays.
-            float treeMu = vCanopy * (1.0 - treeW);
+            // the floor term asks how much sun it stops. Same layer, two rays,
+            // and RN-2665's stand factor modulates it BEFORE either of them so
+            // a thin stand shows more ground AND less shade on that ground,
+            // which is what a gap in a wood is.
+            float treeMu = vCanopy * (1.0 - treeW)
+              * ofTreeStandMod(pM, uTreelineMod.y * treeStandF,
+                               uTreelineMod.w * treeGroveF);
             // sin(depression) of the view ray against the LOCAL up. The
             // geometric normal is deliberately not used: this is a question
             // about the path length through a canopy layer standing on the
@@ -214,20 +252,25 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
             // is what keeps a cliff face and a scree slope out of it.
             float treeK = clamp(uTreeline.x * coverSel
                                 * ofTreeCoverMu(treeMu, treeS), 0.0, 1.0);
-            // THE MOTTLE, retired at its OWN wavelength's Nyquist point on the
-            // curve every other fade in this material uses (0.125 to 0.333 of
-            // the wavelength, fully out at a third against a fold at a half).
-            // Without it a closed canopy at the horizon is a flat green plate,
-            // which is the defect one range band further out.
-            // RN-2560. footM IS IN vWorld UNITS AND THE COMPARISON IS IN
-            // METRES, which is one multiply in the near program (uMetresPerUnit
-            // is exactly 1 there, so this is bit-identical) and a factor of 1e5
-            // in the scaled one. Without it the mottle would come back at FULL
-            // amplitude at the horizon the moment the shell participates, which
-            // is the opposite of what its own Nyquist retirement is for.
+            // THE CROWN MOTTLE, retired at its OWN wavelength's Nyquist point
+            // on the curve every other fade in this material uses (0.125 to
+            // 0.333 of the wavelength, fully out at a third against a fold at
+            // a half). Without it a closed canopy at the horizon is a flat
+            // green plate, which is the defect one range band further out.
+            //
+            // RN-2665 MEASURED HOW FAR "further out" REACHES AND IT IS NOT
+            // FAR. 34 m retires at a footprint of 11.3 m, which at the 1,200 m
+            // aerial pose is row 550, i.e. 3,250 m -- inside the instance
+            // tier's own reach. So this octave is identically ZERO across
+            // every row World Audit R5's rank 1 sampled, which is why that
+            // audit found dIQR near zero there and why TREELINE_AMP could not
+            // have been the lever: there was no field left to scale. The stand
+            // octave above is this one's answer, at five times the wavelength.
+            // The expression itself is unchanged; only footM is now the
+            // hoisted treeFootM, which is the same product.
             float treeF = 1.0 - smoothstep(OF_TREE_CROWN_M * 0.125,
                                            OF_TREE_CROWN_M * 0.333,
-                                           footM * uMetresPerUnit);
+                                           treeFootM);
             float treeM = treeF > 0.0
               ? (ofArtVnoise(pM / OF_TREE_CROWN_M + 91.3) - 0.5) * treeF : 0.0;
             // RN-2275. INTER-CROWN SELF-SHADOWING, and the sun direction it
@@ -295,32 +338,24 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
             // computes on the one surface it is exactly right for, and adds no
             // constant to do it: same function, same uCrownShade, same floor.
             //
-            // THE ARGUMENT IS THE MISSING DENSITY AGAIN, and that is what keeps
-            // the handover exact. treeMu is vCanopy * (1 - w), so at the
-            // harvest ring (w = 1) this is identically 1 and there is no dark
-            // ring at 690 m; past the realised reach it is the full layer. The
-            // instances' OWN shadow is the cascade's job where the cascade
-            // reaches, so painting only the canopy the instances are not
-            // placing is the same complementarity ofTreeCover is built on.
-            // It is an UNDER-count past the last cascade split, where the
-            // instances stand in no shadow at all; that is stated rather than
-            // corrected, because correcting it means using the full vCanopy
-            // and that puts back the ring.
+            // THE ARGUMENT IS THE MISSING DENSITY AGAIN, which keeps the
+            // handover exact: treeMu is vCanopy * (1 - w), so at the harvest
+            // ring (w = 1) this is identically 1 and there is no dark ring at
+            // 690 m, and past the reach it is the full layer. It UNDER-counts
+            // past the last cascade split, where the instances stand in no
+            // shadow at all; correcting that means using the full vCanopy and
+            // that puts the ring back, so it is stated rather than corrected.
             //
-            // INDEPENDENCE, NOT A HOT SPOT. A ground point is visible because
-            // no crown lay on the VIEW ray and lit because no crown lay on the
-            // SUN ray, and the two are treated as independent. That is exactly
-            // wrong at the retro-reflection peak, where the two rays coincide
-            // and every visible point is also sunlit; the shot set has no such
-            // pose (at flyovernoon the sun is near the local up and the view
-            // ray is 5 to 20 degrees below the horizontal), so the hot spot is
-            // out of frame rather than ignored.
+            // INDEPENDENCE, NOT A HOT SPOT: a point is visible because no crown
+            // lay on the VIEW ray and lit because none lay on the SUN ray, and
+            // the two are treated as independent. That is exactly wrong at the
+            // retro-reflection peak; the shot set has no such pose, so the hot
+            // spot is out of frame rather than ignored.
             //
-            // GATED BY THE SAME PRODUCT treeK CARRIES, which is what keeps
-            // every existing zero exactly zero: uTreeline.x is 0 under
-            // ?treeline=0, so that arm is still the pre-RN-2265 frame to the
-            // bit, and coverSel is 0 on a cliff or a scree slope, which is
-            // the same reason the cover term carries it (a face too steep to
+            // GATED BY THE SAME PRODUCT treeK CARRIES, which keeps every
+            // existing zero exactly zero: uTreeline.x is 0 under ?treeline=0,
+            // so that arm is still the pre-RN-2265 frame to the bit, and
+            // coverSel is 0 on a cliff or a scree slope (a face too steep to
             // hold cover has no canopy over it to cast anything).
             float treeGap = clamp(uTreeline.x * coverSel, 0.0, 1.0);
             float treeFloorS = mix(1.0,

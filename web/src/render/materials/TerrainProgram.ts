@@ -133,7 +133,7 @@ export function makeTerrainMaterial(
     // both programs; the near one's copy is stripped at link time because the
     // near shell factor is a compile-time literal.
     uTreelineFar: treelineFar,
-    // RN-2661. (wood-floor shade, reserved, floor law).
+    // RN-2661/RN-2665. (wood-floor shade, stand octave, floor law, grove).
     // Already an IUniform holder, so passed through rather than re-wrapped.
     uTreelineMod: treelineMod,
     // RN-2275. Inter-crown self-shadowing, (amp, K, floor). Shared by
