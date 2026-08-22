@@ -13886,7 +13886,7 @@ of it by under one count.**
 - **`?horizonswell=0` returns `meadow.hzBand` iqr 155.55 -> 4.21**, WG-275's own
   OFF-arm value. **R4's rank 1 rested on that rectangle reading 4.06 "unmoved
   across three audits"; 4.06 is what it reads with the swell OFF.** The row is
-  retired as a standing defect and recorded as a closure.
+  retired as a standing defect and recorded as a closure. (Merge-time completion per the R5 verifier: RN-2475 had ALREADY retired 4.06 on 2026-08-21 for the stronger reason, the rectangle contains no terrain at all, painted-arm proven, a named NUMBERS catalogue entry; and the 155.55 level is co-factored by WG-260's mid stands per WG-277's record, the sibling kill switch reproducing 12.29, not the swell alone.)
 - `vista` box **174.53 / 14.48** and `hzBand` **3.28 / -2.07**, bit-identical to
   R4 through fourteen merges. `vistadawn.hzBand` 203.58 / 3.00 / 34.04;
   `meadownight.skyHi` 9.33 / 1.79 and `skyHz` 14.46 / 1.00, all R4's to the

@@ -118,7 +118,7 @@ determinism proof for its one new pose.
 **RANGE CLAIMS ARE SOLVED AND THEN PROVEN, NEVER READ OFF `rangeRects`.** Every
 range in this document comes from the curvature-correct eye-frame inversion
 2.37 derived (depression `s/(2R) + h/s`, horizon dip `sqrt(2h/R)`, rows through
-`of.look`'s own `pitch - atan(v tan 30)` convention) and is then read back with
+`of.look`'s own `pitch - atan(v tan 30) (sign convention: pitch here is the downward MAGNITUDE, +14 for this pose; with the signed -14 the formula reads wrong even though every derived number in this table is right)` convention) and is then read back with
 a **centre-column** ladder at `x [795, 805)` through the committed
 `tools/smoke/rn2510rows.mjs`. That is 2.32.11's correction applied on purpose: a
 wide-x row mean SMEARS a rung and misplaced the 170 m boundary by ten rows the
