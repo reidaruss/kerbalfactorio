@@ -3534,4 +3534,101 @@ about is serving.** Use a distinct `--outDir` (several probes in this corpus
 already do, e.g. `--outDir dist-gp`/`dist-en`/`dist-ph`) for any build that
 must not disturb a server already in flight.
 
+**AMENDED same day, BT-330 FIX ROUND, after a fresh-context verifier returned
+FIX on five points.** The proof matrix above reproduced on all four paths
+under independent re-check, but the verifier found one real bug in
+`check-guard.mjs` itself, plus four smaller correctness/hygiene gaps, all
+fixed on the same lane rather than routed elsewhere.
+
+**THE REAL BUG: the sentinel falsified the wrapper's own staleness check.**
+The original `newestMtime(DIST)` staleness comparison read the newest file
+ANYWHERE in `dist`, including the sentinel this script itself writes into
+`dist` on every run. Since the sentinel is always newer than the actual
+build, and nothing deleted it, every run made the NEXT run's staleness check
+read a false "fresh" time that grew a little further from the truth each
+time; the verifier measured this as a 16-minute lie after four runs, with a
+real `src` edit between the true build and the last guard run made invisible
+to this layer (rn2550guard's own `checkServedBuild` entry-chunk hash check
+would still have caught the actual served bytes being wrong, but this
+wrapper's own pre-flight check would not have). Fixed two ways at once, per
+the verifier's own preferred remedy: **(1)** the sentinel is now deleted in
+the `finally` alongside the server kill, on every path, so it can never
+accumulate; **(2)** the staleness comparison now reads `dist/index.html`'s
+own mtime specifically, never "the newest file in the directory", so even a
+future sentinel-shaped mistake could not fool it again. Re-proven: two
+consecutive full runs left zero sentinel files in `dist` both times, and
+`dist/index.html`'s mtime read bit-identical (`1787388214`) across both,
+confirming the staleness check tracks the true build rather than anything
+this wrapper itself writes.
+
+**A related but separate claim was also just wrong, not merely under-tested:
+this lane's own header comment said the sentinel was "written BEFORE the
+server started," while the code wrote it at line 127, after the `spawn` call
+at line 77.** It happened to work anyway (the trap this file itself
+documents above is exactly why: `vite preview` serves off disk per request
+and never snapshots, so writing the sentinel a little after the process
+starts and a good deal before the process finishes booting was never
+actually unsafe), but the code did not match its own comment. Fixed by
+moving the write to before the `spawn` call, which is both the preferred fix
+(strictly safer, and makes the comment true by construction rather than by
+lucky timing) and the one applied.
+
+**Four smaller fixes, all verifier-found, in the same file/session:**
+- **A caller-forwarded `--url` would have silently won.** `rn2550guard.mjs`
+  builds its argv from a `Map`, which keeps the LAST value for a repeated
+  key; since this wrapper forwards every argument verbatim and supplies its
+  own `--url` first, a caller adding a second `--url` of their own would
+  silently override the sentinel-verified server with an unverified one,
+  defeating the entire point of the wrapper. Now refused instantly, before
+  the dist check or anything else runs: `check:guard --url=http://evil.example/
+  --shots=forestairnoon` exits 1 in well under a second, naming the reason,
+  no server ever started.
+- **`npm run check:full -- --args` silently dropped `--args` and ran a full
+  sweep instead of the intended tripwire.** `check:full`'s original
+  definition was `node tools/check-all.mjs && npm run check:guard`, a
+  double npm hop; npm appends `-- --args` to the END of whatever it resolves,
+  so the args landed after a `npm run check:guard` that had already been
+  fully resolved by the time they arrived, and were dropped rather than
+  reaching the underlying script. Fixed by having `check:full` call
+  `node tools/smoke/check-guard.mjs` directly, one hop, so an appended arg
+  lands on that command's own argv. Re-proven with a real run: `npm run
+  check:full -- --shots=forestairnoon` now runs `check:all` (9/9) and THEN
+  the one-pose tripwire, exit 0, not a full four-pose sweep.
+- **A PASS could print "OUT OF BAND" with nothing explaining it, worst in
+  the tripwire where that one pose is the entire visible output.**
+  rn2550guard only fails a standing violation if it gets WORSE, so any
+  "OUT OF BAND" table row that survives to an overall PASS is, by
+  construction, a pre-existing recorded violation and not a new one, but a
+  reader seeing "OUT OF BAND ... PASS" with no gloss could easily misread it
+  as a clean band. `check:guard` now scans its own captured stdout for
+  "OUT OF BAND" table rows on a PASS and appends one explanatory line naming
+  the pose(s) and pointing at rendering.md 2.35, without touching
+  `rn2550guard.mjs` itself. Confirmed live at `forestairnoon`: `check:guard: 1
+  pose(s) already OUT OF BAND on this PASS (forestairnoon): a pre-existing
+  recorded standing violation in rn2550guard.mjs's own BASE table (rendering.md
+  2.35), not a new regression from this run. PASS means no NEW regression, not
+  a clean band.`
+- **22 em dashes in this lane's own `build-tooling.md` additions** (the
+  banner paragraph, the BT-330 decision row, the R11 entry), plus one stale
+  "not yet merged" claim about a DIFFERENT, already-merged lane
+  (`lane/bt-doors`, actually merged at `1ebd8854`) that this lane's own
+  prepended text sat in front of without correcting. Both fixed; this file
+  and `check-guard.mjs`/`package.json` carried none.
+
+**On the allocation's own 4-pose/16-run figures versus the guard's real
+4-pose/24-run and 1-pose/6-run counts:** this file already stated the correct
+6 (tripwire) and 24 (full default) run counts throughout; the mismatch was in
+Admin's BT-330 allocation brief, not in anything this lane wrote, and is
+Admin's to correct at merge.
+
+**Final re-proof after all fixes, gates read alone:** PASS x2 back to back
+(sentinel cleanup and staleness-check stability, above); STALE (`touch
+src/main.ts`, fails loud naming `dist/index.html`'s own build time, before
+any server starts); DEAD SERVER via the hidden-vite-binary shape (fails in
+under a second, sentinel confirmed cleaned up even on this path); GUARD
+REGRESSION (`--extra=crownshadefloor=0.30`, exit 1, real ratchet-ceiling
+messages, no standing-violation echo printed since the echo is PASS-only).
+`npx tsc --noEmit` clean, `npm run build` green, `cd web && npm run check`
+9 of 9, every exit code read directly with no pipe.
+
 ---

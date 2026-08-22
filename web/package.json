@@ -26,7 +26,7 @@
     "check:guard": "node tools/smoke/check-guard.mjs",
     "smoke": "node tools/smoke/run.mjs",
     "check": "node tools/check-all.mjs",
-    "check:full": "node tools/check-all.mjs && npm run check:guard",
+    "check:full": "node tools/check-all.mjs && node tools/smoke/check-guard.mjs",
     "sync-assets": "node scripts/sync-assets.mjs"
   },
   "dependencies": {
