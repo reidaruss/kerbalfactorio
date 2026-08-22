@@ -13170,24 +13170,28 @@ un-hazed, one browser run per arm:
 
 | arm | mean `|up|` | `minAzimuthOut` | `downVerts` | path | `crowns` rect Y |
 |---|---:|---:|---:|---|---:|
-| shipped (`flank 12, card 1`) | 0.9863 | **1.0000** | **0** | crown | **0.001740** |
+| **shipped** (`flank 25, card 1`) | 0.9472 | **1.0000** | **0** | crown | **0.001566** |
 | pre-lane (`?crownnormal=0`) | 0.4832 | 0.0000 | **3** | bend | 0.001538 |
 | sign fix alone (`flank=90, card=0`) | 0.4832 | 0.0000 | 0 | crown | 0.001095 |
 | coplanarity alone (`flank=90, card=1`) | 0.4832 | **1.0000** | 0 | crown | 0.000859 |
-| anchor alone (`flank=12, card=0`) | 0.9863 | 0.0000 | 0 | crown | 0.001464 |
+| anchor alone (`flank=25, card=0`) | 0.9472 | 0.0000 | 0 | crown | 0.001369 |
 | authored (`?foliagenormal=0`) | 0.0000 | 1.0000 | 0 | authored | 0.000441 |
 
 **READ THE MIDDLE THREE ROWS AGAINST THE FIRST TWO.** Every fix taken on its own
-makes the crown DARKER than the defect did: the sign fix costs 29 per cent, the
-coplanarity fix 44 per cent, the anchor 5 per cent. **Taken together they are
-worth +13 per cent.** That is not a tuning coincidence, it is 2.39.3's third
+makes the crown DARKER than the defect did: the sign fix costs **29 per cent**,
+the coplanarity fix **44 per cent**, the anchor **11 per cent**. **Taken
+together they are worth +1.8 per cent** (and +13.1 per cent at the refused
+`crownflank=12`, where the same three arms read 0.001095 / 0.000859 / 0.001464
+against 0.001740). That is not a tuning coincidence, it is 2.39.3's third
 degeneracy showing through: the sign tear was compensating for the face
 negation, and removing it only pays once the anchor has rolled the normals near
 enough to vertical that the remaining front-facing area is lit properly.
-Anything that had judged either fix on its own would have refused it.
+**Anything that had judged either fix on its own would have refused it**, and
+2.38.7 routed the sign fix as "low-risk and SEPARABLE, worth landing on its
+own", which this table withdraws.
 
 The two out-of-plane measures earn their keep in the same table. The shipped
-arm reads `minAbsOutOfPlane` **0.0488** and `minAzimuthOut` **1.0000**: the
+arm reads `minAbsOutOfPlane` **0.0571** and `minAzimuthOut` **1.0000**: the
 normals have left the card plane completely in azimuth and barely at all in
 absolute terms, because they are near-vertical and a vertical card's plane
 contains the vertical. One number could not have said that; it is filed as its
@@ -13235,6 +13239,70 @@ usable margin on the binding side** (0.0016 and 0.0018 of `box` headroom at
 `flyovernoon`, 0.0074 of `rho` headroom at `forestairnoon`) **and it repays the
 standing violation rather than merely holding it** (0.1016 against 0.0992).
 32 buys `box` margin and spends the `rho` margin down to 0.0019; 12 fails.
+
+### 2.39.8 THE ACCEPTANCE RUN: `rn2550guard` EXIT 0, AND THREE OF FOUR POSES ARE NOW IN THE CORE
+
+Full four-pose `rn2550guard` on the FINAL build (entry chunk
+`8406a0c499aa908f`, verified served), six arms per pose, a fresh process each,
+twenty-four browser runs:
+
+| pose | boxShip | boxSurf | `f` | `rho` | before | verdict |
+|---|---:|---:|---:|---:|---:|---|
+| `forestairnoon` | 0.9816 | 0.9824 | 0.5127 | **0.1016** | 0.0992 | out of band by 0.0784, **REPAID by 0.0024** |
+| `forestairlow` | 0.9567 | 0.8891 | 0.4708 | **0.3747** | 0.4363 | **IN CORE** |
+| `flyovernoon` | 0.9377 | 0.9052 | 0.4991 | **0.2968** | 0.2488 | **IN CORE** |
+| `flyoverlow` | 0.9655 | 0.8446 | 0.4294 | **0.5126** | 0.7021 | **IN CORE** |
+
+```
+rn2550guard: PASS (4 of 4 poses judged, 1 outside CORE)
+```
+
+**THE HEADLINE IN THE VERDICT LINE IS "1 OUTSIDE CORE" AGAINST THE BASE BUILD'S
+"3 OUTSIDE CORE".** Before this lane one pose was in the CORE, one was out of
+the band entirely and two sat in the band but away from it; after it, three of
+four are in the CORE and the fourth has repaid part of its standing violation.
+
+**SEVEN OF THE EIGHT RATCHET CEILINGS FELL AND ONE ROSE, AND NONE IS RE-PINNED.**
+`forestairnoon` 0.9817/0.9826 to 0.9816/0.9824, `forestairlow` 0.9581/0.8928 to
+0.9567/0.8891, `flyoverlow` 0.9774/0.8884 to **0.9655/0.8446**, and
+`flyovernoon` 0.9343/0.9020 up to 0.9377/0.9052, inside the 0.005 tolerance.
+Per 2.35.9 item 8 the rise is reported and not raised; the FALLS are reported
+and **not lowered either**, which is a deliberate departure from the guard's own
+"a lane that darkens the wood LOWERS the constant in the same commit" and is
+routed as a decision in 2.39.11 item 5 rather than taken unilaterally, because
+`BASE` is a baseline with provenance (N8 measured it on `lane/n8-guardband`),
+five of its eight ceilings are already provisional pending 2.35.7's unanswered
+decision request, and re-pinning seven while refusing to re-pin the eighth is a
+change to the acceptance instrument itself.
+
+**THE BAND'S FLOOR AT `forestairnoon` IS STILL NOT REACHED, AND THIS LANE CAN
+NOW SAY WHY IT IS NOT REACHABLE FROM THE NORMAL AT ALL.** `rho` decomposes as
+
+```
+rho  =  rho0 * Smeas  +  P / Y_clear          the diffuse part plus the specular part
+```
+
+and `Smeas`, the self-shadow as the frame applies it, is **0.0544** at that pose
+and is a function of `residentCanopyMu` and `sinSun` alone: no shading normal
+touches it. So the diffuse part is `rho0 * 0.0544`, and `rho0` is bounded by the
+best a canopy LAYER can do, which is the flat-plate limit this lane measured at
+**0.4578** (`crownflank=12`, mean `|up|` 0.986). **The diffuse part therefore
+cannot exceed about 0.025 at `forestairnoon` while `CROWN_SELF_FLOOR` is 0.08**,
+against a band floor of 0.18. The remaining 0.155 would have to come from the
+specular, and the specular is precisely what the coplanarity fix REMOVES: 2.38.2
+measured the crown at 58 to 87 per cent specular and RN-2590 found the reason
+(the in-plane normal put every card at grazing incidence, where Fresnel is
+largest, which is also why the crown reads BLUE). Raising it back with
+`?canopyenv=` raises `flyoverlow` in the same move.
+
+**WHAT THIS LANE CHANGES ABOUT 2.38.3's REFUSAL is the reason it was a
+refusal.** N10 proved no value of `CROWN_SELF_FLOOR` satisfies the guard because
+the two binding poses failed in OPPOSITE directions, and the cause it named was
+the 8.41x pose spread. **That spread is now 2.23x at `crownflank=12` and is much
+reduced at the shipped 25** (2.39.9), so the objection N10 recorded no longer
+holds in the form it was recorded. The composition is measured in 2.39.9 rather
+than asserted, and `CROWN_SELF_FLOOR` is NOT touched by this lane: the shade law
+stands, exactly as briefed.
 
 ### 2.39.11 OWED, ROUTED, with the sizes measured
 
