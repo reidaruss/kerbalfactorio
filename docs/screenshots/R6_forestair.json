@@ -1,0 +1,961 @@
+{
+ "valid": true,
+ "shot": "forestair",
+ "why": "the MID-ALTITUDE FLIGHT VIEW at 1,200 m over FOREST, not the spawn",
+ "poolRefused": 0,
+ "peaceful": "no of.cheat",
+ "vitals": null,
+ "frame": {
+  "w": 1600,
+  "h": 900
+ },
+ "boxPx": [
+  400,
+  405,
+  1200,
+  675
+ ],
+ "box": {
+  "px": 216000,
+  "luma": 96.25,
+  "rgb": [
+   91.1,
+   98.19,
+   92.22
+  ],
+  "warm": -1.12,
+  "sat": 0.153,
+  "p05": 61.88,
+  "p50": 89.57,
+  "p95": 174.32,
+  "iqr": 32.7,
+  "loFrac": 0,
+  "hiFrac": 0,
+  "lin": {
+   "Y": 0.132823,
+   "rgb": [
+    0.124413,
+    0.137212,
+    0.114107
+   ]
+  },
+  "blackFrac": 0,
+  "col": {
+   "std": 7.56,
+   "minLag": 4,
+   "maxLag": 266,
+   "firstMin": 181,
+   "lag": 186,
+   "peak": 0.145
+  }
+ },
+ "extraPx": {
+  "skyBand": [
+   320,
+   45,
+   1280,
+   135
+  ],
+  "hzBand": [
+   320,
+   315,
+   1280,
+   338
+  ],
+  "under": [
+   560,
+   765,
+   1040,
+   882
+  ],
+  "shadowStep": [
+   300,
+   531,
+   900,
+   580
+  ],
+  "treeIn": [
+   320,
+   517,
+   1280,
+   549
+  ],
+  "treeOut": [
+   320,
+   485,
+   1280,
+   517
+  ],
+  "treeInB": [
+   320,
+   533,
+   1280,
+   549
+  ],
+  "treeInA": [
+   320,
+   517,
+   1280,
+   533
+  ],
+  "treeOutA": [
+   320,
+   501,
+   1280,
+   517
+  ],
+  "treeOutB": [
+   320,
+   485,
+   1280,
+   501
+  ],
+  "crowns": [
+   450,
+   600,
+   650,
+   700
+  ],
+  "farband": [
+   320,
+   338,
+   1280,
+   405
+  ]
+ },
+ "extra": {
+  "skyBand": {
+   "px": 86400,
+   "luma": 153.65,
+   "rgb": [
+    125.19,
+    160.01,
+    174.49
+   ],
+   "warm": -49.3,
+   "sat": 0.324,
+   "p05": 128.75,
+   "p50": 146.66,
+   "p95": 201.97,
+   "iqr": 25.47,
+   "loFrac": 0,
+   "hiFrac": 0.017,
+   "lin": {
+    "Y": 0.336967,
+    "rgb": [
+     0.232599,
+     0.358954,
+     0.426484
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 5,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 127,
+    "lag": 165,
+    "peak": 0.106
+   }
+  },
+  "hzBand": {
+   "px": 22080,
+   "luma": 173.66,
+   "rgb": [
+    179.84,
+    174.1,
+    151.09
+   ],
+   "warm": 28.76,
+   "sat": 0.162,
+   "p05": 162.83,
+   "p50": 173.83,
+   "p95": 183.75,
+   "iqr": 8.22,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.423167,
+    "rgb": [
+     0.456318,
+     0.424652,
+     0.310841
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 4.31,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 320,
+    "lag": null,
+    "peak": null
+   }
+  },
+  "under": {
+   "px": 56160,
+   "luma": 56.77,
+   "rgb": [
+    48.46,
+    58.99,
+    59.2
+   ],
+   "warm": -10.74,
+   "sat": 0.236,
+   "p05": 45.17,
+   "p50": 54.89,
+   "p95": 73.43,
+   "iqr": 12.55,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.042014,
+    "rgb": [
+     0.031327,
+     0.044972,
+     0.044179
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 4.54,
+    "minLag": 4,
+    "maxLag": 160,
+    "firstMin": 107,
+    "lag": 115,
+    "peak": 0.066
+   }
+  },
+  "shadowStep": {
+   "px": 29400,
+   "luma": 83.25,
+   "rgb": [
+    74.78,
+    85.1,
+    89.82
+   ],
+   "warm": -15.04,
+   "sat": 0.183,
+   "p05": 70.17,
+   "p50": 82.15,
+   "p95": 101.1,
+   "iqr": 11.05,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.088695,
+    "rgb": [
+     0.071355,
+     0.092434,
+     0.102727
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 5.37,
+    "minLag": 4,
+    "maxLag": 200,
+    "firstMin": 104,
+    "lag": 106,
+    "peak": 0.02
+   }
+  },
+  "treeIn": {
+   "px": 30720,
+   "luma": 92.81,
+   "rgb": [
+    85.99,
+    95.07,
+    90.5
+   ],
+   "warm": -4.51,
+   "sat": 0.14,
+   "p05": 77.16,
+   "p50": 93.36,
+   "p95": 108.23,
+   "iqr": 14.33,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.11085,
+    "rgb": [
+     0.094776,
+     0.116297,
+     0.104222
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 6.6,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 67,
+    "lag": 68,
+    "peak": 0.342
+   }
+  },
+  "treeOut": {
+   "px": 30720,
+   "luma": 103.89,
+   "rgb": [
+    98.74,
+    106.07,
+    97.45
+   ],
+   "warm": 1.29,
+   "sat": 0.11,
+   "p05": 86.29,
+   "p50": 103.5,
+   "p95": 117.42,
+   "iqr": 13,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.14094,
+    "rgb": [
+     0.126972,
+     0.147009,
+     0.121953
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 7.41,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 54,
+    "lag": 55,
+    "peak": 0.439
+   }
+  },
+  "treeInB": {
+   "px": 15360,
+   "luma": 89.23,
+   "rgb": [
+    82.5,
+    91.26,
+    89
+   ],
+   "warm": -6.5,
+   "sat": 0.146,
+   "p05": 75.6,
+   "p50": 88.79,
+   "p95": 105.23,
+   "iqr": 13.48,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.102041,
+    "rgb": [
+     0.087048,
+     0.106641,
+     0.100627
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 7.46,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 71,
+    "lag": 73,
+    "peak": 0.275
+   }
+  },
+  "treeInA": {
+   "px": 15360,
+   "luma": 96.38,
+   "rgb": [
+    89.47,
+    98.88,
+    91.99
+   ],
+   "warm": -2.52,
+   "sat": 0.133,
+   "p05": 79.95,
+   "p50": 97.28,
+   "p95": 109.3,
+   "iqr": 12.55,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.119659,
+    "rgb": [
+     0.102505,
+     0.125953,
+     0.107818
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 7.08,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 48,
+    "lag": 49,
+    "peak": 0.428
+   }
+  },
+  "treeOutA": {
+   "px": 15360,
+   "luma": 101.04,
+   "rgb": [
+    95.27,
+    103.34,
+    95.31
+   ],
+   "warm": -0.04,
+   "sat": 0.111,
+   "p05": 84.51,
+   "p50": 101.42,
+   "p95": 114.29,
+   "iqr": 12.99,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.131896,
+    "rgb": [
+     0.116338,
+     0.138107,
+     0.116175
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 7.52,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 43,
+    "lag": 44,
+    "peak": 0.652
+   }
+  },
+  "treeOutB": {
+   "px": 15360,
+   "luma": 106.73,
+   "rgb": [
+    102.21,
+    108.79,
+    99.59
+   ],
+   "warm": 2.62,
+   "sat": 0.11,
+   "p05": 88.16,
+   "p50": 106.36,
+   "p95": 121.1,
+   "iqr": 12.78,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.149985,
+    "rgb": [
+     0.137607,
+     0.155911,
+     0.12773
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 10.66,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 59,
+    "lag": 66,
+    "peak": 0.191
+   }
+  },
+  "crowns": {
+   "px": 20000,
+   "luma": 74.05,
+   "rgb": [
+    64.07,
+    76.39,
+    80.21
+   ],
+   "warm": -16.14,
+   "sat": 0.222,
+   "p05": 58.96,
+   "p50": 72.23,
+   "p95": 91.94,
+   "iqr": 18.13,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.070771,
+    "rgb": [
+     0.053421,
+     0.074885,
+     0.081112
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 4.71,
+    "minLag": 4,
+    "maxLag": 66,
+    "firstMin": 55,
+    "lag": 62,
+    "peak": -0.074
+   }
+  },
+  "farband": {
+   "px": 64320,
+   "luma": 170.56,
+   "rgb": [
+    178.59,
+    170.62,
+    146.38
+   ],
+   "warm": 32.21,
+   "sat": 0.177,
+   "p05": 140.06,
+   "p50": 171.9,
+   "p95": 189.31,
+   "iqr": 25.42,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.411422,
+    "rgb": [
+     0.456128,
+     0.41025,
+     0.291393
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 6.59,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 161,
+    "lag": 246,
+    "peak": 0.166
+   }
+  }
+ },
+ "world": {
+  "px": 1440000,
+  "luma": 125.06,
+  "rgb": [
+   116.55,
+   127.71,
+   123.97
+  ],
+  "warm": -7.42,
+  "sat": 0.187,
+  "p05": 53.44,
+  "p50": 120.57,
+  "p95": 200.95,
+  "iqr": 103.94,
+  "loFrac": 0,
+  "hiFrac": 0.023,
+  "lin": {
+   "Y": 0.255407,
+   "rgb": [
+    0.229703,
+    0.26426,
+    0.243389
+   ]
+  },
+  "blackFrac": 0.000143,
+  "col": {
+   "std": 5.7,
+   "minLag": 4,
+   "maxLag": 533,
+   "firstMin": 533,
+   "lag": null,
+   "peak": null
+  }
+ },
+ "sun": {
+  "mode": "elev",
+  "wantDot": 0.55,
+  "sunT": 0.692,
+  "elevDot": 0.55,
+  "err": 0,
+  "tol": 0.06,
+  "solve": {
+   "wantDot": 0.55,
+   "gotDot": 0.5499,
+   "err": 0.0001,
+   "t": 0.6916666666666667
+  }
+ },
+ "stationClock": null,
+ "captureDiag": null,
+ "iblSettleIters": 0,
+ "atCapture": {
+  "cam": {
+   "posE": [
+    0,
+    0,
+    0
+   ],
+   "quat": [
+    0.5324037024537195,
+    0.6090074791429676,
+    -0.5695573196166713,
+    -0.14581031387584367
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": null,
+  "drawPosB": null,
+  "drawPosE": null,
+  "drawEyeDistM": null,
+  "drawVisible": null,
+  "drawnParts": null,
+  "staleMaxM": null,
+  "drawBoundM": null,
+  "eyeLocal": null,
+  "eyeLocalOverBound": null,
+  "clock": null,
+  "frames": 1125,
+  "tick": 508,
+  "rebases": 2,
+  "eyeRel": [
+   0,
+   0,
+   0
+  ]
+ },
+ "preCapture": {
+  "cam": {
+   "posE": [
+    0,
+    0,
+    0
+   ],
+   "quat": [
+    0.5324037024537195,
+    0.6090074791429676,
+    -0.5695573196166713,
+    -0.14581031387584367
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": null,
+  "drawPosB": null,
+  "drawPosE": null,
+  "drawEyeDistM": null,
+  "drawVisible": null,
+  "drawnParts": null,
+  "staleMaxM": null,
+  "drawBoundM": null,
+  "eyeLocal": null,
+  "eyeLocalOverBound": null,
+  "clock": null,
+  "frames": 1036,
+  "tick": 443,
+  "rebases": 2,
+  "eyeRel": [
+   0,
+   0,
+   0
+  ]
+ },
+ "photoCapture": {
+  "cam": {
+   "posE": [
+    0,
+    0,
+    0
+   ],
+   "quat": [
+    0.5324037024537195,
+    0.6090074791429676,
+    -0.5695573196166713,
+    -0.14581031387584367
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": null,
+  "drawPosB": null,
+  "drawPosE": null,
+  "drawEyeDistM": null,
+  "drawVisible": null,
+  "drawnParts": null,
+  "staleMaxM": null,
+  "drawBoundM": null,
+  "eyeLocal": null,
+  "eyeLocalOverBound": null,
+  "clock": null,
+  "frames": 1037,
+  "tick": 443,
+  "rebases": 2,
+  "eyeRel": [
+   0,
+   0,
+   0
+  ]
+ },
+ "repeats": null,
+ "vmHidden": false,
+ "vmRatio": null,
+ "vmArms": null,
+ "pose": {
+  "yawDeg": 300,
+  "pitchDeg": -14,
+  "latDeg": -19.85,
+  "lonDeg": -72.785,
+  "altM": 1200
+ },
+ "postState": {
+  "post": true,
+  "ao": true,
+  "contact": true,
+  "underwater": true,
+  "bloom": true,
+  "grade": true,
+  "aa": true,
+  "contactRan": true,
+  "underwaterRan": false,
+  "headUnderM": 0,
+  "sun": [
+   -0.14708989260081898,
+   0.3872324843550918,
+   0.9101733717017122
+  ],
+  "csLengthM": 0.45,
+  "csSteps": 8,
+  "csStrength": 0.72
+ },
+ "shade": null,
+ "shadow": {
+  "cascades": 3,
+  "mapSize": 2048,
+  "vramMB": 48,
+  "splits": [
+   22,
+   80,
+   300
+  ],
+  "active": true,
+  "soft": false,
+  "texel0M": 0.01547,
+  "biasM": 0.02,
+  "biasSign": 1,
+  "biasUnits": 0.0000025003125390673835,
+  "reversedDepth": true,
+  "biasLegacy": false,
+  "biasRaw": null,
+  "castOff": false,
+  "castRaw": null
+ },
+ "ibl": {
+  "builds": 6,
+  "lastMs": 0.7,
+  "ready": true,
+  "size": 256,
+  "groundBuilds": 6,
+  "ground": true,
+  "biome": 3
+ },
+ "scatter": {
+  "canopyProps": 120854,
+  "canopyCells": 8503,
+  "canopyM2": 66685556,
+  "canopyPerM2": 0.00181,
+  "canopyDelivered": 0.9776,
+  "canopyRadiusM": 3500,
+  "canopyShade": false,
+  "canopyBareCells": 46657,
+  "canopyShadeMean": 0.009,
+  "canopyShadeSd": 0.0078,
+  "canopyShadeMax": 0.1006,
+  "canopyShadeCells": 7625,
+  "canopyPlanetMean": 0.1177,
+  "canopyPlanetSd": 0.0858,
+  "canopyOfferedCells": 93972,
+  "canopySlopeCells": 0,
+  "mid": true,
+  "midEdge": true,
+  "midProps": 0,
+  "midCards": 0,
+  "midCells": 0,
+  "midM2": 0,
+  "midPerM2": 0,
+  "midDelivered": 0,
+  "propsPlaced": 0,
+  "cellsScattered": 0,
+  "wantedPerM2": -0.60606,
+  "placedPerM2": 0,
+  "deliveredFraction": 0,
+  "cellsCapped": 83,
+  "chunksCapped": 1,
+  "canopyTailM": 5099.5,
+  "capCells": 72,
+  "capOfferCells": 11264,
+  "capCellFrac": 0.0064,
+  "capScaleMin": 0.9482,
+  "capFair": true,
+  "chunksRefused": 5,
+  "scatterBacklog": 0,
+  "chunks": 11,
+  "poolRefused": 0,
+  "poolCeiling": 2424832
+ },
+ "treeline": {
+  "amp": 1,
+  "mottle": 0.22,
+  "reachM": 3500,
+  "paint": 0,
+  "far": 0,
+  "floorShade": 1,
+  "stand": 1,
+  "floorLaw": 0,
+  "grove": 1,
+  "tone": {
+   "r": 0.05629622696693897,
+   "g": 0.16993117688950063,
+   "b": 0.025900673628411284,
+   "live": true
+  },
+  "self": {
+   "amp": 1,
+   "k": 3.2,
+   "floor": 0.137,
+   "cardMu": 0.6880917511021921,
+   "sinSun": 0.5512110118734893,
+   "cardShade": 0.1528912294316902,
+   "live": true,
+   "cardShadeRGB": [
+    0.0219118392836466,
+    0.20671658239076365,
+    0.005388818201008032
+   ],
+   "spectral": true,
+   "roughOverride": null,
+   "floorDerived": 0.45579482570846336,
+   "envOverride": null,
+   "uniform": [
+    1,
+    3.2,
+    0.08
+   ]
+  },
+  "crownNormal": {
+   "parts": 3,
+   "verts": 24,
+   "meanUp": 0.9471549441417059,
+   "minAbsOutOfPlane": 0.057096365839242935,
+   "minAzimuthOut": 1,
+   "downVerts": 0,
+   "path": "crown",
+   "ask": {
+    "on": true,
+    "flankDeg": 25,
+    "cardMix": 1
+   }
+  },
+  "crownFace": {
+   "raw": null,
+   "mode": 1,
+   "installed": true,
+   "compiles": 3,
+   "misses": [],
+   "materials": [
+    "props:OF_Canopy:canopy"
+   ],
+   "hazards": {
+    "normalMap": 0,
+    "bumpMap": 0,
+    "clearcoatNormalMap": 0,
+    "anisotropy": 0,
+    "notDoubleSided": 0,
+    "flatShaded": 0
+   }
+  },
+  "crownEnv": {
+   "raw": null,
+   "installed": true,
+   "forced": null,
+   "tau": 2.2018936035270147,
+   "skyView": 0.28493066498909464,
+   "sceneIntensity": 1,
+   "applied": 0.28493066498909464,
+   "appliedLive": 0.28493066498909464,
+   "ownEnvMap": true,
+   "sameTexture": true,
+   "writes": 1131,
+   "materials": [
+    "props:OF_Canopy:canopy"
+   ]
+  }
+ },
+ "phase": {
+  "present": false,
+  "amp": 0,
+  "shipped": 0,
+  "periodM": 256,
+  "probeRepeats": 128,
+  "wantPeriodM": 2,
+  "divides": true,
+  "repeats": 128,
+  "quantumM": 0.000030517578125,
+  "pmQuantumM": 0.03125,
+  "ratio": 1024
+ },
+ "emit": {
+  "installed": true,
+  "flagPresent": false,
+  "amp": 1,
+  "glow": 1,
+  "glowFlagPresent": false,
+  "spliced": 68,
+  "misses": [],
+  "max": 6,
+  "registered": 0,
+  "selected": 0,
+  "dropped": 0,
+  "sceneLights": 2,
+  "fireHot": 40,
+  "fireEmber": 10.4,
+  "wrap": 0.35,
+  "emitters": []
+ },
+ "render": {
+  "triangles": 305485,
+  "calls": 27,
+  "programs": 56,
+  "vramMB": 114.8,
+  "frameMs": {
+   "p50": 8.8,
+   "p95": 12.1,
+   "p99": 13.1
+  },
+  "passMs": {
+   "near": 9.1,
+   "post": 0.3,
+   "total": 9.7
+  }
+ },
+ "setup": {
+  "teleported": true,
+  "wantAltM": 1200,
+  "eyeAltM": 1200,
+  "observerMode": "FLY",
+  "regime": "SURFACE",
+  "spins": 0,
+  "depthMode": "reversed",
+  "chunks": {
+   "resident": 201,
+   "near": 51,
+   "far": 150,
+   "pending": 0,
+   "hidden": 0,
+   "fading": 0,
+   "converged": true
+  },
+  "converged": true,
+  "tickAdvanced": true
+ },
+ "log": [],
+ "cropPng": null
+}
