@@ -16767,7 +16767,7 @@ nothing else.
   against `?firelight=0` moves `hearthL` 6.60 to 3.99, `hearthR` 7.37 to 4.76 and
   `bandLit` 24.67 to 10.74 (35 to 56 per cent), proving the model is live; shipped
   against `?firelightground=0` (`TerrainAmpQuery.ts:320-338`) is **bit-identical at
-  every committed rectangle**, proving the ground's own share is exactly zero. This is
+  every committed rectangle**, proving the ground's own share is exactly zero (CORRECTED at the RN-2710 merge, 2026-08-23: the "exactly zero" evidence was twelve MACHINE-SURFACE rectangles a terrain-only flag can never move; the ground pool exists and measures -6.79/-10.58 per cent R at the new groundL/groundR grass rects, see rendering.md 2.47; this rank was rewritten once on its conclusion and again on its evidence base, and R4:547 had already published the rect gap.). This is
   now a one-file, sonnet-sized question (why `uEmitGround` delivers zero), reclassed
   from opus diagnosis to sonnet fix, and it is the rank this correction pass moves to
   third in the adopted re-ranking (2.46.8).
