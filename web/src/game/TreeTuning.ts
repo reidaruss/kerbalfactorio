@@ -38,10 +38,28 @@ export {
 
 export const TREE_CELL_M = 28;
 
-/** Most trees one cell may hold. A guard on the fair draw, not a target: at the
- *  Forest ask a cell expects 1.88 before weighting, so this is four standard
- *  deviations of headroom and it is COUNTED when it bites. */
-export const MAX_PER_CELL = 6;
+/** Most trees one cell may hold. A guard on the fair draw, not a target.
+ *
+ * WG-310 RAISED THIS FROM 6, measured rather than assumed. A full-weight
+ * Forest cell's expectation is `density * areaKm2` at `canopyWeight`'s ceiling
+ * of 1 (`buildCell`'s `e`, "before weighting" in the old comment's sense: the
+ * biome density alone, not yet thinned by the stand field or the treeline),
+ * which at a 28 m cell (`TREE_CELL_M`, ~0.000784 km2) and the OLD table's
+ * Forest ask (3,840/km2) is 3.01 and never bit -- 6 was real headroom. At the
+ * canopy table adopted table-wide (23,040/km2, WG-310) the same arithmetic
+ * gives 18.06, ABOVE the old cap: probed at `forestaircanopy` with the ask
+ * multiplied and the cap still at 6, `cellsCapped` read 765 of 3,169 offered
+ * (24%) and `deliveredFraction` 0.5115 -- silently shipping half the ruling's
+ * own table while every other number on the row claimed the full one. 20
+ * clears the deterministic ceiling (18.06) with the same kind of margin the
+ * old value held and restores `deliveredFraction` to 1 at every biome (the
+ * other three biomes' new maxima -- Hills 5.65, Mountains 2.26, Plains 1.98 --
+ * were never close to binding; Forest already was the constraint before this
+ * lane, RN-46's "measure, do not assume" applies to a guard exactly as much as
+ * to a picture). Still COUNTED when it bites: `cellsCapped` must read 0 on the
+ * shipped table, and a nonzero reading here is now a real defect again rather
+ * than the expected state this lane found. */
+export const MAX_PER_CELL = 20;
 
 /**
  * Per-instance art scale, and THE ONE PLACE SIZE MEANS SOMETHING.
@@ -85,32 +103,19 @@ export function treeScaleFor(grade: number): number {
 /**
  * Mean trees per km2 by biome index (biome.h order: Ocean, Beach, Plains,
  * Forest, Hills, Mountains, Polar, then the three moon biomes), BEFORE the stand
- * field and the treeline thin it.
+ * field and the treeline thin it, AND BEFORE `HARVEST_TABLE_MULT` below.
  *
- * THESE ARE THE RETIRED CANOPY TIER'S OWN ASKS, ROW FOR ROW (Registry's
- * CANOPY_* tables summed per biome, at its DENSITY_SCALE of 6), and that is a
- * correction rather than a convenience. The first version of this table asked
- * 2,400 in Forest, derived so that the RING AVERAGE matched what the canopy
- * realised (1,292/km2 after `canopyDistanceWeight` thinned two thirds of its
- * ring). Measured, that was right and it LOOKED WRONG, and the picture is what
- * caught it: the canopy is at FULL density inside 300 m and only thins beyond,
- * so its ring average is not the number the eye ever read. The eye reads the
- * near field, the near field was 1.6x thinner, and the middle distance of
- * `WG117_forest_trees.png` was visibly emptier than
- * `WG117_forest_head.png` while every counter said the delivery was 0.99.
- * DW-7 again: no number saw this.
- *
- * Copying the asks instead of re-deriving them also makes the change honest in
- * one direction only. The near field is preserved by construction, and the far
- * field is now DENSER than the canopy's, because the distance thinning is gone.
- *
- * BEACH AND OCEAN ARE 0 AND THAT IS THE RULING, NOT AN OMISSION: the survey's
- * beach candidate is "THE DESERT ... bare pale sand and dry scrub, no trees
- * ever" and the retired canopy had no Beach row either, so this pass leaves that
- * site bit-identical. POLAR IS 0 AND IS A DEFERRAL: a taiga wants its own
- * species and its own measurement site, and nothing polar is measurable here.
+ * THESE ARE THE RETIRED CANOPY TIER'S OWN PRE-WG-222 ASKS, ROW FOR ROW
+ * (Registry's CANOPY_* tables summed per biome, at DENSITY_SCALE 6 -- the
+ * OLDER x6, the one that turned a 70-tree Forest ask into 420 and is baked
+ * into the numbers below rather than applied here). Corrected by WG-310: the
+ * "x6" in each row comment used to mean THIS multiply, and a reader who saw
+ * "x6" beside 420 and concluded the table was current drew exactly the wrong
+ * conclusion (world-gen.md 6.13.11 item 5) -- WG-222 put a SECOND x6 on top
+ * of the canopy table later and this array never received it, which is
+ * `HARVEST_TABLE_MULT`'s whole reason to exist.
  */
-export const TREE_DENSITY_KM2: readonly number[] = [
+const HARVEST_BASE_KM2: readonly number[] = [
   0,      // Ocean
   0,      // Beach     (the desert stays the desert)
   420,    // Plains    (isolated copses in open grass; canopy 18+5+47, x6)
@@ -120,6 +125,49 @@ export const TREE_DENSITY_KM2: readonly number[] = [
   0,      // Polar     (deferred, see above)
   0, 0, 0,  // Moon: Regolith, Highland, CraterFloor
 ];
+
+/**
+ * WG-310 (NUMBERS.md WG-310 to WG-319, ADMIN RULING). `Registry.ts`'s canopy
+ * rows (`CANOPY_FOREST` etc.) are each built through `C()`, which multiplies
+ * by the shared `DENSITY_SCALE` (6) the same way `HARVEST_BASE_KM2` above
+ * already was -- so the CANOPY TABLE'S OWN per-biome total is `Registry`'s raw
+ * per-species sum (Forest 300+90+250=640) times THAT SAME six, giving Plains
+ * 2,520, Forest 23,040, Hills 7,200, Mountains 2,880: exactly
+ * `HARVEST_BASE_KM2` times a SECOND six. WG-222 put that second six on the
+ * canopy table alone and `TREE_DENSITY_KM2` never received it (world-gen.md
+ * 6.13.11 item 2, ScatterTuning.ts 1126-1130's "SIX FOLD density step at
+ * 550 m"). The ruling: harvest adopts the canopy table TABLE-WIDE, gated on
+ * this lane measuring the node cost at the densest pose FIRST (standing
+ * rule 7) rather than assuming the full six-fold ask was free.
+ *
+ * MEASURED (world-gen.md 6.17, `wg310probe.mjs`/`wg310interleave.mjs`,
+ * interleaved WG-189 pairs at `forestair`, the pose that bound): full x6
+ * delivers honestly (13,322 nodes against a 2,219 baseline, `cellsCapped` 0
+ * once `MAX_PER_CELL` was raised alongside this, see below) but its own p50
+ * MEDIAN across six interleaved samples was 20.5 ms -- over the 16.6 ms/60fps
+ * figure other lanes judge against -- and its p99 MEDIAN was 36.8 ms (worst
+ * 52.2) against `StatsProbe.ts`'s ALERT=25/FAIL=40 ms gate: deep in ALERT on
+ * every sample, short of FAIL on all of them. x2 held a p50 median 12.3-12.6
+ * ms and a p99 median 19.1-20.3 ms across two independent six-sample
+ * interleaved runs (worst single sample 28.3 of 12, one outlier) against a x1
+ * baseline whose own worst of six was 19.3 -- real, if imperfect, margin. x3
+ * already put 2 of 12 p99 samples over the ALERT line. `forestaircanopy`,
+ * this lane's other named pose, never left ALERT even at the full x6 (p99
+ * 20.3), so it was never the binding pose and forestair's number is the one
+ * that governs.
+ *
+ * SHIPPED FRACTION: 2 of the ruling's 6 -- the largest that held clear
+ * margin under ALERT at the pose that bound, documented as INTENTIONAL per
+ * the ruling's own stated fallback rather than silently short of the table.
+ * `?harvestx6=0` is the full kill switch back to `HARVEST_BASE_KM2` (mult 1,
+ * the exact pre-lane table), not to some third intermediate value, so the
+ * before arm is one page param from the shipped build either way (standing
+ * rule 7).
+ */
+export const HARVEST_TABLE_MULT = 2;
+
+export const TREE_DENSITY_KM2: readonly number[] =
+  HARVEST_BASE_KM2.map((v) => v * HARVEST_TABLE_MULT);
 
 /**
  * cos of the steepest ground a tree stands on, about 44 degrees, tighter than

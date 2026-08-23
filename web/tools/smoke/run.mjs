@@ -637,6 +637,13 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // every biome's tree ask together for the cost ladder, and `trees=<metres>`
   // sweeps the ring radius, which is the number the pass is judged on.
   'trees', 'treedensity',
+  // WG-310, standing rule 7. `harvestx6=0` is the harvest table's own kill
+  // switch, dividing `TreeTuning.HARVEST_TABLE_MULT` back out and restoring
+  // the exact pre-lane per-biome table. Independent of `treedensity` above
+  // (a generic ladder multiplier this lane's own measurement reused before
+  // committing the constant), so the two can never be attributed to each
+  // other in a reading.
+  'harvestx6',
   // WG-118, standing rule 7. `nodelod=0` draws every harvest node at LOD0 at
   // all ranges (the state before the batch loaded its own `_LOD1`/`_LOD2`);
   // `nodecull=0` turns per-instance frustum culling off. Two claims, two flags.

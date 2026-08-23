@@ -324,6 +324,13 @@ export function parseConfig(search: string): Config {
     rockDensity: Math.max(0, num(p, 'rockdensity', 1)),
     treeRadiusM: Math.min(1600, Math.max(0, num(p, 'trees', TREE_RADIUS_M))),
     treeDensity: Math.max(0, num(p, 'treedensity', 1)),
+    // WG-310, standing rule 7. The full kill switch for the harvest table's
+    // shipped fraction of the canopy table (`TreeTuning.HARVEST_TABLE_MULT`):
+    // `?harvestx6=0` divides it back out, restoring `HARVEST_BASE_KM2` (the
+    // exact pre-lane table) bit-for-bit rather than landing on some third
+    // intermediate value. Independent of `treedensity`, which stays the
+    // generic cost-ladder multiplier WG-116 already owns; the two compose.
+    harvestX6: p.get('harvestx6') !== '0',
     nodeLod: p.get('nodelod') !== '0',
     nodeCull: p.get('nodecull') !== '0',
     spires: p.get('spires') !== '0',

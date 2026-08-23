@@ -303,6 +303,13 @@ export interface Config {
    */
   readonly treeRadiusM: number;
   readonly treeDensity: number;
+  /** WG-310. `?harvestx6=0` is the harvest table's full kill switch: divides
+   *  out `TreeTuning.HARVEST_TABLE_MULT` and restores the exact pre-lane
+   *  table (`HARVEST_BASE_KM2`). Structural rather than a density of 1
+   *  through `treeDensity`, so the before/after pair is one page param on the
+   *  shipped binary (standing rule 7) and not two numbers a reader has to
+   *  multiply out by hand. */
+  readonly harvestX6: boolean;
   /** WG-118: `?nodelod=0` draws every harvest node at its LOD0 geometry at all
    *  ranges, which is what the node batch did before it learned that its own
    *  assets ship `_LOD1` and `_LOD2`. `?nodecull=0` turns per-instance frustum

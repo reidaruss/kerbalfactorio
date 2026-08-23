@@ -307,7 +307,8 @@ export async function phaseBodyScope(
         // same line of argument the scatter three constructors up gives.
         bodyRadiusM: oracle.body.radiusM, water: oracle.water,
         rocks: { enabled: cfg.rocks, density: cfg.rockDensity },
-        trees: { radiusM: cfg.treeRadiusM, density: cfg.treeDensity },
+        trees: { radiusM: cfg.treeRadiusM, density: cfg.treeDensity,
+          harvestX6: cfg.harvestX6 },
         nodeArt: { lod: cfg.nodeLod, cull: cfg.nodeCull },
         // No voxels without a character (`phaseTools` is player-gated too), so
         // there is no dug ground for a node to seat into. A thunk anyway, so

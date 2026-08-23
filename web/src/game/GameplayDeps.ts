@@ -43,8 +43,9 @@ export interface GameplayDeps {
    *  ladder's knob and 1 in play. */
   rocks?: { enabled: boolean; density: number };
   /** WG-116: `?trees=0` is the negative control; the radius is the measurement
-   *  ladder's knob and the shipping reach in play. */
-  trees?: { radiusM: number; density: number };
+   *  ladder's knob and the shipping reach in play. WG-310: `harvestX6` is
+   *  `?harvestx6=0`'s kill switch, forwarded to `VegetationFields` verbatim. */
+  trees?: { radiusM: number; density: number; harvestX6?: boolean };
   /** WG-118: `?nodelod=0` draws every node at LOD0 as before, `?nodecull=0`
    *  turns per-instance frustum culling off. Two claims, two controls. */
   nodeArt?: { lod?: boolean; cull?: boolean };

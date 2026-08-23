@@ -23,6 +23,7 @@ import { GameCore } from './GameCore.js';
 import { NodeField } from './NodeField.js';
 import { RockField } from './RockField.js';
 import { TreeField } from './TreeField.js';
+import { HARVEST_TABLE_MULT } from './TreeTuning.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { WaterOracle } from '../world/WaterOracle.js';
@@ -40,8 +41,12 @@ export interface VegetationDeps {
   water: WaterOracle | null;
   /** WG-69: `?rocks=0` is the negative control. */
   rocks?: { enabled: boolean; density: number };
-  /** WG-116: `?trees=0` is the negative control; radius is the ring. */
-  trees?: { radiusM: number; density: number };
+  /** WG-116: `?trees=0` is the negative control; radius is the ring.
+   *  WG-310: `harvestX6` is `?harvestx6=0`'s kill switch for the harvest
+   *  table's shipped fraction of the canopy table, composed with `density`
+   *  HERE and not by each caller, on this module's own DW-18 rule (a fact
+   *  read from the thing that owns it, never transcribed twice). */
+  trees?: { radiusM: number; density: number; harvestX6?: boolean };
   /** WG-118: `?nodelod=0` / `?nodecull=0`. */
   nodeArt?: { lod?: boolean; cull?: boolean };
   /** Live edits handle, a THUNK: voxels are created after this and a tree
@@ -63,8 +68,14 @@ export function makeVegetationFields(d: VegetationDeps): VegetationFields {
   const rocks = new RockField(d.core, game, field, d.bodyHandle,
     d.seed, d.rocks?.enabled ?? true, d.rocks?.density ?? 1,
     d.bodyRadiusM, d.water, d.editsHandle);
+  // WG-310. `harvestX6 === false` divides `HARVEST_TABLE_MULT` back out, so
+  // `TreeField` sees the exact pre-lane per-biome asks (`HARVEST_BASE_KM2`)
+  // and the kill switch is a structural one page param away, not a fifth of
+  // a density value nobody would guess.
+  const treeDensity = (d.trees?.density ?? 1)
+    * (d.trees?.harvestX6 ?? true ? 1 : 1 / HARVEST_TABLE_MULT);
   const trees = new TreeField(d.core, game, field, d.bodyHandle,
-    d.seed, d.trees?.radiusM ?? 0, d.trees?.density ?? 1,
+    d.seed, d.trees?.radiusM ?? 0, treeDensity,
     d.bodyRadiusM, d.water, d.editsHandle);
   return { game, field, rocks, trees };
 }
