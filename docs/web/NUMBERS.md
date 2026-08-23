@@ -34,6 +34,12 @@ is that the numbers are handed out by one writer before the work starts.
    boundaries (an interpolated index rounds into fabricated middle classes).
    Three audit windows this campaign measured the wrong subject; this rule
    exists because of them.
+7. **A density change is judged at the densest pose, and a merge runs the WHOLE
+   guard (promoted from WG-304, 2026-08-22):** a tripwire that runs one pose of
+   a four-pose guard is a tripwire for one pose; a change to any density term
+   must be verified at the densest pose in the set, and every merge runs the
+   full guard. The existence proof: a Forest-density regression shipped past a
+   Plains-pose tripwire and made main red.
 
 ## Allocated
 
