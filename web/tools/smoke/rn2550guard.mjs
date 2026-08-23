@@ -229,6 +229,101 @@ const COV_TOL = 0.03;
 // rho divides by f, so f amplifies noise by 1/f. Below this the correction is
 // louder than the thing it corrects and the pose should not be judged.
 const F_MIN = 0.10;
+// BT-345, INSTRUMENT 1. `b.rho` IS READ AT EXACTLY ONE PLACE BELOW (the
+// standing-violation deepening test, `side && side === b.rhoOut`), and every
+// pose in BASE today carries `rhoOut: null` with a measured `rho` inside the
+// band, so that branch is never taken and the pins assert NOTHING live
+// (BT-340's own comment already says this; `forestairnoon`'s BAND_LOW headroom
+// is 0.0073, i.e. the guard would let it fall most of the way to the floor
+// unnoticed). Two shapes were on the table: a HARD two-sided tolerance on
+// `rho` itself (fail if it moves by more than a stated amount either way,
+// independent of the band), or a PRINT-AND-FLAG (a non-fatal line naming the
+// pin and the delta). PRINT-AND-FLAG IS WHAT SHIPS, and the choice is argued
+// from this table's OWN history rather than from taste:
+//   forestairnoon  0.0992 -> 0.1510 (RN-2645, +0.0518) -> 0.1890 (RN-2645,
+//                  +0.0380) -> 0.1873 (WG-304, -0.0017)
+//   forestairlow   0.4363 -> 0.2987 (BT-340 adoption, -0.1376)
+//   flyovernoon    0.2488 -> 0.4762 (BT-340 adoption, +0.2274)
+//   flyoverlow     0.7021 -> 0.4016 (BT-340 adoption, -0.3005)
+// Every one of those is a LEGITIMATE, LOGGED, look-affecting or
+// stale-pin-correcting change, and three of the four are an order of
+// magnitude bigger than the 0.0073 headroom the live band already carries at
+// its tightest pose. A HARD two-sided tolerance tight enough to mean anything
+// (tighter than ~0.02, since that is smaller than every content-driven move
+// this table has ever recorded except WG-304's own 0.0017 hygiene fix) would
+// have made THIS FILE ITSELF fail on nearly every one of the changes above,
+// turning the project's one look-regression rail into a serial blocker on
+// exactly the kind of legitimate canopy work it exists to let through, with
+// an Admin-logged re-pin required on almost every landing. A tolerance loose
+// enough not to do that (bigger than 0.15) would not catch anything the BAND
+// check does not already catch on its own. So: PRINT-AND-FLAG. It costs
+// nothing on a legitimate change (a lane sees its own move named and moves
+// on) and it stops a `rho` drift from being invisible the way it is today,
+// without adding a second hard gate on a quantity this project's own history
+// shows moves by look-dev design, often and by a lot. Separate from the BAND
+// check (which stays a HARD fail, unconditionally, in either direction) and
+// separate from the standing-violation deepening test (which stays exactly
+// as BT-340 documented it).
+const RHO_DRIFT_TOL = 0.01;
+// BT-345, INSTRUMENT 2. `?proppaint=1` DOES NOT LEAVE THE CARDS EXACTLY BLACK
+// (open since N8; section 3 above states the finding and RN-2661/RN-2665's
+// re-derivation left it unclosed), and it under-counts `fB` by a THIRD OF THE
+// RECTANGLE at the worst pose. Re-measured on this lane's own build rather
+// than trusted from the file's history: `forestairnoon` under-count 0.4001,
+// `forestairlow` 0.1255, `flyovernoon` 0.2834, `flyoverlow` 0.1266 -- matching
+// World Audit R6's own "0.1255 to 0.4001" to the digit.
+//
+// DIAGNOSED, NOT JUST RE-MEASURED. Specular is RULED OUT: N7's 2.34.10 item 2
+// already showed `?propspec=0` moves the count by 0.007 and not by a third of
+// the rectangle (this lane re-confirmed the direction: the AERIAL splice
+// zeroes `gl_FragColor.rgb` to EXACTLY 0 algebraically when `uPropPaint=1` and
+// `uPropHaze=0`, so whatever was in `totalDiffuse`/`totalSpecular` before that
+// line is overwritten regardless -- the specular hypothesis was never
+// reachable by this mechanism in the first place). Scene fog is RULED OUT: no
+// `THREE.Fog`/`FogExp2` exists anywhere in this codebase (`grep -r
+// "new THREE.Fog"` returns nothing), so `<fog_fragment>`'s `USE_FOG` branch,
+// which runs AFTER the paint splice's zeroing and would otherwise be the
+// obvious "something re-blends after the zero" suspect, never compiles in at
+// all. THE LEADING CANDIDATE, argued but not proven live (would need a GPU
+// pixel-diff this lane's scripted probes cannot take): `Quality.ts` ships
+// `antialias: true` at the `med`/`high` tiers and `Config.ts`'s default
+// quality with no `?quality=` override is `'high'` -- exactly what this guard
+// runs at -- and the canopy cards are alpha-tested foliage with a high
+// edge-to-area ratio (leaf clusters, not filled quads). `?terrainpaint=1`
+// (used for `f`, section 3) has NO such edge problem because both sides of
+// every alpha-tested boundary are compared against an already-black terrain;
+// `?proppaint=1` compares against the UNCHANGED daylit terrain/sky, so an
+// MSAA-resolved edge sample that is part card (now black) and part background
+// (not black) reads as a partial, non-zero pixel, and a sparse foliage
+// texture has a lot of those edges relative to its filled area. This is
+// argued from the code and the quality table, not measured pixel-by-pixel,
+// and is recorded as a hypothesis for the rendering lane that takes this
+// rather than as a settled cause.
+//
+// THE CHOICE: RE-DERIVE THE ESTIMATOR'S ROBUSTNESS RATHER THAN FIX THE PAINT.
+// Reasons, not a default: (1) `rho` and `f` ALREADY DO NOT USE this arm --
+// section 3 states plainly that `?proppaint=1`'s coverage use is refuted and
+// `rho` is taken from the one clean arm (`?terrainpaint=1`) instead, so this
+// leak has never actually corrupted the guard's own pass/fail quantity; (2) a
+// shader-level fix to the paint splice or to MSAA/alpha-test behaviour is a
+// rendering-domain change to `PropSkyAmbient.ts`'s GLSL, out of an
+// instrument-tooling lane's charter and risking a pixel change to every
+// foliage material for a diagnostic arm nothing load-bearing reads; (3) the
+// one place this arm DOES feed a live assertion is the `fB > fA + COV_TOL`
+// check two lines below, which only fires if the leak makes `fB` count MORE
+// than `?terrainpaint=1` -- exactly backwards from the leak's own measured
+// direction (residual, non-black card radiance can only make MORE pixels
+// fail to read as exactly-black, i.e. `fB` can only go DOWN, never up) -- so
+// that check has never had any power to catch the leak getting WORSE. THE
+// ESTIMATOR RE-DERIVATION IS THIS: a measured ceiling on the under-count
+// itself, `(fA - fB)`, asserted as a ratchet exactly like the `box` Rship/
+// Rsurf ceilings above: it can shrink for free (a paint fix, or MSAA/quality
+// change that closes the gap, is always welcome and never fails) but it may
+// not GROW past what this lane measured plus margin without a logged
+// decision, because a leak that suddenly covers half the rectangle instead of
+// a third is a NEW escaping path and not this one. Ceiling: measured max
+// 0.4001 (`forestairnoon`) times a 10 per cent margin, rounded.
+const PROPPAINT_LEAK_CEILING = 0.44;
 
 // THE BASELINE, MEASURED, NOT CHOSEN. Measured 2026-08-21 on
 // `lane/n8-guardband`, one build, one session, server 127.0.0.1:5550
@@ -832,6 +927,19 @@ for (const shot of shots) {
       + ` coverage story has to be re-derived before rho can be trusted.`);
     continue;
   }
+  // BT-345, INSTRUMENT 2's RATCHET, the actual live assertion the check above
+  // never provided: the under-count is EXPECTED to be nonzero (section 3's own
+  // finding) so it cannot simply be asserted at zero, but it should not be
+  // allowed to grow without anyone noticing. Shrinking is always a pass.
+  const proppaintUndercount = fA - fB;
+  if (proppaintUndercount > PROPPAINT_LEAK_CEILING) {
+    fails.push(`${shot}: the ?proppaint=1 under-count is ${proppaintUndercount.toFixed(4)}`
+      + `, above the measured ceiling ${PROPPAINT_LEAK_CEILING} (fA ${fA.toFixed(4)}, fB`
+      + ` ${fB.toFixed(4)}). The known card-paint leak (section 3, BT-345) has grown past`
+      + ` what this lane characterised; that is either a NEW leaking path or a real`
+      + ` regression, not the standing defect, and it should be diagnosed rather than`
+      + ` waved through.`);
+  }
   if (!(f >= F_MIN)) {
     fails.push(`${shot}: crown coverage f = ${f.toFixed(4)} is below F_MIN ${F_MIN}.`
       + ` rho divides by f, so the correction would amplify noise by ${(1 / f).toFixed(1)}x`
@@ -920,6 +1028,19 @@ for (const shot of shots) {
   } else if (b.rhoOut) {
     console.log(`  note: ${shot} rho ${rho.toFixed(4)} is now INSIDE the band and is`
       + ` still marked rhoOut '${b.rhoOut}'. Clear the marking and re-pin.`);
+  }
+  // BT-345, INSTRUMENT 1's PRINT-AND-FLAG, live regardless of the band/rhoOut
+  // outcome above (a pose can drift by a lot and stay comfortably in-band, as
+  // three of the four rows in this table's own history did). Non-fatal by
+  // design; see RHO_DRIFT_TOL's own comment for why this is a print and not a
+  // second hard gate.
+  const rhoDrift = rho - b.rho;
+  if (Math.abs(rhoDrift) > RHO_DRIFT_TOL) {
+    console.log(`  drift: ${shot} rho ${rho.toFixed(4)} vs pinned ${b.rho.toFixed(4)}`
+      + ` (${rhoDrift >= 0 ? '+' : ''}${rhoDrift.toFixed(4)}). Not a failure; the pin`
+      + ` is documentation until this repo re-derives PINS from measurements the way`
+      + ` the box ratchet does. If this move is this lane's own, consider re-pinning`
+      + ` it here with rationale.`);
   }
   for (const [what, got, pin] of [['box', B('clearing'), b.boxClearY],
     ['crowns', C('clearing'), b.crownClearY]]) {

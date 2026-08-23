@@ -17500,3 +17500,129 @@ but the rank's own text also names grass blades passing through the drifts
 (three-ring, per the corrected owed item 1), the `snow` texture family, and the
 forward-scatter BSDF. One further nit for the next atlas lane: ASSET-SPECS' KB
 column is stale on the same three rows its triangle note names.
+## 2.49 BT-345 (build-tooling, guard-instruments lane), 2026-08-23: one instrument built on N19's own fix, one measured correction, one narrowed diagnosis, all doc/tooling only
+
+> This is a **build-tooling** addendum, not a rendering lane; it touches no file under
+> `web/src/` and changes no shading constant. Numbered 2.49 rather than 2.47 or 2.48 because
+> `lane/n19-emitground` landed section 2.47 and `lane/n18-snow` landed 2.48 the same
+> day, concurrently, from the same fork window -- see 2.47 for the actual
+> `uEmitGround` diagnosis, which this section's own 2.49.1 depends on and cites rather
+> than repeats. Full account, the code and the exact commands: the lane's own
+> `docs/controllers/build-tooling.md` BT-345 entry and the three new tools under
+> `web/tools/smoke/` (`firelightgroundarm.mjs`, `iblgroundarm.mjs`, and the
+> `rn2550guard.mjs` PROPPAINT_LEAK_CEILING comment block).
+
+### 2.49.1 `?firelightground=0`'s arming check, built on N19's `groundL`/`groundR`, not on an independent rediscovery
+
+**THIS SUBSECTION IS SUPERSEDED FROM ITS OWN FIRST DRAFT, AND THE CORRECTION IS
+RECORDED RATHER THAN SILENTLY REWRITTEN.** This lane's brief allocated instrument 3 as
+"COORDINATE with RN-2710: if that lane fixes the ground path this instrument may come
+alive" and, working from `origin/main` at `50daac5b` before `lane/n19-emitground` was
+visible, this lane independently added its OWN two ad hoc ground rectangles (RN-2420's
+old pixel coordinates, never before committed) and measured `?firelightground=0`
+moving them by 3.5 to 4.4 per cent -- a real, reproducible signal, but on rectangles
+that (unnoticed at the time) overlap `hearthL`'s own column by 0.0169 of the frame
+width, contaminating the reading with machine pixels. **`lane/n19-emitground` landed
+the actual, clean diagnosis first: section 2.47 above.** `?firelightground=0` was
+never proven inert; every one of `smelternight`'s twelve PRE-EXISTING committed
+rectangles is machine surface (2.47(a)), so "bit-identical at every committed
+rectangle" was a rect-blindness artefact and not evidence about the ground term at
+all. N19's own `groundL`/`groundR` (clear of both hearth columns, verified
+programmatically bit-identical on every machine rectangle across the same pair) show a
+real, `R`-channel-specific move (`groundL` -6.7%, `groundR` -10.6%) attributable to
+`uEmitGround` alone, and a 200x-gain diagnostic overlay (2.47(a)-adjacent) confirms a
+correctly shaped, correctly centred falloff pool: the term is wired, live and correct.
+The residual "unlit lawn" look is real but small on an already-dark night ground, and
+separately explained by grass-blade geometry (`GrassGlsl.ts`) carrying no
+`ofEmitIrradiance` splice of its own -- a second material's seam, routed rather than
+fixed by N19, and not this lane's to fix either.
+
+**THIS LANE'S OWN `groundL`/`groundR` ADDITION IS WITHDRAWN AND REPLACED, VERBATIM,
+BY N19'S.** `SHOTS.smelterhero.extra.groundL`/`groundR` in `artframe.js` now carry
+N19's own coordinates and comment block byte-for-byte, so this lane's own arming check
+depends on the correct, already-landed rectangles rather than on a second, inferior
+set that would have collided with N19's at merge. `web/tools/smoke/firelightgroundarm.mjs`
+is the arming check BT-345's brief actually asked for -- fail loud if the flag is
+registered but moves nothing at its own pose -- rewritten to check PER-CHANNEL relative
+movement (the effect is `R`-specific, per N19's own finding; a luma-only check would
+have badly undersold it) against N19's measured deltas. **It PASSES**, because the
+flag was never the defect: this instrument now exists so a FUTURE regression that
+makes the ground term genuinely inert again is caught, rather than mistaken for the
+rect-blindness that made two audits in a row believe it already was.
+
+### 2.49.2 `?iblground=0`'s blast radius is a WHOLE-FRAME blackout, not "one rectangle"
+
+2.34.10 item 4 (un-numbered, near line 11047) reads: "`?iblground=0` renders a BLACK
+MID-FIELD at `forestair`... The `crowns` rectangle comes back r=g=b=0.00 with `world`
+still at 85.26... [and] `hzBand` is bit-identical to the shipped arm," filed as
+"pre-existing... owned by nobody... a small lane."
+
+**Measured fresh on this lane's own build, the severity is far larger.** At
+`forestair`, `box`, `crowns`, `under`, `shadowStep`, `treeIn`, `treeOut` and `farband`
+all read EXACTLY r=g=b=0 (`blackFrac` 1.0), and `hzBand` -- the rectangle claimed
+bit-identical -- is 79.8 per cent black (`world.blackFrac` 0.0002 -> 0.6535, +65.3
+points). **At `forestfloor` (the ground-level calibration pose) the ENTIRE FRAME,
+sky included, goes to exactly zero** (`world.blackFrac` 0.0016 -> 1.0000, +99.8
+points); the saved screenshot is a flat black rectangle.
+
+**Isolated to post-processing, specifically bloom; CrownEnv and "losing the
+environment" are both ruled out, live.** `?post=0` at `forestfloor` restores a normal
+frame (`box.blackFrac` 1.0 -> 0.057). Of the five post sub-stages, toggling each one
+individually alongside `?iblground=0` showed only `?bloom=0` restores normalcy
+(0.057-ish, i.e. -> 0.042); `?ao=0`, `?grade=0`, `?aa=0` and `?contact=0` each stayed
+fully black. Separately, a live readback of `window.__ofTerrainArt.treeline()
+.crownEnv` under `?iblground=0` reads its normal sky-view-derived
+`applied`/`appliedLive` (~0.58 at `forestair`, matching the un-flagged expectation),
+so `CrownEnv.ts`'s own env/envMapIntensity path is untouched -- the crown's own
+environment term is NOT the mechanism. `?ibldiag=noenv` (an existing, different flag
+that outright nulls `scene.environment`) does not reproduce the blackout either, so
+"losing the environment texture" in general is also ruled out. **The leading
+hypothesis, named but not proven live:** a render-target interaction between the
+ground-capture path (`SkyIbl.update`/`Renderer.environmentFrom`, which allocates and
+disposes a fresh PMREM target on every rebuild) and the bloom mip chain
+(`BloomGlsl.ts`/`PostStack.ts`), triggered specifically by the `iblGroundOn` /
+`setGroundMode` gate never firing when the flag is off. This is GPU-object-identity
+territory a scripted probe cannot resolve without a live debugger, so it is routed
+rather than fixed.
+
+**The instrument shipped is a blast-radius ceiling, and it correctly FAILS today.**
+`web/tools/smoke/iblgroundarm.mjs` asserts `?iblground=0` may not newly black out more
+than 5 per cent of `world` at either `forestair` or `forestfloor` -- a ceiling
+appropriate to what the flag's name claims (a ground-bounce isolator) rather than to
+what it currently does (a near-total kill switch). It exits 1 on both poses today,
+printing the exact percentages above, which is the honest state of a defect this brief
+explicitly permits documenting rather than fixing when the mechanism needs tools this
+lane does not have.
+
+### 2.49.3 `?proppaint=1`'s card leak: specular re-confirmed innocent, fog ruled out, MSAA named as the leading hypothesis
+
+2.35.9 item 3 and 2.46.7 both record `?proppaint=1`'s under-count (0.1255 to 0.4001,
+re-confirmed to the digit on this build) without a settled cause; `?propspec=0` was
+already shown not to close it. This lane re-derives WHY specular could never have been
+reachable in the first place, rather than only re-confirming the measurement: the
+paint splice's own zeroing line (`PropSkyAmbient.ts`'s `AERIAL` block, `vec3 ofApSrc =
+mix(gl_FragColor.rgb, vec3(0.0), uPropPaint)`) takes whatever is in `gl_FragColor.rgb`
+-- diffuse, specular, everything upstream -- and overwrites it algebraically to exactly
+0 when `uPropPaint=1` and `uPropHaze=0` (the `cardsBlack` arm's own flags), so no
+upstream radiance term, specular included, can survive past that line. Scene fog is
+also ruled out: `grep -r "new THREE.Fog"` returns nothing anywhere in this codebase, so
+`<fog_fragment>`'s `USE_FOG` branch -- which runs immediately after the paint splice's
+zeroing and would otherwise be the obvious "something re-blends after the zero"
+suspect -- never compiles in at all. **Leading hypothesis, argued from the code and the
+quality table rather than measured pixel-by-pixel:** `Quality.ts` ships `antialias:
+true` at `med`/`high` and the guard's own default quality (no `?quality=` override) is
+`'high'`; the canopy cards are alpha-tested foliage with a high edge-to-fill ratio, and
+`?proppaint=1` (unlike `?terrainpaint=1`, which compares against an already-black
+terrain) compares a blackened card against the UNCHANGED daylit terrain/sky behind it,
+so an MSAA-resolved edge sample straddling a card silhouette reads as a partial,
+non-zero blend rather than a clean black-or-not test. Routed as a hypothesis for
+whichever lane next touches this paint, not settled here.
+
+`rn2550guard.mjs`'s `rho`/`f` were ALREADY immune to this leak before this lane (they
+are taken from the `?terrainpaint=1` arm exclusively, per the file's own section 3),
+so this diagnosis changes no guard number; what changed is that the guard's own
+`fB > fA + COV_TOL` check, which had no power to catch the leak getting WORSE (it can
+only fire on an impossible OVER-count), now sits beside a measured-ceiling ratchet on
+the under-count itself (`PROPPAINT_LEAK_CEILING`, `rn2550guard.mjs`), so a future
+regression that leaks MORE than this lane characterised is caught rather than absorbed
+silently. Full rationale in that constant's own comment block.
