@@ -157,7 +157,7 @@ export const CANOPY_CHUNK_MAX = 32768;
  *
  * Floored at `MAX_PER_CHUNK` so this can only ever RAISE a coarse chunk's
  * allowance, never lower one: a depth-9 chunk is 3.39 km2 and the area rule
- * alone would give it 8,127, which is tighter than today and would be a second
+ * alone would give it 16,272 at CANOPY_CHUNK_KM2 4,800 (an earlier draft computed 8,127 from the 2,400 rung; merge-time correction), which at the 2,400 rung would have been tighter than today and would be a second
  * silent thinning introduced by a fix for the first.
  */
 export function canopyChunkCap(areaKm2: number, perKm2 = CANOPY_CHUNK_KM2): number {
