@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2730 to RN-2734, `lane/aerosol-measure`, **MEASUREMENT ONLY, NO SHIPPED CONSTANT MOVED: AT `vista` THE HAZE DOES NOT ERASE THE FAR SILHOUETTE, IT INVERTS IT; AT `limb` THE TERM IS 300 SCALE HEIGHTS OUT OF REACH; AND `aerosolScaleM` HAS NO PAGE PARAMETER AT ALL.** World Audit R6 re-classed the aerosol amplitude from a lane dispatch to a Reid look-and-value decision and prescribed a small measurement lane over the three things its `flyover` sweep never covered. Taken, in one session, one build, one sentinel-verified server, twenty-eight frames each in its own browser process, with `?aerosol=`'s arming READ BACK OFF EACH PHOTOGRAPHED PAGE (`artframe.js` gained an additive `atmos` block over `window.__ofAtmos`; `sigma` is `uAerosol.x` AFTER the amplitude, so an arm that never reached the program is caught rather than tabulated as a null). **THE INSTRUMENT IS PROVED AGAINST THE AUDIT FIRST**: R6 4.1's own rect and ladder reproduce to a worst 0.034 counts (3.397/2.572/2.233/1.720 shipped against R6's 3.402/2.578/2.240/1.726) and `flyover` `box` luma reads 2.44.9's own 113.39. **NOISE FLOORS, PER POSE AND IN BOTH DOMAINS, AND THEY DISAGREE BY THREE ORDERS OF MAGNITUDE**: repeat-capture `pngdiff` 0.04 / 0.30 / 0.03 per cent at `flyover`/`vista`/`limb` (the cloud deck's own edges) against rectangle-statistic nulls of 0.000 to 0.008 counts on the very same pairs, so a rectangle lane must quote the rectangle's null and a pixel lane the frame's. **`vista`, SUBJECT 1, AND THE TRADE IS THE REVERSE OF THE EXPECTED ONE.** The committed `hzBand`, documented as "the furthest ridge in the frame", is one third HUD and is refused with a number: its maximum is **225.25 counts in all six arms including `?atmos=0`**, 25 counts above anything the pose's terrain can produce (200.06), and invariant to every switch. ONE new rectangle, `vistaSil` `x460 y426 320x90`, placed against the capture by `rn2730sky.mjs`'s per-column skyline finder run on the haze-off frame (skyline rows 442 to 450 over x 460 to 780, clear of the key legend at x<=415 and the crosshair at x790-810), read as three zones and PROVED by `?atmos=0`: the `sky` zone is **0.000 mean, 0.000 max, all 3,840 px pure void** and the `far` zone is 181.452 of lit terrain. The sky-to-ground step over the amplitude ladder is **-29.894 / -27.456 / -19.094 / -1.773 / +9.985** against a 0.001-count null: the shipped haze is the only thing making `vista`'s far skyline legible, it does so with the polarity inverted (far ground 30 counts BRIGHTER than the sky over it), the two curves cross near amplitude 0.20 to 0.25, and **at 0.25 the far skyline is 1.77 counts from invisible** while the provisional 0.50 keeps 64 per cent of the shipped step. Far-ground structure rises monotonically +14.2/+70.1/+143.7/+239.4 per cent at 32 px, the same shape as `flyover`'s, so the depth cue and the structure loss run together and only the silhouette reverses. `?skyaero=0` splits the pose exactly: it reproduces the full-off arm's sky **to three decimals** (201.820) and moves the ground band by **0.016 counts**. **`limb`, SUBJECT 2, AND THE AUDIT'S NAMED REGRESSION RISK IS MIS-LOCATED.** The committed `ring` is unmoved: 91.693 shipped and **91.693 at `?aerosol=0`**, whole-sweep span 0.037 counts, non-monotone, against a 0.006 null; `?skyaero=0` gives an identical 68.30 `box` luma. Rule 6 first: under `?atmos=0` `ring` falls to **0.149 mean, p50 0** while `ground` keeps 20.735, so the rectangle is atmosphere and nothing else. Rule 8 then makes it a REACH null and the proof is analytic: `ofAtmoSkyAero` opens with `exp(-h0/H)` and the readbacks give h0 = 120,000 m over H = 400 m, i.e. **exp(-300) = 5.1e-131, exactly zero in float32**, at an eye 65 times the layer's own 1,842 m one-per-cent altitude. What DOES move at `limb` is the sunlit disc, and chromatically far more than photometrically: over the sweep its luma falls 8.33 counts while its red falls **30.33** and its blue rises **14.23**, and the `seam` LOD-ribbon defect gains 10 per cent of visibility at the provisional 0.50. **`aerosolScaleM`, SUBJECT 3: THERE IS NO SWITCH, AND THE READBACK PROVES IT EMPIRICALLY** (`scaleM` reads 400 in all twenty-eight frames; `Atmosphere.glsl.ts:155` reaches the GPU once at `:456`, `SkyPass.ts:171` is the only runtime writer and writes `.x`, `__ofAtmos` publishes it with no setter, and `run.mjs`'s `PAGE_PARAMS` has no key for it). No `web/src` was touched; instead the ladder {100,200,300,400,600,800}, derived as R6's own {0.25,0.50,0.75,1.00} fractions of the code's own 400 m plus a 1.5x and 2x upward arm, is DERIVED from the shader's own integral by `rn2730scale.mjs`, and the derivation is licensed by an identity: both constants meet exactly once in each entry point, as `uAerosol.x * column(uAerosol.y)`, and every quantity downstream is a function of `od` alone (`tr`, `ofAeroTintAt`, the composite), the phase function takes neither and `sunT` is Rayleigh and Mie only. **WITHIN a pose the scale height is therefore NOT a distinct handle**: one global amplitude reproduces it to within 3.2 per cent of optical depth across `flyover`'s whole 1.2-to-15.2 km band and to 0.0 per cent at `limb`. **ACROSS poses it IS selective, in 2.44.10 item 1's stated direction and now with a number**: the ground entry's A_eq is **1.0000 at `vista` at every rung** (true whether the far basin is level with the observer or 3.8 km below it, because `ofAeroColumn`'s clamp holds the low end at full density) and **H/400 at `flyover` and `limb`**, so `aerosolScaleM = 200` costs the aerial poses 47 per cent of their optical depth and a standing eye NOTHING, which no amplitude can do. At `vista` the scale height is inert on the ground and live on the sky (A_sky 0.25 to 2.00), so combined with the `?skyaero=0` split it predicts `aerosolScaleM = 100` putting `vista`'s step at roughly +5 to +8 counts with the ground band untouched: a prediction from measured endpoints, not a capture, and it needs the flag first. No emulated frame is committed, because an amplitude chosen to match a scale height in the ground band is wrong in the same frame's sky by up to 5.5x. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, full four-pose **`rn2550guard` PASS 4 of 4, exit 0** (expected null; `web/src/` untouched). Four files changed under `web/`, all additive instruments: `probes/artframe.js` (one added `atmos` report block), `rn2730arms.mjs`, `rn2730sky.mjs`, `rn2730scale.mjs`. Owed and routed: **`aerosolScaleM` needs a page parameter** (one read beside `AEROSOL_AMP`, one `PAGE_PARAMS` key, one re-check of `SkyProbe.ts:139`), `vista`'s `hzBand` should be re-placed or retired, and the orbital disc's warmth is a second Reid call hiding inside the first. Full record in section 2.51; the decision sheet's slot is filled at `docs/REID-DECISIONS-2026-08-27.md` section 6; frames `docs/screenshots/RN2730_*`. THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2730 to RN-2734, `lane/aerosol-measure`, corrected same day per Admin's ruling on a fresh-context verifier's FIX verdict, **MEASUREMENT ONLY, NO SHIPPED CONSTANT MOVED: AT `vista` THE HAZE INVERTS THE FAR SKYLINE'S LUMINANCE POLARITY WHILE HUE CARRIES THE EDGE; AT `limb` THE TERM IS 300 SCALE HEIGHTS OUT OF REACH; AND `aerosolScaleM` HAS NO PAGE PARAMETER AND THREE CONSUMERS.** World Audit R6 re-classed the aerosol amplitude from a lane dispatch to a Reid look-and-value decision and prescribed a small measurement lane over the three things its `flyover` sweep never covered. Taken, in one session, one build, one sentinel-verified server, twenty-eight frames each in its own browser process, with `?aerosol=`'s arming READ BACK OFF EACH PHOTOGRAPHED PAGE (`artframe.js` gained an additive `atmos` block over `window.__ofAtmos`; `sigma` is `uAerosol.x` AFTER the amplitude, so an arm that never reached the program is caught rather than tabulated as a null). **THE INSTRUMENT IS PROVED AGAINST THE AUDIT FIRST**: R6 4.1's own rect and ladder reproduce to a worst 0.034 counts (3.397/2.572/2.233/1.720 shipped against R6's 3.402/2.578/2.240/1.726, and the intermediate 32 px rungs +26.0/+67.5/+127.8 against R6's +26.1/+67.7/+128.2, a one-per-cent disagreement inside tolerance and now annotated in both records) and `flyover` `box` luma reads 2.44.9's own 113.39. **NOISE FLOORS, PER POSE, IN TWO DOMAINS THAT DISAGREE BY THREE ORDERS OF MAGNITUDE, AND PUBLISHED AS BOUNDS RATHER THAN AS ONE PAIR**: eight repeat pairs give within-session `pngdiff` 0.04 / 0.30 to 0.67 / 0.02 to 0.04 per cent at `flyover`/`vista`/`limb` against rectangle-statistic nulls of 0.000 to 0.038 counts on the same pairs, and the fresh-context verifier's own session read `vista` at **2.21 per cent and 0.198 counts**, so **the cross-session floor a later lane must budget against is 0.67 per cent and 0.20 counts**, not the within-session figure this lane first published. A suspected first-frame warm-up effect is named and explicitly NOT isolated, because in every batch the shipped arm is capture one. **`vista`, SUBJECT 1, AND THE FIRST DRAFT OF THIS RESULT WAS WRONG IN A WAY WORTH RECORDING.** The committed `hzBand`, documented as "the furthest ridge in the frame", is refused with a number: its maximum is **225.25 counts in all six arms including `?atmos=0`**, **11.5 counts above the frame's own terrain maximum of 213.73** (measured on a 358,800 px HUD-free ground rect; an earlier draft said 25 counts by comparing against the far zone's 200.06), and HUD glyphs span **18 of its 90 rows across its top 51**. ONE new rectangle, `vistaSil` `x460 y426 320x90`, placed by `rn2730sky.mjs`'s per-column skyline finder on the haze-off frame and PROVED by `?atmos=0`: the `sky` zone is **0.000 mean, 0.000 max, all 3,840 px pure void** and the `far` zone is 181.452 of lit terrain. Over the ladder the LUMINANCE step runs **-29.894 / -27.456 / -19.094 / -1.773 / +9.985** and crosses zero near 0.25, **but a zero luminance step is not invisibility and this lane's own instrument says so**: `rn2730sky.mjs` had to be a CHROMA detector because luma has nothing to lock onto at this pose. The chroma step **never approaches zero**, is **smallest at shipped (-26.53)** and **largest at 0.50 (-68.33)**, reads -39.09 at 0.25, and the sky-to-far RGB separation runs 52.39/56.10/54.22/27.88/28.63; the committed 3x crops agree, with 0.50 the most legible skyline and shipped the least. **So the corrected result is a POLARITY finding**: shipped haze puts the far ground 30 counts brighter than the sky over it, which is upside down for a horizon, and it is also the worst of the five arms for the hue contrast that actually carries the edge. The first draft's "all but vanishes", "1.77 counts from invisible" and its reclassing of 0.25 as out are **struck**; 0.50 is recommended more strongly than before, on the chroma column and the crops. Far-ground structure rises monotonically +14.2/+70.1/+143.7/+239.4 per cent at 32 px, the same shape as `flyover`'s. `?skyaero=0` splits the pose exactly, reproducing the full-off sky **to three decimals** (201.820) while moving the ground band **0.016 counts**, which is what makes the inversion attributable to the sky half. **`limb`, SUBJECT 2, AND THE AUDIT'S NAMED REGRESSION RISK IS MIS-LOCATED.** The committed `ring` is 91.693 shipped and **91.693 at `?aerosol=0`** (span 0.037 over the whole sweep, non-monotone, null 0.006); `?skyaero=0` gives an identical 68.30 `box` luma. Rule 6 first: `?atmos=0` drops `ring` to **0.149 mean, p50 0** while `ground` keeps 20.735, so the rect is atmosphere and nothing else. Rule 8 then classes it a REACH null: `ofAtmoSkyAero` opens with `exp(-h0/H)`, the readbacks give h0 = 120,000 m over H = 400 m, so the factor is **exp(-300) = 5.1e-131, exactly zero in float32**. **That bound is a property of `ofChapman`'s PARAMETERISATION** (anchored on density at the eye, ray assumed rising) **and not proof that a boundary layer is physically absent from a limb view**; a grazing ray does pass the layer near its tangent point, and the reason it is moot is magnitude, about one pixel at 399 km. What DOES move at `limb` is the sunlit disc, chromatically far more than photometrically: luma -8.33 counts over the sweep against red **-30.33** and blue **+14.23**, and the `seam` LOD-ribbon defect gains 10 per cent of visibility at the provisional 0.50. **`aerosolScaleM`, SUBJECT 3: THERE IS NO SWITCH, THERE ARE THREE CONSUMERS, AND THE READBACK PROVES THE FIRST HALF EMPIRICALLY** (`scaleM` reads 400 in all twenty-eight frames). The consumers are the shader's ground entry, the shader's sky entry, and **`SkyProbe.ts:138-139`, a CPU sky-ambient probe that reads `p.aerosolScaleM` directly and feeds `uSkyIrr` into the ambient fill on every surface**, following the sky entry's factor rather than the ground's. No `web/src` was touched; the ladder {100,200,300,400,600,800}, derived as R6's own {0.25,0.50,0.75,1.00} fractions of the code's 400 m plus 1.5x and 2x, is DERIVED from the shader's own integral by `rn2730scale.mjs`, licensed by an identity: both constants meet exactly once per entry point as `uAerosol.x * column(uAerosol.y)` and everything downstream is a function of `od` alone, the phase takes neither and `sunT` is Rayleigh and Mie only. **WITHIN a pose the scale height is NOT a distinct handle in the ground entry** (one amplitude reproduces it to 3.2 per cent across `flyover`'s whole band, 0.0 per cent at `limb`). **ACROSS poses the GROUND entry is selective and 2.44.10 item 1 is vindicated with a number**: A_eq is **1.0000 at `vista` at every rung** and **H/400 at `flyover` and `limb`**, so `aerosolScaleM = 200` costs the aerial poses 47 per cent of their optical depth and `vista`'s ground band nothing. **That scope is the ground entry only**: the same cut moves `vista`'s low sky (A_sky(H=200) about 0.55, putting it near the 0.50 arm's 169.1 against a ground band still at 179.9, about two thirds of the silhouette step gone) and shifts the ambient through the third consumer, so a standing eye's world is NOT left alone, only its far ground band is. No emulated frame is committed, because an amplitude matched to the ground band is wrong in the same frame's sky by up to 5.5x. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, full four-pose **`rn2550guard` PASS 4 of 4, exit 0** (expected null; `web/src/` untouched). Four files changed under `web/`, all additive instruments: `probes/artframe.js` (one added `atmos` report block), `rn2730arms.mjs`, `rn2730sky.mjs`, `rn2730scale.mjs`. Owed and routed: **`aerosolScaleM` needs a page parameter and `SkyProbe.ts:138-139` is a second authority that must move with it, not a re-check**; `vista`'s `hzBand` should be re-placed or retired; `rn2730arms.mjs` should take a throwaway first frame so its nulls stop carrying the warm-up bias; and the orbital disc's warmth is a second cost on the same call, now on the sheet. Full record in section 2.51; the decision sheet's slot is filled at `docs/REID-DECISIONS-2026-08-27.md` section 6; frames `docs/screenshots/RN2730_*`. THIS LINE IS A POINTER: replace it, never append to it.
 
 >
 > *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2725, `lane/plains-pose`, **THE PLAINS HERO GETS TWO EYES, NOT ONE, BECAUSE THE FIRST ONE'S OWN NULL WAS VACUOUS: A GRASS CARD CULLS ON SLANT RANGE AND A 100 M EYE NEVER GETS WITHIN 70 M OF ANYTHING.** R6 rank 5 dispatched per its own draft row (WORLD-AUDIT-R6-2026-08-23.md 4.5d): `meadowfield` (pitch -12, 1.62 m eye) cannot judge its own headline complaint ("the world ends at the carpet") because the 84 m-to-horizon band occupies about twelve frame rows, so the scale ladder reads shipped and `?grass=0` identically. **FIRST DRAFT SHIPPED ONE SHOT, `plainsmid` (h = 100 m, pitch -25, `rangeRects` 85 to 800 m), read a bit-identical scale ladder and called it the carpet's absence proved with a number. A FRESH-CONTEXT VERIFIER FOUND THE NULL VACUOUS**: `GrassGlsl.ts`'s mat rung culls on SLANT range (`dist = length(iPos - cameraPosition)`, not horizontal), `GrassCover.ts`'s `outM = (30, 70)` windows it to exactly zero past 70 m of slant, and at h = 100 m every visible point's slant range is already >= 100 m, so the grass system's own 38,340 resident mat instances draw and paint ZERO pixels regardless of the flag -- proved live (the same site/yaw/pitch at altM 40 moves 23,318 pixels, 2.05 per cent, against `?grass=0`). A rectangle proved to hold ground is not a rectangle proved to hold a REACHABLE subject: the machine-rect trap generalised from surface identity to reach, now NUMBERS.md rule 8. **SHIPPED TWO POSES per Admin's ruling (the verifier's own option B).** `plainsmid` KEPT AT h = 100 UNCHANGED, record corrected to claim only the far ground material/splat (`TerrainCoverFar*`), aerial perspective 85-800 m, scatter density/LOD and relief -- explicitly not the carpet. **`plainslow` ADDED**, same site/yaw/pitch, h = 20 m, `rangeRects` 20/30/45/60/85/150/250/400 m (capped at 400: one pose cannot hold a rung inside the carpet AND 800 m at tens of rows, which is the exact impossible demand that broke `plainsmid`). **`plainslow` SEPARATES SHIPPED FROM `?grass=0` FOR REAL**: per-rect RGB moves 4 to 9 counts at 20/30/45 m (bit-identical at 60 m and past it, matching the slant-range prediction), a full-frame `pngdiff` moves 563,363 of 1,440,000 pixels (39.12 per cent, `maxDelta` 185, split both ways), and `rn2664scale.mjs` over the carpet zone reads a -0.529-count delta at 16 px against a measured 0.000-count repeat-capture noise floor -- more than ten times the brief's 0.05-count floor, and the far-of-carpet zone stays bit-identical, corroborating the cutoff. Two corrections also made at this pass: the manifest's "double for margin" language (85.07 to 100 m is +17.5 per cent, not a doubling) and a banner note that mis-called the base's single previous-pointer block (`lane/n19-emitground`, merged after `lane/n18-snow` despite a lower RN number) a duplicate. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, full four-pose **`rn2550guard` PASS 4 of 4, exit 0** (expected null: no rendered pixel changed; `web/src/` untouched). One file changed under `web/`: `web/tools/smoke/probes/artframe.js`, additive only, two shots plus one dispatch-guard clause (diff proves every other shot untouched). Full record in section 2.50; frames `docs/screenshots/RN2725_plainsmid_1x.png` and `docs/screenshots/RN2725_plainslow_1x.png`. THIS LINE IS A POINTER: replace it, never append to it.
@@ -18038,7 +18038,7 @@ lane's attention: it is the single fact that made `plainsmid` blind and made
 `plainslow` necessary, and nothing here argues it is wrong, only that its
 consequences were undocumented before this correction.
 
-## 2.51 THE AEROSOL AT THE TWO POSES THE AUDIT NEVER TOOK, AND `aerosolScaleM` HAS NO SWITCH: AT `vista` THE HAZE DOES NOT ERASE THE FAR SILHOUETTE, IT INVERTS IT, AND AT `limb` THE TERM IS 300 SCALE HEIGHTS OUT OF REACH (RN-2730 to RN-2734, 2026-08-23, `lane/aerosol-measure`)
+## 2.51 THE AEROSOL AT THE TWO POSES THE AUDIT NEVER TOOK, AND `aerosolScaleM` HAS NO SWITCH: AT `vista` THE HAZE INVERTS THE FAR SKYLINE'S LUMINANCE POLARITY WHILE HUE CARRIES THE EDGE, AND AT `limb` THE TERM IS 300 SCALE HEIGHTS OUT OF REACH (RN-2730 to RN-2734, 2026-08-23, `lane/aerosol-measure`)
 
 **MEASUREMENT ONLY. NO SHIPPED CONSTANT MOVED, NO RENDERED PIXEL MOVED AT
 DEFAULT SETTINGS, `web/src/` UNTOUCHED.** The amplitude choice is Reid's on his
@@ -18117,26 +18117,51 @@ gap.
 NUMBERS.md's RN-2700 entry is binding: a diff means nothing until its same-build
 null is measured, and the null is a property of what MOVES in the frame rather
 than of the instrument, so it is re-taken per pose. Each null below is a
-**second capture of the shipped arm**, taken in this session against this
-server in its own fresh browser process, diffed against the first.
+**second capture of an identical arm**, taken in this session against this
+server in its own fresh browser process, diffed against the first. This lane
+took three such pairs at `vista` and `limb` and two at `flyover`, because every
+arm set it ran carried its own repeat.
 
-| pose | `pngdiff` moved / 1,139,800 | per cent | maxDelta | split | statistic-domain null |
-|---|---|---|---|---|---|
-| `flyover` | 447 | **0.04** | 160 | 233 dark / 214 light | `rn2664scale` **0.000** counts at 1, 16, 32 and 64 px on the audit's own rect |
-| `vista` | 3,404 | **0.30** | 181 | 1,649 / 1,755 | `rn2664scale` **0.000 / 0.000 / 0.001** at 1 / 16 / 32 px on `vistaSil.far`; `boxstat` mean **0.001** on `sky`, **0.000** on `far` |
-| `limb` | 310 | **0.03** | 238 | 148 / 162 | `boxstat` mean **0.006** on `ring`, **0.015** on `ground`, **0.038** on `seam`; `rn2664scale` **0.008** counts on `ring` |
+| pose | pairs | `pngdiff` moved / 1,139,800, per cent | worst | statistic-domain null |
+|---|---|---|---|---|
+| `flyover` | shipped, `?skyaero=0` | 447 (0.04), 454 (0.04) | **0.04** | `rn2664scale` **0.000** counts at 1, 16, 32 and 64 px on the audit's own rect |
+| `vista` | shipped, `?skyaero=0`, `?atmos=0` | 3,404 (0.30), 7,676 (0.67), 3,808 (0.33) | **0.67** | `boxstat` mean **0.001** on the shipped pair and **0.005** on the `?skyaero=0` pair, both zones; `rn2664scale` **0.000 / 0.000 / 0.001** at 1 / 16 / 32 px on `vistaSil.far` |
+| `limb` | shipped, `?skyaero=0`, `?atmos=0` | 310 (0.03), 424 (0.04), 281 (0.02) | **0.04** | `boxstat` mean **0.006** on `ring`, **0.015** on `ground`, **0.038** on `seam`; `rn2664scale` **0.008** counts on `ring` |
 
-**The two domains disagree by three orders of magnitude and both are correct.**
-`vista` moves 3,404 pixels between two loads of one build while its rectangle
-means reproduce to a thousandth of a count. Those are the cloud deck's own
-pixels: the frame carries a moving cloud layer, and a handful of its edges land
-on a different pixel each load without shifting any rectangle's mean. **A lane
-that reads a rectangle must quote the rectangle's null and not the frame's**,
+**THESE ARE LOWER BOUNDS AND THE TABLE MUST BE READ AS ONE.** Every pair above
+is same-session and same-server, and a fresh-context verifier running the same
+poses in its OWN session measured `vista` at **2.21 per cent** in the pixel
+domain and **0.198 / 0.159 counts** on the two `vistaSil` zones, i.e. seven
+times and forty times what a within-session pair shows. Both readings are real
+and they bound different things: within-session repeats share a warmed browser,
+a warmed shader cache and one server process, and a cross-session pair does not.
+**The number a later lane must budget against is the cross-session one: 0.67
+per cent of pixels and 0.20 counts of rectangle mean at `vista`.** Every finding
+in this section clears that: the smallest surviving `vista` effect is the far
+zone's 11.975-count move (60x) and the chroma step's 41.80-count span across the
+ladder (209x), and the retired 1.773-count luminance reading is not relied on
+for anything (2.51.5).
+
+**A SUSPECTED WARM-UP EFFECT, NAMED BUT NOT ISOLATED.** The verifier reports
+the first frame of a batch as a consistent outlier. This lane's data is
+consistent with that and **cannot separate it**, because in every batch the
+shipped arm IS capture one, so capture one appears in all three of its pairs.
+Routed as an instrument fix rather than a finding: `rn2730arms.mjs` should take
+a throwaway frame before its first measured arm, or take its null between two
+non-first captures, and until it does, its nulls carry this bias.
+
+**THE TWO DOMAINS DISAGREE BY THREE ORDERS OF MAGNITUDE AND BOTH ARE CORRECT.**
+`vista` moves thousands of pixels between two loads of one build while its
+rectangle means reproduce to a hundredth of a count. Those are the cloud deck's
+own pixels: the frame carries a moving cloud layer, and a handful of its edges
+land on a different pixel each load without shifting any rectangle's mean. **A
+lane that reads a rectangle must quote the rectangle's null and not the frame's**,
 and a lane that reads pixels must quote the frame's. RN-2700's `pondside`
 entry made the same point from the other end; this is the first pose set where
 the two nulls have been printed side by side.
 
-None of the three poses reaches RN-2700's 0.56 per cent dry floor. That floor
+None of the three poses reaches RN-2700's 0.56 per cent dry floor on a
+within-session pair, and `vista` clears it on a cross-session one. That floor
 was measured on `walk` poses whose settle lands on a different tick each run
 (NUMBERS.md, the RN-2050 row); `flyover` and `limb` are `fly: true` fixed
 cameras with no walker, and `vista` is a `walk` pose standing still.
@@ -18154,6 +18179,23 @@ brackets.
 | 32 | 2.233 (2.240) | 7.039 (7.073) | +215.2% (+215.7%) |
 | 64 | 1.720 (1.726) | 6.674 (6.707) | +288.0% (+288.5%) |
 
+The intermediate rungs, which R6 published only as percentages and which the decision sheet's own table quotes, so that table is traceable to a
+measurement rather than to a citation:
+
+| scale px | 1.00 | 0.75 | 0.50 | 0.25 | 0.00 |
+|---|---|---|---|---|---|
+| 1 | 3.397 | 4.158 (+22.4%) | 5.257 (+54.8%) | 6.784 (+99.7%) | 8.924 (+162.7%) |
+| 16 | 2.572 | 3.192 (+24.1%) | 4.153 (+61.5%) | 5.536 (+115.3%) | 7.527 (+192.7%) |
+| 32 | 2.233 | 2.813 (+26.0%) | 3.740 (+67.5%) | 5.087 (+127.8%) | 7.039 (+215.2%) |
+| 64 | 1.720 | 2.345 (+36.3%) | 3.317 (+92.8%) | 4.706 (+173.6%) | 6.674 (+288.0%) |
+
+R6's own 32 px percentages are +26.1 / +67.7 / +128.2 / +215.7 against this
+lane's +26.0 / +67.5 / +127.8 / +215.2, and its shipped absolute is 2.253
+against 2.233. **Two records of one measurement disagreeing by about one per
+cent is inside the reproduction tolerance and is not a correction to either**,
+but it must not sit unannotated in two places, so the decision sheet now
+carries the note as well.
+
 Worst absolute disagreement 0.034 counts, worst percentage disagreement 0.5
 points, against a repeat-capture null of 0.000. `flyover`'s `box` luma reads
 **113.39**, which is 2.44.9's own published shipped figure to the hundredth.
@@ -18166,23 +18208,34 @@ luma 113.38 against 113.39. **All of the audit's band is the GROUND entry
 (`ofAtmoAerial`) and none of it is the sky ray**, which is worth having written
 down before section 2.51.5 separates the two.
 
-### 2.51.5 SUBJECT 1: `vista`, AND THE HAZE DOES NOT ERASE THE FAR SILHOUETTE, IT INVERTS IT
+### 2.51.5 SUBJECT 1: `vista`, WHERE THE HAZE INVERTS THE FAR SKYLINE'S LUMINANCE POLARITY AND THE SKYLINE'S LEGIBILITY IS CARRIED BY HUE
 
 **THE COMMITTED RECTANGLE NAMED FOR THIS JOB CANNOT DO IT, AND THE PROOF IS ONE
 NUMBER THAT NEVER MOVES.** `vista`'s `hzBand` is documented in
 `probes/artframe.js:651` as "the furthest ridge in the frame". At 1600x900 it
 is `x80 y414 320x90`, and `pngdiff.mjs` excludes the left 210 px of every frame
-for the reason this rectangle ignores: **it is one third HUD.** Three lines of
-the key legend (`drag=look WASD=walk space=jump shift=sprint`, `V=FP/TP` and
-`=hud`) sit inside it. The measurement, and it is the cheapest rule-6 proof
-this campaign has produced: `hzBand`'s **maximum is 225.25 counts in all six
-arms taken at this pose, to the hundredth, including `?atmos=0`**, while the
-pose's own terrain maximum on the same `?atmos=0` frame is 200.06. The
-brightest pixel in the rectangle named for the furthest ridge is a glyph core,
-it is 25 counts above anything the terrain can produce, and it is invariant to
-every switch this lane touched. Its `p99` is 214.10 and its `p01` falls to 8.18
-under `?atmos=0`, so the rectangle holds HUD, sky and ground at once. **No
-number was taken on it and none should be.**
+for the reason this rectangle ignores: **the HUD key legend is inside it.**
+Three lines of it (`drag=look WASD=walk space=jump shift=sprint`, `V=FP/TP` and
+`` `=hud ``) run through the rectangle's upper half. Counted rather than
+estimated, on the `?atmos=0` control frame: **18 of the rectangle's 90 rows
+carry a pixel above the pose's own terrain maximum, spread across its top 51
+rows (414 to 464)**, and 303 of its 28,800 pixels are above that maximum. The
+glyphs are thin, so this is a row-span contamination and not a third of the
+area, and an earlier draft of this section said "one third HUD", which
+overstated it.
+
+The tell is the statistic that will not move: `hzBand`'s **maximum is 225.25
+counts in all six arms taken at this pose, to the hundredth, including
+`?atmos=0`**. The pose's own terrain maximum on that same control frame is
+**213.73**, measured over a 358,800 px HUD-free and view-model-free ground rect
+(`x210 y520` to `x1590 y780`), so the brightest pixel in the rectangle named
+for the furthest ridge is **11.5 counts above anything the terrain can
+produce** and is invariant to the deletion of the atmosphere. An earlier draft
+put that margin at 25 counts by comparing against 200.06, which is the far
+ZONE's maximum rather than the frame's; the margin is 11.5 and the conclusion
+is unchanged. Its `p99` is 214.10 and its `p01` falls to 8.18 under `?atmos=0`,
+so the rectangle holds HUD, sky and ground at once. **No number was taken on it
+and none should be.**
 
 `vista`'s `box` is no better for a structure claim, for the second reason
 `Atmosphere.glsl.ts:480-486` already writes down: it straddles the horizon. Its
@@ -18218,37 +18271,68 @@ deletes the sky box, so sky becomes void and ground stays drawn. On that frame:
 | `far` | 181.452 | 200.06 | fully lit terrain, no void pixel at any percentile |
 
 Nothing but sky reads exactly zero and nothing but ground survives the sky
-box's deletion at 181 counts. The rectangle holds what it is named for.
+box's deletion at 181 counts. The rectangle holds what it is named for. **The
+control's own failure mode, stated:** `?atmos=0` also removes the sky's
+contribution to terrain lighting, so it is a PRESENCE test (void against
+not-void) and not a brightness comparison. It is used here only as the former.
 
 **RULE 8.** No null is published about `far`, and the reach question is
 answered by responsiveness: `far` moves **11.975 counts** across the sweep
-against a **0.000-count** repeat-capture null, and the pose reports its chunk
-set CONVERGED at 327 resident (184 near, 143 far). The subject is drawn, it is
-inside the terrain system's reach, and it is inside the aerosol's: the eye sits
-1.6 m above the layer base, so `exp(-h/H)` at the eye is 0.996 and the whole ray
-is in the densest air the term models.
+against a within-session repeat-capture null of **0.005 counts** (section
+2.51.3), and the pose reports its chunk set CONVERGED at 327 resident (184
+near, 143 far). The subject is drawn, it is inside the terrain system's reach,
+and it is inside the aerosol's: the eye sits 1.6 m above the layer base, so
+`exp(-h/H)` at the eye is 0.996 and the whole ray is in the densest air the term
+models.
 
-**THE SILHOUETTE, over the same amplitudes R6 used at `flyover`.** Step is
-`sky` mean minus `far` mean, the sky-to-ground convention section 4.1 used.
+**THE SILHOUETTE, over the same amplitudes R6 used at `flyover`, IN BOTH
+LUMINANCE AND CHROMA, AND THE SECOND HALF IS THE ONE THAT SETTLES IT.** Steps
+are the `sky` zone's value minus the `far` zone's, the sky-to-ground convention
+section 4.1 used. `RGB sep` is the Euclidean distance between the two zones'
+mean colours.
 
-| amplitude | `sky` mean | `far` mean | step | reading |
-|---|---|---|---|---|
-| **1.00 shipped** | 149.966 | 179.860 | **-29.894** | far ground 30 counts BRIGHTER than the sky over it |
-| 0.75 | 157.267 | 184.723 | -27.456 | |
-| 0.50 | 169.119 | 188.213 | -19.094 | |
-| 0.25 | 188.360 | 190.133 | **-1.773** | **the far skyline all but vanishes** |
-| 0.00 | 201.820 | 191.835 | **+9.985** | sky brighter than ground: the natural polarity |
-| repeat null | 149.967 | 179.860 | -29.893 | **0.001 counts** |
+| amplitude | `sky` mean | `far` mean | **luma step** | `sky` (r-b) | `far` (r-b) | **chroma step** | **RGB sep** |
+|---|---|---|---|---|---|---|---|
+| **1.00 shipped** | 149.966 | 179.860 | **-29.894** | -29.65 | -3.12 | **-26.53** | **52.39** |
+| 0.75 | 157.267 | 184.723 | -27.456 | -31.76 | +22.21 | -53.97 | 56.10 |
+| 0.50 | 169.119 | 188.213 | -19.094 | -32.72 | +35.62 | **-68.33** | 54.22 |
+| 0.25 | 188.360 | 190.133 | **-1.773** | -13.77 | +25.32 | -39.09 | 27.88 |
+| 0.00 | 201.820 | 191.835 | **+9.985** | -16.95 | +12.48 | -29.44 | 28.63 |
+| repeat null | 149.967 | 179.860 | -29.893 | | | | |
 
-**This is the lane's headline and it reverses the expected trade.** At `vista`
-the shipped haze is not erasing the far silhouette; it is the only thing making
-the far skyline legible, and it does so with the polarity inverted, because the
-low sky loses 51.85 counts to the aerosol while the ground under it loses only
-11.98. The two curves cross near amplitude **0.20 to 0.25**, and at 0.25 the far
-skyline is 1.77 counts from invisible against a 0.001-count null. **The value
-the decision sheet currently recommends provisionally, 0.50, sits at -19.09
-counts, which is 64 per cent of the shipped step and comfortably clear of the
-crossing.** 0.25 is not, and this is the first measurement that says so.
+**THE READING, AND THIS SECTION'S FIRST DRAFT GOT IT WRONG IN A WAY WORTH
+RECORDING.** That draft read the luminance column alone, saw it cross zero near
+0.25, and published "the far skyline all but vanishes" and "1.77 counts from
+invisible", then reclassed 0.25 as out on the strength of it. **A luminance step
+of zero is not invisibility**, and this lane's own instrument says so in its own
+header: `rn2730sky.mjs` had to be a CHROMA detector precisely because at this
+pose "the far ground and the sky above it are within a few counts of each other
+in luminance, so a luma edge finder has nothing to lock onto". Applying that
+statement to the sweep and not only to the detector:
+
+1. **The luminance step inverts.** At shipped the far ground is 29.9 counts
+   BRIGHTER than the sky over it, which is upside down for a horizon; the term
+   is what puts it that way, because the low sky loses 51.85 counts to the
+   aerosol while the ground under it loses only 11.98. The crossing near
+   amplitude 0.20 to 0.25 is where that inversion unwinds, and past it the frame
+   has the natural polarity.
+2. **The chroma step never approaches zero at any rung.** It is **smallest at
+   shipped (-26.53)** and **largest at 0.50 (-68.33)**, and at 0.25 it is
+   -39.09, still 1.47 times shipped. `RGB sep` says the same: 52.39 at shipped
+   against 54.22 at 0.50.
+3. **The committed 3x crops agree with the chroma column and not with the luma
+   one.** `RN2730_sil_vista_a0.50_3x.png` is the most legible skyline of the
+   four, `RN2730_sil_vista_a1.00_3x.png` the least, and at
+   `RN2730_sil_vista_a0.25_3x.png` the ridge undulations read plainly.
+
+**So the corrected result is a polarity finding, not a visibility one, and it
+argues for 0.50 more strongly than the first draft did.** The shipped haze
+inverts the far skyline's luminance polarity and is the WORST of the five arms
+for the hue contrast that actually carries the edge; 0.50 is the best of them on
+both the chroma step and the crops. **0.25 is not reclassed as out by this
+lane**: it recovers 143.7 per cent of the far ground's structure and keeps a
+chroma step half again the shipped one, and the first draft's case against it
+rested entirely on the luminance reading that point 1 above retires.
 
 **THE FAR GROUND'S OWN STRUCTURE at `vista`,** on `vistaSil.far`, the same
 instrument as the audit's:
@@ -18277,7 +18361,9 @@ ray's (`ofAtmoAerial`) at full strength:
 the ground by **0.016 counts**. The decomposition is exact: every one of the
 51.85 counts the sky rectangle loses belongs to the sky entry, and every one of
 the 11.98 counts the ground rectangle loses belongs to the ground entry. That
-is what makes section 2.51.7's scale-height result actionable.
+is what makes section 2.51.7's scale-height result actionable, and it is also
+what makes the polarity inversion above attributable: the inversion is the SKY
+half's doing, not the ground half's.
 
 ### 2.51.6 SUBJECT 2: `limb`, WHERE THE TERM THE AUDIT CALLED A REGRESSION RISK IS 300 SCALE HEIGHTS OUT OF REACH
 
@@ -18331,6 +18417,19 @@ is 65 times that. There is no amplitude at which this rectangle can move, and
 section 2.51.7 shows there is no scale height on any reasonable ladder at which
 it can either.
 
+**WHAT THIS BOUND IS AND IS NOT, because the distinction matters to anyone
+reading it as physics.** It is a property of `ofChapman`'s PARAMETERISATION:
+that function integrates an exponential atmosphere along a ray leaving an eye
+at altitude `h0` and rising, so it is anchored on the density AT THE EYE, and
+an eye 300 scale heights up has none. It is not a proof that a boundary layer
+is physically absent from a limb view. A real grazing ray does pass through the
+layer near its tangent point, and a model parameterised on the tangent altitude
+rather than the eye altitude would return something. The magnitude is what
+makes it moot here rather than a defect: a 400 m layer subtends about one pixel
+at 399 km of slant range in this frame, so nothing in the table above would
+move under either parameterisation, and no lane should go looking for a bug in
+`ofChapman` on the strength of this null.
+
 **WHAT DOES MOVE AT `limb` IS THE SUNLIT DISC, AND THAT IS THE REAL REGRESSION
 RISK.** The ground entry is a terminating ray, so it applies to the scaled
 planet shell:
@@ -18361,7 +18460,9 @@ orbit, and it is a Reid look call of its own.
 ### 2.51.7 SUBJECT 3: `aerosolScaleM`, WHICH HAS NO PAGE PARAMETER, AND WHAT ITS LADDER WOULD DO DERIVED FROM THE SHADER'S OWN INTEGRAL
 
 **THE WIRING GAP, STATED PLAINLY AND NOT WORKED AROUND.** This lane may not
-touch `web/src`, and `aerosolScaleM` cannot be reached from a URL:
+touch `web/src`, and `aerosolScaleM` cannot be reached from a URL. Points 1 to 4
+and 6 below are the gap; point 5 is the reason closing it takes two edits
+rather than one:
 
 1. `Atmosphere.glsl.ts:155` is Forge's only literal (`aerosolScaleM: 400`);
    `:370` is the airless body's `1`.
@@ -18370,7 +18471,16 @@ touch `web/src`, and `aerosolScaleM` cannot be reached from a URL:
    `SkyPass.ts:171`, and it writes `.x`.
 4. `window.__ofAtmos` (`SkyPass.ts:169-206`) **publishes** the scale height
    through `aerosol()[1]` and offers no setter beside it.
-5. `run.mjs`'s `PAGE_PARAMS` carries `aerobase`, `aerosol`, `skyaero` and
+5. **There is a THIRD consumer and it is on the CPU.** `SkyProbe.ts:138-139`
+   reads `p.aerosolScaleM` directly, in the sky-ambient probe whose result is
+   written into `uSkyIrr` and thence into the ambient fill every surface in the
+   frame receives (`SkyPass.ts:307-311`). It calls the same Chapman column with
+   the same `max(altM - baseM, 0)`, so it follows the SKY entry's factor and
+   not the ground entry's. Any page parameter added for this constant must
+   drive this read too, or the ambient will silently disagree with the sky it
+   is supposed to be sampled from, which is the exact defect that file's own
+   header says it exists to close.
+6. `run.mjs`'s `PAGE_PARAMS` carries `aerobase`, `aerosol`, `skyaero` and
    `aerodepth` and nothing for the scale height, and an unregistered flag is a
    hard exit before the browser starts (`run.mjs:858-876`).
 
@@ -18453,30 +18563,41 @@ first draft.
    reproduced by a single global amplitude to within 3.2 per cent of the optical
    depth across the entire 1.2-to-15.2 km band; at `limb` to within 0.0 per
    cent. It is not depth-selective. It is the amplitude with a different label.
-2. **Across poses it IS selective, in the direction 2.44.10 item 1 named and by
-   a different mechanism than that item assumed.** The item's phrasing is that
+2. **Across poses the GROUND entry is selective, in the direction 2.44.10 item
+   1 named and by a different mechanism than that item assumed.** The item's phrasing is that
    the constant is "near-irrelevant to ground-level rays and moves the aerosol
    column a 1,200 m eye looks through". That is exactly right and now has a
    number: the ground entry's `A_eq` is **1.0000 at `vista`** and **H/400 at
    `flyover` and `limb`**. `aerosolScaleM = 200` costs the aerial poses 47 per
-   cent of their optical depth and the ground pose **nothing at all**;
-   `?aerosol=0.50` costs both 50 per cent. **If Reid wants `flyover`'s far
-   structure back without touching a standing eye's world, the scale height is
-   the only constant that does it and the amplitude cannot.**
+   cent of their optical depth and costs `vista`'s ground band **nothing at
+   all**; `?aerosol=0.50` costs both 50 per cent. **The scope of that claim is
+   the GROUND entry only, and an earlier draft of this point stated it as
+   though it covered the whole frame.** It does not: point 3 below is the same
+   constant's effect on `vista` through the other two consumers, and it is
+   large. So the honest form is that the scale height is the only constant that
+   returns `flyover`'s far GROUND structure without touching a standing eye's
+   far GROUND, and that a standing eye's sky and ambient move regardless.
 3. **At `vista` the scale height is not inert; it is inert on the GROUND and
    live on the SKY**, `A_sky` running 0.25 to 2.00 over the ladder. Section
    2.51.5's decomposition makes that measurable rather than derived: because
    `?skyaero=0` moves `vista`'s `sky` rectangle by the full 51.85 counts and its
    `far` rectangle by 0.016, a scale-height cut at `vista` would **brighten the
    low sky and leave the far ground's own haze exactly as it is**. The far
-   silhouette's step, which is 29.89 counts of inverted polarity at shipped,
-   would pass through zero and come out the natural way up. Bracketing from the
-   measured arms: `A_sky(H=100)` is 0.29 at the near-horizontal elevations that
-   rectangle actually samples, which sits between the 0.25 arm's sky (188.36)
-   and the 0.50 arm's (169.12), so `aerosolScaleM = 100` puts `vista`'s step at
-   roughly **+5 to +8 counts** with the ground band untouched. That is a
-   prediction from measured endpoints plus a source-derived decomposition, not a
-   capture, and it needs the flag before it is a fact.
+   silhouette's luminance step, which is 29.89 counts of inverted polarity at
+   shipped, would unwind toward the natural way up. Bracketing from the measured
+   arms at the near-horizontal elevations that rectangle actually samples:
+   `A_sky(H=200)` is about 0.55, which puts the low sky near the 0.50 arm's
+   169.1 while the far ground stays at its shipped 179.9, i.e. a luminance step
+   of about -11 counts, **roughly two thirds of the shipped silhouette step
+   gone**; `A_sky(H=100)` is about 0.29, between the 0.25 arm's sky (188.36)
+   and the 0.50 arm's (169.12), which takes the step to roughly +5 to +8
+   counts. **And the sky is not the only thing that moves**: item 5 above puts
+   the same constant into the CPU sky-ambient probe, so a scale-height cut
+   shifts the ambient fill on every surface in the frame as well. A standing
+   eye's world is therefore NOT left alone by this constant; only its far
+   ground band is. These are predictions from measured endpoints plus a
+   source-derived decomposition, not captures, and they need the flag before
+   they are facts.
 4. **No emulated frame is committed.** Because the equivalence holds per entry
    point and not per frame, an amplitude chosen to reproduce a scale height in
    the ground band is wrong in the same frame's sky by the ratio in the second
@@ -18502,6 +18623,8 @@ Files changed under `web/`, all additive, all instruments:
 | `web/tools/smoke/rn2730sky.mjs` | new. Per-column skyline location by the sign change of `r - b`, scanning up from the bottom of the window because Forge's cloud deck is warm and a top-down scan locks onto it. |
 | `web/tools/smoke/rn2730scale.mjs` | new. `ofAeroColumn` and `ofChapman` transcribed, with the float32 underflow guard. Pure arithmetic, no browser. |
 
+**The correction pass in section 2.51.10 is DOCUMENT-ONLY**: it moved three `.md` files and nothing under `web/`, so every gate above stands as measured on the lane commit and none was re-run except `npm run check`, which was taken again and read 9 of 9.
+
 Frames committed for the eye, at 1x, under `docs/screenshots/RN2730_*`. The
 full twenty-eight-frame set lives in this lane's own `web/dist-rn2730-shots/`,
 which the repo's `web/dist-*/` ignore rule already covers and which is not
@@ -18515,8 +18638,11 @@ committed.
    eye, and it is the only constant in the aerosol pair that cannot be
    photographed. The change is an `AEROSOL_SCALE` read beside `AEROSOL_AMP`
    at `Atmosphere.glsl.ts:486-490`, applied at `:456`, plus the key in
-   `run.mjs`'s `PAGE_PARAMS`, plus a re-check of `SkyProbe.ts:139`, which reads
-   the same scale height on the CPU and must not be left on the literal. Out of
+   `run.mjs`'s `PAGE_PARAMS`, plus **`SkyProbe.ts:138-139`, which is a SECOND
+   AUTHORITY on this constant and not a re-check**: it reads `p.aerosolScaleM`
+   on the CPU to build the sky ambient, and a flag that moves the shader while
+   leaving that read on the literal would put the ambient fill and the sky it
+   samples into disagreement at every rung of the ladder. Out of
    this lane's scope by its own brief (`web/src` untouched); routed to Admin.
 2. **`vista`'s `hzBand` IS A BROKEN RECTANGLE AND SHOULD BE RE-PLACED OR
    RETIRED.** It is one third HUD (2.51.5), and unlike this lane's own new
@@ -18528,7 +18654,68 @@ committed.
    ribbon defect that rectangle tracks is currently being veiled by the haze.
    Whoever takes the LOD-seam lane should know its visibility is coupled to the
    aerosol decision.
-4. **THE ORBITAL DISC'S COLOUR IS A SECOND REID CALL HIDING INSIDE THE FIRST**
-   (2.51.6). Nothing in the decision sheet's aerosol item mentioned that the
-   amplitude also sets how warm Forge looks from orbit, and the red channel
-   moves four times as far as the luma does.
+4. **THE ORBITAL DISC'S COLOUR IS A SECOND COST ON THE SAME CALL, NOW ON THE
+   SHEET** (2.51.6). The amplitude also sets how warm Forge looks from orbit,
+   and the red channel moves four times as far as the luma does. It is recorded
+   inside the sheet's existing aerosol item rather than raised as a separate
+   decision, per Admin's ruling at this lane's verification.
+
+### 2.51.10 CORRECTION PASS (2026-08-23, fresh-context verifier, verdict FIX, applied by this lane)
+
+A fresh-context verifier that never touched this lane's measurement reproduced
+its tables to 0.003 counts, verified the entry-point identity line by line
+against the shader, checked the `limb` arithmetic exact and the gates green, and
+routed seven corrections. **No ladder was re-measured and no frame retaken.**
+All seven are applied above, and the two that reached a conclusion are recorded
+where the conclusion was, not quietly dropped.
+
+1. **The `vista` headline is restated as a LUMINANCE-POLARITY result, not a
+   visibility one (2.51.5).** The luminance step crosses zero near amplitude
+   0.25; the chroma step never approaches zero, is smallest at shipped (-26.53)
+   and largest at 0.50 (-68.33), and the committed crops agree with the chroma
+   column. The chroma and RGB-separation columns are added to the table. **"All
+   but vanishes", "1.77 counts from invisible" and the reclassing of 0.25 as out
+   are struck**, in this section, in the banner, in NUMBERS.md's row and in the
+   decision sheet. The corrected reading recommends 0.50 more strongly than the
+   first draft did, so the outcome moved in the opposite direction from the
+   error.
+2. **`aerosolScaleM`'s "costs a standing eye nothing" is scoped to the GROUND
+   entry (2.51.7 point 2), and point 3's consequence is carried into the
+   decision sheet**: a scale-height cut at `vista` brightens the low sky by
+   about two thirds of the silhouette step and shifts the ambient. "A walking
+   player's horizon left alone" is removed from the sheet.
+3. **`SkyProbe.ts:138-139` is added as the THIRD consumer of `aerosolScaleM`
+   (2.51.7 item 5)**, a CPU sky-ambient probe feeding `uSkyIrr` into the
+   ambient fill, following the sky entry's factor. Routed item 1 is upgraded
+   from "a re-check" to "a second authority that must move with the page
+   parameter".
+4. **The `hzBand` margin is corrected from 25 counts to 11.5** (2.51.5,
+   NUMBERS trap 2): 200.06 is the far ZONE's maximum, and the frame's terrain
+   maximum on that control is **213.73** over a stated 358,800 px rect. "One
+   third HUD" is replaced by the row-span figure, **18 of 90 rows across the top
+   51**. The conclusion, retire the rectangle, is unchanged.
+5. **The noise floors are republished as bounds (2.51.3).** The lane's own
+   single `vista` pair (0.30 per cent, 0.001 counts) was the optimistic end of
+   three pairs spanning 0.30 to 0.67, and the verifier's independent session read
+   2.21 per cent and 0.198 counts. The cross-session floor a later lane must
+   budget against is stated as **0.67 per cent and 0.20 counts**. A first-frame
+   warm-up effect is named and explicitly not isolated, and `rn2730arms.mjs` is
+   routed to take a throwaway frame first.
+6. **`flyover`'s intermediate rungs are published (2.51.4)** so the decision
+   sheet's table is traceable to a measurement, and the roughly one per cent
+   disagreement with R6's own figures is annotated in both records instead of
+   sitting silently in two places.
+7. **The `limb` reach bound is scoped (2.51.6)** to `ofChapman`'s
+   parameterisation, which anchors on density at the eye, rather than being
+   presented as proof that a boundary layer is physically absent from a limb
+   view. A grazing ray does pass the layer near its tangent point; the magnitude
+   is about one pixel at 399 km, so no table moves.
+
+**Adopted as an Admin ruling at the same review:** the orbital disc's warmth
+stays inside the decision sheet's existing aerosol item rather than being raised
+as a separate decision, and routed item 4 is reworded from "a second Reid call
+hiding inside the first" to "a second cost on the same call, now on the sheet".
+
+Three findings this pass did NOT disturb, stated so the scope is auditable: the
+`limb` reach null itself, the entry-point identity and every `A_eq` derived from
+it, and the `?skyaero=0` decomposition at both surface poses.
