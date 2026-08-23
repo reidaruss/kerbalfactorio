@@ -1642,6 +1642,49 @@
         placard: [0.2700, 0.3388888888888889, 0.332500, 0.4133333333333333],
         bandLit: [0.2937500, 0.7644444444444445, 0.3750000, 0.8111111111111111],
         bandShade: [0.5625000, 0.7644444444444445, 0.7062500, 0.8111111111111111],
+        // RN-2710. THE GROUND, and the reason it was missing rather than the
+        // reason it is here: every one of the eleven rectangles above sits ON
+        // the machine, because `smelterhero`'s own header says so (`plate` and
+        // both hearth columns are shell and brick, `firebox`/`peep`/`strip` are
+        // the fire itself). WORLD AUDIT R6 read `?firelightground=0` (the
+        // TERRAIN's own kill switch, `TerrainAmpQuery.emitGroundFromQuery`)
+        // against this same eleven and called the 0.000-count delta proof that
+        // "the terrain's ofEmitIrradiance path returns exactly 0.000" -- but a
+        // switch that gates ONLY the terrain material cannot move a rectangle
+        // that contains no terrain pixel, and it never had one. That is
+        // NUMBERS.md's "a registered parameter that does not move the picture"
+        // in the other direction: the picture could not have moved this
+        // instrument regardless of whether the term worked.
+        //
+        // `groundL`/`groundR` are grass, clear of both hearth columns (they sit
+        // outside `hearthL`'s 0.1719-0.2188 and `hearthR`'s 0.8094-0.8438), at
+        // the same standoff as everything else in this shot. Measured on this
+        // build, shipped vs `?firelightground=0`, one flag apart:
+        //   groundL  meanR 5.011 -> 4.674 (-6.7%), meanG 6.676 -> 6.632,
+        //            meanB 5.745 -> 5.723 (R-specific, the fire's own channel)
+        //   groundR  meanR 3.973 -> 3.553 (-10.6%), meanG/B move under 1%
+        // Both machine arms (`hearthL`/`hearthR`/every other named rectangle
+        // above) are BIT-IDENTICAL across the same pair, so the move is
+        // attributed to the ground term and nothing else in frame. The R-only
+        // signature is the fire's own colour and not a global exposure shift.
+        //
+        // A 200x-gain diagnostic arm (rendering.md 2.48, not shipped) that
+        // replaces `lit` with the raw `ofEmitIrradiance` term outright shows a
+        // correctly-shaped, correctly-centred falloff pool at the machine's
+        // base wherever the terrain is actually visible between grass blades,
+        // and exactly nothing past the emitter's own 40 m reach. So the seam
+        // this rank was dispatched to find (`TerrainProgram.ts:171`,
+        // `TerrainFragLight.glsl.ts:158-159`) is wired, live and correctly
+        // shaped; it was never provably zero, only unmeasured. What the eye
+        // sees as an unlit lawn is real but small (a few per cent of an
+        // already-dark night ground) AND separately real: most of the visible
+        // "ground" in this pose is grass-blade geometry (`GrassGlsl.ts`), which
+        // has no `ofEmitIrradiance` splice of its own and cannot show a warm
+        // pool no matter how strong the terrain beneath it is; see the routed
+        // item in rendering.md 2.48 rather than this file, since that is a
+        // second material's own seam.
+        groundL: [0.025000, 0.6666666666666666, 0.168750, 0.9111111111111111],
+        groundR: [0.850000, 0.6666666666666666, 0.975000, 0.9111111111111111],
       },
       why: 'the smelter at arm-reach: the proof-shot framing, plate and brick',
     },

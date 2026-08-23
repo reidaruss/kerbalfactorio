@@ -4344,3 +4344,43 @@ paint now do), that disagreement is an owed item with a measured size, not a
 detail.**
 
 ---
+
+### A KILL SWITCH THAT ONLY REACHES ONE MATERIAL CANNOT BE TESTED BY RECTANGLES THAT SIT ON A DIFFERENT ONE (found 2026-08-23 by RN-2710, lane N19)
+
+World Audit R6 read `?firelightground=0` (`TerrainAmpQuery.emitGroundFromQuery`, which
+gates only the TERRAIN material's take on a live emitter) against `smelternight`'s
+twelve committed rectangles, got a 0.000-count delta at every one, and published
+"the terrain's `ofEmitIrradiance` path returns exactly 0.000." **All twelve
+rectangles are on the machine** -- the shot's own manifest comments say so
+(`plate`/`sunface`/both hearth columns are "clean shell and brick", `firebox`/
+`peep`/`strip` are "the emissive surfaces" themselves, `band`/`bandLit`/
+`bandShade` are "the painted keep-out ring") -- and a switch that gates only the
+terrain material cannot move a rectangle containing no terrain pixel, whether or
+not the term it guards does anything at all. A 6x crop of `hearthL`'s own lowest
+120 rows, the row band nearest ground height, confirmed pure brick and shadow: not
+one grass pixel anywhere in any of the twelve.
+
+Two rectangles were added directly beside the existing ones, clear of both hearth
+columns, plain grass at the same standoff: `groundL` and `groundR`. Both move
+under the same flag, `R`-channel-specific (the fire's own colour, not a global
+exposure shift), while all twelve original rectangles stay bit-identical to the
+digit across the same pair. The mechanism had never been provably zero. It had
+been unmeasured, by an instrument that could not have detected either answer.
+
+This is **the sibling of "a registered parameter that does not move the picture"
+(this file, above) with the direction reversed.** That entry is about a control
+whose own wiring is dead. This one is about a control that is wired correctly and
+narrowly, tested against a target it was never able to reach. `--sundot`'s failure
+was in the control; this failure was in the choice of rectangle. Both look
+identical from the outside: a flag, flipped, and nothing moves.
+
+**The rule. Before publishing "this control changes nothing," name the exact
+pixels the control is scoped to touch and confirm the measuring rectangle
+actually contains some of them.** A kill switch documented as gating one
+material's contribution can only be tested by a rectangle that samples that
+material. A rectangle chosen because it is "close to the subject" is not the same
+claim as a rectangle chosen because it is verified to contain the subject's own
+pixels, and the gap between those two claims is exactly where this defect lived
+for two audits running.
+
+---

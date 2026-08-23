@@ -1,0 +1,1169 @@
+{
+ "valid": true,
+ "shot": "smelternight",
+ "why": "the smelter at arm-reach: the proof-shot framing, plate and brick -- at a SUB-HORIZON sun (dot -0.25), the only frame in this file where a hot machine is the brightest thing in the world, so \"nothing emissive lights anything\" becomes a measurement instead of an inference from a daylit frame",
+ "poolRefused": 0,
+ "peaceful": {
+  "armed": false,
+  "page": "",
+  "infiniteFuel": false,
+  "fullKg": 0,
+  "slotKey": "auto-sandbox",
+  "propellantKg": 0,
+  "orbitAltM": 100000,
+  "assisted": false,
+  "used": [],
+  "firstAtMs": 0,
+  "log": [
+   {
+    "id": "peaceful",
+    "done": true,
+    "message": "peaceful: nothing more will be dispatched, 0 cleared",
+    "detail": {
+     "peaceful": true,
+     "cleared": 0
+    }
+   }
+  ]
+ },
+ "vitals": {
+  "hp": 150,
+  "maxHp": 150,
+  "deaths": 0,
+  "hurtEvents": 0
+ },
+ "frame": {
+  "w": 1600,
+  "h": 900
+ },
+ "boxPx": [
+  400,
+  90,
+  1200,
+  765
+ ],
+ "box": {
+  "px": 540000,
+  "luma": 82.82,
+  "rgb": [
+   116.51,
+   76.19,
+   49.23
+  ],
+  "warm": 67.28,
+  "sat": 0.585,
+  "p05": 2.85,
+  "p50": 61,
+  "p95": 204.03,
+  "iqr": 147.97,
+  "loFrac": 0.4,
+  "hiFrac": 0.05,
+  "lin": {
+   "Y": 0.188788,
+   "rgb": [
+    0.337827,
+    0.156959,
+    0.065216
+   ]
+  },
+  "blackFrac": 0.000063,
+  "col": {
+   "std": 50.5,
+   "minLag": 4,
+   "maxLag": 266,
+   "firstMin": 266,
+   "lag": null,
+   "peak": null
+  }
+ },
+ "extraPx": {
+  "sunface": [
+   416,
+   378,
+   560,
+   513
+  ],
+  "firebox": [
+   620,
+   310,
+   1020,
+   375
+  ],
+  "band": [
+   470,
+   685,
+   1170,
+   738
+  ],
+  "plate": [
+   1085,
+   255,
+   1195,
+   615
+  ],
+  "hearthL": [
+   275,
+   200,
+   350,
+   820
+  ],
+  "hearthR": [
+   1295,
+   200,
+   1350,
+   820
+  ],
+  "peep": [
+   774,
+   386,
+   859,
+   448
+  ],
+  "strip": [
+   698,
+   519,
+   932,
+   533
+  ],
+  "placard": [
+   432,
+   305,
+   532,
+   372
+  ],
+  "bandLit": [
+   470,
+   688,
+   600,
+   730
+  ],
+  "bandShade": [
+   900,
+   688,
+   1130,
+   730
+  ],
+  "groundL": [
+   40,
+   600,
+   270,
+   820
+  ],
+  "groundR": [
+   1360,
+   600,
+   1560,
+   820
+  ]
+ },
+ "extra": {
+  "sunface": {
+   "px": 19440,
+   "luma": 27.13,
+   "rgb": [
+    41.23,
+    23.58,
+    20.74
+   ],
+   "warm": 20.49,
+   "sat": 0.617,
+   "p05": 1.71,
+   "p50": 9.63,
+   "p95": 122.16,
+   "iqr": 24.96,
+   "loFrac": 0.73,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.031822,
+    "rgb": [
+     0.059302,
+     0.025325,
+     0.015263
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 36.16,
+    "minLag": 4,
+    "maxLag": 48,
+    "firstMin": 9,
+    "lag": 13,
+    "peak": 0.59
+   }
+  },
+  "firebox": {
+   "px": 26000,
+   "luma": 143.17,
+   "rgb": [
+    230.86,
+    126.17,
+    53.32
+   ],
+   "warm": 177.54,
+   "sat": 0.769,
+   "p05": 64.44,
+   "p50": 150.81,
+   "p95": 195.59,
+   "iqr": 56.39,
+   "loFrac": 0.005,
+   "hiFrac": 0.006,
+   "lin": {
+    "Y": 0.355192,
+    "rgb": [
+     0.82559,
+     0.246483,
+     0.046908
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 25.1,
+    "minLag": 4,
+    "maxLag": 133,
+    "firstMin": 26,
+    "lag": 36,
+    "peak": 0.347
+   }
+  },
+  "band": {
+   "px": 37100,
+   "luma": 106.64,
+   "rgb": [
+    170.03,
+    94.53,
+    39.95
+   ],
+   "warm": 130.07,
+   "sat": 0.798,
+   "p05": 10.93,
+   "p50": 113.35,
+   "p95": 206.44,
+   "iqr": 163.32,
+   "loFrac": 0.319,
+   "hiFrac": 0.081,
+   "lin": {
+    "Y": 0.274314,
+    "rgb": [
+     0.549228,
+     0.216195,
+     0.04052
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 72.04,
+    "minLag": 4,
+    "maxLag": 233,
+    "firstMin": 224,
+    "lag": 225,
+    "peak": -0.327
+   }
+  },
+  "plate": {
+   "px": 39600,
+   "luma": 53.86,
+   "rgb": [
+    69.86,
+    50.3,
+    42
+   ],
+   "warm": 27.85,
+   "sat": 0.48,
+   "p05": 4.42,
+   "p50": 33.32,
+   "p95": 154.14,
+   "iqr": 76.7,
+   "loFrac": 0.434,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.074691,
+    "rgb": [
+     0.113217,
+     0.066856,
+     0.038854
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 38.51,
+    "minLag": 4,
+    "maxLag": 36,
+    "firstMin": 9,
+    "lag": 12,
+    "peak": 0.692
+   }
+  },
+  "hearthL": {
+   "px": 46500,
+   "luma": 6.6,
+   "rgb": [
+    12.31,
+    4.95,
+    6.17
+   ],
+   "warm": 6.14,
+   "sat": 0.564,
+   "p05": 2.5,
+   "p50": 6.13,
+   "p95": 11.96,
+   "iqr": 3.84,
+   "loFrac": 1,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.002108,
+    "rgb": [
+     0.00421,
+     0.001505,
+     0.001897
+    ]
+   },
+   "blackFrac": 0.000022,
+   "col": {
+    "std": 1.33,
+    "minLag": 4,
+    "maxLag": 25,
+    "firstMin": 14,
+    "lag": 16,
+    "peak": -0.084
+   }
+  },
+  "hearthR": {
+   "px": 34100,
+   "luma": 7.37,
+   "rgb": [
+    12.36,
+    5.81,
+    8.16
+   ],
+   "warm": 4.2,
+   "sat": 0.514,
+   "p05": 2.5,
+   "p50": 6.99,
+   "p95": 13.92,
+   "iqr": 4.94,
+   "loFrac": 1,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.002355,
+    "rgb": [
+     0.004266,
+     0.001768,
+     0.002543
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 1.87,
+    "minLag": 4,
+    "maxLag": 18,
+    "firstMin": 18,
+    "lag": null,
+    "peak": null
+   }
+  },
+  "peep": {
+   "px": 5270,
+   "luma": 184.67,
+   "rgb": [
+    240.41,
+    174.14,
+    124.78
+   ],
+   "warm": 115.63,
+   "sat": 0.48,
+   "p05": 115.92,
+   "p50": 196.45,
+   "p95": 214.78,
+   "iqr": 27.46,
+   "loFrac": 0,
+   "hiFrac": 0.22,
+   "lin": {
+    "Y": 0.525918,
+    "rgb": [
+     0.87705,
+     0.451546,
+     0.228689
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 7.37,
+    "minLag": 4,
+    "maxLag": 28,
+    "firstMin": 6,
+    "lag": 11,
+    "peak": 0.215
+   }
+  },
+  "strip": {
+   "px": 3276,
+   "luma": 180.05,
+   "rgb": [
+    241.74,
+    168.25,
+    115.24
+   ],
+   "warm": 126.5,
+   "sat": 0.522,
+   "p05": 102.44,
+   "p50": 191.78,
+   "p95": 215.86,
+   "iqr": 40.13,
+   "loFrac": 0,
+   "hiFrac": 0.288,
+   "lin": {
+    "Y": 0.511099,
+    "rgb": [
+     0.888028,
+     0.430474,
+     0.199839
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 23.07,
+    "minLag": 4,
+    "maxLag": 78,
+    "firstMin": 7,
+    "lag": 76,
+    "peak": 0.547
+   }
+  },
+  "placard": {
+   "px": 6700,
+   "luma": 29.59,
+   "rgb": [
+    120.87,
+    5.01,
+    4.35
+   ],
+   "warm": 116.51,
+   "sat": 0.978,
+   "p05": 9.72,
+   "p50": 28.51,
+   "p95": 56.93,
+   "iqr": 19.85,
+   "loFrac": 0.44,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.05296,
+    "rgb": [
+     0.240474,
+     0.002429,
+     0.001359
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 14.91,
+    "minLag": 4,
+    "maxLag": 33,
+    "firstMin": 33,
+    "lag": null,
+    "peak": null
+   }
+  },
+  "bandLit": {
+   "px": 5460,
+   "luma": 24.67,
+   "rgb": [
+    82.33,
+    9.63,
+    3.87
+   ],
+   "warm": 78.47,
+   "sat": 0.963,
+   "p05": 9.52,
+   "p50": 19.69,
+   "p95": 77.41,
+   "iqr": 7.67,
+   "loFrac": 0.848,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.031567,
+    "rgb": [
+     0.130724,
+     0.005146,
+     0.001313
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 18.11,
+    "minLag": 4,
+    "maxLag": 43,
+    "firstMin": 15,
+    "lag": 21,
+    "peak": 0.066
+   }
+  },
+  "bandShade": {
+   "px": 9660,
+   "luma": 118.85,
+   "rgb": [
+    187.73,
+    106.56,
+    37.84
+   ],
+   "warm": 149.89,
+   "sat": 0.837,
+   "p05": 11.44,
+   "p50": 146.08,
+   "p95": 204.29,
+   "iqr": 158.79,
+   "loFrac": 0.243,
+   "hiFrac": 0.056,
+   "lin": {
+    "Y": 0.313063,
+    "rgb": [
+     0.638949,
+     0.244385,
+     0.033771
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 72.11,
+    "minLag": 4,
+    "maxLag": 76,
+    "firstMin": 76,
+    "lag": null,
+    "peak": null
+   }
+  },
+  "groundL": {
+   "px": 50600,
+   "luma": 6.15,
+   "rgb": [
+    4.67,
+    6.63,
+    5.72
+   ],
+   "warm": -1.05,
+   "sat": 0.443,
+   "p05": 1,
+   "p50": 5.57,
+   "p95": 13.71,
+   "iqr": 4.71,
+   "loFrac": 1,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.001904,
+    "rgb": [
+     0.001441,
+     0.002056,
+     0.001761
+    ]
+   },
+   "blackFrac": 0.012253,
+   "col": {
+    "std": 1.2,
+    "minLag": 4,
+    "maxLag": 76,
+    "firstMin": 8,
+    "lag": 10,
+    "peak": 0.657
+   }
+  },
+  "groundR": {
+   "px": 44000,
+   "luma": 4.87,
+   "rgb": [
+    3.55,
+    5.33,
+    4.22
+   ],
+   "warm": -0.67,
+   "sat": 0.431,
+   "p05": 0.72,
+   "p50": 4.29,
+   "p95": 11.43,
+   "iqr": 4.57,
+   "loFrac": 1,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.001494,
+    "rgb": [
+     0.001083,
+     0.001636,
+     0.00129
+    ]
+   },
+   "blackFrac": 0.042227,
+   "col": {
+    "std": 0.96,
+    "minLag": 4,
+    "maxLag": 66,
+    "firstMin": 17,
+    "lag": 52,
+    "peak": 0.34
+   }
+  }
+ },
+ "world": {
+  "px": 1440000,
+  "luma": 35.82,
+  "rgb": [
+   50.13,
+   32.77,
+   23.92
+  ],
+  "warm": 26.21,
+  "sat": 0.587,
+  "p05": 1.64,
+  "p50": 8.49,
+  "p95": 184.71,
+  "iqr": 16.01,
+  "loFrac": 0.766,
+  "hiFrac": 0.019,
+  "lin": {
+   "Y": 0.072922,
+   "rgb": [
+    0.131603,
+    0.060193,
+    0.026214
+   ]
+  },
+  "blackFrac": 0.015272,
+  "col": {
+   "std": 39.4,
+   "minLag": 4,
+   "maxLag": 533,
+   "firstMin": 533,
+   "lag": null,
+   "peak": null
+  }
+ },
+ "sun": {
+  "mode": "elev",
+  "wantDot": -0.25,
+  "sunT": 0.128,
+  "elevDot": -0.25,
+  "err": 0,
+  "tol": 0.03,
+  "solve": {
+   "wantDot": -0.25,
+   "gotDot": -0.2501,
+   "err": 0.0001,
+   "t": 0.12777777777777777
+  }
+ },
+ "stationClock": null,
+ "captureDiag": null,
+ "iblSettleIters": 0,
+ "atCapture": {
+  "cam": {
+   "posE": [
+    -0.6412338475929573,
+    11.583390181171126,
+    0.2703917289036326
+   ],
+   "quat": [
+    -0.35939880526913337,
+    0.60392041979304,
+    0.619000971659154,
+    0.35064287018723345
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": [
+   0.3642766338055995,
+   0.004200720081146833,
+   0.6301403231120084,
+   0.6857171874777199
+  ],
+  "drawPosB": [
+   -861135.651819897,
+   -59548.5854968904,
+   504875.5838125283
+  ],
+  "drawPosE": [
+   -340351.768252942,
+   -23773.472328916752,
+   207582.79329251003
+  ],
+  "drawEyeDistM": 399368.404,
+  "drawVisible": false,
+  "drawnParts": 0,
+  "staleMaxM": 0,
+  "drawBoundM": 36.003,
+  "eyeLocal": [
+   -3427.5697370888083,
+   -399308.20347607066,
+   -6027.665799624694
+  ],
+  "eyeLocalOverBound": 11092.642399225497,
+  "clock": {
+   "clockS": 0,
+   "stampedTick": 0,
+   "tick": 369,
+   "pos": [
+    -861128.2410634258,
+    -59548.57541810841,
+    504888.2248663408
+   ],
+   "vel": [
+    950.4337705547063,
+    1.293413345304947,
+    1621.195230338124
+   ],
+   "speedMps": 1879.2551716038995,
+   "alpha": 0.5321600000002223,
+   "renderTick": 368.5321600000002,
+   "renderPos": [
+    -861135.651819897,
+    -59548.5854968904,
+    504875.5838125283
+   ],
+   "renderPosVsIntegerM": 14.653178991214478
+  },
+  "frames": 704,
+  "tick": 369,
+  "rebases": 1,
+  "eyeRel": [
+   -0.6412338475929573,
+   11.583390181171126,
+   0.2703917289036326
+  ]
+ },
+ "preCapture": {
+  "cam": {
+   "posE": [
+    -0.6412338475929573,
+    11.583390181171126,
+    0.2703917289036326
+   ],
+   "quat": [
+    -0.35939880526913337,
+    0.60392041979304,
+    0.619000971659154,
+    0.35064287018723345
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": [
+   0.3636704968590406,
+   0.0034575247430160575,
+   0.630490842325762,
+   0.6857208710403242
+  ],
+  "drawPosB": [
+   -862166.6596827486,
+   -59549.86508470062,
+   503112.77513087075
+  ],
+  "drawPosE": [
+   -341382.7761157936,
+   -23774.75191672697,
+   205819.9846108525
+  ],
+  "drawEyeDistM": 399336.082,
+  "drawVisible": false,
+  "drawnParts": 0,
+  "staleMaxM": 0,
+  "drawBoundM": 36.003,
+  "eyeLocal": [
+   -2819.4004386326997,
+   -399295.29556234466,
+   -4962.302698951535
+  ],
+  "eyeLocalOverBound": 11091.744637191634,
+  "clock": {
+   "clockS": 0,
+   "stampedTick": 0,
+   "tick": 304,
+   "pos": [
+    -862156.0923676754,
+    -59549.85320873922,
+    503130.8849356383
+   ],
+   "vel": [
+    947.1372126504587,
+    1.0655839275723562,
+    1623.1235211602393
+   ],
+   "speedMps": 1879.2551716038993,
+   "alpha": 0.33056133056132164,
+   "renderTick": 303.3305613305613,
+   "renderPos": [
+    -862166.6596827486,
+    -59549.86508470062,
+    503112.77513087075
+   ],
+   "renderPosVsIntegerM": 20.96743469319249
+  },
+  "frames": 592,
+  "tick": 304,
+  "rebases": 1,
+  "eyeRel": [
+   -0.6412338475929573,
+   11.583390181171126,
+   0.2703917289036326
+  ]
+ },
+ "photoCapture": {
+  "cam": {
+   "posE": [
+    -0.6412338475929573,
+    11.583390181171126,
+    0.2703917289036326
+   ],
+   "quat": [
+    -0.35939880526913337,
+    0.60392041979304,
+    0.619000971659154,
+    0.35064287018723345
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": [
+   0.36367484517102394,
+   0.0034628546437469347,
+   0.6304883308879861,
+   0.685720847168605
+  ],
+  "drawPosB": [
+   -862159.2785200306,
+   -59549.85679217359,
+   503125.4247380593
+  ],
+  "drawPosE": [
+   -341375.39495307556,
+   -23774.74362419994,
+   205832.63421804103
+  ],
+  "drawEyeDistM": 399336.292,
+  "drawVisible": false,
+  "drawnParts": 0,
+  "staleMaxM": 0,
+  "drawBoundM": 36.003,
+  "eyeLocal": [
+   -2823.762020209164,
+   -399295.3792137928,
+   -4969.943117637595
+  ],
+  "eyeLocalOverBound": 11091.750455491585,
+  "clock": {
+   "clockS": 0,
+   "stampedTick": 0,
+   "tick": 304,
+   "pos": [
+    -862156.0923676754,
+    -59549.85320873922,
+    503130.8849356383
+   ],
+   "vel": [
+    947.1372126504587,
+    1.0655839275723562,
+    1623.1235211602393
+   ],
+   "speedMps": 1879.2551716038993,
+   "alpha": 0.7981600000001353,
+   "renderTick": 303.7981600000001,
+   "renderPos": [
+    -862159.2785200306,
+    -59549.85679217359,
+    503125.4247380593
+   ],
+   "renderPosVsIntegerM": 6.3218143972299385
+  },
+  "frames": 593,
+  "tick": 304,
+  "rebases": 1,
+  "eyeRel": [
+   -0.6412338475929573,
+   11.583390181171126,
+   0.2703917289036326
+  ]
+ },
+ "repeats": null,
+ "vmHidden": false,
+ "vmRatio": null,
+ "vmArms": null,
+ "pose": {
+  "yawDeg": -180,
+  "pitchDeg": 2,
+  "latDeg": -3.413,
+  "lonDeg": 150.28,
+  "altM": 1.62
+ },
+ "postState": {
+  "post": true,
+  "ao": true,
+  "contact": true,
+  "underwater": true,
+  "bloom": true,
+  "grade": true,
+  "aa": true,
+  "contactRan": true,
+  "underwaterRan": false,
+  "headUnderM": -1e+30,
+  "sun": [
+   -0.14764585839598784,
+   0.3872324843550918,
+   0.910083349786543
+  ],
+  "csLengthM": 0.45,
+  "csSteps": 8,
+  "csStrength": 0.72
+ },
+ "shade": null,
+ "shadow": {
+  "cascades": 3,
+  "mapSize": 2048,
+  "vramMB": 48,
+  "splits": [
+   22,
+   80,
+   300
+  ],
+  "active": false,
+  "soft": false,
+  "texel0M": 0.01547,
+  "biasM": 0.02,
+  "biasSign": 1,
+  "biasUnits": 0.0000025003125390673835,
+  "reversedDepth": true,
+  "biasLegacy": false,
+  "biasRaw": null,
+  "castOff": false,
+  "castRaw": null
+ },
+ "ibl": {
+  "builds": 4,
+  "lastMs": 0.8,
+  "ready": true,
+  "size": 256,
+  "groundBuilds": 4,
+  "ground": true,
+  "biome": 4
+ },
+ "scatter": {
+  "canopyProps": 6797,
+  "canopyCells": 28287,
+  "canopyM2": 6618148,
+  "canopyPerM2": 0.00103,
+  "canopyDelivered": 1.0111,
+  "canopyRadiusM": 3500,
+  "canopyShade": false,
+  "canopyBareCells": 85553,
+  "canopyShadeMean": 0.015,
+  "canopyShadeSd": 0.0238,
+  "canopyShadeMax": 0.1397,
+  "canopyShadeCells": 12675,
+  "canopyPlanetMean": 0.2106,
+  "canopyPlanetSd": 0.245,
+  "canopyOfferedCells": 175192,
+  "canopySlopeCells": 0,
+  "mid": true,
+  "midEdge": true,
+  "midProps": 870,
+  "midCards": 730,
+  "midCells": 36117,
+  "midM2": 1616811,
+  "midPerM2": 0.00054,
+  "midDelivered": 0.9636,
+  "propsPlaced": 44385,
+  "cellsScattered": 25506,
+  "wantedPerM2": 0.4229,
+  "placedPerM2": 0.42261,
+  "deliveredFraction": 0.9993,
+  "cellsCapped": 0,
+  "chunksCapped": 0,
+  "canopyTailM": 0,
+  "capCells": 0,
+  "capOfferCells": 94208,
+  "capCellFrac": 0,
+  "capScaleMin": 1,
+  "capFair": true,
+  "chunksRefused": 0,
+  "scatterBacklog": 0,
+  "chunks": 92,
+  "poolRefused": 0,
+  "poolCeiling": 2424832
+ },
+ "treeline": {
+  "amp": 1,
+  "mottle": 0.22,
+  "reachM": 1400,
+  "paint": 0,
+  "far": 0,
+  "floorShade": 1,
+  "stand": 1,
+  "floorLaw": 0,
+  "grove": 1,
+  "tone": {
+   "r": 0.05629622696693897,
+   "g": 0.16993117688950063,
+   "b": 0.025900673628411284,
+   "live": true
+  },
+  "self": {
+   "amp": 1,
+   "k": 3.2,
+   "floor": 0.137,
+   "cardMu": 0.11980256546975993,
+   "sinSun": -0.2478063734656183,
+   "cardShade": 0.13700000408578872,
+   "live": true,
+   "cardShadeRGB": [
+    0.017294232665269197,
+    0.18601836722304455,
+    0.0039184762220365885
+   ],
+   "spectral": true,
+   "roughOverride": null,
+   "floorDerived": 0.45579482570846336,
+   "envOverride": null,
+   "uniform": [
+    1,
+    3.2,
+    0.08
+   ]
+  },
+  "crownNormal": {
+   "parts": 3,
+   "verts": 24,
+   "meanUp": 0.9471549441417059,
+   "minAbsOutOfPlane": 0.057096365839242935,
+   "minAzimuthOut": 1,
+   "downVerts": 0,
+   "path": "crown",
+   "ask": {
+    "on": true,
+    "flankDeg": 25,
+    "cardMix": 1
+   }
+  },
+  "crownFace": {
+   "raw": null,
+   "mode": 1,
+   "installed": true,
+   "compiles": 3,
+   "misses": [],
+   "materials": [
+    "props:OF_Canopy:canopy"
+   ],
+   "hazards": {
+    "normalMap": 0,
+    "bumpMap": 0,
+    "clearcoatNormalMap": 0,
+    "anisotropy": 0,
+    "notDoubleSided": 0,
+    "flatShaded": 0
+   }
+  },
+  "crownEnv": {
+   "raw": null,
+   "installed": true,
+   "forced": null,
+   "tau": 0.3833682095032318,
+   "skyView": 0.7296704785971803,
+   "sceneIntensity": 1,
+   "applied": 0.7296704785971803,
+   "appliedLive": 0.7296704785971803,
+   "ownEnvMap": true,
+   "sameTexture": true,
+   "writes": 710,
+   "materials": [
+    "props:OF_Canopy:canopy"
+   ]
+  }
+ },
+ "phase": {
+  "present": false,
+  "amp": 0,
+  "shipped": 0,
+  "periodM": 256,
+  "probeRepeats": 128,
+  "wantPeriodM": 2,
+  "divides": true,
+  "repeats": 128,
+  "quantumM": 0.000030517578125,
+  "pmQuantumM": 0.03125,
+  "ratio": 1024
+ },
+ "emit": {
+  "installed": true,
+  "flagPresent": false,
+  "amp": 1,
+  "glow": 1,
+  "glowFlagPresent": false,
+  "spliced": 103,
+  "misses": [],
+  "max": 6,
+  "registered": 1,
+  "selected": 1,
+  "dropped": 0,
+  "sceneLights": 2,
+  "fireHot": 40,
+  "fireEmber": 10.4,
+  "wrap": 0.35,
+  "emitters": [
+   {
+    "x": -0.5678854584693909,
+    "y": 8.731212615966797,
+    "z": 0.16019344329833984,
+    "radius": 0.32091015577316284,
+    "r": 1.4539885520935059,
+    "g": 0.09770375490188599,
+    "b": 0.011203721165657043,
+    "reach": 40
+   }
+  ]
+ },
+ "render": {
+  "triangles": 689512,
+  "calls": 59,
+  "programs": 64,
+  "vramMB": 114.8,
+  "frameMs": {
+   "p50": 8.9,
+   "p95": 13.2,
+   "p99": 22.5
+  },
+  "passMs": {
+   "near": 5.9,
+   "post": 0.2,
+   "total": 6.6
+  }
+ },
+ "setup": {
+  "placed": 2,
+  "kinds": [
+   "smelter",
+   "belt"
+  ],
+  "standoffM": 4.88,
+  "wantStandoffM": 4.6,
+  "aimUpM": 1.7,
+  "belt": true,
+  "sunSide": {
+   "bearingDeg": 270,
+   "postSun": [
+    0.638,
+    0.387,
+    0.665
+   ],
+   "tangent": [
+    -0.052,
+    0.998,
+    0.03
+   ],
+   "dropM": 4
+  },
+  "framed": {
+   "yawDeg": -540,
+   "pitchDeg": 2,
+   "missM": 0.081
+  }
+ },
+ "log": [],
+ "cropPng": null
+}
