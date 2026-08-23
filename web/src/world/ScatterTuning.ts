@@ -1123,11 +1123,23 @@ const ramp = (x: number, a: number, b: number): number => sstep((x - a) / (b - a
  * THE HOLE, measured by lane N4 (rendering.md 2.32.4) and reproduced here.
  * `RADIUS_M` stops the ground props dead at 170 m through a boolean gate with
  * no edge weight, and `CANOPY_NEAR_M` holds the impostor tier out to 550 m.
- * Between them the only thing with HEIGHT is `TreeField`'s harvest ring, which
- * at the Plains table is 420 trees per km2 against this tier's 2,520 -- a SIX
- * FOLD density step at 550 m, because WG-222 multiplied the canopy table by six
- * and `TreeTuning.TREE_DENSITY_KM2` (copied from the pre-WG-222 canopy asks) was
- * not multiplied with it. That step is what the eye reads as a wall: at a 1.62 m
+ * Between them the only thing with HEIGHT is `TreeField`'s harvest ring,
+ * which at the Plains table was 420 trees per km2 against this tier's 2,520
+ * -- a SIX FOLD density step at 550 m, because WG-222 multiplied the canopy
+ * table by six and `TreeTuning.TREE_DENSITY_KM2` (copied from the pre-WG-222
+ * canopy asks) was not multiplied with it.
+ *
+ * WG-310 NARROWED THIS, IT DID NOT CLOSE IT. The ruling was to adopt the
+ * canopy table table-wide; the lane measured the node cost at the densest
+ * pose FIRST (standing rule 7) and found the full six-fold ask broke the
+ * frame budget at `forestair` (world-gen.md 6.17), so the shipped multiplier
+ * is `TreeTuning.HARVEST_TABLE_MULT` = 3 of 6, documented there as
+ * intentional. The Plains ask is now 1,260 against this tier's still-2,520,
+ * a TWO FOLD step at 550 m, smaller than the six fold this record first
+ * measured but the same WALL in kind, only lower. Re-measuring it is this
+ * seam's own owed work and not this lane's (WG-310 did not touch
+ * `canopyDistanceWeight` or this file's target curve, per its brief).
+ * That step is what the eye reads as a wall: at a 1.62 m
  * eye the whole plain past the prop ring is about four and a half frame rows
  * (2.32.3), so every tree from 550 m to the 1,400 m reach lands in a nine-row
  * strip at roughly uniform apparent height, while the rows ABOVE it -- where a

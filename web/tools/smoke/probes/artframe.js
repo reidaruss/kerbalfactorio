@@ -4108,6 +4108,40 @@
           hurtEvents: v.hurtEvents } : null;
       } catch (e) { return null; }
     })(),
+    // WG-310. THE HARVEST NODE COST, read on the photographed frame so a pair
+    // can be shown the ring actually grew rather than asserted to have. `field`
+    // is `NodeField.stats()` (RN-2018's shared /core node batch: rocks AND
+    // trees in one pool), so `field.nodes` is the count that pays the
+    // per-frame `compose()`+`move()` NodeField.update() runs for every live
+    // node every frame (NodeField.ts update(), no exemption for a node that
+    // did not move) -- the cost 6.13.11 item 2 named and this lane prices.
+    // `tree` is `TreeField.stats()` (`TreeStats`), the ring's own bookkeeping
+    // (`live`/`delivered`/`wanted`/`cells`).
+    //
+    // RN-2225's split, read the same way `of.stats().wild` already is (Debug.ts
+    // 74-78): `of.game()` is null on every FLY scenario (`surface`/`ascent`/
+    // `orbit`/`space`, i.e. `forestair`/`forestaircanopy` both), because
+    // `Gameplay` is player-gated and never built for one. The wild
+    // `VegetationScope` this lane's own densest poses actually stream through
+    // is `s.wild` instead, and its `stats()` shape is `{nodes: number, trees:
+    // TreeStats}` (`NodeField.placed.length` rather than the full
+    // `NodeField.stats()` object `game().nodes` gives, so `field` is `{nodes}`
+    // on this arm and not the richer LOD histogram). `source` says which one
+    // answered, so a reader never has to guess whether a null was "no
+    // gameplay" or "no vegetation at all".
+    harvest: (() => {
+      try {
+        const g = typeof of.game === 'function' ? of.game() : null;
+        if (g !== null && g !== undefined) {
+          return { field: g.nodes ?? null, tree: g.trees ?? null, source: 'game' };
+        }
+        if (s.wild !== null && s.wild !== undefined) {
+          return { field: { nodes: s.wild.nodes }, tree: s.wild.trees ?? null,
+            source: 'wild' };
+        }
+        return null;
+      } catch (e) { return null; }
+    })(),
     frame: { w: W, h: H },
     boxPx: bx.map((v) => Math.round(v)),
     box: stat(bx[0], bx[1], bx[2], bx[3]),
