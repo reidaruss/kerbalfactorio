@@ -1,19 +1,13 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2700, `lane/n18-snow`, **THE SNOW PATCH STOPS BEING A PLASTIC SLAB, AND WORLD AUDIT R6 ATTRIBUTED ITS OWN RANK 1 ONE FILE OFF.** R6's only finding classed as a BUG rather than as missing fidelity, first of the endgame wave, two commits. **THE BASELINE REPRODUCES R6 TO THE DIGIT before anything moves**: own build of `50daac5b`, own capture, own instrument, `mtnslope` row 191 shaded snow facet 141.77 / 159.97 / 153.17 = warm **-11.40** against substrate 189.29 / 182.65 / 154.48 = **+34.81**, and `box` `iqr` **88.55**. **COMMIT 1, THE GEOMETRY.** Longest straight run in the ground shoreline **1.263 m -> 0.509 m** (73.2 px -> 29.5 px at 1x, 293 -> 118 px in the audit's own 4x crop, at `mtnslope`'s measured 58 px/m); rim leaves the ground at **33.8 -> 9.1 degrees** by one method on both meshes (mean inclination of the ground-touching side faces, base n-gon excluded; the analytic first-ring step at the widest lobe is 4.0 degrees); a fourth ring at (0.035, 0.90) IS the feather, `seg` goes per lobe 18/12/12 because the widest lobe alone sets the chord, `jit` 0.20 -> 0.06 because the jitter that lobes a 6-gon crenellates an 18-gon, and `lean` 0.18 buys a windward and a lee slope at ZERO triangles. **Smooth shaded with `lobe`'s base n-gon DROPPED**, because Blender averages a vertex normal over every face touching it and the downward base would drag the rim's normals into the earth: measured off the exported bytes, the shipped rim ran 54 vertices at a median tilt of **33.0 degrees** with only 36 of 54 pointing up at all, and the drift's runs 42 at a median **5.4** with **42 of 42 up** and all 175 of the mesh's normals positive. **COMMIT 2, THE ROLE, AND THE AUDIT'S ATTRIBUTION IS REFUTED BY THE MIDDLE ARM.** R6 named the FAMILY (`Ice: 'flat'`, "the same surface family as glass, oil, skin, water and every status chip"). `flat` is the recorded decision not to bind a MAP and cannot tint anything. Three arms, three sentinel-verified servers: base (slab on `Ice`) **-11.40**, **geom (drift on `Ice`) -16.33**, head (drift on `Snow`) **+12.47**, substrate +34.80 in all three. **THE GEOMETRY ALONE MAKES THAT STATISTIC WORSE**, because a smooth drift presents a broader mirror to the sky than a faceted slab does at roughness 0.25, and that is the proof the seam is the palette row. `Snow` is minted as a SPLIT off `Ice` on RN-1780's `Masonry`-off-`Rock` shape, so `Ice` keeps CFE6F0/0.25 and `props_polar.glb`'s bytes never move. **`Snow` = E6E2DA, 0.00, 0.90**: snow's spectral reflectance is flat across the visible and the blue needs metres of ice a 22 cm drift has none of, while dust and soot on a wind-packed drift absorb hardest in the blue, so the honest colour is warm-shifted at 12 counts of chroma, quieter than `SuitGrime`'s 15; roughness 0.90 not 0.95 keeps the wind-crust sheen `vistadawn` needs. **THE VALUE IS `Ice`'s OWN TO 0.17 PER CENT IN LINEAR REC.709 LUMA (0.76278 against 0.76150), so every luma pin in the guard is protected by arithmetic before a frame is taken**, which reuses the luma-preservation half of FoliageTone's RN-2495 record only (the constants here are picked with stated reasons, not solved as 1.08 was). **It stays on `flat` as a DECISION**: no texgen family is a picture of snow, and `coarse` fails on its own number, `albedo_mean_linear` 0.1806 divided back out at `SurfaceBind.ts:83` would swing a 0.76-albedo drift by half its value every 0.75 m with a soil map. **THE ATLAS DIFF IS ENTIRELY THE SNOW'S BYTES, MEASURED THREE WAYS**: the build is bit-deterministic (an unchanged rebuild reproduces `840d06c6..` exactly), commit 1 moves **2 of 14 primitives** (`Mtn_SnowPatch_LOD0` 66 -> 294, `_LOD2` 10 -> 51; all twelve scree/talus/frost-shard primitives byte-identical), and commit 2 moves **0 of 14**. The docstring's held-still clause bound a ROCKS lane; this is the snow lane and it holds the rocks still instead. **`vistadawn`, the pose R6 called worse than `mtnslope`**: the near patch at row 790 goes from **-66 to -58** warm across x 750-800 to **+43 to +71** across x 710-810 against a substrate at +47 to +71, a 113-count inversion answered, and by eye at 1x the frame no longer contains a cold object. **THE LIT FACET SAYS THE SAME THING FROM THE OTHER SIDE**: warm barely moves (+22.12 -> +20.20) while luma falls 19 counts as the mirror sheen goes, so the prop's own lit-minus-shaded hue swing collapses **33.52 -> 7.73 counts**, which is R6's "no ambient relationship to its surroundings" 77 per cent gone. **PRICED ON WG-189's OWN METHOD, INTERLEAVED**: +54,791 triangles at `mtnslope` (+8.60 per cent) for a p50 delta of **exactly 0.00 ms against a 0.50 ms within-arm spread**, identical calls (49) and identical `vramMB`, and the within-arm spread covers all p50 movement (the lane's run-order reading of the repeated 6.6/6.8/7.1 sequence was one session's coincidence, softened at merge). `meadow` is not merely under the 2.7e6 ALERT but **UNMOVED at 1,879,350 in both arms**, since `Mtn_*` props do not exist in Plains. Contract caps rise 100 -> 300 on the part and 900 -> 1100 on the atlas, argued per square metre of ground covered: the atlas runs 64/122/129 triangles per m2 and the snow patch was at **12** on the largest footprint in the file, going to 54, still the cheapest here. **THE PIXEL DIFF GOT ITS OWN NULL FIRST**: two loads of the SAME build differ over 0.56 per cent of a dry frame and 28.60 per cent of `pondside`, so `meadow` 0.27, `machine` 0.58 (the `OF_Glass` + `OF_Skin` control) and `meadownight` 0.30 are all at or under the floor while `mtnslope` 1.90 and `vistadawn` 2.63 are 3.4x and 4.7x it, both splitting pixels BOTH ways as `pngdiff`'s own silhouette assertion requires. **`pondside` IS REPORTED RATHER THAN CLAIMED**: its water-dominated `box` shows no arm separation at all (-41.94 to -42.05 over six interleaved runs) and its dry rects reproduce to the hundredth, but `shore` moves about one count in a way the discriminating `geom` arm's own 0.64 spread nearly covers, and it is left UNRESOLVED. Six of `mtnslope`'s seven committed rects are bit-identical; the one that moves is `upR`, which contains the frame's second snow patch. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, `validate_glb props_mountains` 1/1, full four-pose **`rn2550guard` PASS 4 of 4, exit 0** with all four `rho` reproducing 2.44's published figures. Owed and routed: `Polar_SnowDrift` is still on `Ice` and is the same defect in another atlas; a real `snow` texture family; the grass blades that still pass through the drift (a `Scatter*` question); and three MORE stale rows found in ASSET-SPECS' prop table by reading it off the shipped bytes. Full record in section 2.48; frames `docs/screenshots/RN2700_*`. THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2725, `lane/plains-pose`, **THE PLAINS HERO GETS TWO EYES, NOT ONE, BECAUSE THE FIRST ONE'S OWN NULL WAS VACUOUS: A GRASS CARD CULLS ON SLANT RANGE AND A 100 M EYE NEVER GETS WITHIN 70 M OF ANYTHING.** R6 rank 5 dispatched per its own draft row (WORLD-AUDIT-R6-2026-08-23.md 4.5d): `meadowfield` (pitch -12, 1.62 m eye) cannot judge its own headline complaint ("the world ends at the carpet") because the 84 m-to-horizon band occupies about twelve frame rows, so the scale ladder reads shipped and `?grass=0` identically. **FIRST DRAFT SHIPPED ONE SHOT, `plainsmid` (h = 100 m, pitch -25, `rangeRects` 85 to 800 m), read a bit-identical scale ladder and called it the carpet's absence proved with a number. A FRESH-CONTEXT VERIFIER FOUND THE NULL VACUOUS**: `GrassGlsl.ts`'s mat rung culls on SLANT range (`dist = length(iPos - cameraPosition)`, not horizontal), `GrassCover.ts`'s `outM = (30, 70)` windows it to exactly zero past 70 m of slant, and at h = 100 m every visible point's slant range is already >= 100 m, so the grass system's own 38,340 resident mat instances draw and paint ZERO pixels regardless of the flag -- proved live (the same site/yaw/pitch at altM 40 moves 23,318 pixels, 2.05 per cent, against `?grass=0`). A rectangle proved to hold ground is not a rectangle proved to hold a REACHABLE subject: the machine-rect trap generalised from surface identity to reach, now NUMBERS.md rule 8. **SHIPPED TWO POSES per Admin's ruling (the verifier's own option B).** `plainsmid` KEPT AT h = 100 UNCHANGED, record corrected to claim only the far ground material/splat (`TerrainCoverFar*`), aerial perspective 85-800 m, scatter density/LOD and relief -- explicitly not the carpet. **`plainslow` ADDED**, same site/yaw/pitch, h = 20 m, `rangeRects` 20/30/45/60/85/150/250/400 m (capped at 400: one pose cannot hold a rung inside the carpet AND 800 m at tens of rows, which is the exact impossible demand that broke `plainsmid`). **`plainslow` SEPARATES SHIPPED FROM `?grass=0` FOR REAL**: per-rect RGB moves 4 to 9 counts at 20/30/45 m (bit-identical at 60 m and past it, matching the slant-range prediction), a full-frame `pngdiff` moves 563,363 of 1,440,000 pixels (39.12 per cent, `maxDelta` 185, split both ways), and `rn2664scale.mjs` over the carpet zone reads a -0.529-count delta at 16 px against a measured 0.000-count repeat-capture noise floor -- more than ten times the brief's 0.05-count floor, and the far-of-carpet zone stays bit-identical, corroborating the cutoff. Two corrections also made at this pass: the manifest's "double for margin" language (85.07 to 100 m is +17.5 per cent, not a doubling) and a banner note that mis-called the base's single previous-pointer block (`lane/n19-emitground`, merged after `lane/n18-snow` despite a lower RN number) a duplicate. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, full four-pose **`rn2550guard` PASS 4 of 4, exit 0** (expected null: no rendered pixel changed; `web/src/` untouched). One file changed under `web/`: `web/tools/smoke/probes/artframe.js`, additive only, two shots plus one dispatch-guard clause (diff proves every other shot untouched). Full record in section 2.50; frames `docs/screenshots/RN2725_plainsmid_1x.png` and `docs/screenshots/RN2725_plainslow_1x.png`. THIS LINE IS A POINTER: replace it, never append to it.
 
 >
-> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2710 to RN-2714, `lane/n19-emitground`, **`uEmitGround` NEVER DELIVERED ZERO: THE PREMISE WAS AN INSTRUMENT GAP, NOT A CODE DEFECT, AND A FRESH-CONTEXT VERIFIER REPRODUCED IT EXACTLY (28 of 28 cells, 0 differing pixels of 540,000 in `box`).** The RN-2710 allocation and rendering.md 2.46.5 both asserted "a live, registered, 40 m-reach emitter delivers exactly zero through `uEmitGround`," measured by `?firelightground=0` reading bit-identical to shipped at every one of `smelternight`'s twelve committed rectangles. **ALL TWELVE ARE MACHINE SURFACE** (`box`, `sunface`, `firebox`, `band`, `plate`, `hearthL`, `hearthR`, `peep`, `strip`, `placard`, `bandLit`, `bandShade`), verified by the shot's own manifest comments and by a 6x crop of `hearthL`'s lowest 120 rows showing pure brick, zero grass. A switch that gates only the TERRAIN material cannot move a rectangle containing no terrain pixel; "bit-identical" was guaranteed regardless of whether the term worked. **THE VERIFIER ALSO FOUND THE RECORD HAD ALREADY REFUTED ITSELF TWICE**: `docs/web/WORLD-AUDIT-R4-2026-08-22.md:547` published this same machine-rectangle coverage gap one full audit before R6 repeated it, and RN-2422's own landing row already published this term's +7.4% night-ground effect. **TWO RECTANGLES ADDED, `groundL`/`groundR`, CLEAR OF BOTH HEARTH COLUMNS**, and they move under `?firelightground=0`: raw box `groundL` R 5.01 -> 4.67 (-6.7%), `groundR` R 3.97 -> 3.55 (-10.6%), R-channel-specific (the fire's own colour). **`groundL` IS 91% GRASS, NOT PURE**: the remaining 9.1% is the machine's own outer pilaster, independently measured INERT under the flag (-0.01%), so contamination can only DILUTE the reading toward zero -- the conservative, grass-only figures are LARGER: **`groundL` -8.43%, `groundR` -10.95%**. All twelve machine rectangles stay bit-identical to the digit across the same pair, attributing the move to the ground term alone. **A 200x-GAIN DIAGNOSTIC (local patch, not shipped) PROVES THE SHAPE**, independently confirmed by the verifier from the SHIPPED build alone via a row-band falloff profile: a correctly centred, correctly falling-off warm pool at the machine's base, visible through grass-blade gaps, exactly black past the emitter's own 40 m reach -- ruling out a coordinate bug, a windowed-to-zero bug and an unreached branch, all three of the brief's own hypotheses. Also tested and found to make NO measurable difference (kept OUT of the diff per this lane's "no other terrain terms" boundary): replacing the seam's `pM + uBodyCenter` round-trip with the already-available `vWorld` varying directly, bit-identical at 8-bit output. **`web/src/render/materials/TerrainProgram.ts`, `TerrainAmpQuery.ts` and `TerrainFragLight.glsl.ts` are UNCHANGED from `origin/main`.** **THE ACTUAL NEAR-INVISIBLE THING IS A DIFFERENT MATERIAL'S SEAM**: most of `smelternight`'s visible "ground" is the instanced grass mesh (`GrassGlsl.ts`/`GrassMaterial.ts`), which has no `ofEmitIrradiance` splice at all; the verifier's own falloff profile gives the routed lane its acceptance target (blades move `dR` 0.010 vs the soil between them at `dR` 0.71-0.77). **`EmissiveLight.ts:92`'s header ("It does NOT reach the terrain") is STALE since RN-2422 and is a small owed `main` fix**, out of this lane's owned path. **COORDINATION: BT-345 item 3 carries the same refuted premise against the same twelve rectangles**; `lane/n19-emitground` must merge before BT-345, and BT-345's arming must re-key on `groundL`/`groundR`, never the twelve machine rects (Admin messaged the BT lane directly; matching record here). **MAIN-CORRECTION OBLIGATION FOR ADMIN AT MERGE**: the "exactly zero" claim still stands, uncorrected by this lane because outside its owned path, at rendering.md 2.46.5, the RN-2685 and RN-2710 NUMBERS.md ledger rows, and WORLD-AUDIT-R6 lines 595/611/632/869/960/982 -- state plainly that this rank was rewritten TWICE (once on its conclusion at 2.46.5, once now on its evidence base) and that R4:547 had the gap first. Gates: `tsc`/`build` clean, `npm run check` **9 of 9**, full four-pose `rn2550guard` **exit 0**. One file changed under `web/`: `web/tools/smoke/probes/artframe.js`. Full record in section 2.47; frames `docs/screenshots/RN2710_*`. THIS LINE IS A POINTER: replace it, never append to it.
-
-
-
-
-
-
+> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2700, `lane/n18-snow`, **THE SNOW PATCH STOPS BEING A PLASTIC SLAB, AND WORLD AUDIT R6 ATTRIBUTED ITS OWN RANK 1 ONE FILE OFF.** R6's only finding classed as a BUG rather than as missing fidelity, first of the endgame wave, two commits. **THE BASELINE REPRODUCES R6 TO THE DIGIT before anything moves**: own build of `50daac5b`, own capture, own instrument, `mtnslope` row 191 shaded snow facet 141.77 / 159.97 / 153.17 = warm **-11.40** against substrate 189.29 / 182.65 / 154.48 = **+34.81**, and `box` `iqr` **88.55**. **COMMIT 1, THE GEOMETRY.** Longest straight run in the ground shoreline **1.263 m -> 0.509 m** (73.2 px -> 29.5 px at 1x, 293 -> 118 px in the audit's own 4x crop, at `mtnslope`'s measured 58 px/m); rim leaves the ground at **33.8 -> 9.1 degrees** by one method on both meshes (mean inclination of the ground-touching side faces, base n-gon excluded; the analytic first-ring step at the widest lobe is 4.0 degrees); a fourth ring at (0.035, 0.90) IS the feather, `seg` goes per lobe 18/12/12 because the widest lobe alone sets the chord, `jit` 0.20 -> 0.06 because the jitter that lobes a 6-gon crenellates an 18-gon, and `lean` 0.18 buys a windward and a lee slope at ZERO triangles. **Smooth shaded with `lobe`'s base n-gon DROPPED**, because Blender averages a vertex normal over every face touching it and the downward base would drag the rim's normals into the earth: measured off the exported bytes, the shipped rim ran 54 vertices at a median tilt of **33.0 degrees** with only 36 of 54 pointing up at all, and the drift's runs 42 at a median **5.4** with **42 of 42 up** and all 175 of the mesh's normals positive. **COMMIT 2, THE ROLE, AND THE AUDIT'S ATTRIBUTION IS REFUTED BY THE MIDDLE ARM.** R6 named the FAMILY (`Ice: 'flat'`, "the same surface family as glass, oil, skin, water and every status chip"). `flat` is the recorded decision not to bind a MAP and cannot tint anything. Three arms, three sentinel-verified servers: base (slab on `Ice`) **-11.40**, **geom (drift on `Ice`) -16.33**, head (drift on `Snow`) **+12.47**, substrate +34.80 in all three. **THE GEOMETRY ALONE MAKES THAT STATISTIC WORSE**, because a smooth drift presents a broader mirror to the sky than a faceted slab does at roughness 0.25, and that is the proof the seam is the palette row. `Snow` is minted as a SPLIT off `Ice` on RN-1780's `Masonry`-off-`Rock` shape, so `Ice` keeps CFE6F0/0.25 and `props_polar.glb`'s bytes never move. **`Snow` = E6E2DA, 0.00, 0.90**: snow's spectral reflectance is flat across the visible and the blue needs metres of ice a 22 cm drift has none of, while dust and soot on a wind-packed drift absorb hardest in the blue, so the honest colour is warm-shifted at 12 counts of chroma, quieter than `SuitGrime`'s 15; roughness 0.90 not 0.95 keeps the wind-crust sheen `vistadawn` needs. **THE VALUE IS `Ice`'s OWN TO 0.17 PER CENT IN LINEAR REC.709 LUMA (0.76278 against 0.76150), so every luma pin in the guard is protected by arithmetic before a frame is taken**, which reuses the luma-preservation half of FoliageTone's RN-2495 record only (the constants here are picked with stated reasons, not solved as 1.08 was). **It stays on `flat` as a DECISION**: no texgen family is a picture of snow, and `coarse` fails on its own number, `albedo_mean_linear` 0.1806 divided back out at `SurfaceBind.ts:83` would swing a 0.76-albedo drift by half its value every 0.75 m with a soil map. **THE ATLAS DIFF IS ENTIRELY THE SNOW'S BYTES, MEASURED THREE WAYS**: the build is bit-deterministic (an unchanged rebuild reproduces `840d06c6..` exactly), commit 1 moves **2 of 14 primitives** (`Mtn_SnowPatch_LOD0` 66 -> 294, `_LOD2` 10 -> 51; all twelve scree/talus/frost-shard primitives byte-identical), and commit 2 moves **0 of 14**. The docstring's held-still clause bound a ROCKS lane; this is the snow lane and it holds the rocks still instead. **`vistadawn`, the pose R6 called worse than `mtnslope`**: the near patch at row 790 goes from **-66 to -58** warm across x 750-800 to **+43 to +71** across x 710-810 against a substrate at +47 to +71, a 113-count inversion answered, and by eye at 1x the frame no longer contains a cold object. **THE LIT FACET SAYS THE SAME THING FROM THE OTHER SIDE**: warm barely moves (+22.12 -> +20.20) while luma falls 19 counts as the mirror sheen goes, so the prop's own lit-minus-shaded hue swing collapses **33.52 -> 7.73 counts**, which is R6's "no ambient relationship to its surroundings" 77 per cent gone. **PRICED ON WG-189's OWN METHOD, INTERLEAVED**: +54,791 triangles at `mtnslope` (+8.60 per cent) for a p50 delta of **exactly 0.00 ms against a 0.50 ms within-arm spread**, identical calls (49) and identical `vramMB`, and the within-arm spread covers all p50 movement (the lane's run-order reading of the repeated 6.6/6.8/7.1 sequence was one session's coincidence, softened at merge). `meadow` is not merely under the 2.7e6 ALERT but **UNMOVED at 1,879,350 in both arms**, since `Mtn_*` props do not exist in Plains. Contract caps rise 100 -> 300 on the part and 900 -> 1100 on the atlas, argued per square metre of ground covered: the atlas runs 64/122/129 triangles per m2 and the snow patch was at **12** on the largest footprint in the file, going to 54, still the cheapest here. **THE PIXEL DIFF GOT ITS OWN NULL FIRST**: two loads of the SAME build differ over 0.56 per cent of a dry frame and 28.60 per cent of `pondside`, so `meadow` 0.27, `machine` 0.58 (the `OF_Glass` + `OF_Skin` control) and `meadownight` 0.30 are all at or under the floor while `mtnslope` 1.90 and `vistadawn` 2.63 are 3.4x and 4.7x it, both splitting pixels BOTH ways as `pngdiff`'s own silhouette assertion requires. **`pondside` IS REPORTED RATHER THAN CLAIMED**: its water-dominated `box` shows no arm separation at all (-41.94 to -42.05 over six interleaved runs) and its dry rects reproduce to the hundredth, but `shore` moves about one count in a way the discriminating `geom` arm's own 0.64 spread nearly covers, and it is left UNRESOLVED. Six of `mtnslope`'s seven committed rects are bit-identical; the one that moves is `upR`, which contains the frame's second snow patch. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, `validate_glb props_mountains` 1/1, full four-pose **`rn2550guard` PASS 4 of 4, exit 0** with all four `rho` reproducing 2.44's published figures. Owed and routed: `Polar_SnowDrift` is still on `Ice` and is the same defect in another atlas; a real `snow` texture family; the grass blades that still pass through the drift (a `Scatter*` question); and three MORE stale rows found in ASSET-SPECS' prop table by reading it off the shipped bytes. Full record in section 2.48; frames `docs/screenshots/RN2700_*`. THIS LINE IS A POINTER: replace it, never append to it.
 
 >
-> *(the pointer before that, `lane/n17-poolroom` section 2.45, is no longer kept inline per the one-deep rule; see git history or section 2.45 itself.)*
+> *(the pointer before that, `lane/n19-emitground` section 2.47, is no longer kept inline per the one-deep rule; see git history or section 2.47 itself. CORRECTION, RN-2725's own verifier: an earlier draft of this note called this a second duplicate "previous pointer" block left inline by an earlier lane's oversight. It was not a duplicate: the base held exactly one "previous pointer, kept one deep" block, `lane/n19-emitground`'s, which merged into `main` after `lane/n18-snow` even though its RN block is numbered lower -- rotation order here is MERGE order, not RN-number order -- plus seven stray blank lines before this note that carried no content. This is the normal one-deep rotation applied to that single block, not a second copy of it.)*
 
 
 ## 1. Mission
@@ -17627,3 +17621,419 @@ only fire on an impossible OVER-count), now sits beside a measured-ceiling ratch
 the under-count itself (`PROPPAINT_LEAK_CEILING`, `rn2550guard.mjs`), so a future
 regression that leaks MORE than this lane characterised is caught rather than absorbed
 silently. Full rationale in that constant's own comment block.
+
+
+
+
+## 2.50 THE PLAINS HERO GETS TWO EYES, NOT ONE, BECAUSE THE FIRST ONE'S OWN NULL WAS VACUOUS: A GRASS CARD CULLS ON SLANT RANGE AND A 100 M EYE NEVER GETS WITHIN 70 M OF ANYTHING (RN-2725, 2026-08-23, `lane/plains-pose`, corrected same day per Admin's ruling on a fresh-context verifier's FIX verdict)
+
+### 2.50.1 THE BRIEF, VERBATIM AND BINDING
+
+R6 rank 5 (`WORLD-AUDIT-R6-2026-08-23.md` section 4.5, quoted in the RN-2725
+allocation row): `meadowfield` (pitch -12, 1.62 m standing eye, `meadowfield`'s
+own site lat -7.9675 / lon 116.53189 / yaw 150) is the plains hero and it
+cannot judge its own headline complaint, "the world ends at the carpet." The
+near sward reads as dense grass to about 85 m; past that a flat, smooth,
+untextured green plane runs to the treeline. The instrument that should be
+able to say whether that plane is a real material change or a shading
+artefact cannot: at `meadowfield`'s pitch and eye height the whole 84 m-to-
+horizon band occupies about **twelve frame rows**, so the scale ladder
+(`rn2664scale.mjs`) reads shipped and `?grass=0` identically, **20.78 and
+20.78 at 16 px**, and R5's own `r250` rectangle scores the same band a lift
+of 1.009 and calls it healthy -- the same blindness wearing a number.
+`forestaircanopy` (RN-2585, section 2.36.4/2.36.11 item 2) is the precedent:
+it solved the identical class of problem for the far treeline (690 m-to-
+horizon, 0.515 px at a standing eye) by raising the eye and re-deriving the
+pitch. `midfield` is the nearest thing Plains already has and it declares
+`props: false`, so it cannot judge a carpet (R6 4.5b). The brief: add ONE new
+shot to `web/tools/smoke/probes/artframe.js`, additive only, derived from
+`meadowfield`'s own site and yaw, eye raised and pitch solved by trigonometry
+so the band spans tens of rows, plus its `rangeRects` rungs (85 to at least
+800 m), and either separate shipped from `?grass=0` by more than the
+instrument's 0.05-count floor or report that it does not and thereby prove
+the carpet's absence with a number for the first time. `meadowfield`'s and
+`meadow`'s own fields/rectangles, anything under `web/src/`, and any cover or
+carpet constant are out of scope.
+
+### 2.50.2 WHAT SHIPPED FIRST, AND WHY A FRESH-CONTEXT VERIFIER SENT IT BACK
+
+The first draft of this lane shipped one shot, `plainsmid` (site/yaw
+`meadowfield`'s own, h = 100 m, pitch -25, `rangeRects` 85 to 800 m), read the
+scale ladder as bit-identical between shipped and `?grass=0` at every scale,
+and reported that as "the carpet's absence proved with a number." **A
+fresh-context verifier found the null vacuous.** `GrassGlsl.ts`'s mat-rung
+density term culls on
+
+```
+float dist = max(length(iPos - cameraPosition), 0.05);   // SLANT range
+```
+
+against `GrassCover.ts`'s `outM = (MAT_OUT_LO_M, MAT_OUT_HI_M)` = `(30, 70)`:
+the term windows to exactly zero past 70 m of slant range, regardless of
+horizontal position. At `plainsmid`'s h = 100 m, every visible ground point's
+slant distance is at least 100 m -- the altitude alone, before any horizontal
+component -- so the mat rung is dark at every pixel in the frame by
+construction. The verifier proved it live: at the committed pose the grass
+system's own report shows `draws: 2`, `mat instances: 38,340`,
+`chunksCovered: 8`, `converged: true`, and the rectangle-level decode painted
+**zero pixels of difference**, because none of the 38,340 resident, drawing
+instances ever clear the density threshold at any range this eye can see. The
+verifier's own control proved the mechanism rather than just naming it: the
+identical site/yaw/pitch at `altM = 40` moves **23,318 pixels (2.05 per
+cent), maxDelta 174**, against `?grass=0` -- so the flag, the site and the
+pose FAMILY all work; only `plainsmid`'s OWN height put it outside the
+system's own reach.
+
+**This is the machine-rect trap wearing a new costume.** 2.50.5 (below)
+proved every named rectangle held GROUND, not sky or machine surface, and
+that proof was real and correct -- but a rectangle that holds the right
+SURFACE is not the same as a rectangle whose SUBJECT is within that
+subject's own draw/cull distance. The original 2.50.6 got within one step of
+this: it named `MAT_OUT_HI_M` and "~70 m" as the likely cause, but read the
+70 as a HORIZONTAL range and filed the effect as a viewing-angle confound on
+card silhouette area. The actual mechanism is the slant-range cull above, a
+harder and simpler fact than a silhouette argument, and the corrected
+headline is that this lane's own instrument restated a constant already in
+the code as if it were a discovery, rather than testing whether the pose's
+own geometry ever entered the window that constant defines. **This trap is
+now NUMBERS.md rule 8** (2.50.9).
+
+**Admin's ruling, adopted here (the verifier's own option B): ship TWO
+poses.** `plainsmid` is kept at h = 100 m exactly as committed -- it is not
+a wasted pose, it answers real questions the shot set had none of -- but its
+record is rewritten to claim only what it can judge. A second shot,
+`plainslow`, is added at the same site/yaw/pitch and a lower eye, built to
+stand where the carpet still draws.
+
+### 2.50.3 `plainsmid`, CORRECTED: WHAT IT ACTUALLY MEASURES
+
+`plainsmid`'s pose is UNCHANGED from the first draft (site, yaw, pitch, eye
+height, `box`, `rangeRects` -- nothing here moved):
+
+```
+plainsmid: {
+  scenario: 'surface', needsSandbox: false, fly: true,
+  lat: -7.9675, lon: 116.53189, altM: 100,
+  yaw: 150, pitch: -25,
+  sunDot: 0.70, sunTol: 0.06,
+  box: [0.15, 0.448889, 0.85, 0.454444],
+  rangeRects: [85, 150, 250, 400, 600, 800],
+  rangeRowsPx: 5,
+}
+```
+
+**The eye height derivation is unchanged and stands**, including its own
+correction (this lane's manifest comment originally called rounding 85.07 m
+up to 100 m "doubling for margin," which it is not -- 100/85.07 is +17.5 per
+cent, not +100 per cent, and the band at h = 100 is 2.337 degrees on the
+ladder's own tightest pair, not the roughly-4-degree a true doubling would
+buy; the comment now says so plainly). At eye height `h`, the depression to
+ground at range `s` is `s/(2R) + h/s` radians (Forge R = 6e5 m) and the
+horizon's own dip is `sqrt(2h/R)`. The single-band 2-degree "worth a pose"
+floor (`forestaircanopy`'s own bar) at `s = 84 m` solves to h = 3.20 m, but
+this pose's SIX-RUNG LADDER (85 to 800 m) is bound by its own tightest
+adjacent pair (600 to 800 m, the pair the flat-plane mapping compresses
+hardest): `atan(h/600) - atan(h/800) = 2 degrees` solves numerically to
+**h = 85.07 m**, rounded up to **h = 100 m**. Pitch -25 was chosen and
+proven live (pitch -10 refuses with `rangeRects 85 m falls off the frame`).
+
+**Captured row table, this build:**
+
+| rangeM | row (of 900) | gap to next rung |
+|---|---|---|
+| 85 | 805-810 | -- |
+| 150 | 567-572 | 238 |
+| 250 | 404-409 | 163 |
+| 400 | 297-302 | 107 |
+| 600 | 231-236 | 66 |
+| 800 | 196-201 | 35 |
+
+Every gap clears "tens of rows" with margin, the tightest (600-800) at 35,
+the whole ladder spanning 609 rows against `meadowfield`'s twelve.
+
+**WHAT `plainsmid` CAN JUDGE, restated after 2.50.2's correction:** the far
+ground material and splat (`render/materials/TerrainCoverFar*`), aerial
+perspective across 85 to 800 m, scatter density/LOD at those ranges, and
+relief. Every one of those terms operates on the terrain mesh or the distant
+scatter/impostor tiers, none of which share the grass mat rung's slant-range
+cull, so a null or a signal on `plainsmid`'s own rectangles is a real reading
+about THOSE terms.
+
+**WHAT `plainsmid` CANNOT JUDGE, STATED PLAINLY: the grass carpet, at all,
+structurally, regardless of what the carpet does.** At h = 100 m every
+visible ground point's slant range is >= 100 m > `MAT_OUT_HI_M` (70 m), so
+the mat rung's density term is analytically zero at every pixel in this
+frame on EVERY build, forever, independent of any future change to the
+carpet's own look. `plainsmid`'s own scale-ladder table (identical to three
+decimals at every scale 1 to 128 px, a full-frame `pngdiff` of 0 of
+1,440,000 pixels moved with `maxDelta` 0, both reproduced against a
+repeat-capture noise floor of the same shape) is real and correctly measured
+-- it is simply **a correct null about a pose that cannot see the term**,
+not evidence the term is weak or absent. Every rung's own RGB decode still
+proves the rectangles hold ground rather than sky (2.50.5), which is a
+necessary check this lane is glad it ran, but 2.50.2 is the reminder that
+necessary is not sufficient.
+
+### 2.50.4 `plainslow`: THE POSE THAT CAN STAND WHERE THE CARPET STILL DRAWS
+
+Added at the same site, yaw and pitch as `plainsmid` (one fewer degree of
+freedom to re-derive, and `forestaircanopy`'s own note that pitch does not
+need re-solving per eye height in this regime already argued this), eye
+lowered to h = 20 m:
+
+```
+plainslow: {
+  scenario: 'surface', needsSandbox: false, fly: true,
+  lat: -7.9675, lon: 116.53189, altM: 20,
+  yaw: 150, pitch: -25,
+  sunDot: 0.70, sunTol: 0.06,
+  box: [0.15, 0.397778, 0.85, 0.403333],
+  rangeRects: [20, 30, 45, 60, 85, 150, 250, 400],
+  rangeRowsPx: 5,
+}
+```
+
+**WHY A SECOND POSE RATHER THAN RE-TUNING THE FIRST.** `plainsmid`'s own
+ladder (85 to 800 m, tens of rows a rung) and the grass mat rung's own reach
+(slant range under 70 m) do not overlap at ANY eye height that also keeps
+800 m at tens of rows: LOWERING h to put a rung inside 70 m of slant range
+crushes the far rungs back toward `meadowfield`'s own twelve-row problem, and
+RAISING it to hold the far ladder open (h = 100) pushes the near edge of
+the visible frame out past the grass system's own reach entirely. One pose
+cannot hold both ends; that impossible demand is exactly what produced
+`plainsmid`'s vacuous null. The ladder is therefore SPLIT across two poses:
+`plainsmid` keeps the far half (85 to 800 m), `plainslow` takes the near half
+(20 to 400 m, capped -- see below).
+
+**THE EYE HEIGHT, h = 20 m**, chosen against the constraint that broke
+`plainsmid`: the nearest named rungs must clear `MAT_OUT_HI_M` = 70 m of
+SLANT range with margin. At h = 20, slant range to a ground point at
+horizontal range `s` is `sqrt(s^2 + 400)`; at s = 20 that is 28.3 m, at
+s = 45 it is 49.2 m, at s = 60 it is 63.2 m and at s = 85 it is 87.3 m --
+so 20/30/45 m sit well inside the window, 60 m sits close to its edge and
+85 m sits just past it, framing the handover from both sides. The true
+horizon at h = 20 is `sqrt(2Rh)` = 4,899 m, far past the ladder's own cap.
+
+**THE LADDER IS CAPPED AT 400 m, and the reason is the same impossible-demand
+finding named rather than repeated by accident:** at this FOV a single pose
+cannot hold both a rung inside the carpet's own reach and a rung at 800 m
+spanning tens of rows -- that is this pose's whole division of labour with
+`plainsmid`, which already carries the far half. 400 m is comfortably past
+`MAT_OUT_HI_M` with margin to spare while its own row still sits with room
+either side, not crushed against this pose's own horizon or its own near
+edge.
+
+**Captured row table, this build, reproducing the verifier's own computed
+values (20/30/45/60/85/150/250/400 m at rows ~734/569/436/360/288/206/160/133,
+horizon ~94) within a few rows -- the residual is the 5-row `rangeRowsPx`
+band each rung already carries, not a disagreement with the verifier's
+numbers:**
+
+| rangeM | row (of 900) | slant range (h=20) |
+|---|---|---|
+| 20 | 731-736 | 28.3 m |
+| 30 | 567-572 | 36.1 m |
+| 45 | 433-438 | 49.2 m |
+| 60 | 358-363 | 63.2 m |
+| 85 | 285-290 | 87.3 m |
+| 150 | 203-208 | 151.3 m |
+| 250 | 157-162 | 250.8 m |
+| 400 | 130-135 | 400.5 m |
+
+`box` is set to the `r60` rung's own fraction, bracketing the handover with
+`r85`.
+
+### 2.50.5 THE SUBJECT IS PROVED, NOT ASSUMED (NUMBERS RULE 6 / the machine-rect trap's surface half)
+
+Every rung's own decode (`extra.rNN.rgb`) reads green-dominant, none
+blue-dominant, at BOTH poses, so every rectangle sees ground rather than sky.
+
+`plainsmid` (unchanged from the first draft):
+
+| rangeM | RGB | warm |
+|---|---|---|
+| 85 | 89.94 / 113.81 / 59.84 | +30.10 |
+| 150 | 97.60 / 122.00 / 65.17 | +32.43 |
+| 250 (= `box`) | 106.69 / 131.53 / 70.76 | +35.93 |
+| 400 | 107.07 / 134.44 / 73.69 | +33.38 |
+| 600 | 78.69 / 106.84 / 62.04 | +16.65 |
+| 800 | 79.80 / 104.50 / 64.92 | +14.88 |
+
+`plainslow` (new):
+
+| rangeM | RGB (shipped) | warm |
+|---|---|---|
+| 20 | 76.25 / 93.33 / 50.38 | +25.87 |
+| 30 | 80.19 / 99.13 / 53.11 | +27.08 |
+| 45 | 76.30 / 94.66 / 50.88 | +25.42 |
+| 60 (= `box`) | 85.31 / 107.27 / 56.53 | +28.78 |
+| 85 | 91.32 / 115.58 / 60.42 | +30.90 |
+| 150 | 105.80 / 131.84 / 69.58 | +36.22 |
+| 250 | 101.79 / 129.67 / 67.87 | +33.93 |
+| 400 | 111.34 / 135.33 / 74.30 | +37.04 |
+
+`docs/screenshots/RN2725_plainslow_1x.png` also settles this by eye: the
+lower half of the frame is a dense, individually-legible grass card carpet
+(the near tuft and mat rungs both drawing), handing over by eye to a
+smoother, blade-free green plane above roughly the frame's mid third, which
+is the same transition the audit describes, now inside a frame that can
+measure it.
+
+### 2.50.6 `plainsmid`'S LADDER: A CORRECT NULL ABOUT A POSE THAT CANNOT SEE THE TERM (kept for the record, reclassified per 2.50.2/2.50.3)
+
+Captured shipped and `?grass=0` at 1600x900, same build, same session, fresh
+process each arm.
+
+1. **Per-rung decode**: every one of the six `extra.rNN` blocks and `box`
+   itself read bit-identical to the digit between shipped and `?grass=0`.
+2. **Full-frame `pngdiff.mjs`** (`--left=0 --bottom=0`): **0 of 1,440,000
+   pixels moved, `maxDelta` 0** -- bit-identical, not merely under the
+   tool's default 6-count threshold.
+3. **`rn2664scale.mjs`** (`--rect=240,180,1120,640`, the whole ladder band,
+   `--scales=1,2,4,8,16,32,64,128`): identical to three decimals at every
+   scale. At 16 px (the scale R6 rank 5 itself quoted): **15.654 both arms.**
+
+**Repeat-capture noise floor**, measured the same session: a second,
+fresh-process capture of the SHIPPED arm alone, diffed against the first.
+`pngdiff`: 0 of 1,440,000 moved, `maxDelta` **1**. `rn2664scale.mjs`: the
+same table to the same three decimals, `+0.000` at every scale. The
+shipped-vs-`?grass=0` delta (0.000) is therefore not distinguishable from
+this instrument's own repeat-capture noise (also 0.000, with a 1-count
+ceiling elsewhere in the frame) -- **but per 2.50.2/2.50.3, this is now read
+as the correct behaviour of a pose that cannot see the term, not as a
+finding about the term.**
+
+### 2.50.7 `plainslow`'S LADDER: A REAL, ABOVE-FLOOR SEPARATION, PER RECT AND BY SCALE
+
+Captured shipped, `?grass=0` and a fresh-process shipped repeat, same
+session, same build.
+
+**Per-rect RGB, shipped vs `?grass=0`, in 8-bit counts:**
+
+| rangeM | shipped RGB | `?grass=0` RGB | delta R/G/B | delta luma | repeat-noise (shipped vs shipped) |
+|---|---|---|---|---|---|
+| 20 | 76.25/93.33/50.38 | 85.33/97.33/54.47 | +9.08/+4.00/+4.09 | +5.09 | 0.00/0.00/0.00 |
+| 30 | 80.19/99.13/53.11 | 80.70/91.38/51.55 | +0.51/-7.75/-1.56 | -5.55 | 0.00/0.00/0.00 |
+| 45 | 76.30/94.66/50.88 | 73.29/87.44/48.11 | -3.01/-7.22/-2.77 | -6.00 | 0.00/0.00/0.00 |
+| 60 (= `box`) | 85.31/107.27/56.53 | 85.31/107.27/56.53 | 0/0/0 | 0.00 | 0.00/0.00/0.00 |
+| 85 | 91.32/115.58/60.42 | 91.32/115.58/60.42 | 0/0/0 | 0.00 | 0.00/0.00/0.00 |
+| 150 | 105.80/131.84/69.58 | 105.80/131.84/69.58 | 0/0/0 | 0.00 | 0.00/0.00/0.00 |
+| 250 | 101.79/129.67/67.87 | 101.79/129.67/67.87 | 0/0/0 | 0.00 | 0.00/0.00/0.00 |
+| 400 | 111.34/135.33/74.30 | 111.34/135.33/74.30 | 0/0/0 | 0.00 | 0.00/0.00/0.00 |
+
+The repeat-noise column is the same fresh-process shipped-vs-shipped capture
+at every one of the eight rungs: **0.00 counts on every channel, at every
+rung, with no exception.** The 20/30/45 m rows move **4 to 9 counts on
+individual channels, 5 to 6 counts of luma**, tens of times the measured
+noise floor and in the SIGN each rung's own arm predicts (not all three move
+the same direction -- 20 m gets lighter, 30 and 45 m get darker -- which is
+consistent with real card geometry disappearing rather than a uniform
+lighting shift, and is the same kind of two-directional split
+`pngdiff.mjs`'s own silhouette rule looks for). The 60 m rung and every rung
+past it are bit-identical to the digit, matching 2.50.4's own slant-range
+table: 60 m sits at the very edge of the window (63.2 m slant of the nominal
+70), but the null is not sampling luck: the merge-time re-verifier's per-row
+diff profile puts the topmost moved row at 368 (58.0 m horizontal, 61.3 m
+slant), 5 to 10 rows below the r60 band, because `show = smoothstep(iParam.w
+* 0.70, iParam.w, dens)` compares density against each instance's own
+per-cell threshold, so the last card in a cell drops out before the nominal
+constant is reached: the EFFECTIVE reach here is about 61 m of slant, not
+`MAT_OUT_HI_M`'s 70. Nominal reach is not effective reach (rule 8, one level
+deeper). The r60 rung is therefore an honest out-of-reach null, and `box`
+was moved off it to the r45 fraction at merge per the re-verifier, so the
+shot's one mandatory rectangle is one that can see its subject (+6.00
+counts of separation).
+
+**Full-frame `pngdiff.mjs`**, shipped vs `?grass=0`: **563,363 of 1,440,000
+pixels moved (39.12 per cent), `maxDelta` 185, mean delta 35.12, split both
+ways** (223,623 darker, 339,740 lighter) -- a real, large, two-directional
+change consistent with removing card geometry across most of the frame's
+lower half, not a uniform grade shift. Shipped vs the fresh-process repeat:
+**0 of 1,440,000 moved, `maxDelta` 1.**
+
+**`rn2664scale.mjs` over the carpet zone** (`--rect=240,400,1120,500`,
+covering the 20/30/45 m rungs with margin on both sides):
+
+| scale px | shipped | `?grass=0` | delta | repeat (noise floor) |
+|---|---|---|---|---|
+| 1 | 31.903 | 27.628 | -4.275 (-13.4%) | +0.000 |
+| 2 | 29.059 | 25.750 | -3.309 (-11.4%) | +0.000 |
+| 4 | 24.690 | 22.814 | -1.876 (-7.6%) | +0.000 |
+| 8 | 19.697 | 18.872 | -0.824 (-4.2%) | +0.000 |
+| 16 | 15.425 | 14.896 | -0.529 (-3.4%) | +0.000 |
+| 32 | 11.959 | 11.559 | -0.400 (-3.3%) | +0.000 |
+| 64 | 9.124 | 8.789 | -0.336 (-3.7%) | +0.000 |
+| 128 | 6.258 | 5.536 | -0.722 (-11.5%) | +0.000 |
+
+At 16 px, the same scale R6 rank 5 and `plainsmid`'s own record quote: a
+**-0.529-count delta against a measured 0.000-count noise floor**, more than
+ten times the brief's 0.05-count floor. **`rn2664scale.mjs` over the
+far-of-carpet zone** (`--rect=240,100,1120,270`, covering `r60` through
+`r400`): identical to three decimals at every scale from 1 to 64 px,
+corroborating the per-rect table's own bit-identical reading past 60 m.
+
+**`plainslow` therefore lands on the FIRST acceptance branch**: it separates
+shipped from `?grass=0`, per rect and by the scale ladder, by far more than
+the 0.05-count floor, at the ranges inside the grass system's own reach --
+and it corroborates, independently, that the separation genuinely stops
+where `plainsmid`'s own null said nothing could be seen at all.
+
+### 2.50.8 THE CARRIED-FORWARD FINDING, FOR THE FUTURE COVER LANE
+
+R6's "the world ends at the carpet at about 85 m" now has a **named cause**,
+not just a photograph. The grass mat rung's own `outM = (30, 70)` slant-range
+window (`GrassCover.ts`, consumed by `GrassGlsl.ts`'s `dist` term) retires
+the last cards well inside the range a standing eye's own near sward reads as
+dense (R6 4.5a's own "the near sward is dense to about 85 m"), and the height
+those retiring cards carry (`hM`, `GrassGlsl.ts`) bleeds the visible silhouette
+a little further before the last blade vanishes -- together, a slant cutoff
+at 70 m plus a card's own height is a plausible, mechanism-level account of
+where the eye's own "about 85 m" comes from, not merely a correlation. This
+is a `render/grass/*` + `render/materials/TerrainCoverFar*` question --
+whether the handover from card-drawn ground to terrain-material ground is
+itself well-shaped, whether the terrain material picks up believable detail
+the instant the cards retire, and whether the slant-vs-horizontal choice in
+`GrassGlsl.ts` is the right one for a standing eye at all -- and it is
+explicitly **not this lane's**, per the brief's own scope line naming those
+two paths out of bounds. `plainslow`'s own frame and rung table are the
+instrument that lane should start from instead of re-deriving one.
+
+### 2.50.9 THE TRAP, GENERALISED: NUMBERS.md RULE 8
+
+Recorded in `docs/web/NUMBERS.md`'s own rule list (2.50.10's NUMBERS row
+carries the same text): a null about a subject is not valid until the
+subject is proven to be inside its own system's draw/cull distance at the
+instrument's pose. A rectangle that reads as the right SURFACE is not the
+same as a rectangle whose SUBJECT is reachable: `plainsmid`'s own six
+rectangles held real ground, proved by RGB, and still measured nothing,
+because the grass system's own 38,340 resident mat instances never cleared
+their own density threshold at any range that eye could see. Content-verified
+ground rects are not enough when the subject is distance-culled; the
+machine-rect trap generalises from surface identity to reach.
+
+### 2.50.10 GATES, RAILS AND FILES
+
+`npx tsc --noEmit` **0**. `npm run build` **0**. `npm run check` **9 of 9**.
+Full four-pose `rn2550guard` (`node tools/smoke/check-guard.mjs`) **PASS 4 of
+4, exit 0**, every pose reproducing its BASE table figures to the digit
+(`forestairnoon` 0.9359/0.8844, `forestairlow` 0.9177/0.6778, `flyovernoon`
+0.9190/0.8406, `flyoverlow` 0.9334/0.7050) -- the expected null, since this
+lane changes no rendered pixel and touches nothing under `web/src/`. One file
+changed under `web/`: `web/tools/smoke/probes/artframe.js`, additive only
+(two shots, `plainsmid` and `plainslow`, plus the `|| name === 'plainsmid' ||
+name === 'plainslow'` clause on the existing FLY dispatch guard; every other
+shot untouched, proved by diff). Frames: `docs/screenshots/RN2725_plainsmid_1x.png`
+(1x, shipped) and `docs/screenshots/RN2725_plainslow_1x.png` (1x, shipped).
+The `?grass=0` and repeat-capture comparison frames for both poses live only
+in the lane's own scratch space, not committed, since 2.50.6/2.50.7's numbers
+are what the record needs.
+
+### 2.50.11 OWED AND ROUTED
+
+`render/grass/*` and `render/materials/TerrainCoverFar*` (2.50.8) are the
+named next step, out of this lane's scope by the brief's own line. Whether
+the grass mat rung's SLANT-range cull is the right choice for a standing eye,
+as opposed to a horizontal-range cull, is itself a question worth that future
+lane's attention: it is the single fact that made `plainsmid` blind and made
+`plainslow` necessary, and nothing here argues it is wrong, only that its
+consequences were undocumented before this correction.
