@@ -620,7 +620,7 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // `forestairnoon`. It sweeps, because the shipping value is the loosest
   // ceiling the canopy pool and the frame hold.
   'canopychunkkm2',
-  // RN-2680, lane N17, standing rule 7. `canopychunkmax=` overrides the
+  // RN-2676, lane N17, standing rule 7. `canopychunkmax=` overrides the
   // canopy-only chunk's OUTER ceiling (shipped `CANOPY_CHUNK_MAX`, 32,768),
   // which was the only ceiling left in the canopy chain with no page param:
   // the WG-304 post-merge verifier named it "the only ceiling still binding

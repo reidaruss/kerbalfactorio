@@ -268,7 +268,7 @@ export interface Config {
    */
   readonly canopyChunkKm2: number;
   /**
-   * RN-2680 (lane N17). `?canopychunkmax=` is the OUTER ceiling
+   * RN-2676 (lane N17). `?canopychunkmax=` is the OUTER ceiling
    * `canopyChunkCap` clamps to, in place of the shipped `CANOPY_CHUNK_MAX`
    * (32,768). It is the only ceiling in the canopy chain that had no page
    * param before this: the WG-304 post-merge verifier named it "the only

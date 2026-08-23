@@ -314,7 +314,7 @@ export function parseConfig(search: string): Config {
     // control: `canopyChunkCap` then falls straight through to
     // `MAX_PER_CHUNK` at every depth and the build is the pre-WG-304 one.
     canopyChunkKm2: Math.max(0, num(p, 'canopychunkkm2', CANOPY_CHUNK_KM2)),
-    // RN-2680. Floored at 0 rather than at the shipped value, on the same
+    // RN-2676. Floored at 0 rather than at the shipped value, on the same
     // argument as `canopychunkkm2` above: `0` IS a control (every canopy-only
     // chunk gets zero instances, the outer clamp binding before the area rule
     // ever runs), not an error case to reject.

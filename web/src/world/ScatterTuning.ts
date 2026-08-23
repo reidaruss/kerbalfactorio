@@ -149,7 +149,7 @@ export const MAX_PER_CHUNK = 14000;
  * rendering's constant and an Admin decision, and it is asked for rather than
  * taken.
  *
- * RN-2680 (lane N17, rendering, on world-gen's own named gap). `CANOPY_MAX_
+ * RN-2676 (lane N17, rendering, on world-gen's own named gap). `CANOPY_MAX_
  * CAPACITY` is raised in the same commit (see `PropLibrary.ts`) and THIS
  * ceiling gets its own page param, `?canopychunkmax=`, because the WG-304
  * post-merge verifier named it "the only ceiling still binding at the shipped
@@ -173,7 +173,7 @@ export const CANOPY_CHUNK_MAX = 32768;
  * alone would give it 16,272 at CANOPY_CHUNK_KM2 4,800 (an earlier draft computed 8,127 from the 2,400 rung; merge-time correction), which at the 2,400 rung would have been tighter than today and would be a second
  * silent thinning introduced by a fix for the first.
  *
- * `maxCap` (RN-2680) defaults to `CANOPY_CHUNK_MAX` and is the injection point
+ * `maxCap` (RN-2676) defaults to `CANOPY_CHUNK_MAX` and is the injection point
  * for `?canopychunkmax=`: the OUTER ceiling, so `0` degenerates the whole
  * function to 0 regardless of `areaKm2` or `perKm2` (a deliberate, dramatic
  * control -- see the constant's own comment) and a value below `MAX_PER_CHUNK`

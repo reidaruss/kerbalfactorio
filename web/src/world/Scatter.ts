@@ -179,7 +179,7 @@ export class Scatter {
      */
     private readonly canopyChunkKm2 = CANOPY_CHUNK_KM2,
     /**
-     * RN-2680. The canopy-only chunk's OUTER ceiling, from `?canopychunkmax=`.
+     * RN-2676. The canopy-only chunk's OUTER ceiling, from `?canopychunkmax=`.
      * Default unchanged: the shipped binary calls `canopyChunkCap` exactly as
      * before this param existed. See `ScatterTuning.canopyChunkCap`'s own
      * comment for what sweeping it proves.

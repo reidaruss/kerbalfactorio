@@ -175,7 +175,7 @@ const MAX_CAPACITY = 65536;
  * a silent 16% of the stand not drawn (HUD read `POOL FULL` but no probe
  * gated on it).
  *
- * RN-2680 (lane N17). RAISED AGAIN, 131,072 -> 262,144, and this time the
+ * RN-2675 (lane N17). RAISED AGAIN, 131,072 -> 262,144, and this time the
  * worst measured case does NOT overflow the OLD ceiling: WG-304's density-
  * honest cap fix (world-gen.md 6.16.13) landed `forestair` at 120,854 live
  * instances, 92.2% of 131,072, `poolRefused` 0. The case for raising ahead of
