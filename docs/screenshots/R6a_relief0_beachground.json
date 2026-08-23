@@ -1,0 +1,791 @@
+{
+ "valid": true,
+ "shot": "beachground",
+ "why": "the BEACH at a standing eye, `meadow`'s pose and sun on Beach ground: the near-field surface WG-285 6.15.3 item 5 owes a frame, and the ring where TREE_DENSITY_KM2[Beach]=0 and CANOPY_BEACH disagree",
+ "poolRefused": 0,
+ "peaceful": {
+  "armed": false,
+  "page": "",
+  "infiniteFuel": false,
+  "fullKg": 0,
+  "slotKey": "auto",
+  "propellantKg": 0,
+  "orbitAltM": 100000,
+  "assisted": true,
+  "used": [
+   "peaceful"
+  ],
+  "firstAtMs": 1787466511989,
+  "log": [
+   {
+    "id": "peaceful",
+    "done": true,
+    "message": "peaceful: nothing more will be dispatched, 3 cleared",
+    "detail": {
+     "peaceful": true,
+     "cleared": 3
+    }
+   }
+  ]
+ },
+ "vitals": {
+  "hp": 150,
+  "maxHp": 150,
+  "deaths": 0,
+  "hurtEvents": 0
+ },
+ "frame": {
+  "w": 1600,
+  "h": 900
+ },
+ "boxPx": [
+  320,
+  383,
+  1280,
+  499
+ ],
+ "box": {
+  "px": 111360,
+  "luma": 151.28,
+  "rgb": [
+   160.68,
+   153.07,
+   105.83
+  ],
+  "warm": 54.86,
+  "sat": 0.345,
+  "p05": 62.56,
+  "p50": 164.22,
+  "p95": 200.8,
+  "iqr": 62.77,
+  "loFrac": 0.003,
+  "hiFrac": 0.024,
+  "lin": {
+   "Y": 0.349471,
+   "rgb": [
+    0.394371,
+    0.355199,
+    0.160519
+   ]
+  },
+  "blackFrac": 0,
+  "col": {
+   "std": 13.15,
+   "minLag": 4,
+   "maxLag": 320,
+   "firstMin": 29,
+   "lag": 49,
+   "peak": 0.288
+  }
+ },
+ "extraPx": {
+  "ring": [
+   320,
+   348,
+   1280,
+   383
+  ],
+  "standHi": [
+   320,
+   292,
+   1280,
+   332
+  ],
+  "hzTree": [
+   320,
+   332,
+   1280,
+   348
+  ],
+  "skyHz": [
+   640,
+   198,
+   960,
+   252
+  ]
+ },
+ "extra": {
+  "ring": {
+   "px": 33600,
+   "luma": 124.78,
+   "rgb": [
+    132.92,
+    126.23,
+    86.55
+   ],
+   "warm": 46.37,
+   "sat": 0.348,
+   "p05": 58.19,
+   "p50": 125.11,
+   "p95": 184.8,
+   "iqr": 59.75,
+   "loFrac": 0.002,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.233871,
+    "rgb": [
+     0.265194,
+     0.237511,
+     0.105581
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 15.04,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 25,
+    "lag": 55,
+    "peak": 0.302
+   }
+  },
+  "standHi": {
+   "px": 38400,
+   "luma": 166.54,
+   "rgb": [
+    158.29,
+    170.06,
+    156.02
+   ],
+   "warm": 2.27,
+   "sat": 0.116,
+   "p05": 74.21,
+   "p50": 175.45,
+   "p95": 185.79,
+   "iqr": 14.04,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.401797,
+    "rgb": [
+     0.362334,
+     0.418703,
+     0.350531
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 12.33,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 21,
+    "lag": 22,
+    "peak": 0.242
+   }
+  },
+  "hzTree": {
+   "px": 15360,
+   "luma": 115.96,
+   "rgb": [
+    112.88,
+    119.66,
+    88.35
+   ],
+   "warm": 24.53,
+   "sat": 0.298,
+   "p05": 57.01,
+   "p50": 117.6,
+   "p95": 176.52,
+   "iqr": 82.51,
+   "loFrac": 0.001,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.208336,
+    "rgb": [
+     0.206374,
+     0.217713,
+     0.121232
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 21.78,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 10,
+    "lag": 15,
+    "peak": 0.418
+   }
+  },
+  "skyHz": {
+   "px": 17280,
+   "luma": 181.58,
+   "rgb": [
+    171.39,
+    184.71,
+    180.61
+   ],
+   "warm": -9.22,
+   "sat": 0.111,
+   "p05": 174.31,
+   "p50": 180.54,
+   "p95": 195.61,
+   "iqr": 6.81,
+   "loFrac": 0,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.467282,
+    "rgb": [
+     0.41335,
+     0.483984,
+     0.460652
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 2.91,
+    "minLag": 4,
+    "maxLag": 106,
+    "firstMin": 106,
+    "lag": null,
+    "peak": null
+   }
+  }
+ },
+ "world": {
+  "px": 1440000,
+  "luma": 147.74,
+  "rgb": [
+   149.38,
+   149.88,
+   121.77
+  ],
+  "warm": 27.61,
+  "sat": 0.273,
+  "p05": 55.9,
+  "p50": 160.31,
+  "p95": 195.66,
+  "iqr": 51.71,
+  "loFrac": 0.005,
+  "hiFrac": 0.007,
+  "lin": {
+   "Y": 0.32978,
+   "rgb": [
+    0.338166,
+    0.337669,
+    0.226939
+   ]
+  },
+  "blackFrac": 0,
+  "col": {
+   "std": 8.5,
+   "minLag": 4,
+   "maxLag": 533,
+   "firstMin": 137,
+   "lag": 143,
+   "peak": 0.569
+  }
+ },
+ "sun": {
+  "mode": "elev",
+  "wantDot": 0.55,
+  "sunT": 0.909,
+  "elevDot": 0.55,
+  "err": 0,
+  "tol": 0.05,
+  "solve": {
+   "wantDot": 0.55,
+   "gotDot": 0.5498,
+   "err": 0.0002,
+   "t": 0.9069444444444444
+  }
+ },
+ "stationClock": null,
+ "captureDiag": null,
+ "iblSettleIters": 0,
+ "atCapture": {
+  "cam": {
+   "posE": [
+    2.9103830456733704e-11,
+    -2.9103830456733704e-11,
+    -1.1641532182693481e-10
+   ],
+   "quat": [
+    -0.8444930569672715,
+    -0.08059508633640987,
+    -0.13279229064104922,
+    0.5125447456942687
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": [
+   0.3685985804357538,
+   0.009513371740543815,
+   0.6276154787802315,
+   0.6856700321979472
+  ],
+  "drawPosB": [
+   -853661.0204488989,
+   -59532.20540758443,
+   517415.4797505137
+  ],
+  "drawPosE": [
+   -1027253.9812628302,
+   140664.86395076197,
+   1055749.7031733932
+  ],
+  "drawEyeDistM": 1479744.837,
+  "drawVisible": false,
+  "drawnParts": 0,
+  "staleMaxM": 0,
+  "drawBoundM": 36.003,
+  "eyeLocal": [
+   -378955.2676387917,
+   -1414813.8314945982,
+   -210569.4874897967
+  ],
+  "eyeLocalOverBound": 41100.59819163921,
+  "clock": {
+   "clockS": 0,
+   "stampedTick": 0,
+   "tick": 835,
+   "pos": [
+    -853655.0794015824,
+    -59532.18755947287,
+    517425.2835494827
+   ],
+   "vel": [
+    973.9513781271064,
+    2.9265611720340576,
+    1607.1745855021531
+   ],
+   "speedMps": 1879.2551716038995,
+   "alpha": 0.6340000000000908,
+   "renderTick": 834.6340000000001,
+   "renderPos": [
+    -853661.0204488989,
+    -59532.20540758443,
+    517415.4797505137
+   ],
+   "renderPosVsIntegerM": 11.463456546667611
+  },
+  "frames": 1834,
+  "tick": 835,
+  "rebases": 2,
+  "eyeRel": [
+   2.9103830456733704e-11,
+   -2.9103830456733704e-11,
+   -1.1641532182693481e-10
+  ]
+ },
+ "preCapture": {
+  "cam": {
+   "posE": [
+    0,
+    0,
+    0
+   ],
+   "quat": [
+    -0.8444930569672715,
+    -0.08059508633640987,
+    -0.13279229064104922,
+    0.5125447456942687
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": [
+   0.3648305268850592,
+   0.004880262013086309,
+   0.6298192484552669,
+   0.6857131936682394
+  ],
+  "drawPosB": [
+   -860189.7994608403,
+   -59547.19814397464,
+   506485.57738273474
+  ],
+  "drawPosE": [
+   -1033782.7602747716,
+   140649.87121437176,
+   1044819.8008056142
+  ],
+  "drawEyeDistM": 1476528.902,
+  "drawVisible": false,
+  "drawnParts": 0,
+  "staleMaxM": 0,
+  "drawBoundM": 36.003,
+  "eyeLocal": [
+   -381558.52462023357,
+   -1410060.2395686477,
+   -215129.7537456547
+  ],
+  "eyeLocalOverBound": 41011.2741106668,
+  "clock": {
+   "clockS": 0,
+   "stampedTick": 0,
+   "tick": 429,
+   "pos": [
+    -860176.2872724957,
+    -59547.17685468088,
+    506508.5276110786
+   ],
+   "vel": [
+    953.473250985361,
+    1.5037126865593375,
+    1619.409305427002
+   ],
+   "speedMps": 1879.2551716038995,
+   "alpha": 0.14968814968813368,
+   "renderTick": 428.14968814968813,
+   "renderPos": [
+    -860189.7994608403,
+    -59547.19814397464,
+    506485.57738273474
+   ],
+   "renderPosVsIntegerM": 26.632549035502034
+  },
+  "frames": 902,
+  "tick": 429,
+  "rebases": 2,
+  "eyeRel": [
+   0,
+   0,
+   0
+  ]
+ },
+ "photoCapture": {
+  "cam": {
+   "posE": [
+    0,
+    0,
+    0
+   ],
+   "quat": [
+    -0.8444930569672715,
+    -0.08059508633640987,
+    -0.13279229064104922,
+    0.5125447456942687
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": [
+   0.36483255458738106,
+   0.004882750402266964,
+   0.6298180717114321,
+   0.6857131779450124
+  ],
+  "drawPosB": [
+   -860186.3303555485,
+   -59547.19268212151,
+   506491.4697338286
+  ],
+  "drawPosE": [
+   -1033779.2911694798,
+   140649.8766762249,
+   1044825.693156708
+  ],
+  "drawEyeDistM": 1476530.643,
+  "drawVisible": false,
+  "drawnParts": 0,
+  "staleMaxM": 0,
+  "drawBoundM": 36.003,
+  "eyeLocal": [
+   -381557.13455217925,
+   -1410062.8105040863,
+   -215127.31868815015
+  ],
+  "eyeLocalOverBound": 41011.3224733371,
+  "clock": {
+   "clockS": 0,
+   "stampedTick": 0,
+   "tick": 429,
+   "pos": [
+    -860176.2872724957,
+    -59547.17685468088,
+    506508.5276110786
+   ],
+   "vel": [
+    953.473250985361,
+    1.5037126865593375,
+    1619.409305427002
+   ],
+   "speedMps": 1879.2551716038995,
+   "alpha": 0.36800000000017474,
+   "renderTick": 428.36800000000017,
+   "renderPos": [
+    -860186.3303555485,
+    -59547.19268212151,
+    506491.4697338286
+   ],
+   "renderPosVsIntegerM": 19.794821140614687
+  },
+  "frames": 903,
+  "tick": 429,
+  "rebases": 2,
+  "eyeRel": [
+   0,
+   0,
+   0
+  ]
+ },
+ "repeats": null,
+ "vmHidden": false,
+ "vmRatio": null,
+ "vmArms": null,
+ "pose": {
+  "yawDeg": 180,
+  "pitchDeg": -8,
+  "latDeg": -19.491,
+  "lonDeg": -72.127,
+  "altM": 1.62
+ },
+ "postState": {
+  "post": true,
+  "ao": true,
+  "contact": true,
+  "underwater": true,
+  "bloom": true,
+  "grade": true,
+  "aa": true,
+  "contactRan": true,
+  "underwaterRan": false,
+  "headUnderM": -1e+30,
+  "sun": [
+   -0.14767233158505383,
+   0.3872324843550918,
+   0.9100790545575793
+  ],
+  "csLengthM": 0.45,
+  "csSteps": 8,
+  "csStrength": 0.72
+ },
+ "shade": null,
+ "shadow": {
+  "cascades": 3,
+  "mapSize": 2048,
+  "vramMB": 48,
+  "splits": [
+   22,
+   80,
+   300
+  ],
+  "active": true,
+  "soft": false,
+  "texel0M": 0.01547,
+  "biasM": 0.02,
+  "biasSign": 1,
+  "biasUnits": 0.0000025003125390673835,
+  "reversedDepth": true,
+  "biasLegacy": false,
+  "biasRaw": null,
+  "castOff": false,
+  "castRaw": null
+ },
+ "ibl": {
+  "builds": 10,
+  "lastMs": 0.6,
+  "ready": true,
+  "size": 256,
+  "groundBuilds": 10,
+  "ground": true,
+  "biome": 1
+ },
+ "scatter": {
+  "canopyProps": 6006,
+  "canopyCells": 27606,
+  "canopyM2": 5170888,
+  "canopyPerM2": 0.00116,
+  "canopyDelivered": 1.004,
+  "canopyRadiusM": 3500,
+  "canopyShade": false,
+  "canopyBareCells": 92347,
+  "canopyShadeMean": 0.2231,
+  "canopyShadeSd": 0.2707,
+  "canopyShadeMax": 0.8441,
+  "canopyShadeCells": 18157,
+  "canopyPlanetMean": 0.557,
+  "canopyPlanetSd": 0.4303,
+  "canopyOfferedCells": 147513,
+  "canopySlopeCells": 0,
+  "mid": true,
+  "midEdge": true,
+  "midProps": 246,
+  "midCards": 172,
+  "midCells": 32376,
+  "midM2": 1391638,
+  "midPerM2": 0.00018,
+  "midDelivered": 1.0097,
+  "propsPlaced": 11066,
+  "cellsScattered": 19834,
+  "wantedPerM2": 0.12301,
+  "placedPerM2": 0.12276,
+  "deliveredFraction": 0.998,
+  "cellsCapped": 0,
+  "chunksCapped": 0,
+  "canopyTailM": 0,
+  "capCells": 0,
+  "capOfferCells": 86016,
+  "capCellFrac": 0,
+  "capScaleMin": 1,
+  "capFair": true,
+  "chunksRefused": 0,
+  "scatterBacklog": 0,
+  "chunks": 84,
+  "poolRefused": 0,
+  "poolCeiling": 2424832
+ },
+ "treeline": {
+  "amp": 1,
+  "mottle": 0.22,
+  "reachM": 1400,
+  "paint": 0,
+  "far": 0,
+  "floorShade": 1,
+  "stand": 1,
+  "floorLaw": 0,
+  "grove": 1,
+  "tone": {
+   "r": 0.05629622696693897,
+   "g": 0.16993117688950063,
+   "b": 0.025900673628411284,
+   "live": true
+  },
+  "self": {
+   "amp": 1,
+   "k": 3.2,
+   "floor": 0.137,
+   "cardMu": 0.16613266057289855,
+   "sinSun": 0.5430370126355589,
+   "cardShade": 0.46122274097964655,
+   "live": true,
+   "cardShadeRGB": [
+    0.22428587238321895,
+    0.5655128609897758,
+    0.12582778851920412
+   ],
+   "spectral": true,
+   "roughOverride": null,
+   "floorDerived": 0.45579482570846336,
+   "envOverride": null,
+   "uniform": [
+    1,
+    3.2,
+    0.08
+   ]
+  },
+  "crownNormal": {
+   "parts": 3,
+   "verts": 24,
+   "meanUp": 0.9471549441417059,
+   "minAbsOutOfPlane": 0.057096365839242935,
+   "minAzimuthOut": 1,
+   "downVerts": 0,
+   "path": "crown",
+   "ask": {
+    "on": true,
+    "flankDeg": 25,
+    "cardMix": 1
+   }
+  },
+  "crownFace": {
+   "raw": null,
+   "mode": 1,
+   "installed": true,
+   "compiles": 3,
+   "misses": [],
+   "materials": [
+    "props:OF_Canopy:canopy"
+   ],
+   "hazards": {
+    "normalMap": 0,
+    "bumpMap": 0,
+    "clearcoatNormalMap": 0,
+    "anisotropy": 0,
+    "notDoubleSided": 0,
+    "flatShaded": 0
+   }
+  },
+  "crownEnv": {
+   "raw": null,
+   "installed": true,
+   "forced": null,
+   "tau": 0.5316245138332754,
+   "skyView": 0.6581328858359682,
+   "sceneIntensity": 1,
+   "applied": 0.6581328858359682,
+   "appliedLive": 0.6581328858359682,
+   "ownEnvMap": true,
+   "sameTexture": true,
+   "writes": 1843,
+   "materials": [
+    "props:OF_Canopy:canopy"
+   ]
+  }
+ },
+ "phase": {
+  "present": false,
+  "amp": 0,
+  "shipped": 0,
+  "periodM": 256,
+  "probeRepeats": 128,
+  "wantPeriodM": 2,
+  "divides": true,
+  "repeats": 128,
+  "quantumM": 0.000030517578125,
+  "pmQuantumM": 0.03125,
+  "ratio": 1024
+ },
+ "emit": {
+  "installed": true,
+  "flagPresent": false,
+  "amp": 1,
+  "glow": 1,
+  "glowFlagPresent": false,
+  "spliced": 107,
+  "misses": [],
+  "max": 6,
+  "registered": 0,
+  "selected": 0,
+  "dropped": 0,
+  "sceneLights": 2,
+  "fireHot": 40,
+  "fireEmber": 10.4,
+  "wrap": 0.35,
+  "emitters": []
+ },
+ "render": {
+  "triangles": 658308,
+  "calls": 66,
+  "programs": 65,
+  "vramMB": 114.8,
+  "frameMs": {
+   "p50": 7,
+   "p95": 8.5,
+   "p99": 9.4
+  },
+  "passMs": {
+   "near": 5.6,
+   "post": 0.2,
+   "total": 6.2
+  }
+ },
+ "setup": {
+  "teleported": true,
+  "converged": true,
+  "spins": 0,
+  "biome": 1,
+  "eyeAltM": 1.62,
+  "sunYawOffDeg": 136.41,
+  "sunElevDeg": 33.32,
+  "upCheck": 0,
+  "regime": "SURFACE",
+  "chunks": {
+   "resident": 330,
+   "near": 178,
+   "far": 152,
+   "pending": 0,
+   "hidden": 0,
+   "fading": 0,
+   "converged": true
+  },
+  "tickAdvanced": true
+ },
+ "log": [],
+ "cropPng": null
+}

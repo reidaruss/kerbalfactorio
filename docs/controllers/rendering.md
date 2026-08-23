@@ -16652,3 +16652,132 @@ measured values as its new pins and this lane touches no shading, density or
 geometry path. HEAD after rebase: `f4c94703`.
 
 Branch `lane/n17-poolroom`, pushed, **not merged**.
+
+## 2.46 WORLD AUDIT R6: R5's FIVE RE-SCORED ON THE SCALE LADDER, AND THE FAR HALF OF THE AERIAL FRAME TURNS OUT TO BE THE ATMOSPHERE (RN-2685 to RN-2686, 2026-08-23, `audit/r6`)
+
+**Read-only plus two additive instruments. Base `origin/main` at `7e5862cf`. Full
+document: [WORLD-AUDIT-R6-2026-08-23.md](../web/WORLD-AUDIT-R6-2026-08-23.md).**
+
+### 2.46.1 The mandated re-score, and it changed four of five verdicts
+
+R5 scored its structure findings on the `iqr` of a five-row strip, which RN-2664 then
+disqualified in the catalogue ("it falls while the structure improves"). Every one of
+R5's five was therefore re-run on `rn2664scale.mjs` before any new ranking:
+
+1. **Rank 1 (the inert far paint): SHRINKS BY A THIRD AND IS RE-ATTRIBUTED.** The band
+   R5 called inert is now two bands. At `flyover`, rect `x560 w900`, 32 px filter:
+   3.4 to 4.5 km reads **6.563**, and 4.5 to 15.2 km reads **2.094 to 2.328**, against
+   6.3 to 18.9 inside 4.5 km. WG-295's tail and RN-2665's mottle closed the inner
+   third. Over the remaining outer band `?treeline=0` costs only **5.0 per cent** at
+   32 px while `?aerosol=0` **adds 215.7 per cent**, so what remains is the atmosphere
+   and not the paint. This is 2.44.10 item 1's routed lane, now with a measured trade
+   curve under it.
+2. **Rank 2 (the beach's treeless disc): SURVIVES INTACT.** `?beachcanopy=0` moves the
+   near field by 0.047 counts at 1 px and 0.026 at 64 px, at every scale, which is this
+   instrument's own noise floor. Still Reid-blocked on the coastline decision.
+3. **Rank 3 (the dry sea): CHROMA CLOSED, AND THE LADDER REFUTES THE SURVIVOR'S STATED
+   CAUSE.** N14 halved the warm step and reported honestly that the plate still reads
+   as water, blaming "the plate's SHAPE and flat, untextured VALUE DIP". At `forestair`
+   rows 365 to 405 the plate carries **6.880** counts at 16 px against its same-row
+   neighbour's **6.718**: it is not a flat hole. **2.42's own eye conclusion is
+   corrected here**, and what is left carrying the read is the boundary shape, which is
+   world-gen's and Reid's, not a palette lane's.
+4. **Rank 4 (the tier seam): IT WAS TWO FINDINGS AND THEY SPLIT.** The tone half at
+   690 m has shrunk: rows 457 to 462 at `forestaircanopy`, `x[795,805)`, read
+   **71.22 to 50.57 = -20.65** against R5's published -30.19 and WG-295's -17.33 on an
+   intermediate base. **R5's endpoints do not reproduce and nobody had reconciled the
+   three; row 462 reproduces WG-295 to the digit.** The density half at 550 m is
+   untouched and is **exactly 6.0** (`TreeTuning.ts:116`'s 420 against
+   `Registry.ts:354-356`'s `(100+30+290) x DENSITY_SCALE 6`), and WG-295/301/304 are
+   all gated on `groundOk` at `Scatter.ts:530` and cannot reach it. Its character has
+   changed: WG-260's mid tier removed the visible cliff, so it is now a standing
+   disagreement between the wood a player can harvest and the wood they can see.
+5. **Rank 5 (the carpet's lift): THE NUMBER SURVIVES UNMOVED AND IS THE WRONG NUMBER.**
+   All six lift rungs reproduce R5 to two decimals, so no lane touched it. The ladder
+   says the carpet is a veil rather than a wash (it **adds 55 per cent** of 16 px
+   structure over 17 to 84 m while **removing 4.34 counts** of 1 px), and that past
+   84 m it is absent: shipped and `?grass=0` read **20.78 and 20.78** at 16 px.
+
+### 2.46.2 The rank 1 finding, and the correction this lane made to its own first draft
+
+At `flyover` over 4.5 to 15.2 km the coarse lateral structure is 2.240 shipped against
+7.073 with `?aerosol=0`. The retained fraction 0.317 over an effective 8 km implies
+`sigma = 1.44e-4` against the authored `aerosolSigma = 1.4e-4`
+(`Atmosphere.glsl.ts:154`), **three per cent apart**, so the term is doing exactly what
+its constant says and no lane should hunt a bug. `?aerosol=` is an amplitude
+(`Atmosphere.glsl.ts:486-490`), so the trade was swept rather than deleted: 0.75 buys
++26.1 per cent of 32 px structure, 0.50 buys +67.7, 0.25 buys +128.2, monotone with no
+knee, and 0.50 keeps the depth cue by eye at 1x.
+
+**A claim this lane made and then struck on its own measurement.** The first draft
+argued the constant's own stated design bar ("a 20 km silhouette desaturated and still
+legible") was missed. It is not: the visible skyline at `flyover` is row 317, the
+inversion puts it at 20.0 km, and the sky-to-ground step across rows 316 to 322 reads
+**22.86 counts shipped against 20.47 with the aerosol off**, so the aerosol is not
+eating the silhouette at all. What was never scored is the **lateral** field inside the
+band, and that is where the 68 per cent goes. The struck claim is printed in the audit
+rather than removed.
+
+### 2.46.3 Two pose fields this lane had wrong before it read anything off them
+
+`rn2686bands.mjs`'s first range table carried **remembered** pitches for
+`forestaircanopy` (-6) and `meadowfield` (-8). The manifest says **-2.5** and **-12**.
+The table now transcribes each field with its `artframe.js` line cited beside it, and
+refuses to print a range column for any pose it does not have. A wrong range column is
+the single thing this campaign has most often been wrong about.
+
+### 2.46.4 The plains hero cannot measure its own mid field
+
+At `meadowfield` (pitch -12, 1.62 m eye) the geometric horizon is row 286 and the whole
+84 m-to-horizon band occupies about **twelve frame rows**. A wide-x row profile flattens
+the eye's apparent carpet cut to a **3.54-count** maximum step over rows 292 to 316, and
+R5's `r250` scores the same band a lift of 1.009 and calls it healthy. `forestaircanopy`
+is the precedent (added by R5 for exactly this reason over Forest) and **Plains has no
+twin**; `midfield` declares `props: false` and cannot judge a carpet. Ranked 5 in the
+audit as a pose request and nothing else.
+
+### 2.46.5 Three things the eye found that no round had ranked
+
+- **`Mtn_SnowPatch` is a faceted plastic slab.** `tools/blender/build_props_mountains.py:83-97`
+  builds it as three `seg=6` lobes with two rings (its own docstring argues against the
+  decal read and then facets it), and `SurfaceRoles.ts:197` gives it `Ice: 'flat'`, the
+  same surface family as glass and status chips. At `mtnslope` row 191 a shaded facet
+  reads warm **-11.40** against the substrate 240 px away at **+34.81**, a 46.2-count
+  inversion at one row under one light. It is the highest-contrast near-field object in
+  `vista`, `vistadawn` and `mtnslope`, and **neither half is blocked** on Polyhaven or
+  the coastline.
+- **The emissive is bright and is not a light source.** `smelternight` is valid on this
+  build and is the first frame that can separate "contributes nothing" from "the sun is
+  drowning it": the machine glows beautifully and the grass beside it sits at the frame
+  edge's value. Ranked on the frame, with the rectangle set named as the lane's first
+  deliverable rather than spent here.
+- **The beach substrate's corduroy is `groundrelief`'s**, proven by a one-flag pair
+  (`R6_beach_crop_ripple.png` against `R6_beach_crop_ripple_relief0.png`): the term
+  disappears and an isotropic mottle is left. The defect is that its direction field is
+  coherent across the whole visible plain; `reliefswing`, `reliefcell` and
+  `reliefcellnoise` are the registered handles.
+
+### 2.46.6 Instruments, and the ladder's own floor
+
+Added: `web/tools/smoke/rn2685shots.mjs` (a named shot set at one arm, scenario dispatch
+**parsed** from `artframe.js`'s manifest and refused rather than guessed, the probe's
+JSON kept beside the PNG) and `web/tools/smoke/rn2686bands.mjs` (sweeps
+`rn2664scale.mjs` down a column of equal-height bands by **shelling out** to it, so the
+statistic has one implementation and the two cannot drift). Neither changes a rendered
+pixel.
+
+`rn2664scale.mjs`'s noise floor, measured rather than assumed: R5 proved
+`?beachcanopy=0` cannot reach `beachground`'s near field, so that pair is a **de facto
+null pair** on that rectangle, and over 800 x 200 px it reads **0.047 counts at 1 px,
+0.033 at 16 px, 0.026 at 64 px**. That is one query parameter short of a true repeat and
+the audit says so rather than promoting it.
+
+### 2.46.7 Gates, and one figure the guard run corrects in the record
+
+`npx tsc --noEmit` 0, `npm run build` 0, `npm run check` **9 of 9**,
+`npm run check:full` **exit 0** with `rn2550guard` PASS at 4 of 4 poses and the four
+`rho` values reproducing RN-2675's post-rebase run to the digit (0.1873 / 0.2987 /
+0.4762 / 0.4016). **The `?proppaint=1` under-count is 0.1255 to 0.4001 on this build**,
+not the "0.13 to 0.32" R5's section 8 carried; the worst pose (`forestairnoon`, 0.4001)
+is worse by a quarter of the rectangle than the record says. No source file under
+`web/src/` was touched. Branch `audit/r6`, pushed, **not merged**.
