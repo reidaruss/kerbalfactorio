@@ -282,6 +282,16 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // RN-2275. Inter-crown self-shadowing: the exact off control, and the two
   // numbers the law is chosen on. Registered in the commit that introduces
   // them (RN-152's scar).
+  //
+  // RN-2661 WIDENED WHAT `crownshade=0` TURNS OFF AND IT IS REGISTERED HERE
+  // RATHER THAN DISCOVERED LATER. That flag zeroes `uCrownShade.x`, the amp
+  // the law mixes from 1.0 with, and RN-2661's wood-floor shade calls the SAME
+  // `ofCrownSelfShade`. So `?crownshade=0` now ALSO disables the far paint's
+  // floor shade, silently, and an arm taken with it is no longer "the crowns
+  // unshaded with everything else held". The isolated control for the floor
+  // term alone is `?treelinefloor=0`; for the crown terms alone with the floor
+  // held, pair `?crownshade=0` with nothing (there is no separate crown amp)
+  // and read the difference against `?crownshade=0&treelinefloor=0`.
   'crownshade', 'crownshadeamp', 'crownshadek', 'crownshadefloor',
   // RN-2645. WHICH TRANSMITTANCE THE SHADE LAW TAKES. `crownshadelaw=0` is the
   // layer BASE's `exp(-tau/sinSun)`, the pre-RN-2645 frame; `=1` is the layer

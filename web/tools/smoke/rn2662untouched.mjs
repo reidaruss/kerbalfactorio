@@ -54,25 +54,68 @@ const url = argv.get('--url') ?? 'http://127.0.0.1:5660/';
 const dir = path.join(HERE, '..', '..', 'build', 'rn2662');
 fs.mkdirSync(dir, { recursive: true });
 
+// ===========================================================================
+// THE ARMED TEST IS ON THE SUBJECT RECTANGLE, NOT ON THE WHOLE FRAME, AND
+// THAT IS NUMBERS.md's OWN RULE RATHER THAN THIS FILE'S PREFERENCE.
+//
+// The catalogue entry filed by RN-2647 says it in as many words: an arming
+// test belongs on the quantity and the rectangle the ACCEPTANCE instrument
+// uses, not on a whole-frame pixel percentage, whenever the term is scoped to
+// a subject smaller than the frame. This file shipped with a whole-frame
+// `pngdiff` percentage anyway and it duly failed on the merged tree:
+// `flyovernoon` moved 1.33 per cent against a two-load noise arm that read
+// 0.45 per cent, under a 5x factor, because `lane/wg-reach`'s extended forest
+// makes a surface pose's whole-frame pixel count far less reproducible
+// load-to-load than it was before the merge.
+//
+// The acceptance quantity for this term is `box`'s linear patch mean, which is
+// what `rn2550guard` ratchets on, and a surface pose reproduces it to about
+// five decimals. So the MAGNITUDE claim moves there and the whole-frame
+// `pngdiff` is kept for the DIRECTION claim, which is what it is good at.
+// ===========================================================================
 const ARM_FACTOR = 5;
-// A pair under this is quiet whatever the noise arm says: two loads that
-// happen to agree to the pixel must not make a 0.01 per cent pair a failure.
-const QUIET_FLOOR_PCT = 0.05;
-// AND A QUIET TEST NEEDS A FACTOR FOR THE SAME REASON AN ARMING TEST DOES,
-// WHICH THIS FILE LEARNED BY FAILING. The first version asserted
-// `pair <= max(noise, 0.05)`, a bare comparison between TWO SINGLE DRAWS of
-// the same random quantity. `forestfloor` returned pair 0.53 per cent against
-// noise 0.50 per cent and failed, on a walk pose whose documented two-load
-// scatter is RN-1766's 3.78 per cent. A one-sided `>` between two single
-// draws of one quantity is a coin flip when the true effect is zero, so the
-// test was failing half the time by construction. The repair is a factor, not
-// a wider constant: the noise estimate is one pair, so allow it to be off by
-// 2x. That is still a real test -- the term is skipped entirely below 690 m,
-// so a leak here would repaint the whole visible mid-ground, not 0.03 per
-// cent of it -- and RN-1766's measured 3.78 per cent stands as a second,
-// absolute bound that a 2x factor can never widen past.
-const QUIET_FACTOR = 2;
+// Below this relative move the ratio is not worth forming: a quarter of a
+// count on `box`'s own level.
+const ARM_FLOOR_REL = 0.002;
+
+// ===========================================================================
+// THE QUIET TEST GOT THIS WRONG TWICE AND BOTH VERSIONS ARE RECORDED, BECAUSE
+// THE SECOND ONE SHIPPED GREEN AND WAS RED THREE RUNS OUT OF THREE ON THE
+// BUILD IT CERTIFIED (a fresh-context verifier's catch).
+//
+// VERSION 1 asserted `pair <= max(noise, 0.05)`: a bare `>` between TWO SINGLE
+// DRAWS of the same random quantity, which is a coin flip when the true effect
+// is zero. It failed at `forestfloor` on 0.53 against 0.50.
+//
+// VERSION 2 multiplied that single draw by 2. That is the same defect wearing
+// a factor. **The noise arm's own scatter is far larger than 2x**: measured
+// across three runs, `vista`'s two-load pair reads 0.06, 2.14 and 0.22 per
+// cent, a 35-fold spread, because a walk pose's streamed chunk set and
+// character placement are not reproducible frame to frame. A bound built from
+// one draw of a quantity that varies 35-fold is not a bound.
+//
+// VERSION 3, HERE, STOPS GATING ON THE NOISE ARM'S MAGNITUDE AT ALL and uses
+// two criteria that are stable:
+//
+//   MAGNITUDE  RN-1766's **3.78 per cent**, which is a PUBLISHED, measured
+//              two-page-load scatter for a walk pose rather than one draw
+//              taken during this run. It is the operative bound.
+//   DIRECTION  a real leak from a SHADE term is overwhelmingly one-signed:
+//              the two armed poses in this very run read 190-to-1 and
+//              271-to-1 lighter-on-removal. Walk-scene scatter is balanced:
+//              the three quiet poses read within a factor of 1.4 of 1:1. So a
+//              3x imbalance is a discriminator that does NOT depend on the
+//              magnitude that will not hold still.
+//
+// The noise arm is still rendered and PRINTED, because a reader needs to know
+// how loud the pose is; it is no longer asserted on.
+// ===========================================================================
 const WALK_TWO_LOAD_PCT = 3.78;
+const QUIET_BALANCE = 3;
+// A pair under this is quiet whatever else says: two loads that happen to
+// agree to the pixel must not make a 0.01 per cent pair a failure, and a
+// balance ratio computed on a handful of pixels is meaningless.
+const QUIET_FLOOR_PCT = 0.05;
 
 const POSES = [
   // shot, scenario, must, evalargs extras
@@ -126,22 +169,48 @@ for (const [shot, scenario, must, extra] of POSES) {
   const j = diff(a, b);
   const jn = diff(a, a2);
   if (j === null || jn === null) { fails.push(`${tag}: pngdiff produced no json`); continue; }
+  const bal = j.darker === 0 || j.lighter === 0 ? 'inf'
+    : (Math.max(j.darker, j.lighter) / Math.min(j.darker, j.lighter)).toFixed(1);
   console.log(`${tag.padEnd(20)} ${must.padEnd(6)} pair moved ${String(j.moved).padStart(7)} px`
     + ` (${String(j.pct).padStart(6)}%)  darker ${j.darker} / lighter ${j.lighter}`
-    + `  meanDelta ${j.meanDelta}   own two-load noise ${String(jn.pct).padStart(6)}%`);
-  if (must === 'quiet') {
-    const bound = Math.max(jn.pct * QUIET_FACTOR, QUIET_FLOOR_PCT);
-    if (j.pct > bound || j.pct > WALK_TWO_LOAD_PCT) {
-      fails.push(`${tag}: the flag pair moved ${j.pct}% against a bound of`
-        + ` ${bound.toFixed(2)}% (this pose's own two-load noise ${jn.pct}% times`
-        + ` ${QUIET_FACTOR}) and RN-1766's ${WALK_TWO_LOAD_PCT}% walk floor. The`
-        + ' term reached a pose all three of its zeros say it cannot reach.');
+    + ` = ${bal}x  meanDelta ${j.meanDelta}   [noise arm ${String(jn.pct).padStart(6)}%,`
+    + ' PRINTED not asserted: see the header]');
+  if (must === 'quiet' && j.pct > QUIET_FLOOR_PCT) {
+    if (j.pct > WALK_TWO_LOAD_PCT) {
+      fails.push(`${tag}: the flag pair moved ${j.pct}%, over RN-1766's`
+        + ` published ${WALK_TWO_LOAD_PCT}% two-page-load scatter for a walk`
+        + ' pose. The term reached a pose all three of its zeros say it cannot'
+        + ' reach.');
+    }
+    const hi = Math.max(j.darker, j.lighter);
+    const lo = Math.max(1, Math.min(j.darker, j.lighter));
+    if (hi / lo > QUIET_BALANCE) {
+      fails.push(`${tag}: the flag pair is ${(hi / lo).toFixed(1)}x`
+        + ` ${j.lighter > j.darker ? 'lighter' : 'darker'}-dominant`
+        + ` (${j.lighter} / ${j.darker}), past the ${QUIET_BALANCE}x balance`
+        + ' bound. Walk-scene scatter is balanced and a shade term is not, so a'
+        + ' one-signed pair here is the term leaking rather than the scene'
+        + ' moving.');
     }
   }
   if (must === 'moved') {
-    if (j.pct <= Math.max(jn.pct * ARM_FACTOR, QUIET_FLOOR_PCT)) {
-      fails.push(`${tag}: the armed pair moved ${j.pct}% against a two-load noise`
-        + ` of ${jn.pct}%, under the ${ARM_FACTOR}x arming factor.`);
+    // MAGNITUDE, on the acceptance rectangle. `box.lin.Y` is what
+    // `rn2550guard` ratchets on and what this term is scoped to move.
+    const Y = (e) => ((e.box ?? {}).lin ?? {}).Y ?? null;
+    const [ya, yb, yc] = [Y(ea), Y(eb), Y(ec)];
+    if (ya === null || yb === null || yc === null) {
+      fails.push(`${tag}: no box.lin.Y on one of the three arms`);
+    } else {
+      const armed = Math.abs(yb - ya) / ya;
+      const noise = Math.abs(yc - ya) / ya;
+      console.log(`${''.padEnd(20)} ARMED  box lin.Y ${ya.toFixed(6)} shipped against`
+        + ` ${yb.toFixed(6)} off = ${(armed * 100).toFixed(2)}% of the subject,`
+        + ` on a two-load noise of ${(noise * 100).toFixed(3)}%`);
+      if (armed <= Math.max(noise * ARM_FACTOR, ARM_FLOOR_REL)) {
+        fails.push(`${tag}: the armed pair moved box lin.Y by`
+          + ` ${(armed * 100).toFixed(2)}% against a two-load noise of`
+          + ` ${(noise * 100).toFixed(3)}%, under the ${ARM_FACTOR}x factor.`);
+      }
     }
     // DIRECTION, AND IT IS THE CLAIM RATHER THAN A SANITY CHECK. `pngdiff a b`
     // counts a pixel as `lighter` when b is lighter than a; a is the SHIPPED

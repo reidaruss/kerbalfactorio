@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2660 to RN-2666, `lane/n16-paintstructure`, **THE FAR PAINT LIT A WOOD'S FLOOR LIKE A CLEARING, THE 34-METRE MOTTLE WAS DEAD ACROSS EVERY ROW RANK 1 SAMPLED, AND THE STATISTIC RANK 1 WAS SCORED ON CANNOT SEE A COARSE FIELD.** World Audit R5 rank 1's paint half merged with RN-2645's routed residue, per Admin's adopted plan; the debt measured FIRST and landed as its own commit before any structure work. **DELIVERABLE ONE, THE DEBT, IS PAID OUT OF COVERAGE AND NOT OUT OF A FLOOR.** Over the ground the far canopy does NOT hide -- 43 per cent of the fragment at 3.4 km over Hills -- the term left the bare biome albedo at full sun, i.e. it lit a wood's floor like a clearing. It now takes the same `ofCrownSelfShade` the crowns take, on the same missing density `vCanopy * (1 - w)`, so it is identically 1 at the 690 m harvest ring (no new ring), the full layer past the reach, and gated by the same `uTreeline.x * coverSel` product `treeK` carries. **NO NEW CONSTANT**: rendering.md 2.43.7 states the shipped law computes the transmittance at the BASE of the canopy layer and calls that a defect FOR THE CROWN, which wants the layer mean; the surface that sits at the base of the layer is the GROUND, so this lane spends the quantity the law already computes on the one surface it is exactly right for. **THAT TERM ALONE TAKES `flyovernoon` boxSurf 0.9243 -> 0.8823 and boxShip 0.9568 -> 0.9379, which is 188 and 84 per cent of the 0.0223 / 0.0225 owed. RN-2665's MOTTLE THEN GIVES 0.0095 AND 0.0069 OF IT BACK -- Jensen on a concave cover law, measured and stated rather than apologised for, and the trade is one flag apart -- so the SHIPPED frame pays 0.0325 / 0.0120, i.e. 146 and 53 per cent: boxSurf DISCHARGED with 0.0102 in hand, boxShip with a NAMED SHORTFALL of 0.0105.** **ALL EIGHT `box` NUMBERS FALL AT ALL FOUR POSES** (0.9808/0.9499 -> 0.9603/0.9184, 0.9429/0.7669 -> 0.9189/0.6859, 0.9568/0.9243 -> 0.9448/0.8918, 0.9618/0.8347 -> 0.9409/0.7379) **and the ceiling is lowered ONCE, at the lane's FINAL frame, in the darkening commit, so no ratchet is raised at any point in the lane's history.** **THE IDENTITY CONTROL IS EXACT ON ALL SEVEN QUANTITIES THE GUARD PRINTS**: `?treelinefloor=0` reproduces the pre-lane build's boxShip, boxSurf, crShip, crSurf, G, f and rho to four decimals. **`rho` AND `f` ARE UNMOVED AT ALL FOUR POSES, which CONFIRMS RN-2645's second logged decision by measurement rather than leaving it a prediction.** **THE LANE'S ONE REAL DECISION IS THE OPTICAL DEPTH AND IT COSTS THE SHORTFALL.** `ofTreeCoverMu`, the view-side half of the same expression, is the Boolean crown-overlap law on the crown PLAN index; running the sun ray on the leaf-area depth `K * mu` two lines away would be two different woods. The other law is BUILT, MEASURED AND REFUSED (`?treelinefloorlaw=1`: 0.9058 / 0.8071, 227 and 526 per cent of the debt), and the plan-index build's own arm reproduces the earlier hard-coded build's four-pose table to four decimals, so the two laws are one flag apart rather than two commits apart. **DELIVERABLE TWO: THE MOTTLE WAS NOT WEAK, IT WAS DEAD, AND THE REASON IS ONE NUMBER NOBODY HAD COMPUTED.** `TREE_MOTTLE` retires at `34 * 0.333` = 11.3 m of ground footprint per pixel; the footprint across rank 1's own rows runs 12.0 m at row 540 to 288 m at row 330, so the field is identically ZERO at every row that audit sampled and `TREELINE_AMP` could never have been the lever. **AND THE VERTEX ROUTE CANNOT CARRY IT EITHER**: depth 8 is resident only to 2,630 m and a 165 m stand needs cells under 82 m, so across every metre of the 3.4-to-15.5 km band the mesh has already averaged world-gen's stand field away, which is what makes a shader field a FIRST copy rather than a second. `TerrainStandMottle.ts` (NEW) evaluates world-gen's OWN `dense` and `groveWeight` laws with world-gen's OWN four constants IMPORTED, at `STAND_M` 165 m and `GROVE_M` 760 m, each divided by its own 9,000,000-sample mean so the modulation is mean-preserving (RN-2661 had just re-pinned that level), each retired at its own Nyquist point, and it MODULATES THE DENSITY rather than the albedo, because a stand-scale feature is more crowns and fewer crowns and not crowns of a different colour. Four live re-measurements agree with the normaliser to under one per cent and `assertStandMottleMatchesScatter` re-runs them at MODULE LOAD and THROWS. **THERE ARE TWO OCTAVES BECAUSE THE SMOOTH-DATUM NYQUIST IS A LOWER BOUND**: the stand octave was measured reaching 4.3 km against the 7.0 km its own arithmetic predicts, because relief tilts a hillside away from the eye and stretches `footM` past the sphere's own value. **DELIVERABLE THREE, UNASKED FOR AND THE MOST REUSABLE: THE STATISTIC RANK 1 WAS SCORED ON CANNOT SEE A COARSE FIELD.** The five-row strip `iqr` FELL by up to 3.7 counts in the middle of the band while the same crops at 2x plainly gained landscape mosaic, because `iqr` is a middle-50 spread dominated by whatever varies fastest and has no notion of scale. `rn2664scale.mjs` (NEW) box-filters at a ladder of scales and reports `sd(s)`, the structure at or coarser than `s`, with the per-row mean removed so the aerial gradient cannot masquerade as lateral structure. Over rank 1's own rows the two terms add **+14.8 per cent of lateral structure at 16 px and +9.6 per cent at 64 px**, and **the mottle is the only one of the two that adds anything at 64 px** (the floor shade alone reads -3.1 per cent there). **AND THE CEILING RE-ROUTES HALF OF RANK 1 OUT OF THIS SHADER.** With the haze off the far paint carries **6.4 to 11.6 counts of `iqr` at every rung from 3.8 km to 15.5 km**, including 11.6 counts at 11.3 km; on the shipped arm the same term is worth **0.00 to 0.36 counts past 10 km**. The paint is not missing structure out there, it HAS structure and the atmosphere removes it, so the 8-to-15.5 km half of rank 1 is an aerial-perspective question and no albedo term in this material can reach it. **Rank 1's paint half is DISCHARGED to about 8 km and REFUSED beyond it with a number.** FIVE new NUMBERS traps, all from this lane's own mistakes or instruments: a footprint-faded term can be DEAD across its whole subject band and nothing publishes `footM`; a smooth-datum Nyquist ladder is a LOWER bound; `iqr` cannot score a coarse field; a module-load assertion can throw on its own sampling noise and the repair is a better estimator (this one threw at boot and is recorded rather than quietly widened); and two rays through one medium must use one geometry. Four new `PAGE_PARAMS` registered in the commits that read them, four new probes, `rn2550guard` `BASE` touched at `flyovernoon` in the TIGHTENING direction only. **NOT TOUCHED:** `ScatterTuning.ts` and `TreeTuning` (WG-295's), `CrownEnv`/`CrownSkyView`/`CanopySelfShadow` constants, the height field, the wasm, `artframe.js` (additive `--evalargs` rects only, centre-column and wide, both with provenance). **GUARD EXIT 0, `PASS (4 of 4 poses judged, 1 outside CORE)`, every number reproduced on a freshly rebuilt bundle with the served entry chunk hashed against `dist`. Gates 0, 0, 9 of 9.** All three existing understorey probes (`rn2647untouched`, `rn2607untouched`, `rn2593untouched`) green on this build, and `rn2662untouched` (NEW) clean at five poses: `forestfloor`, `meadow` and `vista` each track their OWN two-load noise to within 0.04 per cent, and the NIGHT arm (`forestair` at sun -0.25, an evalarg rather than a new pose) is the LOUDEST in the set at 3.35 per cent with 37,998 lighter against 140 darker, because a wood at night is a wood whose floor sees only what it can see of the sky. **AND THAT PROBE FAILED ITSELF FIRST**: its quiet test compared two single draws of one random quantity with a bare `>`, which is a coin flip when the true effect is zero, and `forestfloor` failed at 0.53 against 0.50; the repair is a factor, not a wider constant. **PER-FRAME COST: zero triangles, zero draw calls, paired differences 0 / 0 / +0.1 ms, PAIRS DISAGREE IN SIGN.** **THE HARVEST-RING ZERO IS CONFIRMED ON THE POSE BUILT TO SEE IT**: `forestaircanopy`'s `ctrl690` strip reads 15.851 against 15.851. **EYE: PARTIAL, and the partial is the atmosphere rather than the term** -- the band reads as woods and fields rather than as a wash with streaks in it, and it does not read as forest, because past 8 km the air owns the pixel. **HANDOVER ASSUMPTION FOR WG-295, STATED: reach 3,500 with the ring at 3,427 m.** Both terms take `1 - w` from the instance tier's own published weight so they follow the reach with no edit; the two octaves' Nyquist retirement is keyed on `footM` and therefore on the POSE, so if the reach passes about 4.3 km at `flyover` the stand octave retires inside the ring and the grove octave carries the band alone. The second lane to merge re-measures the join and should re-take the scale ladder. Full record in section 2.44; frames `docs/screenshots/RN2660_*`. THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2660 to RN-2666, `lane/n16-paintstructure`, **THE FAR PAINT LIT A WOOD'S FLOOR LIKE A CLEARING, THE 34-METRE MOTTLE WAS DEAD ACROSS EVERY ROW RANK 1 SAMPLED, AND THE STATISTIC RANK 1 WAS SCORED ON CANNOT SEE A COARSE FIELD.** World Audit R5 rank 1's paint half merged with RN-2645's routed residue, the debt measured FIRST and landed as its own commit before any structure work. **REBASED ONTO main AT `96cab596`: `lane/wg-reach` MERGED FIRST, so this lane is the SECOND MERGER and 2.44.11 discharges the three join obligations.** **ONE: THE RESIDUE IS PAID OUT OF COVERAGE, NOT A FLOOR.** Over the ground the far canopy does NOT hide (43 per cent of the fragment at 3.4 km over Hills) the term left the bare biome albedo at full sun. It now takes the same `ofCrownSelfShade` the crowns take, on the same missing density `vCanopy * (1 - w)`, so it is identically 1 at the 690 m harvest ring and adds NO constant: rendering.md 2.43.7 says the shipped law computes the transmittance at the BASE of the canopy layer and calls that a defect FOR THE CROWN, and the surface at the base of the layer is the GROUND. **On the merged tree `flyovernoon` goes 0.9289 / 0.8671 to 0.9190 / 0.8406, which is 0.0153 and 0.0614 BELOW RN-2605's pre-raise target: DISCHARGED on both quantities.** On this lane's own pre-merge tree it paid 53 and 146 per cent with a named 0.0105 `boxShip` shortfall, and the join closes it; the two trees are kept apart rather than blended. **The identity control is the THREE-flag arm and it reproduces `lane/wg-reach`'s own published merged-main figure to four decimals.** **THE LANE'S ONE REAL DECISION IS THE OPTICAL DEPTH AND IT COSTS 0.0214 OF `boxShip` FORGONE**: `ofTreeCoverMu`, the view-side half of the same expression, is a Boolean crown-overlap law on the crown PLAN index, so running the sun ray on the leaf-area depth `K * mu` two lines away would be two different woods. The other law is BUILT, MEASURED AND REFUSED (`?treelinefloorlaw=1`, 0.8976 / 0.7873, 139 and 358 per cent of the residue). **TWO: THE MOTTLE WAS DEAD, NOT WEAK.** `TREE_MOTTLE` retires at an 11.3 m ground footprint and rank 1's own rows run 12.0 to 288 m, so the field is identically ZERO at every row that audit sampled and `TREELINE_AMP` could never have been the lever. The vertex route cannot carry it either (depth 8 is resident to 2,630 m; a 165 m stand needs cells under 82 m), which makes a shader field a FIRST copy. `TerrainStandMottle.ts` (NEW) evaluates world-gen's OWN `dense` and `groveWeight` laws with world-gen's OWN four constants IMPORTED, at `STAND_M` 165 m and `GROVE_M` 760 m, each divided by its own 9,000,000-sample mean so the modulation is mean-preserving, each retired at its own Nyquist point, MODULATING THE DENSITY rather than the albedo. **There are two octaves because the smooth-datum Nyquist is a LOWER bound**: the stand octave measured 4.3 km against the 7.0 km its own arithmetic predicts, because relief stretches `footM` past the sphere's own value. **THREE: `iqr` CANNOT SCORE A COARSE FIELD AND R5 RANK 1 WAS SCORED ON IT.** The five-row strip `iqr` FELL by up to 3.70 counts in the middle of the band while the same crops at 2x plainly gained landscape mosaic. `rn2664scale.mjs` (NEW) box-filters at a ladder of scales and reports `sd(s)`, the structure at or coarser than `s`, with the per-row mean removed. On the merged tree the two terms add **+6.1 per cent at 16 px and +13.9 per cent at 64 px, the gain monotone in scale, with the MOTTLE supplying 9.1 of those 13.9 points** while the floor shade alone is negative at 1 px. **FOUR, AND THIS IS THE ONE THE VERIFIER RESCUED: THE UPPER BAND IS SUPPRESSED, NOT INERT, AND THIS FILE'S FIRST ANSWER WAS WRONG.** It said "refused with a number" on a `?treeline=0` counter-reading that does not reproduce (0.86 / 0.32 / 0.00 wide, up to 1.68 centre, on bit-exact deterministic frames), priced on the strip-`iqr` statistic this same section condemns two pages earlier, over a range mislabelled 3.8-to-15.5 km when the rows are 7.5-to-15.5, citing an `RN-2543` that does not exist. **Re-measured scale-resolved: the paint's structural increment is +0.72 counts at 1 px on the SHIPPED frame (+35.5 per cent over `?treeline=0`), it arrives at 12.8 per cent (1 px) and 6.6 per cent (16 px) of its surface size, and the rest of the frame's structure over the same rows arrives at 51 and 66 per cent, so the increment is suppressed 4 to 10 times HARDER than the frame is** by extinction plus the ACES shoulder at the airlight-raised operating point. **Verdict downgraded from REFUSED to UNRESOLVED, INSTRUMENT FIRST**, and routed to a real aerial-perspective lane with the two switchable constants named (`aerosolSigma` 1.4e-4 and `aerosolScaleM` 400 at `Atmosphere.glsl.ts:154-155`, `aerosolScaleM` the surgical one, both outside M1's lock), briefed to diagnose before tuning and warned it may end as a Reid look call since a 28 km Koschmieder is already physical. **THE JOIN.** Obligation C: the four normaliser means are UNCHANGED on the merged `ScatterTuning` and `check:boot` passes. Obligation B: `?canopytail=1` reproduces this lane's pre-merge frames to the digit, and over the 3.4-to-5.1 km annulus the tail owns the FINE end (+54.0 per cent at 1 px against the mottle's +5.1) while **the mottle's coarse increment survives the tail 97 per cent intact at 32 px**; the two occupy different scales, the mean is unmoved to a count, **VERDICT KEEP BOTH, no follow-up flagged.** Obligation A: **`rn2550guard` is EXIT 1 on the merged tree with ONE problem and it is PROVED FOREIGN** -- all eight `box` ratchets are UNDER their pins, and the single failure is `forestairnoon` `rho` 0.1596 against `BAND_LOW` 0.18, which reads **identically to four decimals with all three of this lane's terms held off** (`f` 0.6029 pre-merge to 0.3695, a 39 per cent drop in card mass in that rectangle). It is `lane/wg-reach`'s, on a pose whose waiver RN-2645's second logged Admin decision deliberately cleared, so it is routed to Admin rather than papered over. **A PROBE THIS LANE SHIPPED WAS RED THREE RUNS OF THREE ON THE BUILD IT CERTIFIED WHILE THE RECORD SAID CLEAN, and that is the worst error here**: both of `rn2662untouched`'s criteria were bounds built from ONE DRAW of a noise arm whose own scatter spans 35-fold. Rebuilt on quantities that hold still (RN-1766's published 3.78 per cent plus a direction test; the acceptance rectangle's own linear mean for the arming) it is green 3 of 3 with the armed reading bit-identical across runs. **Registered: `?crownshade=0` now silently disables the wood-floor shade too**, at the flag's own site. **Routed: the floor term contradicts `CanopySelfShadow`'s published property 1** by taking the instance tier's PLACEMENT weight where the sun ray should take the full local index, bought to keep the 690 m ring exact, with the cleaner fix named (gate on the CASCADE's own coverage). SIX new NUMBERS traps. Gates 0, 0, **9 of 9**; guard **exit 1, foreign, named**. Full record in section 2.44; frames `docs/screenshots/RN2660_*`. THIS LINE IS A POINTER: replace it, never append to it.
 
 
 
@@ -15821,242 +15821,228 @@ into an aggregate:
 ## 2.44 THE FAR PAINT LIT A WOOD'S FLOOR LIKE A CLEARING, THE 34-METRE MOTTLE WAS DEAD ACROSS EVERY ROW RANK 1 SAMPLED, AND THE STATISTIC RANK 1 WAS SCORED ON CANNOT SEE A COARSE FIELD (RN-2660 to RN-2666, 2026-08-22, `lane/n16-paintstructure`)
 
 > World Audit R5 rank 1 (paint half) and RN-2645's routed residue, merged as
-> Admin's adopted plan says. Base `origin/main` at `58eb1e74`. Branch
-> `lane/n16-paintstructure`, pushed, **not merged to main**. Server
-> `127.0.0.1:5660`, `--strictPort`, sentinel `dist/of-sentinel-rn2660.txt`
-> whose **CONTENT** was fetched back over the wire on each of five builds
-> (tokens `RN2660-BASE-K7M`, `RN2660-FLOOR-Q3T`, `RN2660-PLANLAW-W9D`,
-> `RN2660-FINAL-T5V`, `RN2660-GROVE-H8L`), never a status code, and
+> Admin's adopted plan says. **Rebased onto `origin/main` at `96cab596`, i.e.
+> AFTER `lane/wg-reach` (WG-295 to WG-303) merged first, so this lane is the
+> SECOND MERGER and 2.44.11 is the join.** Branch `lane/n16-paintstructure`,
+> pushed, **not merged to main**. Server `127.0.0.1:5660`, `--strictPort`,
+> sentinel `dist/of-sentinel-rn2660.txt` whose **CONTENT** was fetched back
+> over the wire on each of six builds, never a status code, and
 > `rn2550guard`'s own `checkServedBuild` hashed the served entry chunk against
-> `dist` on every guard run (`4c396149322d3c34` pre-lane, `0fdc21be40047228`,
-> `24c9c0d50e24b6cb`, and the final build's own). PID found by `netstat -ano`
-> and killed by this lane on every rebuild. `npx tsc --noEmit`, `npm run build`
-> and `cd web && npm run check` run as SEPARATE steps with each exit status
-> read on its own. **THE PRE-LANE BASELINE WAS RE-MEASURED IN THIS WORKTREE
-> BEFORE ANY EDIT and reproduces RN-2645's whole four-pose guard table to the
-> digit**, so every delta below is against a number this lane watched arrive.
+> `dist` on every guard run. PID found by `netstat -ano` and killed by this
+> lane on every rebuild. `npx tsc --noEmit`, `npm run build` and
+> `cd web && npm run check` run as SEPARATE steps with each exit status read on
+> its own. **THE PRE-LANE BASELINE WAS RE-MEASURED IN THIS WORKTREE BEFORE ANY
+> EDIT and reproduces RN-2645's whole four-pose guard table to the digit.**
+>
+> **A FRESH-CONTEXT VERIFIER RETURNED FIX AND SIX OF ITS FINDINGS ARE APPLIED
+> AT THEIR OWN SITES BELOW.** The physics reproduced (the debt table, the 43
+> per cent complement analytically, the 690 m identity STRONGER than this
+> section had claimed, the Jensen argument, the normalisers to 0.35 per cent on
+> the verifier's own lattice, the dead 34 m mottle by direct measurement, the
+> scale instrument cell for cell). What it refuted was **four arm labels, one
+> price, one self-contradicting headline and this section's own re-aim
+> conclusion**, and it supplied the measurement that RESCUES the re-aim rather
+> than merely deleting it (2.44.9). Every one of those errors is in an arm or a
+> label this lane reasoned about instead of running, which is the same lesson
+> 2.43.12 filed one lane earlier.
 
 ### 2.44.1 THE ONE-LINE ANSWER, AND IT HAS FOUR PARTS
 
-**1. THE RESIDUE IS PAID OUT OF COVERAGE, NOT OUT OF A FLOOR, AND THE PAYMENT
-IS A SURFACE THE TERM WAS LIGHTING WRONG RATHER THAN A CONSTANT TURNED DOWN.**
-Over the ground the far canopy does NOT hide, the treeline paint left the bare
-biome albedo at full sun: a wood's floor lit like a clearing, on 43 per cent of
-the fragment at 3.4 km over Hills. It now takes the same `ofCrownSelfShade` the
-crowns take, on the same missing density. **That term ALONE takes `flyovernoon`
-boxSurf 0.9243 -> 0.8823 and boxShip 0.9568 -> 0.9379, which is 188 and 84 per
-cent of the 0.0223 / 0.0225 owed. THE STAND MOTTLE THEN GIVES 0.0095 AND 0.0069
-OF IT BACK, and the SHIPPED frame pays 0.0325 / 0.0120, i.e. 146 and 53 per
-cent: boxSurf DISCHARGED with 0.0102 in hand, boxShip with a named SHORTFALL of
-0.0105.** The give-back is Jensen on a concave cover law and is measured, not
-apologised for (2.44.2a). **All eight `box` numbers fall at all four poses and
-`rho` is unmoved to four decimals at every one of them.**
+**1. THE RESIDUE IS PAID OUT OF COVERAGE, NOT OUT OF A FLOOR, AND ON THE MERGED
+TREE IT IS DISCHARGED ON BOTH QUANTITIES.** Over the ground the far canopy does
+NOT hide, the treeline paint left the bare biome albedo at full sun: a wood's
+floor lit like a clearing, on 43 per cent of the fragment at 3.4 km over Hills.
+It now takes the same `ofCrownSelfShade` the crowns take, on the same missing
+density, and adds no constant. On the merged tree `flyovernoon` goes
+**0.9289 / 0.8671 to 0.9190 / 0.8406**, which is **0.0153 and 0.0614 BELOW
+RN-2605's pre-raise target of 0.9343 / 0.9020**. On this lane's own pre-merge
+tree it went 0.9568 / 0.9243 to 0.9448 / 0.8918, 53 and 146 per cent of the
+residue with a named 0.0105 shortfall on `boxShip`; **the join closes that
+shortfall and 2.44.2 keeps the two trees apart rather than blending them.**
 
 **2. THE MOTTLE WAS NOT WEAK, IT WAS DEAD, AND THE REASON IS ONE NUMBER NOBODY
-HAD COMPUTED.** `TREE_MOTTLE`'s field retires at its own Nyquist point, a
-ground footprint of `34 * 0.333` = **11.3 m per pixel**. At `flyover`'s 1,200 m
-eye the footprint across rank 1's own rows runs from **12.0 m at row 540 to
-288 m at row 330**. The field is therefore identically ZERO across every row
-that audit sampled, which is why its `dIQR` was zero and why `TREELINE_AMP`
-could never have been the lever: there was no field left to scale. Two new
-octaves at world-gen's OWN `STAND_M` (165 m) and `GROVE_M` (760 m) carry
-world-gen's OWN `dense` and `groveWeight` laws with world-gen's OWN four
-constants, each divided by its own measured mean so the modulation is
-mean-preserving, and each retired at its own Nyquist point.
+HAD COMPUTED.** `TREE_MOTTLE`'s field retires at a ground footprint of
+`34 * 0.333` = **11.3 m per pixel**. At `flyover`'s 1,200 m eye the footprint
+across rank 1's own rows runs from **12.0 m at row 540 to 288 m at row 330**.
+The field is identically ZERO across every row that audit sampled, which is why
+its `dIQR` was zero and why `TREELINE_AMP` could never have been the lever.
 
 **3. THE STATISTIC RANK 1 WAS SCORED ON CANNOT SEE A COARSE FIELD, AND THIS
-LANE BUILT THE ONE THAT CAN.** The five-row strip `iqr` went DOWN in the middle
-of the band while the same crops side by side at 2x plainly gained
-larger-scale organisation. `iqr` is a robust middle-50 spread and is dominated
-by whatever varies FASTEST in the strip, so replacing fine relief streaking
-with broad patches lowers it. `rn2664scale.mjs` box-filters the band at a
-ladder of scales and reports the standard deviation of the filtered luma, i.e.
-structure AT OR COARSER THAN each scale. Over rank 1's own rows the two terms
-together add **+14.8 per cent of lateral structure at 16 px and +9.6 per cent
-at 64 px**, and the mottle is **the only one of the two that adds anything at
-all at 64 px** (the floor shade alone reads -3.1 per cent there).
+LANE BUILT THE ONE THAT CAN.** `rn2664scale.mjs` box-filters at a ladder of
+scales and reports the sd of the filtered luma, i.e. structure AT OR COARSER
+THAN each scale. Over rank 1's own rows on the merged tree the two terms
+together add **+6.1 per cent of lateral structure at 16 px and +13.9 per cent
+at 64 px**, the gain is monotone in scale, and **the mottle supplies 9.1 of
+those 13.9 points** while the floor shade alone is NEGATIVE at 1 px. On this
+lane's pre-merge tree the same rect read +14.8 at 16 px and +9.6 at 64.
 
-**4. AND THE UPPER HALF OF THE BAND IS AIRLIGHT-LIMITED, WHICH RE-ROUTES HALF
-OF RANK 1 OUT OF THIS SHADER.** With `?terrainhaze=0&prophaze=0` the far paint
-carries **6.4 to 11.6 counts of `iqr`** at every rung from 3.8 km to 15.5 km,
-including 11.6 counts at 11.3 km. On the shipped arm the same term is worth
-**0.00 to 0.36 counts** past 10 km. The paint is not missing structure out
-there; it HAS structure and the atmosphere between it and the eye removes it.
-No albedo term in this material can reach past about 8 km, and rank 1's
-remaining half is an aerial-perspective question rather than a paint one.
+**4. AND THE UPPER BAND IS SUPPRESSED, NOT INERT. THIS SECTION FIRST SAID
+"REFUSED WITH A NUMBER" AND THAT WAS WRONG.** Measured scale-resolved over rows
+329 to 389 (15.5 km down to 7.5 km), the paint's own structural increment is
+**+0.72 counts at 1 px and +0.19 at 16 px on the SHIPPED frame**, i.e. 35.5 and
+10.9 per cent more structure than `?treeline=0`: present and measurable, not
+inert. With the atmosphere removed the same increment is **+5.65 and +2.90
+counts**, so it arrives at **12.8 and 6.6 per cent** of its surface size while
+the rest of the frame's structure over the same rows arrives at **51 and 66 per
+cent**. **The increment is suppressed 4 to 10 times harder than the frame is**,
+by extinction AND by the ACES shoulder at the airlight-raised operating point.
+The band is therefore an **aerial-perspective question with a named next
+instrument**, not a refusal (2.44.9, 2.44.10 item 1).
 
-### 2.44.2 THE DEBT: THE ARITHMETIC
+### 2.44.2 THE DEBT: THE ARITHMETIC, ON TWO TREES, KEPT APART
 
 RN-2605 raised `flyovernoon` by 0.0248 boxShip / 0.0251 boxSurf under the
 project's first logged guard decision. RN-2645 repaid 0.0023 / 0.0028 and
 measured that **no combination of the ambient-floor handles on either half can
 close the rest**, routing the residue to the paint's ALBEDO or COVERAGE. This
-is that lane.
+is that lane. The residue is **0.0225 / 0.0223**, the gap from RN-2645's
+ceiling (0.9568 / 0.9243) to RN-2605's pre-raise target (0.9343 / 0.9020).
 
-| | boxShip | boxSurf |
+**A. THE MERGED TREE (base `96cab596`), WHICH IS WHAT SHIPS. Four arms, one
+flag apart, one build, at `flyovernoon`:**
+
+| arm | boxShip | boxSurf |
 |---|---:|---:|
-| RN-2605's pre-raise ceiling, the target | 0.9343 | 0.9020 |
-| RN-2645's raised, partly repaid ceiling | 0.9568 | 0.9243 |
-| **residue owed to this lane** | **0.0225** | **0.0223** |
-| RN-2661's floor shade ALONE | 0.9379 | 0.8823 |
-| *that term's own payment* | *0.0189 (84%)* | *0.0420 (188%)* |
-| RN-2665's mottle GIVES BACK | +0.0069 | +0.0095 |
-| **SHIPPED, both terms** | **0.9448** | **0.8918** |
-| **repaid** | **0.0120** | **0.0325** |
-| **per cent of the residue** | **53** | **146** |
-| **still owed** | **0.0105** | **none; 0.0102 in hand** |
+| `?treelinefloor=0&treelinestand=0&treelinegrove=0` (merged main) | 0.9289 | 0.8671 |
+| bare `?treelinefloor=0` (the MOTTLE is still on) | 0.9309 | 0.8702 |
+| **SHIPPED** | **0.9190** | **0.8406** |
+| `?treelinefloorlaw=1` (the refused law) | 0.8976 | 0.7873 |
 
-**EVERY ARM, AT `flyovernoon`, ONE FLAG APART ON ONE BUILD:**
+**THE IDENTITY CONTROL IS THE THREE-FLAG ONE AND THIS SECTION FIRST PRINTED THE
+ONE-FLAG ONE UNDER THAT NAME** (the verifier's catch). Bare `?treelinefloor=0`
+leaves the mottle running and reads 0.9309 / 0.8702, which is NOT main. The
+three-flag arm reads **0.9289 / 0.8671, and `lane/wg-reach`'s own published
+merged-main figure for this pose is 0.9289 / 0.8671**: two lanes, two
+harnesses, the same four decimals.
 
-| arm | boxShip | boxSurf | note |
-|---|---:|---:|---|
-| pre-lane, re-measured here | 0.9568 | 0.9243 | reproduces RN-2645 to the digit |
-| `?treelinefloor=0` | **0.9568** | **0.9243** | the identity control, exact |
-| `?treelinestand=0&treelinegrove=0` | 0.9379 | 0.8823 | the floor shade alone |
-| **SHIPPED** | **0.9448** | **0.8918** | |
-| `?treelinefloorlaw=1` | 0.9058 | 0.8071 | 227% / 526%, refused on physics |
+**THE DECOMPOSITION, EACH HALF AGAINST ITS OWN NEIGHBOUR:**
 
-**THE FOUR-POSE TABLE, and ALL EIGHT `box` NUMBERS FALL:**
+- the mottle alone (main to bare `floor=0`): **+0.0020 / +0.0031**
+- the floor shade on top of it (bare `floor=0` to SHIPPED): **-0.0119 / -0.0296**
+- **net, this lane on the merged tree: -0.0099 / -0.0265**
+- **SHIPPED against RN-2605's pre-raise target: 0.0153 and 0.0614 IN HAND.
+  DISCHARGED on both quantities.**
 
-| pose | boxShip before / after | boxSurf before / after | `rho` before / after |
+**B. THE PRE-MERGE TREE (base `58eb1e74`), THIS LANE'S OWN, KEPT BECAUSE IT IS
+WHAT THE TWO COMMITS WERE MEASURED AND PINNED ON:** main 0.9568 / 0.9243, the
+floor shade alone 0.9379 / 0.8823 (84 and 188 per cent of the residue), SHIPPED
+0.9448 / 0.8918 (53 and 146 per cent), **boxShip shortfall 0.0105**. The
+give-back there was 0.0069 / 0.0095. **The two trees' give-backs differ (0.0069
+against 0.0020) because WG-reach's tail changes the mix in the rectangle, and
+they are not averaged or blended.**
+
+**THE FOUR-POSE TABLE ON THE MERGED TREE, and ALL EIGHT `box` NUMBERS ARE UNDER
+THEIR PINS:**
+
+| pose | boxShip / pin | boxSurf / pin | `rho` |
 |---|---|---|---|
-| `forestairnoon` | 0.9808 / **0.9603** | 0.9499 / **0.9184** | 0.1890 / **0.1890** |
-| `forestairlow` | 0.9429 / **0.9189** | 0.7669 / **0.6859** | 0.2996 / **0.2996** |
-| `flyovernoon` | 0.9568 / **0.9448** | 0.9243 / **0.8918** | 0.4762 / **0.4762** |
-| `flyoverlow` | 0.9618 / **0.9409** | 0.8347 / **0.7379** | 0.4016 / **0.4016** |
+| `forestairnoon` | 0.9544 / 0.9817 | 0.9090 / 0.9826 | 0.1596 |
+| `forestairlow` | 0.9200 / 0.9464 | 0.6855 / 0.7732 | 0.2954 |
+| `flyovernoon` | 0.9190 / **0.9448** | 0.8406 / **0.8918** | 0.4762 |
+| `flyoverlow` | 0.9334 / 0.9774 | 0.7050 / 0.8884 | 0.4016 |
 
-**ONLY `flyovernoon` IS RE-PINNED.** The other three fell further and are left
-alone on the precedent rendering.md 2.39.12 item 5 records Admin setting:
-re-pinning a fall tightens the guard for every later lane on the strength of one
-build. `flyovernoon` is re-pinned because it is the pose the debt is ON.
-
-**AND THE PIN IS SET ONCE, AT THE LANE'S FINAL SHIPPED FRAME, IN THE DARKENING
+**THE PIN IS SET ONCE, AT THIS LANE'S FINAL PRE-MERGE FRAME, IN THE DARKENING
 COMMIT.** Pinning 0.9379 in the first commit and moving it to 0.9448 in the
-second would have been a RAISE of a ratchet constant inside one lane, which this
-guard's own rule forbids without a logged decision. The intermediate
-floor-shade-only build reads 0.9379 / 0.8823, which is BELOW the pin and passes
-against it, so **no ceiling is raised at any point in this lane's history** and
-no decision is needed for a change that never has to happen.
+second would have been a RAISE of a ratchet constant inside one lane, which
+this guard's own rule forbids without a logged decision; the floor-only build
+reads below the pin and passes against it. **It is NOT re-pinned again to the
+merged 0.9190 / 0.8406**: that further fall is `lane/wg-reach`'s, and 2.39.12
+item 5 records Admin declining to tighten the guard on the strength of another
+lane's change. **The 0.0258 of dead slack that leaves is stated rather than
+taken, and re-pinning it is an Admin item (2.44.10 item 6).**
 
-### 2.44.2a THE INTERACTION THE BRIEF ASKED FOR: THE MOTTLE GIVES BACK 31 AND 43 PER CENT OF THE PAYMENT, AND IT IS JENSEN
+### 2.44.2a THE INTERACTION THE BRIEF ASKED FOR: THE MOTTLE GIVES PART OF THE PAYMENT BACK, AND IT IS JENSEN
 
 The brief's instruction was that structure must not repaint the mean the first
 deliverable had just re-pinned, and that the interaction be stated and measured.
-**It does move it, by +0.0069 boxShip and +0.0095 boxSurf, which is 31 and 43
-per cent of what the floor shade bought, and the mechanism is not a leak.**
+**It does move it: +0.0020 boxShip and +0.0031 boxSurf on the merged tree
+(+0.0069 / +0.0095 pre-merge), which is 16.8 and 10.5 per cent of what the
+floor shade pays on the same tree.** An earlier draft called the pre-merge pair
+"31 and 43 per cent of what the floor shade bought"; **those are fractions of
+the RESIDUE, not of the floor shade's payment, which are 36.5 and 22.6 per
+cent** (the verifier's catch, and the denominators are now named at every use).
 
-The mottle is mean-preserving in the DENSITY by construction: each of the two
-factors is divided by its own 9,000,000-sample mean, and four live
-re-measurements confirm those means to under one per cent. But the density
-enters `cover = 1 - exp(-mu / sinDep)`, which is **CONCAVE in mu**, so by
-Jensen's inequality a mean-preserving modulation of mu LOWERS the mean COVER.
-Less cover is more ground showing; floor-shaded ground is brighter than crown
-tone; the wood reads slightly lighter.
-
-**That is what a wood with clearings in it IS, against a uniformly closed one of
-the same mean density**, so the right response is to report it rather than to
-cancel it. Cancelling it would mean normalising the modulation in the COVER
-instead of in the density, which is not a quantity world-gen has a law for and
-would make the field's contrast a look number again.
-
-**THE TRADE IS ONE FLAG APART ON THE SHIPPED BUILD.**
-`?treelinestand=0&treelinegrove=0` recovers the full 0.9379 / 0.8823 for an
-Admin or a lane that would rather have the payment than the structure. This lane
-ships the structure because the structure is the deliverable World Audit R5
-ranked BLOCKING and the boxSurf half of the debt is discharged either way.
-
-**THE IDENTITY CONTROL IS EXACT ON EVERY QUANTITY THE GUARD PRINTS, NOT ONLY ON
-THE TWO RATCHETS**: `?treelinefloor=0` reads boxShip 0.9568, boxSurf 0.9243,
-crShip 0.9129, crSurf 0.8481, G 0.5591, f 0.5120, rho 0.4762, against a
-pre-lane run on a DIFFERENT BUILD that read the same seven numbers. A term
-whose off arm reproduces the previous build's whole table is a term with no
-side channel.
-
-**`rho` AND `f` ARE UNMOVED TO FOUR DECIMALS AT ALL FOUR POSES.** RN-2645's
-second logged decision re-pinned `forestairnoon`'s `rho` and defended it by
-predicting that the far paint cannot reach that quantity, because `rho` is
-coverage-corrected on the `?terrainpaint=1` arm which renders the terrain
-exactly black. A lane that has now moved the paint by 0.042 of `boxSurf` reads
-`rho` 0.1890 / 0.2996 / 0.4762 / 0.4016 before and after. **The prediction is
-confirmed by measurement rather than left as an argument.**
+The mechanism is not a leak. The mottle is mean-preserving in the DENSITY by
+construction, and four live re-measurements confirm its two normalisers to
+under one per cent. But the density enters `cover = 1 - exp(-mu / sinDep)`,
+which is **CONCAVE in mu**, so by Jensen a mean-preserving modulation LOWERS the
+mean COVER. Less cover is more ground showing; floor-shaded ground is brighter
+than crown tone; the wood reads slightly lighter. **That is what a wood with
+clearings in it IS**, against a uniformly closed one of the same mean density,
+so the right response is to report it rather than to cancel it. Cancelling it
+would mean normalising in the COVER, which is not a quantity world-gen has a
+law for. **The trade is one flag apart**: `?treelinestand=0&treelinegrove=0`.
 
 ### 2.44.3 WHY THE PLAN INDEX AND NOT `K * mu`, WHICH IS THE LANE'S ONE REAL DECISION
 
-The shipped law is `S = FLOOR + (1 - FLOOR) exp(-tau / sinSun)`, and the choice
-is what `tau` is for a ray to the GROUND.
-
-`CanopySelfShadow`'s own header derives `K = G * LAI / mu`, i.e. K converts the
-crown PLAN-area index into the LEAF-AREA optical depth of a HOMOGENEOUS layer.
+`CanopySelfShadow`'s own header derives `K = G * LAI / mu`: K converts the crown
+PLAN-area index into the LEAF-AREA optical depth of a HOMOGENEOUS layer.
 `ofTreeCoverMu`, the view-side half of the very same expression, is the BOOLEAN
-crown-overlap law on the plan index: it asks how often a ray misses every
-crown, treating crowns as discrete objects. Those are two different woods, and
-they were about to be used two lines apart.
-
-The sun ray gets the same geometry the view ray gets. The sunlit ground
-fraction is `exp(-mu / sinSun)`, and a ray that DOES hit a crown is effectively
-stopped, because one vertical crown crossing is K = 3.2 of leaf-area depth and
-`exp(-3.2)` is 0.041.
+crown-overlap law on the plan index. Those are two different woods and they were
+about to be used two lines apart. The sun ray gets the geometry the view ray
+gets: the sunlit ground fraction is `exp(-mu / sinSun)`, and a ray that DOES hit
+a crown is effectively stopped (one vertical crown crossing is K = 3.2 of
+leaf-area depth, `exp(-3.2)` = 0.041).
 
 **THE OTHER LAW IS BUILT, MEASURED AND REFUSED, ON `?crownshadelaw=1`'s
-PRECEDENT, AND ITS PRICE IS THE SHORTFALL.** `?treelinefloorlaw=1` reads
-0.9058 / 0.8071 at `flyovernoon`, which would have over-paid the debt at 227
-and 526 per cent. **It was built FIRST, on its own build, and the plan-index
-build's `?treelinefloorlaw=1` arm reproduces that earlier build's whole
-four-pose table to four decimals**, which is what makes the two laws one flag
-apart rather than two commits apart:
+PRECEDENT, AND THE PRICE OF THE REFUSAL IS 0.0214 OF `boxShip` FORGONE.** On the
+merged tree `?treelinefloorlaw=1` reads **0.8976 / 0.7873** against main's
+0.9289 / 0.8671, i.e. it pays 0.0313 / 0.0798, **139 and 358 per cent of the
+residue**, where the shipped law pays 0.0099 / 0.0265. The gap between them,
+0.9190 - 0.8976 = **0.0214**, is what the physics decision costs. **An earlier
+draft called that price 0.0036, which was the pre-merge boxShip SHORTFALL and
+not the forgone amount at all** (the verifier's catch); pre-merge the same
+quantity is 0.9448 - 0.9199 = 0.0249.
 
-| pose | `?treelinefloorlaw=1` boxShip / boxSurf |
-|---|---|
-| `forestairnoon` | 0.8985 / 0.7749 |
-| `forestairlow` | 0.8417 / 0.4236 |
-| `flyovernoon` | 0.9058 / 0.8071 |
-| `flyoverlow` | 0.8934 / 0.5439 |
+**AND THE FOUR-POSE `?treelinefloorlaw=1` TABLE THIS SECTION FIRST PUBLISHED IS
+WITHDRAWN.** It read 0.8985 / 0.7749, 0.8417 / 0.4236, 0.9058 / 0.8071,
+0.8934 / 0.5439 and was labelled "one flag apart on one build". It was neither:
+it came from an earlier build on which the leaf-area law was HARD-CODED and the
+mottle did not exist, so it is a mottle-off table from a different binary. The
+verifier re-took it as a true one-flag arm on the pre-merge shipped build and it
+reads **0.9228 / 0.8383, 0.8773 / 0.5257, 0.9199 / 0.8301, 0.9111 / 0.6099**.
+Those are the verifier's runs and are labelled as such; this lane's own
+re-measurement of the arm is the merged-tree `flyovernoon` row above.
 
-So the refusal costs 0.0036 of a ratchet and that is stated as the price of a
-physics decision rather than hidden inside it. **THE OBSERVATION IT LEAVES
-BEHIND IS ROUTED RATHER THAN TAKEN**: this term's view ray and its sun ray now
-both use the plan index while the CROWN's own self-shade still uses `K * mu`,
-so the two halves of the canopy model disagree about the canopy's geometry.
-`CROWN_SELF_K` has a calibration table behind it and is out of this lane's
-rails (2.44.10 item 2).
+**THE OBSERVATION IT LEAVES BEHIND IS ROUTED RATHER THAN TAKEN** (2.44.10
+item 2): this term's view ray and its sun ray now both use the plan index while
+the CROWN's own self-shade still uses `K * mu`.
 
 ### 2.44.4 THE HANDOVER IS PRESERVED, AND EVERY EXISTING ZERO IS STILL EXACTLY ZERO
 
 The floor shade takes `vCanopy * (1 - w)`, the SAME missing-density argument
-`ofTreeCover` is built on, so:
+`ofTreeCover` is built on, so at the 690 m harvest ring `w` is 1, the argument
+is 0 and the term is identically 1. **There is no new ring at 690 m.** It is
+gated by `clamp(uTreeline.x * coverSel, 0, 1)`, the same product `treeK`
+carries, so `?treeline=0` is still the pre-RN-2265 frame to the bit and cliffs
+and scree stay out.
 
-- at the 690 m harvest ring `w` is 1, the argument is 0, `exp(0)` is 1 and the
-  term is identically 1. **There is no new ring at 690 m**, which is the one
-  artefact this whole handover exists to prevent.
-- past the realised reach it is the full layer.
-- it is gated by `clamp(uTreeline.x * coverSel, 0, 1)`, the same product `treeK`
-  carries, so `?treeline=0` is still the pre-RN-2265 frame to the bit and a
-  cliff or a scree slope is still excluded.
+**AND IT ADDS A FOURTH ZERO NOBODY ASKED FOR, REGISTERED RATHER THAN LEFT TO BE
+FOUND: `?crownshade=0` NOW SILENTLY DISABLES THE WOOD-FLOOR SHADE TOO.** That
+flag zeroes `uCrownShade.x`, the amp `ofCrownSelfShade` mixes from 1.0 with, and
+this term calls the same function. So an arm taken with `?crownshade=0` is no
+longer "the crowns unshaded with everything else held". It is written into
+`run.mjs`'s own `PAGE_PARAMS` comment beside the flag and into the shader's
+comment beside the call.
 
-**IT IS AN UNDER-COUNT PAST THE LAST CASCADE SPLIT AND THAT IS STATED RATHER
-THAN CORRECTED.** The instances' own shadow is the cascade's job where the
-cascade reaches; past it the placed trees stand in no shadow at all, so
-painting only the canopy the instances are NOT placing under-states the
-shading. Using the full `vCanopy` instead would put the 690 m ring back, and
-the ring is worse.
-
-**INDEPENDENCE, NOT A HOT SPOT.** A ground point is visible because no crown
-lay on the VIEW ray and lit because no crown lay on the SUN ray, and the two
-are treated as independent. That is exactly wrong at the retro-reflection peak
-where the two rays coincide; the shot set has no such pose, so the hot spot is
-out of frame rather than ignored.
+**THE ARGUMENT CONTRADICTS `CanopySelfShadow`'s PUBLISHED PROPERTY 1 AND THAT IS
+ROUTED (2.44.10 item 7).** That file states the SUN ray takes the FULL local
+index whatever tier drew the crowns, because a shadow is cast by every crown
+above the surface. This term takes `vCanopy * (1 - w)`, the instance tier's
+PLACEMENT weight, which is a statement about which renderer drew a tree rather
+than about which trees cast shade. It is done that way to keep the 690 m ring
+exact, and the price is that the wood's floor is under-shaded wherever the
+instance tier places but the cascade does not reach. **The cleaner fix is to
+gate on the CASCADE'S own coverage rather than on the instance tier's weight**,
+which is a shadow-system question outside this lane's rails.
 
 ### 2.44.5 THE MOTTLE'S DIAGNOSIS: A NYQUIST RETIREMENT KILLED THE TERM OVER ITS OWN SUBJECT
 
-The audit's structure finding is reproduced first. On the pre-lane build, the
-centre-column ladder at `flyover` reads the shipped arm's `?treeline=0` delta
-as under one count from 15.5 km to 6.4 km with the exceptions the correction
-pass restored, and **at row 539 the shipped arm has 16.12 counts LESS `iqr`
-than `?treeline=0`** against the audit's own 15.47. The instrument agrees.
+At row 539 the shipped arm has **16.12 counts LESS `iqr`** than `?treeline=0`
+against the audit's own 15.47: the instrument agrees before it is used.
 
-**THE CAUSE IS THE FOOTPRINT LADDER, AND IT IS GEOMETRY RATHER THAN TUNING.**
-`treeF` retires the 34 m field between a 4.25 m and an 11.3 m footprint. At
-`flyover` (h 1,200 m, pitch -14), by the R5 correction pass's own
+**THE CAUSE IS THE FOOTPRINT LADDER.** `treeF` retires the 34 m field between a
+4.25 m and an 11.3 m footprint. At `flyover`, by the R5 correction pass's own
 curvature-correct inversion:
 
 | row | range | footprint m/px | 34 m octave | 165 m octave | 760 m octave |
@@ -16068,25 +16054,22 @@ curvature-correct inversion:
 | 540 | 3.4 km | 12.0 | dead | full | full |
 | 550 | 3.25 km | 11.2 | just alive | full | full |
 
-The 34 m octave first stirs at row 550, which is 3,250 m, INSIDE the instance
-tier's own 3,500 m reach. **Every row rank 1 sampled is past it.**
+The 34 m octave first stirs at 3,250 m, INSIDE the instance tier's own reach.
+**Every row rank 1 sampled is past it.**
 
-**AND THE VERTEX ROUTE CANNOT CARRY THE STAND FIELD THERE EITHER, WHICH IS WHAT
-MAKES A SHADER FIELD A FIRST COPY RATHER THAN A SECOND.** `vCanopy` already
-contains world-gen's stand and grove factors, evaluated per terrain VERTEX in
-`ChunkCanopy`. But depth 8 (115 m cells) is resident only to about 2,630 m of
-eye distance by `ScatterTuning`'s own ladder, and a 165 m stand has a dominant
-period near 330 m and needs cells under 82 m to survive sampling. The audited
-band starts at 3,378 m. Across every metre of it the mesh has already averaged
-the stand field away.
+**AND THE VERTEX ROUTE CANNOT CARRY THE STAND FIELD THERE EITHER.** `vCanopy`
+already contains world-gen's stand and grove factors per terrain VERTEX, but
+depth 8 (115 m cells) is resident only to about 2,630 m and a 165 m stand needs
+cells under 82 m. The audited band starts at 3,378 m. Across every metre of it
+the mesh has already averaged the field away, which is what makes a shader field
+a FIRST copy rather than a second.
 
 ### 2.44.6 THE TWO OCTAVES ARE WORLD-GEN'S OWN LAW, ASSERTED AGAINST WORLD-GEN'S OWN LIVE FIELD
 
-`ScatterTuning.canopyWeight` is a PRODUCT of three factors and WG-221's header
-says why: the LANDSCAPE (760 m woods and fields), the STAND (165 m closures and
-clearings inside a wood) and the TREELINE. `TerrainStandMottle.ts` evaluates
-the first two of those expressions, with their four constants IMPORTED rather
-than retyped, on the value noise the terrain material already has:
+`ScatterTuning.canopyWeight` is a PRODUCT of three factors (WG-221: the 760 m
+LANDSCAPE, the 165 m STAND, the TREELINE). `TerrainStandMottle.ts` evaluates the
+first two with their four constants IMPORTED rather than retyped, on the value
+noise the material already has:
 
 ```
 dense = CANOPY_FLOOR_W + (1 - CANOPY_FLOOR_W) * ramp(v, STAND_LO, STAND_HI)
@@ -16095,203 +16078,189 @@ mod   = (dense / TREE_STAND_MEAN) * (grove / TREE_GROVE_MEAN)
 ```
 
 The one thing it cannot share is the HASH: `ChunkCanopy`'s header proves an
-exact GLSL mirror of `standAt` is **not writable at all**, because ESSL 1.00 has
-no integer type and no bitwise operators and a 24-bit mantissa cannot emulate a
-32-bit wrapping multiply. So the PHASE is the material's own (keyed on `pM`,
-planet-centred metres with a 31.25 mm quantum, exactly as the crown mottle and
-`ofArtMassif` already are) and the LAW, the SCALE and the CONTRAST are
-world-gen's.
+exact GLSL mirror of `standAt` is **not writable at all** in ESSL 1.00. So the
+PHASE is the material's own (keyed on `pM`, planet-centred metres with a
+31.25 mm quantum) and the LAW, SCALE and CONTRAST are world-gen's.
 
-**THE TWO NORMALISERS ARE THE ONLY MEASURED NUMBERS IN THE FILE, and they exist
-because RN-2661 re-pinned the paint's LEVEL one commit earlier.** A structure
-term that also moved the mean would be spending that pinning without saying so.
 `TREE_STAND_MEAN` 0.55827 and `TREE_GROVE_MEAN` 0.54384 are means over 9,000,000
-samples each. Four independent re-measurements over a 21 km square at each
-audited site agree with the stand figure to under one per cent:
+samples each. Four re-measurements over a 21 km square at each audited site
+agree with the stand figure to under one per cent (Hills 0.5594 world-gen /
+0.5543 shader; Forest 0.5561 / 0.5590), **and the values are unchanged on the
+merged `ScatterTuning`**, which is 2.44.11's obligation C in its cheap form.
+`assertStandMottleMatchesScatter` re-runs all four at MODULE LOAD and THROWS.
 
-| site | world-gen `dense(standAt)` | the shader's `dense(vnoise)` |
-|---|---:|---:|
-| Hills | 0.5594 (+0.20%) | 0.5543 (-0.71%) |
-| Forest | 0.5561 (-0.38%) | 0.5590 (+0.13%) |
+**THE ASSERT'S FIRST VERSION WAS THE DEFECT AND IS RECORDED RATHER THAN QUIETLY
+REPAIRED.** 4,900 samples over a 2.9 km square is about 300 independent cells,
+standard error 0.021; it threw at boot with the Forest site 2.2 standard errors
+out, which is ordinary noise. Widening the tolerance would have been the wrong
+repair. It now strides 1.618 stand cells over a 21 km square, 6,400 independent
+draws, standard error 0.0046, with the tolerances read off that.
 
-and `assertStandMottleMatchesScatter` re-runs all four comparisons at MODULE
-LOAD and THROWS, on `assertTreelineMatchesScatter`'s own precedent.
+**THE CONTRAST IS CLOSE BUT NOT EQUAL**: relative RMS 0.6580 and 0.6508 for the
+shader field against 0.6161 and 0.6181 for world-gen's, 5 to 7 per cent hotter,
+where the RAW noises differ by 18 per cent and the ramp's saturation compresses
+it to a fifth of that.
 
-**THE ASSERT'S FIRST VERSION WAS THE DEFECT AND IT IS RECORDED RATHER THAN
-QUIETLY REPAIRED.** It walked a 2.9 km square on a quarter-cell lattice: 4,900
-samples but only about 300 INDEPENDENT stand cells, standard error 0.021. It
-threw at boot with the Forest site reading 0.6051, which is 2.2 standard errors
-and perfectly ordinary noise. Widening the tolerance would have been the wrong
-repair. The estimator now strides 1.618 stand cells over a 21 km square, which
-is also the RIGHT DOMAIN, and the tolerances (2 per cent on the shader field,
-6 on world-gen's, 6 and 12 on the coarser grove pair) are read off the
-resulting standard errors rather than picked.
-
-**THE CONTRAST IS CLOSE BUT NOT EQUAL AND THE SIZE IS PUBLISHED**: relative RMS
-0.6580 and 0.6508 for the shader field against 0.6161 and 0.6181 for
-world-gen's, i.e. 5 to 7 per cent hotter. The RAW noises differ by far more
-(`standAt` is two octaves with sd 0.156, one octave of `ofArtVnoise` has 0.184,
-an 18 per cent gap) and the ramp's own saturation compresses it to a fifth of
-that. Matching the LAW was worth more than matching the noise, and that is the
-measurement that says so.
-
-**IT MODULATES THE DENSITY, NOT THE ALBEDO, and that is the whole difference
-from `TREE_MOTTLE`.** A stand-scale feature in a wood is not crowns of a
-different colour, it is more crowns and fewer crowns. Fed into the
-Beer-Lambert cover, a low cell shows more ground and (since RN-2661) more
-SHADED ground, and a high cell shows closed canopy. Fed into the albedo it
-would have repainted a flat wash a mottled shade of the same wash, which is
-the R5 verifier's own reason for demoting `TREELINE_AMP`.
+**IT MODULATES THE DENSITY, NOT THE ALBEDO.** A stand-scale feature is more
+crowns and fewer crowns, not crowns of a different colour.
 
 ### 2.44.7 WHY THERE ARE TWO OCTAVES: THE SMOOTH-DATUM NYQUIST IS A LOWER BOUND
 
-The stand octave alone was built, measured, and found to reach **4.3 km of a
-15.5 km band**. On the `?treelinepaint=2` coverage arm at `flyover` it moves
-`treeK` by 2.9 to 13.9 counts inside 4.3 km and by 0.00 to 0.23 counts, which
-is noise, beyond it.
-
-**THAT IS NOT WHERE THE ARITHMETIC PUT IT.** 165 m retires between a 20.6 m and
-a 55.0 m footprint, which on the smooth datum is 4.3 km to 7.0 km at this pose.
-The measurement says it is gone by 4.5. **The datum ladder is a LOWER BOUND on
-`footM`**: real relief tilts a hillside away from the eye and stretches its
-per-pixel footprint well past the sphere's own value, so a term faded on
-`footM` retires EARLIER than a smooth-datum ladder predicts. The grove octave
-is therefore chosen against the measurement rather than against the arithmetic:
-760 m retires between 95 m and 253 m, 3.5 to 7 times further out on the same
-curve. It is a separate flag (`?treelinegrove=`) precisely so the next reader
-can reproduce that finding.
+The stand octave alone reaches **4.3 km of a 15.5 km band**: on the
+`?treelinepaint=2` coverage arm it moves `treeK` by 2.9 to 13.9 counts inside
+4.3 km and by 0.00 to 0.23 counts, which is noise, beyond it. **That is not
+where the arithmetic put it** (4.3 to 7.0 km). The datum ladder is a LOWER BOUND
+on `footM`: real relief tilts a hillside away from the eye and stretches its
+per-pixel footprint past the sphere's own, so a footprint-faded term retires
+EARLIER than a smooth-datum ladder predicts. The grove octave is chosen against
+the measurement: 760 m retires between 95 m and 253 m.
 
 ### 2.44.8 THE INSTRUMENT: `iqr` CANNOT SCORE A COARSE FIELD, AND THE ONE THAT CAN
 
-Measured on the shipped-haze wide ladder at `flyover`, both octaves against
-both off, the five-row strip `iqr` moves **+1.06 to +2.00 at 6.0 to 7.5 km,
-+1.70 to +3.01 at 3.5 to 3.8 km, and -0.68 to -1.56 at 4.1 to 4.5 km**. On the
-haze-off arm it is negative across more of the middle. The `box` rectangle's own
+On the shipped-haze wide ladder at `flyover`, both octaves against both off, the
+five-row strip `iqr` moves **+1.06 to +2.00 at 6.0 to 7.5 km, +1.70 to +3.01 at
+3.5 to 3.8 km, and -0.68 to -1.56 at 4.1 to 4.5 km**; on the haze-off arm the
+middle of the band goes as negative as **-3.70**. The `box` rectangle's own
 `iqr` reads 64.10 with the octaves off and 62.83 with them on.
 
-The same crops side by side at 2x plainly gain larger-scale organisation. **When
-a number and an eye disagree this project's own rule is to suspect the number
-of measuring a different quantity, and here it is.** `iqr` is a robust
-middle-50 spread over a 1120 px strip: it is dominated by whatever varies
-FASTEST in it, and replacing fine relief streaking with broad patches lowers it
-while raising the scale at which the ground is organised. A statistic that
-cannot distinguish "flat" from "smooth and patchy" is the wrong statistic for a
-mottle, **and R5 rank 1 was itself scored on it.**
+The same crops at 2x plainly gain larger-scale organisation. **When a number and
+an eye disagree this project's own rule is to suspect the number of measuring a
+different quantity, and here it is.** `iqr` is a middle-50 spread dominated by
+whatever varies FASTEST in the patch and has no notion of scale, so a term that
+replaces fine relief streaking with broad patches lowers it. **R5 rank 1 was
+itself scored on it.**
 
-`rn2664scale.mjs` (NEW) box-filters a rectangle at a ladder of scales and
-reports the standard deviation of the filtered luma with the per-row mean
-removed, so the aerial gradient cannot masquerade as lateral structure.
-Filtering at scale `s` removes everything finer than `s`, so `sd(s)` is the
-structure AT OR COARSER THAN `s`. Over rank 1's own rows (x 560, y 330,
-900x210, i.e. 15.5 km down to 3.4 km, clear of the HUD):
+`rn2664scale.mjs` (NEW) box-filters at a ladder of scales and reports the sd of
+the filtered luma with the per-row mean removed, so the aerial gradient cannot
+masquerade as lateral structure. Over rank 1's own rows (x 560, y 330, 900x210,
+15.5 km down to 3.4 km, clear of the HUD):
 
 | scale px | pre-lane | floor shade only | **both terms** |
 |---:|---:|---:|---:|
-| 1 | 5.583 | 5.943 (+6.4%) | **6.194 (+10.9%)** |
-| 4 | 5.155 | 5.515 (+7.0%) | **5.773 (+12.0%)** |
-| 16 | 4.065 | 4.425 (+8.9%) | **4.665 (+14.8%)** |
-| 32 | 2.468 | 2.561 (+3.7%) | **2.707 (+9.7%)** |
-| 64 | 1.634 | 1.583 (**-3.1%**) | **1.791 (+9.6%)** |
+| 1 | 8.649 | 8.550 (**-1.1%**) | 8.662 (+0.1%) |
+| 4 | 7.531 | 7.548 (+0.2%) | 7.679 (+2.0%) |
+| 8 | 6.448 | 6.586 (+2.2%) | 6.731 (+4.4%) |
+| 16 | 5.456 | 5.665 (+3.8%) | **5.788 (+6.1%)** |
+| 32 | 3.312 | 3.448 (+4.1%) | **3.599 (+8.7%)** |
+| 64 | 2.124 | 2.226 (+4.8%) | **2.419 (+13.9%)** |
 
-**THE MOTTLE IS THE ONLY ONE OF THE TWO TERMS THAT ADDS STRUCTURE AT 32 AND
-64 PIXELS**, which at this band is 270 to 530 m of ground, i.e. exactly stand
-and grove scale. The floor shade alone is negative at 64 px. That is the
-deliverable, and it is a scale-resolved measurement rather than a scalar.
+**THE GAIN IS MONOTONE IN SCALE AND THE COARSE END IS THE STRONGEST**, which is
+the mottle's whole design intent: at 64 px (270 to 530 m of ground here) the two
+terms add 13.9 per cent and the MOTTLE supplies 9.1 of those points, while at
+1 px the floor shade alone is NEGATIVE. On this lane's own PRE-MERGE tree the
+same rect read +14.8 per cent at 16 px and +9.6 at 64 with the floor shade at
+-3.1 at 64; 's tail has since raised the fine and mid-scale
+baseline inside this rect, which moves the percentages without changing which
+term owns which scale.
 
 **THE OVERLAP THE TWO FIELDS COULD HAVE HAD IS MEASURED AT THE ONE POSE WHERE
 THE MESH CAN STILL RESOLVE A STAND.** `forestaircanopy` looks at its own 690 m
-ring from a 60 m eye, where the terrain is depth 8 or finer and `vCanopy`
-therefore still carries some of world-gen's stand field. If a shader-side copy
-at the same scale were going to curdle, it would curdle there. Measured on that
-pose's own `box`: `iqr` 55.50 pre-lane against **56.93 shipped, +2.6 per cent**,
-with luma moving 0.50 counts. It adds contrast; it does not fight the vertex
-field.
+ring from a 60 m eye. Its `box` `iqr` reads 55.50 pre-lane against **56.93
+shipped, +2.6 per cent**. It adds contrast; it does not fight the vertex field.
 
 **AND THE HARVEST-RING ZERO IS CONFIRMED ON THE POSE BUILT TO SEE IT.**
-`forestaircanopy`'s `ctrl690` strip is fully inside 690 m by construction, where
-`ofTreeInstanceW` returns 1 and the whole branch is skipped. Run through the
-scale ladder, the pre-lane and shipped arms read **15.851 against 15.851 at
-1 px, 13.377 against 13.378 at 4 px and 7.922 against 7.921 at 16 px**: identical
-to three decimals on a strip 960 px wide.
+`forestaircanopy`'s `ctrl690` strip, fully inside 690 m by construction, reads
+**15.851 against 15.851 at 1 px, 13.377 against 13.378 at 4 px and 7.922 against
+7.921 at 16 px** on a strip 960 px wide.
 
-### 2.44.9 THE CEILING, AND IT RE-ROUTES HALF OF RANK 1
+### 2.44.9 THE UPPER BAND IS SUPPRESSED, NOT INERT, AND THIS SECTION'S FIRST ANSWER HERE WAS WRONG
 
-`?terrainhaze=0&prophaze=0` on both arms, `?treeline=0` against the shipped
-frame, wide ladder at `flyover`:
+**WHAT THIS SECTION FIRST SAID, AND WHY IT IS WITHDRAWN.** It claimed the far
+paint is worth "0.00 to 0.36 counts past 10 km" on the shipped arm and called
+the 8-to-15.5 km band "REFUSED with a number". A fresh-context verifier found
+four faults and all four hold:
 
-| row | range | luma delta | **`iqr` delta** |
-|---|---:|---:|---:|
-| 329 | 15.5 km | -9.11 | **+6.78** |
-| 349 | 11.3 km | -11.08 | **+11.62** |
-| 369 | 9.0 km | -8.76 | **+8.07** |
-| 389 | 7.5 km | -9.41 | **+6.43** |
-| 429 | 5.6 km | -6.94 | **+5.57** |
-| 509 | 3.8 km | -6.72 | **+4.14** |
+1. **The counter-number does not reproduce.** Re-run, the same rows read
+   0.86 / 0.32 / 0.00 on the wide ladder and up to 1.68 on the centre column.
+   These frames are bit-exact deterministic, so the spread is not noise: it is
+   a quantity that depends on which rows and which column were picked.
+2. **It was priced on the strip `iqr` this very section condemns two pages
+   earlier**, and that section's own luma and `iqr` columns disagree by 9x
+   about the same rows.
+3. **The range was wrong.** The rows quoted are 7.5 to 15.5 km, not 3.8 to
+   15.5 km.
+4. **`RN-2543` is not a tag that exists.** The 99-per-cent-airlight figure is
+   RN-2540's, it is an infinite-path `hzBand` number, and `flyover.hzBand` is
+   twice convicted in this file as horizon-contaminated.
 
-On the SHIPPED arm the same term moves those rows by 0.00 to 3.16 counts and
-adds no measurable `iqr` past 8 km.
+**THE MEASUREMENT THAT SHOULD HAVE BEEN TAKEN, TAKEN.** Scale-resolved over
+rows 329 to 389 (15.5 km down to 7.5 km), four arms, one build:
 
-**SO THE PAINT IS NOT MISSING STRUCTURE IN THE UPPER BAND. IT HAS 6 TO 12
-COUNTS OF IT AND THE ATMOSPHERE REMOVES IT.** RN-2543 already measured
-`hzBand` at 99 per cent airlight and this is that finding at every rung of the
-band rather than at one rectangle. It means the second half of R5 rank 1, the
-8-to-15.5 km span, **cannot be fixed by any albedo term in this material at
-all**, and a lane briefed to add one there would be tuning a term the air is
-already deleting. It is routed as an aerial-perspective question in 2.44.10
-item 1.
+| scale px | `?treeline=0` | SHIPPED | `?treeline=0` no haze | SHIPPED no haze |
+|---:|---:|---:|---:|---:|
+| 1 | 2.034 | **2.756** | 3.997 | **9.644** |
+| 4 | 2.009 | 2.635 | 3.856 | 8.401 |
+| 8 | 1.900 | 2.397 | 3.439 | 7.267 |
+| 16 | 1.763 | **1.955** | 2.675 | **5.575** |
 
-### 2.44.9a SCOPE, NIGHT, THE UNDERSTOREY, AND ONE PROBE THAT FAILED ITSELF
+Read it as three numbers:
+
+- **THE PAINT IS LIVE UP THERE.** Its structural increment on the SHIPPED frame
+  is **+0.72 counts at 1 px (+35.5 per cent) and +0.19 at 16 px (+10.9 per
+  cent)**. Not inert, and the earlier "refused" verdict rested on it being so.
+- **THE INCREMENT ARRIVES AT 12.8 PER CENT (1 px) AND 6.6 PER CENT (16 px)** of
+  its own surface size (5.647 and 2.900 counts with the haze off).
+- **THE REST OF THE FRAME'S STRUCTURE OVER THE SAME ROWS ARRIVES AT 50.9 AND
+  65.9 PER CENT.** So the paint's increment is **suppressed 4.0x at 1 px and
+  10.0x at 16 px MORE than the frame is.**
+
+**THE ASYMMETRY IS THE FINDING.** Pure extinction would attenuate the paint and
+the frame's ground content alike. Two things break that: part of the "frame"
+denominator is airlight's OWN variation, which lives in FRONT of the extinction
+and is not attenuated at all; and the airlight raises the operating point into
+the ACES shoulder, where the local display slope is far below unity, so a small
+scene-linear increment on top of a large pedestal is compressed harder than the
+pedestal's own variation. **Both are properties of the atmosphere and the grade,
+not of the paint.**
+
+**SO THE VERDICT IS UNRESOLVED, INSTRUMENT FIRST, NOT REFUSED.** The upper band
+is worth pursuing and this shader is not where it is pursued. 2.44.10 item 1
+routes it with the two constants and the warning it needs.
+
+### 2.44.9a SCOPE, NIGHT, THE UNDERSTOREY, AND A PROBE THAT WAS RED ON THE BUILD IT CERTIFIED
 
 `rn2662untouched.mjs` (NEW). Three structural zeros are claimed for the floor
-shade and all three are the kind of claim this project has been wrong about
-before: inside 690 m `ofTreeInstanceW` returns 1 and the branch is skipped;
-`vCanopy == 0` fails the outer gate; `?treeline=0` zeroes the gate product. The
-arming is an OUTCOME readback (`treeline().floorShade` must read 1 / 0) rather
-than the flag having been typed.
+shade and the arming is an OUTCOME readback (`treeline().floorShade` must read
+1 / 0) rather than the flag having been typed.
 
-| pose | claim | pair moved | own two-load noise | direction |
+| pose | claim | pair moved | balance | arming |
 |---|---|---:|---:|---|
-| `forestfloor` | quiet | 0.24% | 0.28% | -- |
-| `meadow` | quiet | 0.92% | 0.91% | -- |
-| `vista` | quiet | 0.42% | 0.42% | -- |
-| `forestair` at sun **-0.25** | moved | **3.35%** | 0.07% | 37,998 lighter / 140 darker |
-| `flyovernoon` | moved | **1.20%** | 0.03% | 13,206 lighter / 446 darker |
+| `forestfloor` | quiet | 0.53% | 1.4x | -- |
+| `meadow` | quiet | 0.69% | 1.0x | -- |
+| `vista` | quiet | 0.12% | 1.0x | -- |
+| `forestair` at sun **-0.25** | moved | 3.35% | **277x lighter** | box lin.Y **189.3%** on 0.000% noise |
+| `flyovernoon` | moved | 1.05% | 20.8x lighter | box lin.Y **1.30%** on 0.000% noise |
 
-**The three quiet poses track their own two-load noise to within 0.04 per cent**,
-which is the strongest form of the claim available at a walk pose.
+**IT WAS RED THREE RUNS OUT OF THREE ON THE BUILD IT CERTIFIED, AND THE RECORD
+SAID IT WAS CLEAN** (the verifier's catch, and the worst error in this lane).
+The cause is one shape used twice. Its quiet test compared the pair against
+**one draw** of a noise arm whose own scatter spans 5 to 10x between runs
+(`vista` read 0.06 / 2.14 / 0.22 across three), and multiplying one draw of that
+by 2 is the same defect wearing a factor. Its armed test compared a WHOLE-FRAME
+pixel percentage against the same kind of single draw, which is exactly the
+shape NUMBERS.md's RN-2647 entry already forbids for a term scoped smaller than
+the frame.
 
-**NIGHT IS AN ARGUMENT RATHER THAN A NEW POSE, and its claim is NOT a null,
-which is the point.** `artframe.js` takes `sunDot` as an evalarg, so the Forest
-AERIAL site is re-shot at -0.25 with no manifest change. With the sun under the
-horizon `max(sinSun, CROWN_SUN_MIN)` clamps to 0.02, the transmittance
-underflows and the wood's floor falls to the bare ambient floor. A wood at night
-is a wood whose floor sees only the sky it can see through the canopy, so the
-term MUST be live there and MUST darken, and it is the loudest arm in the set at
-3.35 per cent with a 271-to-1 direction ratio. A quiet night arm would have
-meant the term had switched itself off in the one condition where its own clamp
-is the whole of its behaviour.
+**BOTH SIDES ARE REBUILT ON QUANTITIES THAT HOLD STILL.** Quiet is now
+RN-1766's PUBLISHED 3.78 per cent walk scatter plus a **direction** test (a
+shade term leaks one-signed at 20x to 277x; walk-scene scatter is balanced at
+1.0x to 1.4x), and the noise arm is printed rather than asserted on. Armed is
+now `box`'s linear patch mean, which is what `rn2550guard` ratchets on and what
+a surface pose reproduces to five decimals. **Green three runs of three on the
+merged tree**, and the night arm's direction ratio is reported as its measured
+**106x to 277x range** rather than as the single 271x this section first quoted.
 
-**AND THE PROBE FAILED ITSELF FIRST, IN A WAY WORTH THE CATALOGUE.** Its first
-version asserted `pair <= max(noise, 0.05)`, a bare comparison between TWO
-SINGLE DRAWS of the same random quantity. `forestfloor` returned 0.53 per cent
-against a noise arm of 0.50 and FAILED, on a walk pose whose documented two-load
-scatter is RN-1766's 3.78 per cent. **A one-sided `>` between two single draws
-of one quantity is a coin flip when the true effect is zero**, so the test was
-failing half the time by construction. The repair is a factor rather than a
-wider constant (the noise estimate is one pair, so allow it 2x) with RN-1766's
-measured 3.78 per cent kept as a second absolute bound. This is RN-2607's own
-"an arming floor must be measured at its own pose" one level further on: a
-measured floor still needs a tolerance, because the measurement is itself noisy.
+**NIGHT IS AN ARGUMENT RATHER THAN A NEW POSE** (`sunDot` is an evalarg), and
+its claim is NOT a null: with the sun under the horizon the transmittance
+underflows and the wood's floor falls to the bare ambient floor, moving `box`
+by 189 per cent of its own level.
 
-**THE THREE EXISTING UNDERSTOREY PROBES ARE GREEN ON THIS BUILD**, run
-unmodified: `rn2647untouched` clean (`forestfloor` 0.69 per cent,
-`meadownight` 0.11, and its own 22.02 per cent card arming intact),
-`rn2607untouched` clean, `rn2593untouched` clean.
+**THE THREE EXISTING UNDERSTOREY PROBES ARE GREEN**, run unmodified:
+`rn2647untouched`, `rn2607untouched`, `rn2593untouched`.
 
 ### 2.44.9b PER-FRAME COST
 
-WG-189 interleaved pairs, order rotated per repeat, `wg260sweep.mjs` at
-`flyovernoon`, the shipped arm against `?treelinefloor=0&treelinestand=0&treelinegrove=0`:
+WG-189 interleaved pairs, order rotated per repeat, at `flyovernoon`:
 
 ```
 on:  p50 median 6.00 spread 0.20 (6.1, 6, 5.9)   tris 239557 calls 32
@@ -16300,135 +16269,171 @@ paired on-minus-off: 0, 0, 0.1 ms; PAIRS DISAGREE IN SIGN, unresolved
 ```
 
 **Zero triangles, zero draw calls, and a paired difference the instrument
-cannot resolve.** The terms add two `ofArtVnoise` evaluations (16 hashes), one
-`exp`, two `smoothstep`s and a handful of multiplies, all INSIDE a branch only
-canopy fragments past 690 m enter, and the two noise calls are the only real
-cost. The honest statement is that it is under 0.1 ms at this pose rather than
-that it is free.
+cannot resolve.** Two `ofArtVnoise` evaluations, one `exp`, two `smoothstep`s,
+inside a branch only canopy fragments past 690 m enter. Under 0.1 ms at this
+pose rather than free.
 
 ### 2.44.9c THE EYE
 
-`docs/screenshots/RN2660_flyover_{pre,floor0,mottle0,shipped}.png` at 1x and the
+`docs/screenshots/RN2660_flyover_{pre,floor0,mottle0,shipped}.png` at 1x with
 band crops beside them, four arms one flag apart on one build.
 
 **PARTIAL, AND THE PARTIAL IS THE ATMOSPHERE RATHER THAN THE TERM.** Against
 the pre-lane arm the shipped band has visibly broader, more coherent light and
-dark patches where the pre arm has fine horizontal streaking that follows the
-relief: it reads as woods and fields rather than as a wash with streaks in it,
-which is the direction rank 1 asked for. It does NOT read as forest. It reads
-as a patchy landscape under heavy haze, and 2.44.9's table is why: past about
-8 km the atmosphere is most of the pixel and the ground's own albedo, whatever
-it is doing, arrives divided by ten to twenty.
-
-**THE CROP IS PLACED ON THE BAND AND NOT ON THE CROWNS**, which is the
-difference from `rn2646shots`: rank 1's subject is rows 329 to 549, and the
-existing crown crop at (450, 600) is the card mass at 2 km and below. Against
-the FIDELITY-GAP section 1 statement, the aerial frame is closer to the bar in
-its mid-range and unchanged at its far range, and the far range is now known to
-be out of this shader's reach.
+dark patches where the pre arm has fine horizontal streaking following the
+relief: woods and fields rather than a wash with streaks in it, which is the
+direction rank 1 asked for. It does NOT read as forest, and 2.44.9 is why.
+Against the FIDELITY-GAP section 1 statement the aerial frame is closer to the
+bar in its mid-range and suppressed at its far range.
 
 ### 2.44.9d GATES, RAILS AND FILES
 
-**TOUCHED:** `web/src/render/materials/TerrainStandMottle.ts` (NEW: world-gen's
-two density laws on the material's own hash, the two measured normalisers, the
-module-load assertion and the GLSL half),
-`web/src/render/materials/TerrainTreeline.glsl.ts` (the `ofTreeCoverMu` split,
-`ofTreeFloorShade`, the floor term, the two octaves and the `footM` hoist),
-`web/src/render/materials/TerrainTreeline.ts` (three query parsers),
-`web/src/render/materials/TerrainFragPars.glsl.ts` /
-`TerrainUniformState.ts` / `TerrainProgram.ts` / `TerrainArtHandle.ts` (the
-`uTreelineMod` vec4 and its readback), `web/tools/smoke/run.mjs` (FOUR new
-`PAGE_PARAMS`, each in the commit that reads it),
-`web/tools/smoke/rn2550guard.mjs` (`flyovernoon` re-pinned DOWN, once, at the
-lane's final frame, with the two-step arithmetic and the give-back beside it),
-four new probes (`rn2660band`, `rn2662untouched`, `rn2664scale`, `rn2660shots`,
-all new names, no existing probe overwritten, and `rn2660shots` takes `--out=`),
-this file, `docs/web/NUMBERS.md` and `docs/screenshots/RN2660_*`.
+**TOUCHED:** `TerrainStandMottle.ts` (NEW), `TerrainTreeline.glsl.ts`,
+`TerrainTreeline.ts`, `TerrainFragPars.glsl.ts`, `TerrainUniformState.ts`,
+`TerrainProgram.ts`, `TerrainArtHandle.ts`, `run.mjs` (FOUR new `PAGE_PARAMS`
+plus the `?crownshade=0` coupling registered at the existing flag's own site),
+`rn2550guard.mjs` (`flyovernoon` re-pinned DOWN, once), five new probes
+(`rn2660band`, `rn2662untouched`, `rn2664scale`, `rn2660shots`, `rn2666join`),
+this file, `docs/web/NUMBERS.md`, `docs/screenshots/RN2660_*`.
 
-**NOT TOUCHED, and these are the brief's own rails:** `ScatterTuning.ts`,
-`TreeTuning` and every constant in either (WG-295's, and this lane IMPORTS
-`STAND_M`, `GROVE_M`, `STAND_LO/HI`, `GROVE_LO/HI`, `CANOPY_FLOOR_W` and
-`GROVE_FLOOR_W` rather than copying them), `CrownEnv.ts`, `CrownSkyView.ts`,
-`CanopySelfShadow.ts` and `CROWN_SELF_K` / `CROWN_SELF_FLOOR` / `CROWN_CARD_FLOOR`
-/ the spectral split, `CrownNormal.ts`, `CrownFaceFold.ts`, the height field, the
-wasm, and `artframe.js` (no pose row, no committed rectangle and no manifest
-change; every ladder rect is an additive `--evalargs` one with its own
-provenance printed). No em dash anywhere.
+**NOT TOUCHED:** `ScatterTuning.ts` and `TreeTuning` (WG-295's; this lane
+IMPORTS seven of its constants rather than copying them), `CrownEnv.ts`,
+`CrownSkyView.ts`, `CanopySelfShadow.ts` and all its constants,
+`CrownNormal.ts`, `CrownFaceFold.ts`, the height field, the wasm, and
+`artframe.js` (no pose row, no committed rectangle, no manifest change). No em
+dash anywhere.
 
-**THE HANDOVER ASSUMPTION, STATED FOR WG-295.** Everything here is measured at
-`flyover`'s CURRENT realised reach, **`treeline().reachM` 3,500 with the
-instance ring at 3,427 m**, read back on every arm. WG-295 is extending that
-reach concurrently. **Both of this lane's terms take `1 - w` from the SAME
-`ofTreeInstanceW` the instance tier publishes**, so they follow the reach
-wherever it moves without an edit; what does NOT follow is the two octaves'
-Nyquist retirement, which is keyed on `footM` and therefore on the POSE. If the
-reach moves outward past about 4.3 km at `flyover` the stand octave will be
-retiring INSIDE the instance ring and doing nothing, and the grove octave will
-be carrying the band alone. **The second lane to merge re-measures the join**
-(R5 rank 4's -30.19-count cliff over rows 457-462 is the shared subject) and
-should re-take 2.44.8's scale ladder, which is the instrument that would show it.
-
-**GATES**, each run as its own step with its own exit status read, never chained
-into an aggregate:
+**GATES**, each run as its own step with its own exit status read:
 
 | gate | result |
 |---|---|
 | `npx tsc --noEmit` | exit 0 |
 | `npm run build` | exit 0 |
-| `cd web && npm run check` | **9 of 9**, exit 0 |
-| `node tools/smoke/rn2662untouched.mjs` | exit 0, clean, 5 poses |
-| `node tools/smoke/rn2647untouched.mjs` | exit 0, clean |
-| `node tools/smoke/rn2607untouched.mjs` | exit 0, clean |
-| `node tools/smoke/rn2593untouched.mjs` | exit 0, clean |
-| `node tools/smoke/wg260sweep.mjs` (3 interleaved pairs) | exit 0 |
-| `node tools/smoke/rn2660band.mjs` (nine ladders) | exit 0 |
-| `node tools/smoke/rn2664scale.mjs` | exit 0 |
-| `node tools/smoke/rn2660shots.mjs` | exit 0 |
-| **`node tools/smoke/rn2550guard.mjs`** | **exit 0, `PASS (4 of 4 poses judged, 1 outside CORE)`**, served entry chunk `6b2cb17227f01595` verified against `dist` |
+| `cd web && npm run check` | **9 of 9**, exit 0, on the MERGED tree (its `check:boot` is obligation C) |
+| `rn2662untouched` x3 on the merged tree | exit 0, clean, 3 of 3 |
+| `rn2647untouched` / `rn2607untouched` / `rn2593untouched` | exit 0, clean |
+| `wg260sweep` (3 interleaved pairs) | exit 0 |
+| `rn2660band` / `rn2664scale` / `rn2660shots` / `rn2666join` | exit 0 |
+| **`rn2550guard` on the MERGED tree** | **exit 1, ONE problem, PROVED FOREIGN: see 2.44.11 A and owed item 8** |
+
+### 2.44.11 THE JOIN: `lane/wg-reach` MERGED FIRST AND THIS LANE IS THE SECOND MERGER
+
+Rebased onto `origin/main` at `96cab596`. WG-reach's tail is additive in
+`ScatterTuning`, and the three obligations are discharged below.
+
+**C. THE MODULE-LOAD ASSERT SURVIVES THE MERGED `ScatterTuning`.** Re-derived
+against the merged `standAt` and `groveAt`, the four means are UNCHANGED to four
+decimals (Hills 0.5594 / 0.5543, Forest 0.5561 / 0.5590), and `npm run
+check:boot` PASSES on the merged tree, which is the assert running for real at
+page load.
+
+**A. THE GUARD AT ALL FOUR POSES ON THE MERGED TREE: EXIT 1, ONE PROBLEM, AND
+IT IS NOT THIS LANE'S.** Every one of the eight `box` ratchets is UNDER its pin
+(2.44.2's table), so the direction WG-reach predicted is confirmed by
+measurement rather than assumed. The single failure is
+**`forestairnoon` `rho` 0.1596, OUTSIDE `BAND_LOW` 0.18 by 0.0204**, on a pose
+whose `rhoOut` waiver RN-2645's second logged Admin decision deliberately
+CLEARED.
+
+**OWNERSHIP IS PROVED BY AN ARM RATHER THAN ARGUED FROM THE FACT THAT `rho` IS A
+CARD QUANTITY.** With all three of this lane's terms held off
+(`?treelinefloor=0&treelinestand=0&treelinegrove=0`), `forestairnoon` reads
+`rho` **0.1596** and `f` **0.3695**: identical to four decimals to the shipped
+arm. This lane moves that pose's `boxShip` 0.9722 to 0.9544 and its `boxSurf`
+0.9368 to 0.9090 and leaves `rho` and `f` untouched. **The out-of-band is
+entirely `lane/wg-reach`'s**, and its mechanism is visible in the same row:
+crown coverage `f` in the `crowns` rectangle falls from 0.6029 pre-merge to
+0.3695, a 39 per cent drop in card mass in that rectangle, which is the reach
+and cap rework redistributing cards. **Routed to Admin as 2.44.10 item 8; this
+lane will not re-add a waiver a logged Admin decision removed.**
+
+**B. THE 3.4-TO-5.1 KM ANNULUS, AND THE DOUBLE-COUNT IS PRICED AND ACCEPTED.**
+`?canopytail=1` is WG-reach's own structural off for the tail, so the four
+corners are one build apart. **First, a check worth having: with the tail off,
+`flyover`'s `box` reads luma 114.77 / `iqr` 62.83 shipped and 113.94 / 64.10
+mottle-off, which reproduces this lane's PRE-MERGE frames to the digit.**
+`rn2664scale` over rows 446 to 538 (5.1 km down to 3.4 km):
+
+| scale px | neither | + mottle only | + tail only | **both** |
+|---:|---:|---:|---:|---:|
+| 1 | 7.925 | 8.328 (+5.1%) | 12.207 (+54.0%) | **12.350 (+55.8%)** |
+| 8 | 6.231 | 6.625 (+6.3%) | 9.038 (+45.0%) | **9.225 (+48.1%)** |
+| 16 | 4.181 | 4.484 (+7.3%) | 6.428 (+53.8%) | **6.628 (+58.5%)** |
+| 32 | 2.789 | 2.948 (+5.7%) | 4.348 (+55.9%) | **4.502 (+61.4%)** |
+
+**THE TWO TERMS OCCUPY DIFFERENT SCALES AND THE DOUBLE-COUNT IS MILD WHERE THE
+MOTTLE LIVES.** The tail's placed silhouettes dominate the FINE end (+54 per
+cent at 1 px against the mottle's +5.1). The mottle's own increment survives the
+tail almost intact at the COARSE end: +0.154 with the tail on against +0.159
+with it off at 32 px, i.e. **97 per cent preserved**, and 66 per cent preserved
+at 16 px. At 1 px the tail masks 65 per cent of it, which is the near tier
+correctly taking over ground the paint was standing in for.
+
+**VERDICT: KEEP BOTH.** There is no runaway (total structure rises from 7.925 to
+12.350 at 1 px, of which the tail is +4.28 and the mottle +0.14) and no
+redundant field at a shared scale. The mean is unmoved to a count: `box` luma
+112.64 mottle-off against 113.39 shipped. **No follow-up flagged beyond the
+numbers above.**
+
+**THE HANDOVER ASSUMPTION THIS LANE STATED BEFORE THE JOIN HELD.** Both terms
+take `1 - w` from `ofTreeInstanceW`, the instance tier's own published weight,
+so they followed the reach with no edit; `treeline().reachM` still reads 3,500
+at `flyover` on the merged tree. What was predicted to break did not: the stand
+octave's Nyquist retirement is keyed on `footM`, and at 4.3 km it still sits
+outside the ring rather than inside it.
 
 ### 2.44.10 OWED AND ROUTED
 
-1. **THE 8-TO-15.5 KM HALF OF R5 RANK 1 IS AN AERIAL-PERSPECTIVE QUESTION, NOT
-   A PAINT ONE, AND THE EVIDENCE IS 2.44.9's TABLE.** The far paint carries 6 to
-   12 counts of `iqr` at every rung out to 15.5 km with the haze off and 0.00 to
-   0.36 counts on the shipped frame. Whatever is done to the paint's albedo,
-   coverage or structure out there is divided by ten to twenty before it reaches
-   the eye. The lane that owns this is one that asks whether Forge's aerosol
-   profile is right at 10 to 40 km, not one that edits
-   `TerrainTreeline.glsl.ts`. **Rank 1's paint half is DISCHARGED to about 8 km
-   and REFUSED beyond it with a number.**
+1. **THE 7.5-TO-15.5 KM BAND IS AN AERIAL-PERSPECTIVE LANE, AND IT IS
+   UNRESOLVED RATHER THAN REFUSED.** 2.44.9's pair is the evidence: the paint's
+   own structural increment is present on the shipped frame (+35.5 per cent at
+   1 px) and arrives at 6.6 to 12.8 per cent of its surface size while the rest
+   of the frame arrives at 51 to 66 per cent. **The next instrument is the
+   atmosphere, and the two switchable constants are named: `aerosolSigma`
+   (1.4e-4, `Atmosphere.glsl.ts:154`) and `aerosolScaleM` (400, line 155).**
+   `aerosolScaleM` is the surgical one, because it is near-irrelevant to
+   ground-level rays and moves the aerosol column a 1,200 m eye looks through.
+   Both are OUTSIDE M1's locked set. **The lane must diagnose before it tunes**
+   (this lane's own record is three lanes' worth of evidence for that rule) and
+   **it must be briefed that it may end as a Reid look call rather than a fix**:
+   a 28 km Koschmieder visibility is already physical, so "the far band is
+   hazy" may be correct and merely not what anyone wants to look at.
 2. **THE TWO HALVES OF THE CANOPY MODEL DISAGREE ABOUT THE CANOPY'S GEOMETRY.**
-   The far paint's view ray and its sun ray now both use the crown PLAN index;
-   the CROWN's own self-shade still uses the leaf-area depth `K * mu`, which is
-   the homogeneous-layer model. `CROWN_SELF_K` has a calibration table behind it
-   (`CanopySelfShadow.ts:100-150`) and moving it is out of this lane's rails, but
-   the disagreement is now a measured factor of 2.5 in the darkening rather than
-   a stylistic difference, and `?treelinefloorlaw=1` prices it at all four poses.
-   The crown thread is paused pending Reid; this belongs to whatever restarts it.
+   The far paint's view ray and its sun ray both use the crown PLAN index; the
+   CROWN's self-shade still uses `K * mu`. The disagreement is a measured factor
+   of 2.4 in the darkening, priced by `?treelinefloorlaw=1`. `CROWN_SELF_K` has
+   a calibration table behind it and the crown thread is paused pending Reid.
 3. **`iqr` IS THE WRONG SCORE FOR A COARSE FIELD AND THREE AUDITS HAVE USED IT.**
-   `rn2664scale.mjs` is this lane's answer and it is deliberately general (any
-   PNG, any rect, any scale ladder). **World Audit R6 should score every
-   "structure" claim on it rather than on a strip `iqr`**, and R5 rank 1's own
-   structure finding should be re-read with it before another lane is briefed
-   against a five-row strip.
-4. **THE STAND OCTAVE'S REACH IS SET BY RELIEF, NOT BY THE DATUM, AND NOTHING
-   PUBLISHES `footM`.** Every footprint-faded term in this material (the crown
-   mottle, the fine and coarse bump octaves, the mid-field layer, the massif) is
-   retired on a quantity no probe reads back, and this lane found one of them
-   dead across its entire subject band because of it. A readback of `footM` at
-   the committed rectangles would have made that a five-minute check instead of
-   a three-arm hunt. Cheap, additive, and owed.
-5. **`?proppaint=1`'s COVERAGE COUNT IS NOW CLOSER TO TRIPPING THE GUARD.**
-   Darkening the terrain pushes more of it to exactly black, so `fB` rises: at
-   `forestairlow` it goes 0.2796 -> 0.4022 against an `fA` of 0.4447. Section 3
-   of `rn2550guard` already refutes that arm as a coverage instrument and the
-   `fB <= fA + COV_TOL` assertion still holds with 0.0425 of margin, but a
-   further darkening of the far paint could trip it and the failure would be the
-   instrument rather than the frame.
-6. **THE `skyView`-ON-THE-PAINT COMPLETION (2.43.11 item 2) IS DECLINED, WITH
-   ITS OWN OWNER'S ARITHMETIC.** It needs `crownSkyView` in the terrain fragment
-   shader (a 24-node quadrature, so a rational fit with its own error budget)
-   and its own record prices it at -0.0012 / -0.0014 toward a debt this lane has
-   already over-paid on `boxSurf`. It remains worth having so the two halves stop
-   disagreeing about one quantity, and it is now BEHIND item 2, which is the
-   larger version of the same disagreement.
+   `rn2664scale.mjs` is general (any PNG, any rect, any scale ladder). **World
+   Audit R6 should score every structure claim on it**, and R5 rank 1's own
+   structure finding should be re-read with it.
+4. **NOTHING PUBLISHES `footM`.** Five terms in `TerrainFragAlbedo` are retired
+   on it and this lane found one dead across its entire subject band because of
+   it. A readback at the committed rectangles is cheap, additive and owed.
+5. **`?proppaint=1`'s COVERAGE COUNT MOVES WITH TERRAIN DARKNESS.** On the
+   SHIPPED arm at `forestairlow` `fB` reads 0.3190 against an `fA` of 0.4447, a
+   margin of 0.1257 against `COV_TOL` 0.03. **An earlier draft quoted 0.4022 and
+   called the margin 0.0425; that was the REFUSED `?treelinefloorlaw=1` arm, so
+   the alarm was three times overstated** (the verifier's catch). It is a real
+   direction to watch and not a near miss.
+6. **THE MERGED TREE SITS 0.0258 BELOW THIS LANE'S `flyovernoon` PIN.** Shipped
+   reads 0.9190 / 0.8406 against a pin of 0.9448 / 0.8918. Re-pinning would
+   tighten the guard on the strength of ANOTHER lane's change, which 2.39.12
+   item 5 records Admin declining, so it is left and named. **Admin's call.**
+7. **THE FLOOR SHADE CONTRADICTS `CanopySelfShadow`'s PUBLISHED PROPERTY 1** by
+   taking the instance tier's PLACEMENT weight where that file says the sun ray
+   takes the FULL local index. It buys an exact 690 m ring and costs an
+   under-shaded floor wherever the instances place but the cascade does not
+   reach. **The cleaner fix is to gate on the CASCADE's own coverage**, which is
+   a shadow-system change outside these rails.
+8. **`forestairnoon`'s `rho` IS OUT OF BAND ON MERGED MAIN AND IT IS
+   `lane/wg-reach`'s.** 0.1596 against `BAND_LOW` 0.18, with `f` down from
+   0.6029 to 0.3695, proved foreign by the all-off arm (2.44.11 A). RN-2645's
+   second logged Admin decision cleared that pose's waiver on measured
+   evidence; re-adding it is Admin's, not a lane's. **`rn2550guard` is exit 1 on
+   merged main until this is answered, and the answer is either a world-gen fix
+   to the card mass in that rectangle or a third logged guard decision.**
+9. **THE `skyView`-ON-THE-PAINT COMPLETION (2.43.11 item 2) IS DECLINED.** It
+   needs `crownSkyView` in the terrain fragment shader and its own record prices
+   it at -0.0012 / -0.0014 toward a debt now discharged. It sits BEHIND item 2,
+   which is the larger version of the same disagreement.

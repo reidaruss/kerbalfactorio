@@ -4186,6 +4186,45 @@ contrast, aliasing and dither, which are fine-scale questions by construction.**
 
 ---
 
+### A PROBE CAN BE GREEN IN THE RECORD AND RED THREE RUNS OF THREE ON THE BUILD IT CERTIFIES, AND THE CAUSE IS A BOUND BUILT FROM ONE DRAW OF A NOISY QUANTITY (found 2026-08-22 by RN-2662's fresh-context verifier, lane N16)
+
+`rn2662untouched.mjs` shipped with "clean" written into its lane's record and a
+green run behind it. A verifier re-ran it three times on the same build and got
+three different failures. Nothing had changed: **both of its criteria were
+built from a SINGLE DRAW of a quantity that does not hold still.**
+
+Its quiet test rendered a two-load "noise arm" per pose and asserted
+`pair <= noise * 2`. Measured across three runs, `vista`'s noise arm reads
+**0.06, 2.14 and 0.22 per cent, a 35-fold spread**, because a walk pose's
+streamed chunk set and character placement are not reproducible frame to frame.
+A bound that is two times a number which itself varies 35-fold is not a bound,
+it is a lottery, and the FIRST version of the same test (a bare `>` with no
+factor at all) was a straight coin flip when the true effect was zero.
+
+Its armed test had the same shape on a whole-frame `pngdiff` percentage, and
+duly failed after an unrelated lane merged more geometry into the pose.
+
+**Two repairs, both of which replace the noisy quantity rather than widening
+the bound around it.** The quiet side now uses a PUBLISHED per-pose constant
+(RN-1766's 3.78 per cent two-page-load scatter) plus a DIRECTION test, which is
+the discriminating property and is nearly noise-free: a shade term leaks
+one-signed at 20x to 277x while scene scatter is balanced at 1.0x to 1.4x. The
+armed side now uses the acceptance rectangle's own linear patch mean, which a
+surface pose reproduces to five decimals: the same two arms that read a jittery
+1.05 per cent of the FRAME read 1.30 per cent of the SUBJECT on 0.000 per cent
+noise, bit-identical across three runs.
+
+**The rule. Before an assertion ships, RUN IT AT LEAST THREE TIMES and look at
+the spread of every quantity on both sides of the comparison, not just the one
+being judged. A self-calibrating control is only as good as the calibration,
+and a calibration measured once is a sample of size one. If the reference
+quantity is noisier than the effect, do not scale the reference: change it for
+one that holds still, or for a published constant somebody already measured
+properly.** And the corollary that stings: a lane that writes "clean" in its
+record after one green run has recorded a coin toss, not a result.
+
+---
+
 ### A MODULE-LOAD ASSERTION CAN THROW ON ITS OWN SAMPLING NOISE, AND THE REPAIR IS A BETTER ESTIMATOR RATHER THAN A WIDER TOLERANCE (found 2026-08-22 by RN-2665, lane N16)
 
 This project runs several assertions at module load that compare a shader-side

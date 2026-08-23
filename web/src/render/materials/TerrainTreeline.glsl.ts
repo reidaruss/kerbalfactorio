@@ -357,6 +357,25 @@ export const TERRAIN_TREELINE_BLOCK = /* glsl */`
             // so that arm is still the pre-RN-2265 frame to the bit, and
             // coverSel is 0 on a cliff or a scree slope (a face too steep to
             // hold cover has no canopy over it to cast anything).
+            //
+            // AND IT ADDS A FOURTH ZERO NOBODY ASKED FOR: ?crownshade=0 zeroes
+            // uCrownShade.x, which ofCrownSelfShade mixes from 1.0 with, so
+            // that flag now switches this term off too. Registered at the
+            // parameter's own site in run.mjs rather than left to be found.
+            //
+            // THE ARGUMENT CONTRADICTS CanopySelfShadow'S PUBLISHED PROPERTY 1
+            // AND THAT IS ROUTED RATHER THAN HIDDEN (rendering.md 2.44.10
+            // item 7). That file states the SUN ray takes the FULL local index
+            // whatever tier drew the crowns, because a shadow is cast by every
+            // crown above the surface; this term takes vCanopy * (1 - w), the
+            // instance tier's PLACEMENT weight, which is a statement about
+            // which renderer drew a tree and not about which trees cast shade.
+            // It is done that way to keep the 690 m ring exact, and the price
+            // is that the wood's floor is under-shaded wherever the instance
+            // tier is placing but the cascade is not reaching. The cleaner fix
+            // is to gate on the CASCADE'S own coverage rather than on the
+            // instance tier's weight, which is a shadow-system question this
+            // lane's rails do not include.
             float treeGap = clamp(uTreeline.x * coverSel, 0.0, 1.0);
             float treeFloorS = mix(1.0,
               ofTreeFloorShade(treeMu, treeSun, uCrownShade, uTreelineMod.z),
