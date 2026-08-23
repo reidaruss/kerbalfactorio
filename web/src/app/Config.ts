@@ -12,7 +12,8 @@
 import { parsePost } from '../render/post/PostConfig.js';
 import { TREE_RADIUS_M } from '../game/TreeTuning.js';
 import {
-  CANOPY_CHUNK_KM2, CANOPY_MAX_CELL_M, CANOPY_TAIL_MULT, MAX_CELL_M,
+  CANOPY_CHUNK_KM2, CANOPY_CHUNK_MAX, CANOPY_MAX_CELL_M, CANOPY_TAIL_MULT,
+  MAX_CELL_M,
 } from '../world/ScatterTuning.js';
 import { CANOPY_FAR_RADIUS_M, CANOPY_MAX_RADIUS_M }
   from '../world/ScatterTuning.js';
@@ -313,6 +314,11 @@ export function parseConfig(search: string): Config {
     // control: `canopyChunkCap` then falls straight through to
     // `MAX_PER_CHUNK` at every depth and the build is the pre-WG-304 one.
     canopyChunkKm2: Math.max(0, num(p, 'canopychunkkm2', CANOPY_CHUNK_KM2)),
+    // RN-2680. Floored at 0 rather than at the shipped value, on the same
+    // argument as `canopychunkkm2` above: `0` IS a control (every canopy-only
+    // chunk gets zero instances, the outer clamp binding before the area rule
+    // ever runs), not an error case to reject.
+    canopyChunkMax: Math.max(0, num(p, 'canopychunkmax', CANOPY_CHUNK_MAX)),
     rocks: p.get('rocks') !== '0',
     station: p.get('station') !== '0',
     rockDensity: Math.max(0, num(p, 'rockdensity', 1)),

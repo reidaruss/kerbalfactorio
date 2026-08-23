@@ -148,6 +148,19 @@ export const MAX_PER_CHUNK = 14000;
  * while reporting `canopyDelivered` 1.00. Raising `CANOPY_MAX_CAPACITY` is
  * rendering's constant and an Admin decision, and it is asked for rather than
  * taken.
+ *
+ * RN-2680 (lane N17, rendering, on world-gen's own named gap). `CANOPY_MAX_
+ * CAPACITY` is raised in the same commit (see `PropLibrary.ts`) and THIS
+ * ceiling gets its own page param, `?canopychunkmax=`, because the WG-304
+ * post-merge verifier named it "the only ceiling still binding at the shipped
+ * value and it has no page param, so the one live constraint cannot be
+ * swept". The default is UNCHANGED (`?canopychunkmax=` defaults to this
+ * constant), so the shipped binary is bit-for-bit what it was before the
+ * param existed. See `canopyChunkCap`'s new `maxCap` argument and
+ * rendering.md 2.45 for the outcome-readback proof (swept at `forestair`,
+ * `?canopychunkmax=0` collapses `canopyProps`; swept up past 32,768 it rises
+ * past the shipped 120,854 toward the one still-capped depth-8 chunk's
+ * uncapped area-rule ask, which is what sized the new pool ceiling).
  */
 export const CANOPY_CHUNK_KM2 = 4800;
 export const CANOPY_CHUNK_MAX = 32768;
@@ -159,10 +172,19 @@ export const CANOPY_CHUNK_MAX = 32768;
  * allowance, never lower one: a depth-9 chunk is 3.39 km2 and the area rule
  * alone would give it 16,272 at CANOPY_CHUNK_KM2 4,800 (an earlier draft computed 8,127 from the 2,400 rung; merge-time correction), which at the 2,400 rung would have been tighter than today and would be a second
  * silent thinning introduced by a fix for the first.
+ *
+ * `maxCap` (RN-2680) defaults to `CANOPY_CHUNK_MAX` and is the injection point
+ * for `?canopychunkmax=`: the OUTER ceiling, so `0` degenerates the whole
+ * function to 0 regardless of `areaKm2` or `perKm2` (a deliberate, dramatic
+ * control -- see the constant's own comment) and a value below `MAX_PER_CHUNK`
+ * can make this function return LESS than `MAX_PER_CHUNK`, which is correct
+ * for a sweep param even though the shipped default never does it.
  */
-export function canopyChunkCap(areaKm2: number, perKm2 = CANOPY_CHUNK_KM2): number {
+export function canopyChunkCap(
+  areaKm2: number, perKm2 = CANOPY_CHUNK_KM2, maxCap = CANOPY_CHUNK_MAX,
+): number {
   const byArea = Math.ceil(Math.max(0, areaKm2) * Math.max(0, perKm2));
-  return Math.min(CANOPY_CHUNK_MAX, Math.max(MAX_PER_CHUNK, byArea));
+  return Math.min(Math.max(0, maxCap), Math.max(MAX_PER_CHUNK, byArea));
 }
 
 export const MAX_PER_CELL = 160;

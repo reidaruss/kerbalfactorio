@@ -33,7 +33,8 @@ import {
   CELLS, MAX_CELL_M, BUILDS_PER_UPDATE, MAX_PER_CHUNK,
   RADIUS_M, DETAIL_RADIUS_M, DETAIL_FULL_M, tierOf, type Tier,
   CANOPY_FULL_M, CANOPY_MAX_CELL_M, CANOPY_BANDS, canopyReachM,
-  CANOPY_TAIL_MULT, canopyTailReachM, CANOPY_CHUNK_KM2, canopyChunkCap,
+  CANOPY_TAIL_MULT, canopyTailReachM, CANOPY_CHUNK_KM2, CANOPY_CHUNK_MAX,
+  canopyChunkCap,
 } from './ScatterTuning.js';
 import { CONTACT_CARDS } from '../render/ScatterLook.js';
 import { PropEmitter } from './ScatterEmit.js';
@@ -177,6 +178,13 @@ export class Scatter {
      * repairs is one page param away on the shipped binary.
      */
     private readonly canopyChunkKm2 = CANOPY_CHUNK_KM2,
+    /**
+     * RN-2680. The canopy-only chunk's OUTER ceiling, from `?canopychunkmax=`.
+     * Default unchanged: the shipped binary calls `canopyChunkCap` exactly as
+     * before this param existed. See `ScatterTuning.canopyChunkCap`'s own
+     * comment for what sweeping it proves.
+     */
+    private readonly canopyChunkMax = CANOPY_CHUNK_MAX,
   ) {
     this.em = new PropEmitter(lib, fair, grassShort);
     this.deps = {
@@ -558,7 +566,7 @@ export class Scatter {
     // where the canopy is the only tier drawing, so nothing a walking player
     // stands on can see this line.
     const ceil = groundOk ? MAX_PER_CHUNK
-      : canopyChunkCap(areaKm2, this.canopyChunkKm2);
+      : canopyChunkCap(areaKm2, this.canopyChunkKm2, this.canopyChunkMax);
     const want = Math.min(ceil,
       Math.max(1, Math.ceil(full.total * areaKm2 * this.densityScale) + 64
         + Math.ceil(base.total * areaKm2 * this.densityScale) * CONTACT_CARDS));

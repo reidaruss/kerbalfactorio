@@ -268,6 +268,14 @@ export interface Config {
    */
   readonly canopyChunkKm2: number;
   /**
+   * RN-2680 (lane N17). `?canopychunkmax=` is the OUTER ceiling
+   * `canopyChunkCap` clamps to, in place of the shipped `CANOPY_CHUNK_MAX`
+   * (32,768). It is the only ceiling in the canopy chain that had no page
+   * param before this: the WG-304 post-merge verifier named it "the only
+   * ceiling still binding at the shipped value". Default unchanged.
+   */
+  readonly canopyChunkMax: number;
+  /**
    * WG-67: `?rocks=0` places NO world rocks and is the one-binary control for
    * the whole rock pass, the same shape as `?canopy=0` one paragraph up.
    * `?rockdensity=` scales every biome's rock ask together and exists for the
