@@ -256,9 +256,42 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // treeline, which a `#ifndef OF_SCALED` had removed it from since RN-2265.
   // Registered in the same commit that introduces it.
   'treelinefar',
+  // RN-2661. `treelinefloor=0` restores the pre-RN-2661 frame: the ground the
+  // view ray reaches BETWEEN the far crowns, lit as if it were a clearing.
+  // The shipped 1 shades it with the same `ofCrownSelfShade` the crowns take,
+  // on the density the instances are not placing. Registered in the same
+  // commit that introduces it.
+  'treelinefloor',
+  // RN-2661. `treelinefloorlaw=1` runs that shade on the LEAF-AREA depth K*mu
+  // (the crown half's homogeneous model) instead of the shipped crown PLAN
+  // index (the geometry the term's own view ray already uses). Registered in
+  // the same commit that introduces it.
+  'treelinefloorlaw',
+  // RN-2665. `treelinestand=0` restores the pre-RN-2665 far canopy density: no
+  // stand-scale modulation of the density the instance tier is not placing.
+  // The shipped 1 re-imposes world-gen's own `dense(standAt)` factor at
+  // STAND_M, which the terrain mesh has averaged away by 2,630 m of eye
+  // distance. Registered in the same commit that introduces it.
+  'treelinestand',
+  // RN-2665. `treelinegrove=0` removes the SECOND of world-gen's two averaged-
+  // away density factors, the 760 m landscape one. Separate from
+  // `treelinestand` because the two retire at different ranges and the finding
+  // that produced this one is that the stand octave reaches 4.3 km of a
+  // 15.5 km band. Registered in the same commit that introduces it.
+  'treelinegrove',
   // RN-2275. Inter-crown self-shadowing: the exact off control, and the two
   // numbers the law is chosen on. Registered in the commit that introduces
   // them (RN-152's scar).
+  //
+  // RN-2661 WIDENED WHAT `crownshade=0` TURNS OFF AND IT IS REGISTERED HERE
+  // RATHER THAN DISCOVERED LATER. That flag zeroes `uCrownShade.x`, the amp
+  // the law mixes from 1.0 with, and RN-2661's wood-floor shade calls the SAME
+  // `ofCrownSelfShade`. So `?crownshade=0` now ALSO disables the far paint's
+  // floor shade, silently, and an arm taken with it is no longer "the crowns
+  // unshaded with everything else held". The isolated control for the floor
+  // term alone is `?treelinefloor=0`; for the crown terms alone with the floor
+  // held, pair `?crownshade=0` with nothing (there is no separate crown amp)
+  // and read the difference against `?crownshade=0&treelinefloor=0`.
   'crownshade', 'crownshadeamp', 'crownshadek', 'crownshadefloor',
   // RN-2645. WHICH TRANSMITTANCE THE SHADE LAW TAKES. `crownshadelaw=0` is the
   // layer BASE's `exp(-tau/sinSun)`, the pre-RN-2645 frame; `=1` is the layer

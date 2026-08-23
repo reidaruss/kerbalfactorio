@@ -265,6 +265,15 @@ export function terrainFragPars(depth: DepthPolicy): string {
     // treeline at all: 0, the default, is the pre-RN-2560 frame to the bit,
     // and the near program ignores it (it holds a compile-time 1).
     uniform float uTreelineFar;
+    // RN-2661/RN-2665. THE ARMS THE FAR PAINT'S LEVEL AND STRUCTURE HANG ON,
+    // three of them shipped at 1: x is the wood-floor shade
+    // (?treelinefloor=), y is the 165 m STAND octave (?treelinestand=), w is
+    // the 760 m GROVE octave (?treelinegrove=), and z selects the floor
+    // shade's optical depth (0 the crown PLAN index, shipped; 1 the leaf-area
+    // depth K*mu, ?treelinefloorlaw=1). ONE vec4 rather than four scalars
+    // because all four are read inside the same branch within six lines of
+    // each other, and (0, 0, *, 0) is the pre-RN-2661 frame to the bit.
+    uniform vec4 uTreelineMod;
     // RN-2275. INTER-CROWN SELF-SHADOWING: (amp, K, floor). The SAME three
     // floats the canopy card's per-frame colour update reads, held once in
     // CanopySelfShadow.SHADE, so the near stand and the far treeline cannot be
