@@ -1668,8 +1668,10 @@
         // attributed to the ground term and nothing else in frame. The R-only
         // signature is the fire's own colour and not a global exposure shift.
         //
-        // A 200x-gain diagnostic arm (rendering.md 2.48, not shipped) that
-        // replaces `lit` with the raw `ofEmitIrradiance` term outright shows a
+        // A 200x-gain diagnostic arm (rendering.md 2.47 as authored on
+        // `lane/n19-emitground`; that section's own header notes the number
+        // renumbers if a concurrent lane's own 2.47 landed first; not shipped)
+        // that replaces `lit` with the raw `ofEmitIrradiance` term outright shows a
         // correctly-shaped, correctly-centred falloff pool at the machine's
         // base wherever the terrain is actually visible between grass blades,
         // and exactly nothing past the emitter's own 40 m reach. So the seam
@@ -1681,8 +1683,8 @@
         // "ground" in this pose is grass-blade geometry (`GrassGlsl.ts`), which
         // has no `ofEmitIrradiance` splice of its own and cannot show a warm
         // pool no matter how strong the terrain beneath it is; see the routed
-        // item in rendering.md 2.48 rather than this file, since that is a
-        // second material's own seam.
+        // item in rendering.md 2.47 rather than this file (same renumber
+        // caveat as above), since that is a second material's own seam.
         groundL: [0.025000, 0.6666666666666666, 0.168750, 0.9111111111111111],
         groundR: [0.850000, 0.6666666666666666, 0.975000, 0.9111111111111111],
       },
