@@ -553,6 +553,45 @@ const F_MIN = 0.10;
 // numbers into this table is not this lane's call, so **those three are left
 // exactly as they are and the measurements are recorded here for Admin.**
 // `forestairnoon`'s IS this lane's and is re-pinned below.
+//
+// ===========================================================================
+// BT-340, 2026-08-22. THE THIRD LOGGED DECISION: THE THREE rho PINS WG-304
+// FLAGGED AS STALE AND DECLINED TO ADOPT ARE ADOPTED, MOVING ALL THREE INTO
+// CORE. ADMIN DECISION, NUMBERS.md BT-340 ROW, LOGGED BEFORE THE LANE STARTED
+// PER RULE 5.
+// ===========================================================================
+// WG-304 above measured `flyovernoon`, `flyoverlow` and `forestairlow`'s
+// `rho` pins as STALE FROM N13/N15, not its own change, and declined to
+// write another lane's numbers into this table, routing the decision to
+// Admin. This is that decision, taken.
+//
+// CONFIRMED HERE, NOT TRUSTED FROM THE COMMENTS: a fresh guard run on this
+// lane's own build of `main` (base d45c712a, `vite preview --strictPort`,
+// served entry chunk sentinel-verified against `dist`) reproduces the
+// merged-main table to the digit:
+//   forestairnoon  0.9359 / 0.8844   rho 0.1873   (unchanged, WG-304's pin)
+//   forestairlow   0.9177 / 0.6778   rho 0.2987   (was 0.4363)
+//   flyovernoon    0.9190 / 0.8406   rho 0.4762   (was 0.2488)
+//   flyoverlow     0.9334 / 0.7050   rho 0.4016   (was 0.7021)
+// Every box value measured here is BELOW its ratchet ceiling below, so this
+// decision touches no box pin; only the three named `rho` pins move.
+//
+// `forestairnoon` needed no numeric change: WG-304 already re-pinned it to
+// 0.1873 before this lane started, and this lane's own run reproduces that
+// to four decimals. The brief's "0.1890-era pin" names RN-2645's value,
+// already superseded by WG-304; recorded so the next reader does not go
+// looking for a change that already happened.
+//
+// WHY THIS IS HYGIENE AND NOT BEHAVIOUR. `b.rho` is read at exactly one
+// place below (the standing-violation deepening test) and only on the branch
+// where `side` is non-null, i.e. where the CURRENT run's `rho` is itself
+// outside `BAND_LOW..BAND_HIGH`. All four poses carry `rhoOut: null` and all
+// four measured `rho` values sit inside the band (three now inside CORE as a
+// direct result of this adoption), so no `b.rho` pin is read by any of
+// today's four poses. The pins remain the evidence trail, not a live
+// constraint, until a future measured `rho` actually leaves the band at one
+// of these poses -- see the comment above `const side = ...` below for what
+// a non-null `rhoOut` means when that happens.
 const BASE = {
   // RN-2645: `rho` re-pinned to the measured 0.1890 and `rhoOut` CLEARED, under
   // the second logged decision above. The pose is judged on the band now, not
@@ -570,14 +609,22 @@ const BASE = {
   // gives 0.1830 at capScaleMin 0.8425, 4,800 gives 0.1873 at 0.9482), so the
   // residual 0.0017 against the truncated arm is uniform-versus-concentrated
   // and not budget. Headroom against BAND_LOW is now 0.0073.
+  //
+  // BT-340: reconciled, not moved. The third logged decision block above
+  // confirms 0.1873 by a fresh guard run rather than changing it.
   forestairnoon: { boxShip: 0.9512, boxSurf: 0.9083, boxClearY: 0.189652,
     crownClearY: 0.103580, rho: 0.1873, rhoOut: null },
   // RN-2605: both re-derived DOWNWARD, no decision needed.
   // WG-304: lowered again. Pre-existing -0.0035 / -0.0063, this lane
   // -0.0059 / -0.0181. `rho` control 0.2996 against the pinned 0.4363: STALE,
-  // not this lane's (shipped 0.2987), left unchanged.
+  // not this lane's (shipped 0.2987), left unchanged AT THE TIME.
+  //
+  // BT-340: ADOPTED under the third logged decision above. This lane's own
+  // fresh guard run confirms 0.2987 to four decimals, matching WG-304's own
+  // "shipped" figure. The stale 0.4363 (no build since before N13/N15 has
+  // produced it) is retired.
   forestairlow: { boxShip: 0.9370, boxSurf: 0.7488, boxClearY: 0.106526,
-    crownClearY: 0.058633, rho: 0.4363, rhoOut: null },
+    crownClearY: 0.058633, rho: 0.2987, rhoOut: null },
   // RN-2605: both RAISED under the logged decision above. Debt 0.0248 / 0.0251.
   // RN-2645: both LOWERED again, in the guard's TIGHTENING direction, which
   // needs no decision. THE REPAYMENT IS PARTIAL AND THE RESIDUE IS NAMED:
@@ -604,14 +651,23 @@ const BASE = {
   // reproduces the pins to four decimals, so all of -0.0279 / -0.0572 is this
   // campaign's, and 0.9289 / 0.8671 is BELOW RN-2605's pre-raise 0.9343 /
   // 0.9020 by 0.0054 / 0.0349. `rho` control 0.4762 against the pinned 0.2488:
-  // STALE, not this lane's (shipped 0.4762, identical), left unchanged.
+  // STALE, not this lane's (shipped 0.4762, identical), left unchanged AT THE
+  // TIME.
+  //
+  // BT-340: ADOPTED under the third logged decision above. This lane's own
+  // fresh guard run confirms 0.4762 to four decimals, matching WG-304's own
+  // "shipped" figure. The stale 0.2488 is retired.
   flyovernoon: { boxShip: 0.9289, boxSurf: 0.8671, boxClearY: 0.288112,
-    crownClearY: 0.148116, rho: 0.2488, rhoOut: null },
+    crownClearY: 0.148116, rho: 0.4762, rhoOut: null },
   // WG-304: lowered. Pre-existing -0.0156 / -0.0537, this lane -0.0104 /
   // -0.0448. `rho` control 0.4016 against the pinned 0.7021: STALE, not this
-  // lane's (shipped 0.4016, identical), left unchanged.
+  // lane's (shipped 0.4016, identical), left unchanged AT THE TIME.
+  //
+  // BT-340: ADOPTED under the third logged decision above. This lane's own
+  // fresh guard run confirms 0.4016 to four decimals, matching WG-304's own
+  // "shipped" figure. The stale 0.7021 is retired.
   flyoverlow: { boxShip: 0.9514, boxSurf: 0.7899, boxClearY: 0.147985,
-    crownClearY: 0.078325, rho: 0.7021, rhoOut: null },
+    crownClearY: 0.078325, rho: 0.4016, rhoOut: null },
 };
 
 const OFF = ['--prophaze=0', '--terrainhaze=0'];
@@ -821,6 +877,32 @@ for (const shot of shots) {
   // THROUGH. A pose not marked `rhoOut` fails the moment it leaves the band. A
   // pose that is already out fails if it moves FURTHER out, so the standing
   // violation is pinned at its current depth and can only be repaid.
+  //
+  // WHAT A NON-NULL `rhoOut` MEANS, WRITTEN DOWN SO THE NEXT LANE DOES NOT
+  // REDISCOVER IT (BT-340). Today every pose in BASE carries `rhoOut: null`
+  // and every measured `rho` is inside the band, so `b.rho` below is never
+  // read and this whole mechanism is dormant. The day a pose's `rho` first
+  // leaves the band, `NO BASELINE`-shaped output above prints the exact
+  // object to paste in, including a computed `rhoOut: 'low'`/`'high'`; pasting
+  // it in is what ARMS the mechanism below, and it means three things, not
+  // one:
+  //   1. That pose is no longer required to be INSIDE the band. It is
+  //      required not to get WORSE than the `rho` value pinned alongside the
+  //      `rhoOut` flag, which is the depth of the excursion AT THE MOMENT IT
+  //      WAS RECORDED, not some looser "still out is fine" rule.
+  //   2. `worse` below is one-sided by the recorded `side`: a `'low'` pose
+  //      fails only if the new `rho` is LOWER (by more than TOL) than the
+  //      pin; a `'high'` pose fails only if HIGHER. Moving back toward the
+  //      band (a repayment) always passes.
+  //   3. `rhoOut` is not a blanket exemption and it does not survive a side
+  //      flip. If a later run's `side` disagrees with `b.rhoOut` (including
+  //      `null`, i.e. the pose came back inside the band -- which only prints
+  //      a reminder note to clear the marking, per RN-2645's own precedent --
+  //      or the OPPOSITE out-of-band end), the `side !== b.rhoOut` branch
+  //      above fires instead: a flip to the opposite end is judged as a
+  //      BRAND NEW, unrecorded violation and fails outright, exactly as if no
+  //      `rhoOut` had ever been set for that pose. A stale `rhoOut` does not
+  //      protect against the other end of the band.
   const side = rho < BAND_LOW ? 'low' : (rho > BAND_HIGH ? 'high' : null);
   if (side && side !== b.rhoOut) {
     fails.push(`${shot}: crowns rho ${rho.toFixed(4)} is OUTSIDE the band`
