@@ -64,7 +64,7 @@ export interface ScatterSampleDeps {
 export function sampleChunk(
   d: ScatterSampleDeps, c: ScatterCounters,
   v: ChunkView, base: Tier, card: Tier, canopy: Tier, want: number,
-  pos: Float32Array, cell: number, band: number,
+  pos: Float32Array, cell: number, band: number, groundOk: boolean,
 ): Placed {
   const nrm = d.pool.batch(v.pooled).normals(v.pooled.slot);
   const keyBase = keyHash(v.key);
@@ -164,8 +164,16 @@ export function sampleChunk(
   // both empty there, so the whole of `want` is the canopy's budget). See
   // ScatterCap.ts for why a scale beats a bigger ceiling and why the delivery
   // ratio cannot see the defect this fixes.
-  const coarse = base.total <= 0 && card.total <= 0;
-  const capScale = d.capFair && canopyOn && coarse
+  // WG-304. `groundOk` IS PASSED IN RATHER THAN INFERRED FROM EMPTY TIERS, and
+  // the WG-295 verifier is why. The first version read
+  // `base.total <= 0 && card.total <= 0`, which is true for a coarse chunk
+  // TODAY only because all ten biome tables happen to carry a base prop; a
+  // canopy-only biome would make it true on a FINE chunk and quietly extend the
+  // density scale to ground the player walks on. It is also the same predicate
+  // `Scatter.build` now gates the area-aware ceiling on, and the two would be a
+  // latent disagreement about which chunks are coarse if either re-derived it.
+  // One boolean, decided once, at the place that owns the mesh cell size.
+  const capScale = d.capFair && canopyOn && !groundOk
     ? canopyCapScale({
       pos, ax: a.x, ay: a.y, az: a.z, nrm,
       upx, upy, upz,

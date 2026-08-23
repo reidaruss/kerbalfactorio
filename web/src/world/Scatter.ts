@@ -33,7 +33,7 @@ import {
   CELLS, MAX_CELL_M, BUILDS_PER_UPDATE, MAX_PER_CHUNK,
   RADIUS_M, DETAIL_RADIUS_M, DETAIL_FULL_M, tierOf, type Tier,
   CANOPY_FULL_M, CANOPY_MAX_CELL_M, CANOPY_BANDS, canopyReachM,
-  CANOPY_TAIL_MULT, canopyTailReachM,
+  CANOPY_TAIL_MULT, canopyTailReachM, CANOPY_CHUNK_KM2, canopyChunkCap,
 } from './ScatterTuning.js';
 import { CONTACT_CARDS } from '../render/ScatterLook.js';
 import { PropEmitter } from './ScatterEmit.js';
@@ -170,6 +170,13 @@ export class Scatter {
      * positional quantisation.
      */
     private readonly canopyMaxCellM = CANOPY_MAX_CELL_M,
+    /**
+     * WG-304. Instances per km2 of chunk a CANOPY-ONLY chunk is allowed, from
+     * `?canopychunkkm2=`. `0` restores the flat `MAX_PER_CHUNK` at every
+     * depth, which is the pre-WG-304 ceiling exactly, so the regression this
+     * repairs is one page param away on the shipped binary.
+     */
+    private readonly canopyChunkKm2 = CANOPY_CHUNK_KM2,
   ) {
     this.em = new PropEmitter(lib, fair, grassShort);
     this.deps = {
@@ -543,11 +550,21 @@ export class Scatter {
     // four standard deviations at a full 1,024-cell chunk; the contact term is
     // the skirt, which the tier densities know nothing about. `chunksCapped`
     // counts any truncation that happens anyway rather than swallowing it.
-    const want = Math.min(MAX_PER_CHUNK,
+    // WG-304. THE CEILING IS AREA-AWARE ON A CANOPY-ONLY CHUNK, and nowhere
+    // else. See `canopyChunkCap`: `MAX_PER_CHUNK` is a per-CHUNK COUNT applied
+    // to chunks whose area spans six orders of magnitude, which makes it a
+    // density ceiling four times tighter at every LOD step outward, i.e. the
+    // opposite of what a far tier needs. `groundOk` false is exactly the band
+    // where the canopy is the only tier drawing, so nothing a walking player
+    // stands on can see this line.
+    const ceil = groundOk ? MAX_PER_CHUNK
+      : canopyChunkCap(areaKm2, this.canopyChunkKm2);
+    const want = Math.min(ceil,
       Math.max(1, Math.ceil(full.total * areaKm2 * this.densityScale) + 64
         + Math.ceil(base.total * areaKm2 * this.densityScale) * CONTACT_CARDS));
     const pl = sampleChunk(this.deps, this.c, v, base,
-      Scatter.detailOn(band) ? card : EMPTY_TIER, canopy, want, pos, cell, band);
+      Scatter.detailOn(band) ? card : EMPTY_TIER, canopy, want, pos, cell, band,
+      groundOk);
     // A chunk that legitimately places NOTHING is still recorded, and that is
     // load-bearing twice over. It used to return early, so the chunk was retried
     // every single frame forever, which with a per-update budget starves every
