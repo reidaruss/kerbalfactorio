@@ -175,22 +175,74 @@ const MAX_CAPACITY = 65536;
  * a silent 16% of the stand not drawn (HUD read `POOL FULL` but no probe
  * gated on it).
  *
- * Sized like every other ceiling in this file: the next power-of-two double
- * from `START_CAPACITY` (2,048) that clears the worst case, so growth is
- * still O(1) amortised and the number follows a measured demand rather than a
- * second guessed constant. 65,536 < 77,998 <= 131,072: one more double,
- * 68% of headroom above the worst case measured so far.
+ * RN-2680 (lane N17). RAISED AGAIN, 131,072 -> 262,144, and this time the
+ * worst measured case does NOT overflow the OLD ceiling: WG-304's density-
+ * honest cap fix (world-gen.md 6.16.13) landed `forestair` at 120,854 live
+ * instances, 92.2% of 131,072, `poolRefused` 0. The case for raising ahead of
+ * an overflow rather than after one:
  *
- * MEMORY, same arithmetic as `MAX_CAPACITY`'s own comment, doubled: 131,072
- * slots is about 10.5 MB of texture (up from 5.2 MB at the old ceiling) plus
- * about 13.1 MB of CPU-side typed array, and ONLY the canopy's single
- * `OF_Leaf:canopy` batch can ever reserve it -- every other batch (including
- * the near biome's own Leaf/Bark/etc. materials, which do not carry this
- * suffix) still tops out at `MAX_CAPACITY`. A batch that never fills never
- * pays (`grow()` still starts doubling from 2,048), so this only costs
- * anything on a site whose realised canopy count actually clears 65,536.
+ * 1. HEADROOM IS THIN AND THE ONLY MEASURED LEVER IS SATURATED. The one
+ *    density step this campaign measured (`?canopychunkkm2=` 2,400 -> 4,800)
+ *    added 3,712 instances for +0.0043 of the guard's `rho`; only 10,218
+ *    slots (2.75 such steps) sit between the shipped count and the old
+ *    ceiling. But `?canopychunkkm2=9600` is bit-identical to shipped in every
+ *    field (world-gen.md 6.16.13, post-merge verifier) -- that lever is
+ *    already saturated, so headroom cannot be read off it and "2.75 steps
+ *    from overflow" is a real but THIN number against the project's history
+ *    of landing several such steps in one day (WG-295/301/304 all landed
+ *    2026-08-22).
+ * 2. THE ONE LEVER THIS LANE COULD MEASURE FRESH TURNED OUT SMALL, AND THAT
+ *    IS RECORDED RATHER THAN QUIETLY DROPPED. This lane's own deliverable 2
+ *    gives `CANOPY_CHUNK_MAX` a page param (`?canopychunkmax=`,
+ *    ScatterTuning.ts), the one ceiling in the chain the WG-304 post-merge
+ *    verifier flagged as unsweepable, so it could finally be swept. MEASURED
+ *    on this build, `forestair`, one page param apart, outcome-read off
+ *    `scatter.canopyProps`/`capScaleMin` (rendering.md 2.45 has the full
+ *    ladder): raising `canopychunkmax` from the shipped 32,768 takes
+ *    `forestair` from 120,854 to an ASYMPTOTE of **121,925** at 40,000 and
+ *    beyond (`capScaleMin` reaches 1.0000 there and 100,000/200,000 read
+ *    identically), i.e. relieving that one ceiling entirely is worth only
+ *    **+1,071 instances, not the ~32,000 a naive area-rule estimate
+ *    (`4800 * 13.54 km2`) predicts** -- an earlier draft of this comment
+ *    quoted that estimate as a "measured ceiling" before the sweep actually
+ *    ran and it was wrong by 30x; the real `want` at that chunk is density-
+ *    limited, not area-ceiling-limited, once the ceiling stops binding. So
+ *    THIS specific lever is not the overflow risk either.
+ * 3. THE HONEST BASIS IS THEREFORE THE GENERIC ONE: headroom for a FEW MORE
+ *    density-table changes of the one size this campaign actually measured
+ *    (3,712), not a specific named mechanism, because both mechanisms this
+ *    lane checked are saturated. Sized like every other ceiling in this file:
+ *    the next power-of-two double from `START_CAPACITY` (2,048). This is NOT
+ *    "infinity" -- it is a single, bounded doubling, the same one arithmetic
+ *    step RN-2260 itself took, and it is free until the batch actually grows
+ *    into it (point 4).
+ * 4. `?canopychunkmax=` DEFAULTS TO THE SHIPPED 32,768 (ScatterTuning.ts), so
+ *    NONE of this is live in the shipped binary today: `forestair` still
+ *    reads 120,854 with this commit, unmoved, and `grow()` still stops
+ *    doubling at the same 131,072-covering point it always did (2,048 ->
+ *    4,096 -> ... -> 131,072 covers 120,854 in the same 6 doublings either
+ *    ceiling allows). The raise only matters the day something ELSE grows
+ *    live usage past 131,072.
+ *
+ * MEMORY. Same arithmetic as `MAX_CAPACITY`'s own comment, doubled again:
+ * AT THE NEW CEILING, 262,144 slots is about 21.0 MB of texture (up from
+ * 10.5 MB at the old ceiling) plus about 26.2 MB of CPU-side typed array, and
+ * ONLY the canopy's single `OF_Leaf:canopy` batch can ever reserve it. AT THE
+ * SHIPPED DEFAULT, this raise costs exactly nothing: live usage is unmoved at
+ * 120,854 and `grow()`'s doubling ladder does not change, which is why
+ * `render.vramMB` reads bit-identical before and after in every measurement
+ * this lane took (see rendering.md 2.45). **THAT READING MUST NOT BE READ AS
+ * "THE RAISE IS FREE" ON ITS OWN, PER RN-2166**: `render.vramMB` is a field
+ * that does not count instance-pool textures at all (it read 104.2 unmoved
+ * across six freshly-uploaded 1024-square terrain textures in the lane that
+ * found it), so it would report the same 114.8 even if this raise DID cost
+ * something. The 10.5 MB / 13.1 MB delta the OLD ceiling's own comment
+ * states, and the further 10.5 MB / 13.1 MB this raise adds ON TOP OF IT IF
+ * THE BATCH EVER GROWS INTO IT, are the priced costs; `vramMB`'s unmoved
+ * reading is corroborating evidence that nothing grew into it TODAY, not
+ * evidence about what growing into it would cost.
  */
-const CANOPY_MAX_CAPACITY = 131072;
+const CANOPY_MAX_CAPACITY = 262144;
 /** Props are small; a 33^2 chunk's worth of geometry is a few thousand verts. */
 const MAX_VERTS = 60000;
 

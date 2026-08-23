@@ -620,6 +620,14 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // `forestairnoon`. It sweeps, because the shipping value is the loosest
   // ceiling the canopy pool and the frame hold.
   'canopychunkkm2',
+  // RN-2680, lane N17, standing rule 7. `canopychunkmax=` overrides the
+  // canopy-only chunk's OUTER ceiling (shipped `CANOPY_CHUNK_MAX`, 32,768),
+  // which was the only ceiling left in the canopy chain with no page param:
+  // the WG-304 post-merge verifier named it "the only ceiling still binding
+  // at the shipped value and it has no page param, so the one live
+  // constraint cannot be swept". `canopychunkmax=0` is a structural control
+  // (every canopy-only chunk gets zero instances); the default is unchanged.
+  'canopychunkmax',
   // WG-67, standing rule 7. `rocks=0` places NO world rocks, which is the
   // one-binary control for the whole rock-node pass; `rockdensity=` scales
   // every biome's rock ask together for the cost ladder.
