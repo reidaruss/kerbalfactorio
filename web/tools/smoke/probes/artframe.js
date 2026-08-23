@@ -4473,6 +4473,31 @@
     // `cardMu` / `sinSun` / `cardShade` let a verifier recompute the law
     // independently and check the GLSL and the TypeScript are still the same
     // three lines.
+    // RN-2730. THE AEROSOL'S OWN ARMING, READ OFF THE PHOTOGRAPHED PAGE, on
+    // the `treeline` / `phase` / `emit` pattern immediately around it and for
+    // the identical reason. `?aerosol=` is an AMPLITUDE on `aerosolSigma`
+    // (Atmosphere.glsl.ts:456), so an arm that never reached the program is
+    // indistinguishable in a frame from an arm that reached it and did
+    // nothing, and a measurement lane sweeping that amplitude has no other way
+    // to say which it photographed. `sigma` is `uAerosol.x`, i.e. the product
+    // ALREADY MULTIPLIED by the amplitude, so the readback is the value in the
+    // shader and not a restatement of the request URL (NUMBERS.md: "a restore
+    // that names a value goes stale; read the shipped value instead").
+    // `scaleM` is `uAerosol.y`, published here because THIS lane's third
+    // subject has no page parameter at all and the null has to be readable.
+    // `baseM` is the per-frame layer base (`uAeroRef.x`), which is what makes
+    // the column geometry reproducible from the report alone.
+    atmos: (() => {
+      const h = window.__ofAtmos;
+      if (h === undefined || typeof h.aerosol !== 'function') return null;
+      const a = h.aerosol();
+      const ref = typeof h.aeroRef === 'function' ? h.aeroRef() : [null, null];
+      return {
+        sigma: a[0], scaleM: a[1], ms: a[2],
+        baseM: ref[0], datumOn: ref[1],
+        atmosOn: typeof h.atmosOn === 'function' ? h.atmosOn() : null,
+      };
+    })(),
     treeline: (() => {
       const h = window.__ofTerrainArt;
       return h === undefined || typeof h.treeline !== 'function'
