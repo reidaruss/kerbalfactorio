@@ -775,17 +775,31 @@ sit on the file origin, so a scatter placement matrix is pure terrain data.
 | `props/props_plains.glb` | `Plains` | `Plains_GrassTuftA`, `Plains_GrassTuftB`, `Plains_FlowerCluster`, `Plains_PebbleA`, `Plains_PebbleB`, `Plains_Shrub` | 438 | 4 | 45 |
 | `props/props_forest.glb` | `Forest` | `Forest_Fern`, `Forest_DeadTree`, `Forest_FallenLog`, `Forest_MushroomCluster`, `Forest_Rock` | 527 | 4 | 53 |
 | `props/props_hills.glb` | `Hills` | `Hills_LargeBoulder`, `Hills_ScreePatch`, `Hills_Shrub` | 436 | 4 | 39 |
-| `props/props_mountains.glb` | `Mountains` | `Mtn_ScreeSheet`, `Mtn_TalusFan`, `Mtn_FrostShards`, `Mtn_SnowPatch` | 650 | 3 | 62 |
+| `props/props_mountains.glb` | `Mountains` | `Mtn_ScreeSheet`, `Mtn_TalusFan`, `Mtn_FrostShards`, `Mtn_SnowPatch` | 878 | 3 | 70 |
 | `props/props_polar.glb` | `Polar` | `Polar_IceShard`, `Polar_SnowDrift`, `Polar_IceBoulder` | 306 | 3 | 29 |
 | `props/props_ocean.glb` | `Ocean` | `Ocean_Kelp`, `Ocean_SeabedRock` | 169 | 3 | 18 |
 | `props/props_moon.glb` | `Regolith`, `MoonHighland`, `CraterFloor` | `Moon_RockSmall`, `Moon_RockLarge`, `Moon_RegolithRipple`, `Moon_HighlandOutcrop`, `Moon_CraterRimRock`, `Moon_ImpactGlass` | 510 | 4 | 52 |
 | `props/props_cave.glb` | voxel tunnels | `Cave_Stalagmite`, `Cave_CrystalCluster`, `Cave_Rubble`, `Cave_SupportFrame`, `Cave_OreVeinPanel` | 548 | 5 | 54 |
 | `props/detail_cards.glb` | terrain detail | `Detail_GrassCardA/B/C`, `Detail_PebbleScatter` | 118 | 3 | 11 |
 
-Every LOD0 lands between 18 and 162 triangles against the 400 ceiling. The budget is a
+Every LOD0 lands between 18 and 294 triangles against the 400 ceiling. The budget is a
 ceiling, not a quota: these are drawn by the thousand, and the real budget is the
 **material count**, because the renderer batches by material and an atlas that uses six
 roles costs six draws per chunk where one that uses three costs three.
+
+**RN-2700 read this table off the shipped bytes and four of its ten rows were
+already wrong, only one of them by this lane's doing.** `props_mountains` is
+650 -> 878 and 62 -> 70 KB because RN-2700 re-authored `Mtn_SnowPatch` from a
+66-triangle slab into a 294-triangle drift, and that row is corrected above.
+The other three drifted earlier and are recorded here rather than silently
+repaired, because each belongs to whichever lane last moved its atlas:
+`props_forest` reads 527 and measures **816**, `props_plains` reads 438 and
+measures **685**, `detail_cards` reads 118 and measures **214**. The range
+sentence above was stale on the same evidence and by more than this lane moved
+it: `Mtn_FrostShards` has been **234** triangles since RN-245, so "18 and 162"
+was already 72 triangles short before the snow patch was touched. Measured with
+`assets/models/dist/props/*.glb` parsed directly; every figure here is a sum of
+each atlas's `*_LOD0` primitive index counts divided by three.
 
 **The moon is one file for three biomes**, which is right rather than lazy. `biome.h`
 classifies a moon by elevation band alone (`rel < -0.10` crater floor, `rel > 0.20`

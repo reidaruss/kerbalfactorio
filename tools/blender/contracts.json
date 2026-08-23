@@ -1867,7 +1867,21 @@
         "is arithmetic rather than ambition: the atlas went from three props",
         "to four, and a field of fragments is MADE of its fragment count. The",
         "old spire spent 120 triangles on one silhouette; 14 scree plates cost",
-        "168 for a field, and coverage is what decoration is for."
+        "168 for a field, and coverage is what decoration is for.",
+        "RN-2700: Mtn_SnowPatch 100 -> 300 and the total 900 -> 1100. World",
+        "Audit R6 ranked the snow patch ahead of every other look gap in the",
+        "world, as a faceted slab with a razor silhouette, and the mesh went",
+        "66 -> 294 triangles to answer it. THE PRICE IS ARGUED PER SQUARE",
+        "METRE OF GROUND COVERED, because that is what a decoration prop is",
+        "sold by: this atlas runs ScreeSheet 64, TalusFan 122 and FrostShards",
+        "129 triangles per square metre of footprint, and the snow patch was",
+        "at 12 on the largest footprint in the file (2.60 x 2.10 m against the",
+        "scree's 1.75 x 1.50). At 294 it is 54, still the CHEAPEST prop here",
+        "per square metre it covers, at 84 per cent of the next cheapest",
+        "(ScreeSheet's 64). An earlier draft said less than half, which is",
+        "false; corrected at merge per the RN-2700 verifier.",
+        "The headroom above 294 and above 1049 is deliberately thin: this",
+        "atlas is finished and a cap's job is to catch a mistake."
       ],
       "lod0_node": "Mtn_ScreeSheet_LOD0",
       "lod_nodes": [
@@ -1880,7 +1894,7 @@
       "dims_xyz_m": [1.75, 0.155, 1.50],
       "tolerance_m": 0.005,
       "max_tris_lod0": 260,
-      "max_tris_total": 900,
+      "max_tris_total": 1100,
       "max_materials": 3,
       "sockets": [],
       "clips": [],
@@ -1889,7 +1903,7 @@
         {"node": "Mtn_ScreeSheet_LOD0", "dims_xyz_m": [1.75, 0.155, 1.50], "max_tris": 200, "pivot": "ground"},
         {"node": "Mtn_TalusFan_LOD0", "dims_xyz_m": [1.30, 0.168, 1.15], "max_tris": 210, "pivot": "ground"},
         {"node": "Mtn_FrostShards_LOD0", "dims_xyz_m": [1.45, 0.160, 1.25], "max_tris": 260, "pivot": "ground"},
-        {"node": "Mtn_SnowPatch_LOD0", "dims_xyz_m": [2.60, 0.22, 2.10], "max_tris": 100, "pivot": "ground"}
+        {"node": "Mtn_SnowPatch_LOD0", "dims_xyz_m": [2.60, 0.22, 2.10], "max_tris": 300, "pivot": "ground"}
       ]
     },
 

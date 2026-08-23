@@ -497,6 +497,31 @@ FLAT_ROLES = {
     "Glass": "transparent; a normal map on a 0.35-alpha pane reads as dirt",
     "Water": "transparent and animated by the shader, not by a map",
     "Ice": "near-specular; relief belongs in the mesh at this poly count",
+    # RN-2700. `Snow` splits off `Ice` (see of_lib.PALETTE for why the two are
+    # different substances) and it lands HERE rather than in ROLE_FAMILY, which
+    # is a decision and not an omission, so the reason is the whole entry.
+    #
+    # It is NOT `Ice`'s reason. Snow is not near-specular and its relief does
+    # not belong in a 294-triangle mesh; a real snow surface wants sastrugi and
+    # a wind crust and it wants them at 5 to 20 cm, which is a MAP's job.
+    #
+    # The reason is that no family in this file is a picture of snow, and
+    # borrowing one is worse than going without. `coarse` is the near miss and
+    # it fails on its own published number: its `albedo_mean_linear` is 0.1806,
+    # SurfaceBind divides that back out through `material.color`, and the map's
+    # own spread about that dark mean would then swing a 0.76-albedo drift by
+    # roughly half its value every 0.75 m. Snow is the most uniform surface in
+    # the world and that would be dirt on it, in the literal sense that the map
+    # is a picture of soil. `stone` is fractured facets and `suitfab` is a
+    # weave, so neither is closer.
+    #
+    # A `snow` family is therefore OWED and named in rendering.md 2.48: three
+    # PNGs whose normal carries wind ripple and whose albedo is near-flat, at a
+    # tile around 1.5 m. Until it exists, no map beats the wrong map, and the
+    # tone defect R6 ranked is answered in the palette where it was authored.
+    "Snow": "no family in this file is a picture of snow; borrowing coarse "
+            "would put a soil map's own spread about a 0.1806 mean on the most "
+            "uniform surface in the world. A snow family is owed (RN-2700)",
     "Oil": "a pool surface, deliberately mirror-flat",
     # Leaf, LeafDeep, LeafLight, LeafDry and Grass lived here from DW-35 to
     # RN-181 with two recorded reasons: "a normal map fights the flat-shaded

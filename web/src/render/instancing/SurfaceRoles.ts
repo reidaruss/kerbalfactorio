@@ -195,6 +195,23 @@ export const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   Fang: 'fur',
   EmissiveState: 'flat', EyeDark: 'flat', EyeGlow: 'flat', Glass: 'flat',
   Ice: 'flat', Oil: 'flat', Skin: 'flat', Water: 'flat',
+  // RN-2700 (World Audit R6 rank 1). `Snow` is a SPLIT off `Ice`, on the same
+  // shape as RN-1780's `Masonry` off `Rock` and RN-1880's `Haft` off `Bark`:
+  // one row was carrying two substances, and the one it described correctly
+  // was the polar pressure ridge rather than the 22 cm mountain drift. It
+  // stays on `flat` and the audit's own framing of this seam is refuted rather
+  // than followed: R6 named the FAMILY as the defect ("the same surface family
+  // as glass, oil, skin, water and every status chip"), and measured, the
+  // 46.21-count warm inversion at `mtnslope` row 191 lives entirely in the
+  // MATERIAL that `Ice` was handing the drift, a 33-count-of-chroma blue at
+  // roughness 0.25. `flat` was never binding a map to snow and could not have
+  // caused it. See texgen's FLAT_ROLES entry for why no family here is a
+  // picture of snow and rendering.md 2.48 for the owed one.
+  //
+  // Moves in the same commit as texgen's table (RN-100's rule:
+  // verifyAgainstManifest makes a one-sided move a failed smoke run, and
+  // check-roles.mjs makes it a failed build).
+  Snow: 'flat',
   // RN-1780 (look audit R6): the firebox peep and sight strip. A role of its
   // own rather than a re-point of `EmissiveState` (which stays `flat` for
   // every status chip in the game, 23 other build scripts' worth), because

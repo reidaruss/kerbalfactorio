@@ -423,6 +423,7 @@
     "Ice": "near-specular; relief belongs in the mesh at this poly count",
     "Oil": "a pool surface, deliberately mirror-flat",
     "Skin": "1.5 cm of visible wrist; a pore map is 5.6 MB for nothing",
+    "Snow": "no family in this file is a picture of snow; borrowing coarse would put a soil map's own spread about a 0.1806 mean on the most uniform surface in the world. A snow family is owed (RN-2700)",
     "Water": "transparent and animated by the shader, not by a map"
   }
 }

@@ -1,10 +1,10 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2710 to RN-2714, `lane/n19-emitground`, **`uEmitGround` NEVER DELIVERED ZERO: THE PREMISE WAS AN INSTRUMENT GAP, NOT A CODE DEFECT, AND A FRESH-CONTEXT VERIFIER REPRODUCED IT EXACTLY (28 of 28 cells, 0 differing pixels of 540,000 in `box`).** The RN-2710 allocation and rendering.md 2.46.5 both asserted "a live, registered, 40 m-reach emitter delivers exactly zero through `uEmitGround`," measured by `?firelightground=0` reading bit-identical to shipped at every one of `smelternight`'s twelve committed rectangles. **ALL TWELVE ARE MACHINE SURFACE** (`box`, `sunface`, `firebox`, `band`, `plate`, `hearthL`, `hearthR`, `peep`, `strip`, `placard`, `bandLit`, `bandShade`), verified by the shot's own manifest comments and by a 6x crop of `hearthL`'s lowest 120 rows showing pure brick, zero grass. A switch that gates only the TERRAIN material cannot move a rectangle containing no terrain pixel; "bit-identical" was guaranteed regardless of whether the term worked. **THE VERIFIER ALSO FOUND THE RECORD HAD ALREADY REFUTED ITSELF TWICE**: `docs/web/WORLD-AUDIT-R4-2026-08-22.md:547` published this same machine-rectangle coverage gap one full audit before R6 repeated it, and RN-2422's own landing row already published this term's +7.4% night-ground effect. **TWO RECTANGLES ADDED, `groundL`/`groundR`, CLEAR OF BOTH HEARTH COLUMNS**, and they move under `?firelightground=0`: raw box `groundL` R 5.01 -> 4.67 (-6.7%), `groundR` R 3.97 -> 3.55 (-10.6%), R-channel-specific (the fire's own colour). **`groundL` IS 91% GRASS, NOT PURE**: the remaining 9.1% is the machine's own outer pilaster, independently measured INERT under the flag (-0.01%), so contamination can only DILUTE the reading toward zero -- the conservative, grass-only figures are LARGER: **`groundL` -8.43%, `groundR` -10.95%**. All twelve machine rectangles stay bit-identical to the digit across the same pair, attributing the move to the ground term alone. **A 200x-GAIN DIAGNOSTIC (local patch, not shipped) PROVES THE SHAPE**, independently confirmed by the verifier from the SHIPPED build alone via a row-band falloff profile: a correctly centred, correctly falling-off warm pool at the machine's base, visible through grass-blade gaps, exactly black past the emitter's own 40 m reach -- ruling out a coordinate bug, a windowed-to-zero bug and an unreached branch, all three of the brief's own hypotheses. Also tested and found to make NO measurable difference (kept OUT of the diff per this lane's "no other terrain terms" boundary): replacing the seam's `pM + uBodyCenter` round-trip with the already-available `vWorld` varying directly, bit-identical at 8-bit output. **`web/src/render/materials/TerrainProgram.ts`, `TerrainAmpQuery.ts` and `TerrainFragLight.glsl.ts` are UNCHANGED from `origin/main`.** **THE ACTUAL NEAR-INVISIBLE THING IS A DIFFERENT MATERIAL'S SEAM**: most of `smelternight`'s visible "ground" is the instanced grass mesh (`GrassGlsl.ts`/`GrassMaterial.ts`), which has no `ofEmitIrradiance` splice at all; the verifier's own falloff profile gives the routed lane its acceptance target (blades move `dR` 0.010 vs the soil between them at `dR` 0.71-0.77). **`EmissiveLight.ts:92`'s header ("It does NOT reach the terrain") is STALE since RN-2422 and is a small owed `main` fix**, out of this lane's owned path. **COORDINATION: BT-345 item 3 carries the same refuted premise against the same twelve rectangles**; `lane/n19-emitground` must merge before BT-345, and BT-345's arming must re-key on `groundL`/`groundR`, never the twelve machine rects (Admin messaged the BT lane directly; matching record here). **MAIN-CORRECTION OBLIGATION FOR ADMIN AT MERGE**: the "exactly zero" claim still stands, uncorrected by this lane because outside its owned path, at rendering.md 2.46.5, the RN-2685 and RN-2710 NUMBERS.md ledger rows, and WORLD-AUDIT-R6 lines 595/611/632/869/960/982 -- state plainly that this rank was rewritten TWICE (once on its conclusion at 2.46.5, once now on its evidence base) and that R4:547 had the gap first. Gates: `tsc`/`build` clean, `npm run check` **9 of 9**, full four-pose `rn2550guard` **exit 0**. One file changed under `web/`: `web/tools/smoke/probes/artframe.js`. Full record in section 2.47; frames `docs/screenshots/RN2710_*`. THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2700, `lane/n18-snow`, **THE SNOW PATCH STOPS BEING A PLASTIC SLAB, AND WORLD AUDIT R6 ATTRIBUTED ITS OWN RANK 1 ONE FILE OFF.** R6's only finding classed as a BUG rather than as missing fidelity, first of the endgame wave, two commits. **THE BASELINE REPRODUCES R6 TO THE DIGIT before anything moves**: own build of `50daac5b`, own capture, own instrument, `mtnslope` row 191 shaded snow facet 141.77 / 159.97 / 153.17 = warm **-11.40** against substrate 189.29 / 182.65 / 154.48 = **+34.81**, and `box` `iqr` **88.55**. **COMMIT 1, THE GEOMETRY.** Longest straight run in the ground shoreline **1.263 m -> 0.509 m** (73.2 px -> 29.5 px at 1x, 293 -> 118 px in the audit's own 4x crop, at `mtnslope`'s measured 58 px/m); rim leaves the ground at **33.8 -> 9.1 degrees** by one method on both meshes (mean inclination of the ground-touching side faces, base n-gon excluded; the analytic first-ring step at the widest lobe is 4.0 degrees); a fourth ring at (0.035, 0.90) IS the feather, `seg` goes per lobe 18/12/12 because the widest lobe alone sets the chord, `jit` 0.20 -> 0.06 because the jitter that lobes a 6-gon crenellates an 18-gon, and `lean` 0.18 buys a windward and a lee slope at ZERO triangles. **Smooth shaded with `lobe`'s base n-gon DROPPED**, because Blender averages a vertex normal over every face touching it and the downward base would drag the rim's normals into the earth: measured off the exported bytes, the shipped rim ran 54 vertices at a median tilt of **33.0 degrees** with only 36 of 54 pointing up at all, and the drift's runs 42 at a median **5.4** with **42 of 42 up** and all 175 of the mesh's normals positive. **COMMIT 2, THE ROLE, AND THE AUDIT'S ATTRIBUTION IS REFUTED BY THE MIDDLE ARM.** R6 named the FAMILY (`Ice: 'flat'`, "the same surface family as glass, oil, skin, water and every status chip"). `flat` is the recorded decision not to bind a MAP and cannot tint anything. Three arms, three sentinel-verified servers: base (slab on `Ice`) **-11.40**, **geom (drift on `Ice`) -16.33**, head (drift on `Snow`) **+12.47**, substrate +34.80 in all three. **THE GEOMETRY ALONE MAKES THAT STATISTIC WORSE**, because a smooth drift presents a broader mirror to the sky than a faceted slab does at roughness 0.25, and that is the proof the seam is the palette row. `Snow` is minted as a SPLIT off `Ice` on RN-1780's `Masonry`-off-`Rock` shape, so `Ice` keeps CFE6F0/0.25 and `props_polar.glb`'s bytes never move. **`Snow` = E6E2DA, 0.00, 0.90**: snow's spectral reflectance is flat across the visible and the blue needs metres of ice a 22 cm drift has none of, while dust and soot on a wind-packed drift absorb hardest in the blue, so the honest colour is warm-shifted at 12 counts of chroma, quieter than `SuitGrime`'s 15; roughness 0.90 not 0.95 keeps the wind-crust sheen `vistadawn` needs. **THE VALUE IS `Ice`'s OWN TO 0.17 PER CENT IN LINEAR REC.709 LUMA (0.76278 against 0.76150), so every luma pin in the guard is protected by arithmetic before a frame is taken**, which reuses the luma-preservation half of FoliageTone's RN-2495 record only (the constants here are picked with stated reasons, not solved as 1.08 was). **It stays on `flat` as a DECISION**: no texgen family is a picture of snow, and `coarse` fails on its own number, `albedo_mean_linear` 0.1806 divided back out at `SurfaceBind.ts:83` would swing a 0.76-albedo drift by half its value every 0.75 m with a soil map. **THE ATLAS DIFF IS ENTIRELY THE SNOW'S BYTES, MEASURED THREE WAYS**: the build is bit-deterministic (an unchanged rebuild reproduces `840d06c6..` exactly), commit 1 moves **2 of 14 primitives** (`Mtn_SnowPatch_LOD0` 66 -> 294, `_LOD2` 10 -> 51; all twelve scree/talus/frost-shard primitives byte-identical), and commit 2 moves **0 of 14**. The docstring's held-still clause bound a ROCKS lane; this is the snow lane and it holds the rocks still instead. **`vistadawn`, the pose R6 called worse than `mtnslope`**: the near patch at row 790 goes from **-66 to -58** warm across x 750-800 to **+43 to +71** across x 710-810 against a substrate at +47 to +71, a 113-count inversion answered, and by eye at 1x the frame no longer contains a cold object. **THE LIT FACET SAYS THE SAME THING FROM THE OTHER SIDE**: warm barely moves (+22.12 -> +20.20) while luma falls 19 counts as the mirror sheen goes, so the prop's own lit-minus-shaded hue swing collapses **33.52 -> 7.73 counts**, which is R6's "no ambient relationship to its surroundings" 77 per cent gone. **PRICED ON WG-189's OWN METHOD, INTERLEAVED**: +54,791 triangles at `mtnslope` (+8.60 per cent) for a p50 delta of **exactly 0.00 ms against a 0.50 ms within-arm spread**, identical calls (49) and identical `vramMB`, and the within-arm spread covers all p50 movement (the lane's run-order reading of the repeated 6.6/6.8/7.1 sequence was one session's coincidence, softened at merge). `meadow` is not merely under the 2.7e6 ALERT but **UNMOVED at 1,879,350 in both arms**, since `Mtn_*` props do not exist in Plains. Contract caps rise 100 -> 300 on the part and 900 -> 1100 on the atlas, argued per square metre of ground covered: the atlas runs 64/122/129 triangles per m2 and the snow patch was at **12** on the largest footprint in the file, going to 54, still the cheapest here. **THE PIXEL DIFF GOT ITS OWN NULL FIRST**: two loads of the SAME build differ over 0.56 per cent of a dry frame and 28.60 per cent of `pondside`, so `meadow` 0.27, `machine` 0.58 (the `OF_Glass` + `OF_Skin` control) and `meadownight` 0.30 are all at or under the floor while `mtnslope` 1.90 and `vistadawn` 2.63 are 3.4x and 4.7x it, both splitting pixels BOTH ways as `pngdiff`'s own silhouette assertion requires. **`pondside` IS REPORTED RATHER THAN CLAIMED**: its water-dominated `box` shows no arm separation at all (-41.94 to -42.05 over six interleaved runs) and its dry rects reproduce to the hundredth, but `shore` moves about one count in a way the discriminating `geom` arm's own 0.64 spread nearly covers, and it is left UNRESOLVED. Six of `mtnslope`'s seven committed rects are bit-identical; the one that moves is `upR`, which contains the frame's second snow patch. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, `validate_glb props_mountains` 1/1, full four-pose **`rn2550guard` PASS 4 of 4, exit 0** with all four `rho` reproducing 2.44's published figures. Owed and routed: `Polar_SnowDrift` is still on `Ice` and is the same defect in another atlas; a real `snow` texture family; the grass blades that still pass through the drift (a `Scatter*` question); and three MORE stale rows found in ASSET-SPECS' prop table by reading it off the shipped bytes. Full record in section 2.48; frames `docs/screenshots/RN2700_*`. THIS LINE IS A POINTER: replace it, never append to it.
 
 >
-> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2675 to RN-2680, `lane/n17-poolroom`, **THE CANOPY POOL GETS HEADROOM AND ITS LAST CEILING GETS A SWITCH, AND THE BRIEF'S OWN RN-2166 CLAIM WAS BACKWARDS.** Two capacity/instrumentation deliverables, zero pixel changes. **THE BRIEF ASSIGNING THIS LANE ASSERTED "buffers counted" per RN-2166; the actual record (section 2.11 and NUMBERS.md, quoted verbatim) says the opposite** -- `render.vramMB` is an instrument gap that does not count instance-pool textures, found on this identical field for this identical pool once already at 2.16.4 -- and is corrected before being used rather than carried forward. **DELIVERABLE 1: `PropLibrary.CANOPY_MAX_CAPACITY` 131,072 -> 262,144**, the standard next-power-of-two double, argued on THIN HEADROOM (10,218 slots, 2.75 measured density-steps of 3,712 each, between the shipped 120,854 live and the old ceiling) rather than on a specific mechanism, because **a pre-measurement estimate of the obvious next step was wrong by 30x and the correction is recorded rather than silently redrafted**: fully relieving `CANOPY_CHUNK_MAX` was estimated at +32,000 instances from the area-rule arithmetic and MEASURES at **+1,071** (120,854 -> 121,925) once deliverable 2 made it sweepable. Costs NOTHING at the shipped default (same doubling ladder, same live count); the priced cost IF the batch ever grows into the new headroom is +10.5 MB texture / +13.1 MB CPU-side typed array, doubled from the original ceiling's own arithmetic. **DELIVERABLE 2: `?canopychunkmax=`** overrides `CANOPY_CHUNK_MAX` (32,768, the one ceiling in the canopy chain the WG-304 post-merge verifier named unsweepable), threaded through `Config`/`ConfigTypes`/`BootBodyScope`/`Scatter`/`ScatterTuning.canopyChunkCap`'s new third argument, registered in `run.mjs`, default unchanged. **NON-VACUITY PROVEN BY OUTCOME READBACK, NOT RN-2590's TRAP**: read off `scatter.canopyProps` on the photographed frame, `?canopychunkmax=0` collapses `forestair` from 120,854 to **36,267** and the value rises to an asymptote of **121,925** from 40,000 upward, `capScaleMin` reaching 1.0000 and bit-identical through 200,000. **BIT-IDENTICAL PROOF AT SHIPPED DEFAULTS**, two owned sentinel-verified servers (`origin/main` @ `d45c712a` vs this branch), WG-304's own 5-pose blast-radius set, 3 fresh processes each, run twice: `canopyProps`/`capScaleMin`/`chunksCapped`/`poolRefused`/`calls`/`vramMB` bit-identical in every row on both runs; only `poolCeiling` moves, by the constant it is supposed to move by (+655,360, the raised `maxCap` summed across 5 canopy-suffixed batches); triangles wobbled under 0.03% in 2 of 15 rows on the first run and reproduced bit-identical on the second, the documented per-process settle-tick variance (2.11), not a regression. Gates: `tsc`/`build` clean, `npm run check` **9 of 9**, full four-pose `rn2550guard` **exit 0** (unsurprising: no shading, density or geometry code path touched). Full record in section 2.45; new `tools/smoke/rn2675sweep.mjs`. THIS LINE IS A POINTER: replace it, never append to it.
+> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2710 to RN-2714, `lane/n19-emitground`, **`uEmitGround` NEVER DELIVERED ZERO: THE PREMISE WAS AN INSTRUMENT GAP, NOT A CODE DEFECT, AND A FRESH-CONTEXT VERIFIER REPRODUCED IT EXACTLY (28 of 28 cells, 0 differing pixels of 540,000 in `box`).** The RN-2710 allocation and rendering.md 2.46.5 both asserted "a live, registered, 40 m-reach emitter delivers exactly zero through `uEmitGround`," measured by `?firelightground=0` reading bit-identical to shipped at every one of `smelternight`'s twelve committed rectangles. **ALL TWELVE ARE MACHINE SURFACE** (`box`, `sunface`, `firebox`, `band`, `plate`, `hearthL`, `hearthR`, `peep`, `strip`, `placard`, `bandLit`, `bandShade`), verified by the shot's own manifest comments and by a 6x crop of `hearthL`'s lowest 120 rows showing pure brick, zero grass. A switch that gates only the TERRAIN material cannot move a rectangle containing no terrain pixel; "bit-identical" was guaranteed regardless of whether the term worked. **THE VERIFIER ALSO FOUND THE RECORD HAD ALREADY REFUTED ITSELF TWICE**: `docs/web/WORLD-AUDIT-R4-2026-08-22.md:547` published this same machine-rectangle coverage gap one full audit before R6 repeated it, and RN-2422's own landing row already published this term's +7.4% night-ground effect. **TWO RECTANGLES ADDED, `groundL`/`groundR`, CLEAR OF BOTH HEARTH COLUMNS**, and they move under `?firelightground=0`: raw box `groundL` R 5.01 -> 4.67 (-6.7%), `groundR` R 3.97 -> 3.55 (-10.6%), R-channel-specific (the fire's own colour). **`groundL` IS 91% GRASS, NOT PURE**: the remaining 9.1% is the machine's own outer pilaster, independently measured INERT under the flag (-0.01%), so contamination can only DILUTE the reading toward zero -- the conservative, grass-only figures are LARGER: **`groundL` -8.43%, `groundR` -10.95%**. All twelve machine rectangles stay bit-identical to the digit across the same pair, attributing the move to the ground term alone. **A 200x-GAIN DIAGNOSTIC (local patch, not shipped) PROVES THE SHAPE**, independently confirmed by the verifier from the SHIPPED build alone via a row-band falloff profile: a correctly centred, correctly falling-off warm pool at the machine's base, visible through grass-blade gaps, exactly black past the emitter's own 40 m reach -- ruling out a coordinate bug, a windowed-to-zero bug and an unreached branch, all three of the brief's own hypotheses. Also tested and found to make NO measurable difference (kept OUT of the diff per this lane's "no other terrain terms" boundary): replacing the seam's `pM + uBodyCenter` round-trip with the already-available `vWorld` varying directly, bit-identical at 8-bit output. **`web/src/render/materials/TerrainProgram.ts`, `TerrainAmpQuery.ts` and `TerrainFragLight.glsl.ts` are UNCHANGED from `origin/main`.** **THE ACTUAL NEAR-INVISIBLE THING IS A DIFFERENT MATERIAL'S SEAM**: most of `smelternight`'s visible "ground" is the instanced grass mesh (`GrassGlsl.ts`/`GrassMaterial.ts`), which has no `ofEmitIrradiance` splice at all; the verifier's own falloff profile gives the routed lane its acceptance target (blades move `dR` 0.010 vs the soil between them at `dR` 0.71-0.77). **`EmissiveLight.ts:92`'s header ("It does NOT reach the terrain") is STALE since RN-2422 and is a small owed `main` fix**, out of this lane's owned path. **COORDINATION: BT-345 item 3 carries the same refuted premise against the same twelve rectangles**; `lane/n19-emitground` must merge before BT-345, and BT-345's arming must re-key on `groundL`/`groundR`, never the twelve machine rects (Admin messaged the BT lane directly; matching record here). **MAIN-CORRECTION OBLIGATION FOR ADMIN AT MERGE**: the "exactly zero" claim still stands, uncorrected by this lane because outside its owned path, at rendering.md 2.46.5, the RN-2685 and RN-2710 NUMBERS.md ledger rows, and WORLD-AUDIT-R6 lines 595/611/632/869/960/982 -- state plainly that this rank was rewritten TWICE (once on its conclusion at 2.46.5, once now on its evidence base) and that R4:547 had the gap first. Gates: `tsc`/`build` clean, `npm run check` **9 of 9**, full four-pose `rn2550guard` **exit 0**. One file changed under `web/`: `web/tools/smoke/probes/artframe.js`. Full record in section 2.47; frames `docs/screenshots/RN2710_*`. THIS LINE IS A POINTER: replace it, never append to it.
 
 
 
@@ -13,7 +13,7 @@
 
 
 >
-> *(the pointer before that, `lane/n16-paintstructure` section 2.44, is no longer kept inline per the one-deep rule; see git history or section 2.44 itself.)*
+> *(the pointer before that, `lane/n17-poolroom` section 2.45, is no longer kept inline per the one-deep rule; see git history or section 2.45 itself.)*
 
 
 ## 1. Mission
@@ -17042,3 +17042,461 @@ under test). **And state that `docs/web/WORLD-AUDIT-R4-2026-08-22.md` line 547
 had already published the machine-rectangle coverage gap one full audit before
 R6 repeated the mistake** -- R6's own rank-3 finding was avoidable from the
 project's own prior record, not only from a fresh measurement.
+---
+
+## 2.48 THE SNOW PATCH STOPS BEING A PLASTIC SLAB, AND THE AUDIT'S ATTRIBUTION WAS ONE FILE OFF (RN-2700, 2026-08-23, `lane/n18-snow`)
+
+World Audit R6's rank 1, the only rank it classed as a BUG rather than as missing
+fidelity, and the first item of the endgame wave. Two commits, both landed, base
+`origin/main` at `50daac5b`.
+
+### 2.48.1 THE ONE-LINE ANSWER, AND IT HAS THREE PARTS
+
+**One.** The geometry was a slab and now it is a drift: the longest straight run in
+the ground shoreline goes **1.263 m to 0.509 m**, the rim leaves the ground at
+**33.8 to 9.1 degrees** measured the same way on both meshes (the analytic
+first-ring step is 4.0), and every one of the mesh's 175 vertex normals now points
+up where the shipped mesh had 18 of 54 rim normals pointing into the earth.
+
+**Two.** The tone was a MATERIAL defect and not a FAMILY defect, and the audit
+attributed it one file off. `mtnslope` row 191's shaded facet goes **-11.40 to
++12.47** warm against a substrate at **+34.80**, so the 46.21-count inversion is a
+22.33-count gap and the sign is the substrate's. **The geometry commit alone does
+not fix it and makes that statistic WORSE** (-11.40 to -16.33), which is the lane's
+evidence that the seam is the palette row rather than the mesh or the family.
+
+**Three.** The price is +54,791 triangles at `mtnslope` (+8.60 per cent) for **zero
+measurable frame time**: interleaved base/head over three fresh processes each,
+p50 6.6/6.8/7.1 in BOTH arms, a delta of 0.00 ms against a within-arm spread of
+0.50 ms, with draw calls and `vramMB` identical.
+
+### 2.48.2 THE BASELINE REPRODUCES R6 TO THE DIGIT
+
+Before anything moved, the lane's own build of `50daac5b`, its own capture and its
+own instrument (`rn2510rows.mjs`, mean r/g/b over an x window, nearest neighbour,
+no resampling) were pointed at the audit's two published windows at `mtnslope`
+row 191:
+
+| window | r | g | b | warm | R6 published |
+|---|---|---|---|---|---|
+| shaded snow facet `x[618,648)` | 141.77 | 159.97 | 153.17 | **-11.40** | -11.40 |
+| substrate `x[880,980)` | 189.29 | 182.65 | 154.48 | **+34.81** | +34.81 |
+
+Every figure to the digit. The `box` rectangle's `iqr` also reads **88.55**, the
+number 2.46 records as unmoved from R5. The lane is measuring the thing the audit
+measured.
+
+### 2.48.3 THE THREE ARMS, AND WHY THERE ARE THREE
+
+`base` is `50daac5b`. `geom` is commit 1, the new mesh still wearing the old `Ice`
+material and the old manifest. `head` is commit 2. Three `npm run build` outputs in
+three named scratch directories, three `vite preview` servers, each **sentinel
+verified by content over the wire**: the entry chunk, `props_mountains.glb` and
+`surfaces.json` were fetched from each port and sha256-compared against the `dist`
+that port was told to serve, all nine MATCH, and only `head`'s served manifest
+knows the role `Snow`.
+
+`mtnslope` row 191, the audit's own two windows:
+
+| arm | r | g | b | warm | substrate warm | gap |
+|---|---|---|---|---|---|---|
+| base, slab on `Ice` | 141.77 | 159.97 | 153.17 | **-11.40** | +34.81 | 46.21 |
+| geom, drift on `Ice` | 134.20 | 155.73 | 150.53 | **-16.33** | +34.79 | 51.12 |
+| head, drift on `Snow` | 152.87 | 157.00 | 140.40 | **+12.47** | +34.80 | **22.33** |
+
+**THE MIDDLE ROW IS THE FINDING.** R6 named the family as the seam, `Ice: 'flat'`,
+"the same surface family as glass, oil, skin, water and every status chip in the
+game". `flat` is the recorded decision not to bind a MAP; it cannot tint anything,
+and it was never going to be the difference between -11 and +35. Fixing the mesh
+first and measuring before touching the material shows the geometry moving the
+statistic five counts the WRONG way, because a smooth drift presents a broader
+uninterrupted mirror to the sky than a faceted slab does and the shipped material's
+roughness was 0.25. The inversion lives in the palette row: CFE6F0, 33 counts of
+chroma of blue, answered by a tight specular lobe that returns the sky.
+
+The same three arms at the LIT facet, `x[672,698)` row 191, the run the row profile
+puts at the patch's brightest:
+
+| arm | r | g | b | warm | luma |
+|---|---|---|---|---|---|
+| base | 215.12 | 207.62 | 193.00 | +22.12 | 208.15 |
+| geom | 213.85 | 207.15 | 193.00 | +20.85 | 207.55 |
+| head | 196.12 | 188.38 | 175.92 | +20.20 | 189.13 |
+
+The lit facet's warm barely moves and its LUMA falls 19 counts, which is the
+roughness change doing exactly what it should: at 0.25 the sun-facing facet carried
+a mirror sheen that snow does not have. **The prop's own internal hue swing, lit
+facet minus shaded facet, collapses from 33.52 counts to 7.73.** That swing is the
+signature R6 named ("a material with no ambient relationship to its surroundings")
+and it is 77 per cent gone.
+
+### 2.48.4 THE SUBJECT IS PROVED, NOT ASSUMED (NUMBERS RULE 6)
+
+The mesh changed, so the audit's window could have stopped landing on snow. The
+window is checked with an instrument independent of the window: `rn2635rowscan.mjs`
+across `x[560,1000)` at `y=191`, which prints the row itself.
+
+On `base` the profile enters snow at about x 625 and leaves it at about x 765, with
+`b > g > r` throughout (x 750 reads 97/115/136, warm **-39**) and the substrate
+resuming at x 770 with `r > g > b` (x 880 reads 197/190/163). On `head` the same
+profile enters snow at about x 625 and leaves at about x 790, and reads
+`r >= g >= b` across nearly the whole extent (157/154/152, 171/165/159,
+201/192/178, 213/203/185, 203/192/176), with one shadow pocket at x 700 to 720
+reading -32 and -27. Both arms carry the same grass pixel immediately left of the
+window (base 171/193/116, head 172/194/118), so the window's snow-to-ground
+composition is unchanged. The window still frames what it framed.
+
+### 2.48.5 `vistadawn`, THE POSE R6 CALLED WORSE THAN `mtnslope`
+
+R6: "in a frame graded entirely warm by a 5.7 degree sun, these are the only cold
+objects in it and they read as litter." Measured on the near patch at `y=790`,
+`rn2635rowscan.mjs` across `x[700,900)`:
+
+| arm | patch pixels, warm | substrate beside it |
+|---|---|---|
+| base | **-66, -66, -63, -60, -59, -58** at x 750 to 800 | +47 at x 720 to 740 |
+| head | **+65, +71, +68, +50, +11, +55, +52, +50, +43** at x 710 to 810 | +71 at x 850 |
+
+A 113-count inversion at the pose the audit ranked worst becomes a patch that reads
+inside the dawn grade, with two remaining cold pixels (-32) in a self-shadow pocket
+at half the base's magnitude. **BY EYE AT 1x the criterion is met without argument**:
+the frame no longer contains a cold object. The drifts take the dawn's own pink,
+which is what a spectrally flat high-albedo surface does under a pink light, and
+that is the palette row's whole physical claim being visible.
+
+### 2.48.6 THE EYE, THREE WAYS, AT 4x
+
+`RN2700_mtnslope_crop_{base,geom,head}.png`, one crop rectangle (`x=600 y=130`,
+340x160 at 4x, nearest neighbour, `rn2450crop.mjs`) applied identically to all
+three arms.
+
+**base** a hard-edged convex polyhedron with visible flat facets, a razor
+silhouette, and a blue-grey shaded rim that shares its hue with nothing else in
+frame. **geom** the shape is a drift and the material is worse: a smooth,
+uninterrupted, glossy blue-white surface that reads as spilled milk or standing
+ice. **head** a soft warm off-white drift with a feathered edge, an off-centre
+crest and a shaded flank that reads as shadow rather than as a different substance.
+
+The middle frame is worth keeping in the record precisely because it is the arm
+that would have shipped if this lane had done the geometry and stopped.
+
+### 2.48.7 THE ATLAS DIFF IS ENTIRELY THE SNOW'S BYTES
+
+`build_props_mountains.py`'s docstring held the snow's bytes still "so that the
+atlas diff is entirely the rock work", which binds a ROCKS lane. This is the snow
+lane, so it holds the rocks still and the claim inverts. It is measured rather than
+asserted, in three steps.
+
+1. **The build is bit-deterministic.** Rebuilding the UNCHANGED file reproduces the
+   committed binary exactly, sha256 `840d06c6...` to `840d06c6...`, and `git status`
+   reports nothing. Anything that moves afterwards is authored.
+2. **Per primitive, commit 1 moved two of fourteen.** Hashing each mesh primitive's
+   own accessor bytes (positions, normals, UVs, indices) across the change: all
+   twelve `Mtn_ScreeSheet`, `Mtn_TalusFan` and `Mtn_FrostShards` primitives are
+   byte-identical, and `Mtn_SnowPatch_LOD0` (66 to 294 triangles) and `_LOD2` (10 to
+   51) are the two that moved. Atlas total 780 to 1049; file 68,532 to 71,884 bytes.
+3. **Commit 2 moved zero geometry.** All fourteen primitives are byte-identical to
+   commit 1's; only the material name and its PBR values differ. File 71,884 to
+   71,896 bytes: the unpadded JSON grows 15 bytes (+1 for the longer material
+   name, +14 for `0.25` becoming `0.8999999761581421`) and 4-byte chunk padding
+   absorbs 3 (attributed at merge; the first draft said "the twelve bytes").
+
+`props_polar.glb`, the only other consumer of `Ice`, is untouched, as is every glb
+carrying `Glass`, `Oil`, `Skin` or `Water`.
+
+### 2.48.8 THE GEOMETRY, CONSTANT BY CONSTANT
+
+`SNOW_RINGS` `((0.000, 1.00), (0.035, 0.90), (0.24, 0.74), (0.58, 0.50))` against
+the shipped `((0.0, 1.00), (0.55, 0.70))`.
+
+- **The feather.** The first step spends 3.5 per cent of the height over 10 per cent
+  of the radius: 4.0 degrees at the big lobe after the fit into `SNOW`, by the
+  analytic ring-step. By the one method that measures BOTH meshes the same way
+  (mean inclination of the ground-touching side faces off the exported bytes, base
+  n-gon excluded) the rim goes 33.8 to 9.1 degrees; the 7.9 this record first
+  printed paired the two methods and was corrected at merge. It is a new RING
+  rather than a taper on the old one because a taper would have moved the shoreline
+  inward and shrunk the prop inside a fitted box.
+- **The profile.** Three convex pieces where there was one, so the top stops reading
+  as a single flat plate seen end on.
+- **Segmentation, per lobe.** 18 on the wide lobe, 12 on the two small ones, because
+  the longest straight shoreline run is set by the widest lobe alone. 1.263 m to
+  0.509 m, which at `mtnslope`'s 58 px/m is 73.2 px to 29.5 px at 1x, or 293 px to
+  118 px in the audit's own 4x crop.
+- **`jit` 0.20 to 0.06.** The same radial jitter that gives a 6-gon a lobed shoreline
+  gives an 18-gon high-frequency crenellation. 0.06 is under half the 0.10 gap
+  between the first two rings; that inequality alone does not prove ordering
+  (`_wob` is multiplicative on both rings, a 0.114 worst-case bound against the
+  0.10 gap), but at these seeds it is measured safe: no first-band face flares
+  outward, min radial-normal component +0.036 (verifier, at merge). A seed change
+  must re-measure.
+- **`lean` 0.18, at zero triangles.** The crest walks about 0.22 m off centre on a
+  2.60 m drift, so there is a windward slope and a lee one. This is the "no
+  accumulation shape" clause and it is free.
+- **Smooth shaded, with `lobe`'s base n-gon dropped.** ASSET-SPECS 4.5 puts a boulder
+  in five to seven large flat facets because flat facets catch directional light;
+  snow has no facets to catch anything with, and flat shading is the mechanism that
+  made this the highest-contrast object in three hero poses. Blender averages a
+  vertex normal over EVERY face touching it, so leaving the downward base in place
+  would drag the whole ground ring's normals toward straight down. A drift is a
+  surface lying on the ground and not a solid with an underside. Measured off the
+  exported bytes: shipped rim, 54 vertices, median tilt from up **33.0 degrees**,
+  max 180, only 36 of 54 pointing up at all; drift rim, 42 vertices, median **5.4
+  degrees**, max 15.3, **42 of 42 up**, and all 175 of the mesh's normals have a
+  positive up component. Dropping the base also removes 36 triangles that were never
+  rasterised.
+
+### 2.48.9 THE ROLE, AND WHY IT IS A SPLIT RATHER THAN A REPOINT
+
+`Snow` is minted off `Ice` on the shape RN-1780 used for `Masonry` off `Rock` and
+RN-1880 for `Haft` off `Bark`: one palette row was carrying two substances and it
+described the wrong one. `Ice` keeps CFE6F0 at roughness 0.25, which is correct for
+a polar pressure ridge and a glacial erratic's glaze, and keeps `props_polar.glb`'s
+bytes still. A repoint would have rewritten another atlas from a lane whose subject
+is one prop.
+
+```
+"Snow":  ("E6E2DA", 0.00, 0.90, 1.0, None)
+```
+
+- **E6E2DA.** Snow's spectral reflectance is flat across the visible to within a few
+  per cent; the blue everyone has seen in snow needs metres of path length through
+  solid ice and a 22 cm drift has none, so the cold cast was never a fact about the
+  substance. What IS true of this snow is that it is wind-packed on a scree slope
+  under blowing mineral debris, and light-absorbing impurities are why an aged
+  snowpack falls from 0.85 to 0.65 albedo: dust and soot absorb hardest at short
+  wavelengths and least in the red, so dusty snow is warm-shifted rather than
+  neutral. 12 counts of chroma, quieter than `SuitGrime`'s 15.
+- **THE VALUE IS `Ice`'s OWN AND THAT IS THE SAFETY ARGUMENT.** In linear Rec.709
+  luma E6E2DA reads **0.76278** against CFE6F0's **0.76150**, 0.17 per cent apart,
+  so the entire measurable change in this row is chroma and roughness and every
+  luma-based pin in the guard is protected by arithmetic before a frame is taken.
+  What transfers from FoliageTone.ts's RN-2495 record is the luma-preservation
+  SAFETY argument only: RN-2495 SOLVED for its constant (sat 1.08 against a printed
+  two-stream bracket) where E6E2DA and 0.90 are PICKED with stated physical
+  reasons, checked against literature ranges, not derived. 0.763 broadband is also the
+  right number on its own for packed, slightly dusty snow.
+- **0.90.** A dense random medium of ice grains has no coherent facet to reflect in
+  and is near-Lambertian at this scale. Not 0.95, because a wind crust develops a
+  skin that catches a low sun as a sheen, which is why a snowfield glares at sunset
+  and `vistadawn` is the pose that would lose it. It sits where it should among the
+  natural rows: rougher than `RockDark` 0.80, smoother than `Rock` 0.94 and `Sand`
+  0.95, and nowhere near the ice it stopped being.
+- **The forward scatter snow actually has is NOT modelled, deliberately.** The honest
+  mechanism is transmission through the drift; `emission` is the only slot in the
+  palette tuple that could fake it, and an emissive drift would glow at
+  `meadownight`. Owed, below.
+
+**IT STAYS ON `flat`, AND THAT IS A DECISION WITH A REASON.** No family in texgen is
+a picture of snow. `coarse` is the near miss and fails on its own published number:
+`albedo_mean_linear` 0.1806, which `SurfaceBind.ts:83` divides back out through
+`material.color`, so the soil map's spread about that dark mean would swing a
+0.76-albedo drift by roughly half its value every 0.75 m. Snow is the most uniform
+surface in the world and that map is a picture of dirt. `stone` is fractured facets
+and `suitfab` is a weave, so neither is closer.
+
+Four tables move together per RN-100 and `check-roles.mjs`'s four-way rule:
+`of_lib.PALETTE`, texgen's `FLAT_ROLES`, `SurfaceRoles.ts` and the manifest.
+**The manifest diff is ONE LINE.** `texgen.py build --only=<family>` explicitly
+refuses to refresh the role tables and a full generation would put seventeen
+families' PNG bytes into this lane, so the two role tables were rewritten from
+texgen's own dicts under texgen's own round-trip refusal (if the file on disk is not
+already `json.dump(indent=2, sort_keys=False)` output, stop), with the family table,
+`version` and `zlib` asserted unmoved. `check-roles`: PASS, 56 glb to 56 shipped
+roles, 56 in `surfaces.json`, 56 in `ROLE_FAMILY`, served manifest in sync.
+
+### 2.48.10 THE PRICE, ON WG-189's OWN METHOD
+
+`mtnslope`, base and head **interleaved** (base r1, head r1, base r2, head r2, base
+r3, head r3), a fresh browser process per frame, one session, both servers sentinel
+verified:
+
+| arm | triangles | calls | p50 ms | p95 ms | vramMB |
+|---|---|---|---|---|---|
+| base | 637,108 / 637,108 / 637,118 | 49 / 49 / 49 | 6.6 / 6.8 / 7.1 | 8.6 / 8.9 / 9.3 | 114.8 |
+| head | 691,902 / 691,902 / 691,902 | 49 / 49 / 49 | 6.6 / 6.8 / 7.1 | 8.7 / 8.4 / 8.6 | 114.8 |
+
+**+54,791 triangles, +8.60 per cent, and a p50 delta of exactly 0.00 ms against a
+within-arm spread of 0.50 ms.** Draw calls and VRAM are identical: the prop shares
+its atlas batch, so more triangles cost no more binds. **The p50 sequence 6.6, 6.8,
+7.1 repeated in both arms in this session, but the verifier's independent
+interleave read plain noise with no order ramp (base 6.7/7.0/6.6, head
+7.0/6.7/6.2), so the order story was one session's coincidence; what survives is
+that ARM explains none of it, on the spread, which is the reason the arms were
+interleaved rather than swept.** `vista` prices at +57,872 (+9.2 per cent) and
+`vistadawn` at +57,954 (+7.8 per cent) on single runs.
+
+**`meadow` is not merely under the 2.7e6 ALERT, it is UNMOVED**: 1,879,350 triangles
+in both arms, identical to the unit, because `Mtn_*` props do not exist in Plains.
+(The counter is not unit-stable in general: one merge-time verifier run read a head
+frame at 1,879,395 and `mtnslope`'s base wobbles 637,108 to 637,118; the conclusion
+is untouched.)
+(The `2,759,465` in `artframe.js:775` is stale against this base by a wide margin
+and is not this lane's to correct.)
+
+The contract cap rises with an argument priced per square metre of ground covered,
+since that is what a decoration prop is sold by: this atlas runs `ScreeSheet` 64,
+`TalusFan` 122 and `FrostShards` 129 triangles per square metre of footprint, and
+the snow patch was at **12** on the largest footprint in the file (2.60 x 2.10 m
+against the scree's 1.75 x 1.50). At 294 it is **54**, still the cheapest prop here
+per square metre it covers, at 84 per cent of the next cheapest (`ScreeSheet`'s 64;
+the commit message and an earlier draft of this line said "less than half", which
+is false, corrected at merge per the RN-2700 verifier). `max_tris` 100 to
+300 on the part, `max_tris_total` 900 to 1100.
+
+### 2.48.11 THE GUARDS, AND THE ONE CONTROL THAT CANNOT ANSWER
+
+`mtnslope` publishes seven rectangles. Base against head, **six are bit-identical to
+the hundredth on every channel** (`box` 127.06/25.41/88.55, `upL`, `upC`, `hzBand`,
+`mid`, `nearG`), and the ONE that moves is `upR`, luma 73.65 to 74.81 and warm 10.97
+to 12.32, which is the rectangle containing the frame's second snow patch. Two base
+repeats read `upR` identically, so the move is the change and not the process.
+`vista` and `vistadawn` behave the same way: every rectangle bit-identical except
+`nearG` (`vista` 140.44 to 142.94 luma, `vistadawn` 45.94 to 47.49, warm 15.79 to
+17.27), which is the only rectangle either pose puts on the ground the drifts lie on.
+
+**THE PIXEL DIFF NEEDED ITS OWN NULL BEFORE IT COULD SAY ANYTHING.** Two independent
+page loads of the SAME build are not the same picture: the water surface, the cloud
+layer and the settle tick all move between processes. Measured on `pngdiff.mjs`, the
+same-build null is **0.56 per cent** of the frame at `mtnslope` and **28.60 per
+cent** at `pondside`.
+
+| pair | moved | against its null | verdict |
+|---|---|---|---|
+| `meadow` base vs head | 0.27 % | 0.56 % | at or under the floor |
+| `machine` base vs head | 0.58 % | 0.56 % | at the floor |
+| `meadownight` base vs head | 0.30 % | 0.56 % | under the floor |
+| `pondside` base vs head | 34.78 % | **28.60 %** | the pose cannot resolve this |
+| `mtnslope` base vs head | 1.90 % | 0.56 % | 3.4x, split 10,583 dark / 11,044 light |
+| `vistadawn` base vs head | 2.63 % | 0.56 % | 4.7x, split 12,332 / 17,695 |
+
+`machine` carries `OF_Glass` (`box.glb`) and `OF_Skin` (`player_fp_arms.glb`) and its
+`box`, `hearthL` and `hearthR` rectangles are identical to the hundredth. The two
+signal rows move pixels BOTH ways, which is `pngdiff`'s own stated property
+assertion for a silhouette change rather than a shading one.
+
+**`pondside` is reported rather than claimed, and this is the honest part.** It is
+the `OF_Water` control and it is the one frame with an animated surface in it. Six
+runs, base/geom/head interleaved, all at 955,911 triangles and 81 calls: the
+water-dominated `box` reads warm -41.94, -42.00 (base), -42.00, -42.04 (geom),
+-42.00, -42.05 (head), an 0.11-count spread with **no separation between arms**, and
+the dry `wood` and `bank` rectangles reproduce to the hundredth in all six. What
+does move is `shore` (140.41/140.34/140.60 base against 141.50/141.35/141.49 head,
+about +1.1 luma) and `nearW` (base 55.66/56.54/55.11 against head 53.62/53.98/53.61),
+and the discriminating `geom` arm straddles both (`shore` 140.92/140.28, `nearW`
+54.61/56.84) with a within-arm spread that swallows the `nearW` delta whole and
+reaches 0.64 of the 1.1 on `shore`. **`nearW` is not separated; `shore` is weakly
+separated at about one count and is left UNRESOLVED rather than explained away.**
+The role and palette rows for `Water` are untouched, `water_pool.glb` is
+byte-identical, and no mechanism in this lane reaches a pond at spawn, so the
+residue is most likely the animated specular spilling into a rect at the waterline.
+It is one count on a surface whose own frame-to-frame noise is larger.
+
+### 2.48.12 GATES, RAILS AND FILES
+
+`npx tsc --noEmit` exit 0. `npm run build` exit 0. `npm run check` **9 of 9**,
+including `check:roles` and `check:proplods`. `validate_glb.py props_mountains`
+**1/1 PASS** against the raised contract.
+
+**Full four-pose `rn2550guard`: PASS, 4 of 4 poses judged, 1 outside CORE, exit 0**,
+on its own sentinel-verified server (served entry chunk `36f4d3f45f2671df` matching
+`dist`, `dist` newer than `src`, `wasm` and `index.html`). Unsurprising, since this
+lane touches no shading, density or terrain path and the guard's four poses are
+`forestair*` and `flyover*` in Forest, where no `Mtn_*` prop exists. Worth recording
+that **all four `rho` and both box ratchets reproduce 2.44's published post-merge
+figures**: `forestairnoon` 0.9359 / 0.8844 with `rho` 0.1873 and `f` 0.5843,
+`flyovernoon` 0.9190 / 0.8406, `forestairlow` `rho` 0.2987, `flyoverlow` 0.4016. The
+`?proppaint=1` under-count reads 0.1255 to 0.4001, the range 2.46 corrected R5's
+section 8 to.
+
+Files, commit 1 `0b028d4d`: `tools/blender/build_props_mountains.py`,
+`assets/models/dist/props/props_mountains.glb`, `tools/blender/contracts.json`,
+`docs/web/ASSET-SPECS.md`.
+Files, commit 2 `b0176256`: `tools/blender/of_lib.py`, `tools/blender/texgen.py`,
+`web/src/render/instancing/SurfaceRoles.ts`,
+`assets/textures/dist/surfaces.json`, plus `build_props_mountains.py` and the glb.
+
+Frames `docs/screenshots/RN2700_*`, 22 of them. The set is the three `mtnslope`
+arms and their three 4x crops, the three `vistadawn` arms, `vista` base and head,
+and the four control poses base and head. **The repeats are deliberately pruned to
+the pairs a verifier needs to re-derive the two nulls**: `mtnslope_base_r1` against
+`_r2` is the dry null (0.56 per cent) and `pondside_base_r2` against `_r3` is the
+animated one (28.60 per cent). The remaining eight repeat frames were measured, are
+tabulated above, and were dropped rather than committed, since 47 MB of evidence is
+already a large payload for one prop.
+
+### 2.48.13 OWED AND ROUTED
+
+1. **`Polar_SnowDrift` is still on `Ice`.** `build_props_polar.py:45-59` builds a
+   wind drift out of four flattened lobes and paints it with the near-specular blue
+   ice row, which is now provably the wrong material for snow. It was left alone
+   because moving it rewrites `props_polar.glb` from a lane whose subject is one
+   prop in `props_mountains.glb`. A polar lane should repoint it to `Snow` and
+   should probably take the drift's own `seg=6` THREE-ring geometry with it (rings
+   `((0.0, 1.00), (0.50, 0.78), (0.85, 0.40))`; its razor first ring at z=0 r=1.00
+   is the shared defect, its profile is not the slab's), since it
+   is the same defect at the same scale. `Polar_IceShard` and `Polar_IceBoulder`'s
+   glaze are genuinely ice and must NOT move.
+2. **A `snow` texture family is owed.** Three PNGs whose normal carries wind ripple
+   and sastrugi and whose albedo is near flat, at a tile around 1.5 m, plus a
+   `FAMILY_SIZE` row. `flat` answers the tone defect R6 ranked and leaves the
+   micro-relief one standing. It needs a full `texgen.py build` on a clean tree,
+   which is why it is its own lane rather than a rider on this one.
+3. **Grass blades still pass through the drift.** R6 named it ("grass blades passing
+   straight through them") and it is untouched here: it is a `Scatter*` placement
+   question, explicitly outside this lane's boundary, and it wants a scatter lane
+   that suppresses ground cover inside a decoration prop's footprint.
+4. **A snow BSDF would owe the forward scatter.** A 22 cm drift is translucent and
+   its shaded side is lit partly by sun that travelled THROUGH it, which is why real
+   shaded snow is far less blue than a Lambertian white. Nothing in the
+   metallic-roughness tuple can say that. The residual 22.33-count gap at row 191 is
+   partly this and partly correct: a shaded surface lit by sky and bounce SHOULD
+   read cooler than the sunlit ground beside it.
+5. **ASSET-SPECS' prop table is stale in three more rows**, found by reading it off
+   the shipped bytes while correcting the mountains row: `props_forest` reads 527
+   and measures 816, `props_plains` reads 438 and measures 685, `detail_cards` reads
+   118 and measures 214. Recorded in the document rather than repaired, because each
+   belongs to whichever lane last moved its atlas. The range sentence was stale on
+   the same evidence and by more than this lane moved it: `Mtn_FrostShards` has been
+   234 triangles since RN-245, so "18 and 162" was already 72 short.
+
+
+### 2.48.14 MERGE-TIME VERIFIER ADDENDUM (Admin, 2026-08-23)
+
+A fresh-context verifier (own builds of all three commits, own Blender renders of
+the atlas at each commit reproducing every committed binary bit-identically, own
+sentinel-verified servers, own guard run) returned **MERGE** with prose
+corrections, all applied above at their sites. Every load-bearing number in this
+section reproduced, most to the digit. Three additions of its own:
+
+**The decomposition the lane did not run.** The lane proved geometry-alone makes
+row 191 worse but never separated the palette row's two terms. The verifier built
+both isolation arms on the new mesh:
+
+| arm | hex | rough | shaded warm | lit warm | lit luma | internal swing |
+|---|---|---|---|---|---|---|
+| geom | CFE6F0 | 0.25 | -16.33 | +20.85 | 207.55 | 37.18 |
+| armR (roughness only) | CFE6F0 | 0.90 | -12.54 | +0.92 | 188.69 | 13.46 |
+| armC (hex only) | E6E2DA | 0.25 | +8.90 | +23.34 | 207.55 | 14.44 |
+| head | E6E2DA | 0.90 | +12.47 | +20.20 | 189.13 | 7.73 |
+
+The hex carries +25.23 of the +28.80-count warm recovery (88 per cent), the
+roughness +3.79 (13 per cent), nearly additive; the roughness owns the 19-count
+lit-luma fall and about half the swing collapse. The middle-arm mechanism claim
+(specular sky at 0.25) is SUPPORTED: roughening alone returns +3.79 of the
+geometry's -4.93 (77 per cent).
+
+**A dispatch contradiction, ruled on rather than glossed.** R6's dispatch said
+"must not touch: any palette" while its done-when required the shaded facet's warm
+to come inside a stated distance of the substrate's. The decomposition proves
+those incompatible: 88 per cent of the recovery is reachable only through the
+palette hex. The lane crossed the line correctly, and the crossing is hereby
+named as an Admin ruling rather than left implicit.
+
+**The R6 rank is PARTIAL, not closed.** All five of the audit's explicit
+done-when criteria are met and by eye the frame no longer contains a cold object,
+but the rank's own text also names grass blades passing through the drifts
+(routed, owed item 3), and the owed list adds the `Polar_SnowDrift` twin
+(three-ring, per the corrected owed item 1), the `snow` texture family, and the
+forward-scatter BSDF. One further nit for the next atlas lane: ASSET-SPECS' KB
+column is stale on the same three rows its triangle note names.
