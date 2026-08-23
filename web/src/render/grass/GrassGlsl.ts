@@ -375,15 +375,16 @@ export function grassFragmentShader(depth: DepthPolicy): string {
       // and vWorld already IS that position here, so this is the identical
       // computation written without re-deriving it.
       //
-      // THE NORMAL IS n, the UNBENT one (GrassCard's own baked BEND_UP plus
-      // this file's uBendUp do NOT apply here), on the trans term's own
-      // precedent four lines up: a firebox is a LOCAL, mostly-horizontal
-      // source, and blending the normal toward up before this dot product
-      // would wash every blade to the same faint reading regardless of which
-      // way it faces the fire, which is the one thing a standing blade near a
-      // furnace should NOT do. ns stays reserved for ndl/skyView, the ground-
-      // substitute terms this residual (GrassGlsl's own RN-2220 note) was
-      // written for.
+      // THE NORMAL IS n, not ns: it carries GrassCard's own baked BEND_UP
+      // (0.74 toward local up, GrassCard.ts) as every use of n in this file
+      // does, and what is skipped here is only this file's SECOND blend,
+      // uBendUp, on the trans term's own precedent four lines up. A firebox
+      // is a LOCAL, mostly-horizontal source, and applying that second blend
+      // toward up before this dot product would wash every blade to the same
+      // faint reading regardless of which way it faces the fire, which is
+      // the one thing a standing blade near a furnace should NOT do. ns
+      // stays reserved for ndl/skyView, the ground-substitute terms this
+      // residual (GrassGlsl's own RN-2220 note) was written for.
       ${EMIT_INSTALLED ? `
       lit += albedo * ofEmitIrradiance(vWorld, n) * uEmitGround;
       ` : ''}

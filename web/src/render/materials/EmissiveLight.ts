@@ -94,8 +94,11 @@
 // this header was stale from that commit until RN-2735 corrected it, per
 // rendering.md 2.47(e)) and, since RN-2735, the GRASS CARPET
 // (`GrassGlsl.ts`'s fragment stage, gated by the SAME `uEmitGround` object the
-// terrain reads, shared by reference from `GrassMaterial.ts`). What it does
-// NOT reach: nothing left unlisted above as of RN-2735.
+// terrain reads, shared by reference from `GrassMaterial.ts`). It does NOT
+// reach `WaterMaterial.ts`, a bare `ShaderMaterial` with no splice of any
+// kind (`pondside` is a committed pose that stands beside water and would be
+// the one to exercise this if it were wired); that gap is a named owed item,
+// routed rather than fixed here, in rendering.md 2.52.
 
 import * as THREE from 'three';
 
