@@ -88,11 +88,14 @@
 //
 // ============================== WHAT IT REACHES =============================
 //
-// The machine programs (`MachineBatch`'s hook) and the prop / node programs
-// (`PropSkyAmbient`'s splice). It does NOT reach the terrain, and that is a
-// LANE BOUNDARY rather than a design choice: the R3 dispatch gives the terrain
-// materials to M2 and this lane is fenced out of them. The one line it needs
-// is named in the completion report as an owed cross-lane seam.
+// The machine programs (`MachineBatch`'s hook), the prop / node programs
+// (`PropSkyAmbient`'s splice), the TERRAIN (`TerrainFragLight.glsl.ts`'s own
+// `ofEmitIrradiance(pM + uBodyCenter, n) * uEmitGround` line, landed RN-2422;
+// this header was stale from that commit until RN-2735 corrected it, per
+// rendering.md 2.47(e)) and, since RN-2735, the GRASS CARPET
+// (`GrassGlsl.ts`'s fragment stage, gated by the SAME `uEmitGround` object the
+// terrain reads, shared by reference from `GrassMaterial.ts`). What it does
+// NOT reach: nothing left unlisted above as of RN-2735.
 
 import * as THREE from 'three';
 
