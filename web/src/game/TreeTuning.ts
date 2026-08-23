@@ -44,21 +44,27 @@ export const TREE_CELL_M = 28;
  * Forest cell's expectation is `density * areaKm2` at `canopyWeight`'s ceiling
  * of 1 (`buildCell`'s `e`, "before weighting" in the old comment's sense: the
  * biome density alone, not yet thinned by the stand field or the treeline),
- * which at a 28 m cell (`TREE_CELL_M`, ~0.000784 km2) and the OLD table's
- * Forest ask (3,840/km2) is 3.01 and never bit -- 6 was real headroom. At the
- * canopy table adopted table-wide (23,040/km2, WG-310) the same arithmetic
- * gives 18.06, ABOVE the old cap: probed at `forestaircanopy` with the ask
- * multiplied and the cap still at 6, `cellsCapped` read 765 of 3,169 offered
- * (24%) and `deliveredFraction` 0.5115 -- silently shipping half the ruling's
- * own table while every other number on the row claimed the full one. 20
- * clears the deterministic ceiling (18.06) with the same kind of margin the
- * old value held and restores `deliveredFraction` to 1 at every biome (the
- * other three biomes' new maxima -- Hills 5.65, Mountains 2.26, Plains 1.98 --
- * were never close to binding; Forest already was the constraint before this
- * lane, RN-46's "measure, do not assume" applies to a guard exactly as much as
- * to a picture). Still COUNTED when it bites: `cellsCapped` must read 0 on the
- * shipped table, and a nonzero reading here is now a real defect again rather
- * than the expected state this lane found. */
+ * which at a 28 m cell (`TREE_CELL_M`, ~0.000784 km2) and the pre-lane table's
+ * Forest ask (3,840/km2, `HARVEST_BASE_KM2`) is 3.01. The cap does not start
+ * biting at some comfortable multiple of that: solving `3.01 * m >= 6` puts
+ * the threshold at `m >= 1.993`, JUST UNDER 2x, and this lane's shipped
+ * multiplier (3, see `HARVEST_TABLE_MULT`) is past it. So the raise is not
+ * headroom for a hypothetical future increase, it is LOAD-BEARING for what
+ * ships today: a fresh-context verifier measured 4 cells capped at exactly
+ * x2 with the cap still at 6, and at the full canopy table (23,040/km2) the
+ * same arithmetic gives 18.06, ABOVE the old cap by a wide margin: probed at
+ * `forestaircanopy` with the ask multiplied by six and the cap still at 6,
+ * `cellsCapped` read 765 of 3,169 offered (24%) and `deliveredFraction`
+ * 0.5115, silently shipping half the ruling's own table while every other
+ * number on the row claimed the full one. 20 clears the deterministic
+ * ceiling (18.06) with margin and restores `deliveredFraction` to ~1 at
+ * every biome and every multiplier 1 through 6 tested (the other three
+ * biomes' new-table maxima -- Hills 5.65, Mountains 2.26, Plains 1.98 --
+ * were never close to binding even at the full x6; Forest was always the
+ * constraint, RN-46's "measure, do not assume" applies to a guard exactly as
+ * much as to a picture). Still COUNTED when it bites: `cellsCapped` must
+ * read 0 on the shipped table, and a nonzero reading here is now a real
+ * defect again rather than the expected state this lane found. */
 export const MAX_PER_CELL = 20;
 
 /**
@@ -130,41 +136,56 @@ const HARVEST_BASE_KM2: readonly number[] = [
  * WG-310 (NUMBERS.md WG-310 to WG-319, ADMIN RULING). `Registry.ts`'s canopy
  * rows (`CANOPY_FOREST` etc.) are each built through `C()`, which multiplies
  * by the shared `DENSITY_SCALE` (6) the same way `HARVEST_BASE_KM2` above
- * already was -- so the CANOPY TABLE'S OWN per-biome total is `Registry`'s raw
- * per-species sum (Forest 300+90+250=640) times THAT SAME six, giving Plains
- * 2,520, Forest 23,040, Hills 7,200, Mountains 2,880: exactly
- * `HARVEST_BASE_KM2` times a SECOND six. WG-222 put that second six on the
- * canopy table alone and `TREE_DENSITY_KM2` never received it (world-gen.md
- * 6.13.11 item 2, ScatterTuning.ts 1126-1130's "SIX FOLD density step at
- * 550 m"). The ruling: harvest adopts the canopy table TABLE-WIDE, gated on
- * this lane measuring the node cost at the densest pose FIRST (standing
+ * already was, so the CANOPY TABLE'S OWN per-biome total is `Registry`'s raw
+ * per-species sum, CURRENT NUMBERS (Forest `1200+360+2280=3840`), times THAT
+ * SAME six, giving Plains 2,520, Forest 23,040, Hills 7,200, Mountains 2,880:
+ * exactly `HARVEST_BASE_KM2` times a SECOND six. (An earlier draft of this
+ * paragraph cited the retired PRE-WG-222 per-species figures, 300+90+250,
+ * which sum to 640 and not 3,840; that is the exact citation trap
+ * world-gen.md 6.13.11 item 5 warns about, reproduced here once and
+ * corrected: `HARVEST_BASE_KM2`'s own per-row comments carry the CURRENT
+ * Registry sums, and this paragraph now matches them.) WG-222 put that
+ * second six on the canopy table alone and `TREE_DENSITY_KM2` never received
+ * it (world-gen.md 6.13.11 item 2, ScatterTuning.ts's "SIX FOLD density step
+ * at 550 m"). The ruling: harvest adopts the canopy table TABLE-WIDE, gated
+ * on this lane measuring the node cost at the densest pose FIRST (standing
  * rule 7) rather than assuming the full six-fold ask was free.
  *
  * MEASURED (world-gen.md 6.17, `wg310probe.mjs`/`wg310interleave.mjs`,
- * interleaved WG-189 pairs at `forestair`, the pose that bound): full x6
- * delivers honestly (13,322 nodes against a 2,219 baseline, `cellsCapped` 0
- * once `MAX_PER_CELL` was raised alongside this, see below) but its own p50
- * MEDIAN across six interleaved samples was 20.5 ms -- over the 16.6 ms/60fps
- * figure other lanes judge against -- and its p99 MEDIAN was 36.8 ms (worst
- * 52.2) against `StatsProbe.ts`'s ALERT=25/FAIL=40 ms gate: deep in ALERT on
- * every sample, short of FAIL on all of them. x2 held a p50 median 12.3-12.6
- * ms and a p99 median 19.1-20.3 ms across two independent six-sample
- * interleaved runs (worst single sample 28.3 of 12, one outlier) against a x1
- * baseline whose own worst of six was 19.3 -- real, if imperfect, margin. x3
- * already put 2 of 12 p99 samples over the ALERT line. `forestaircanopy`,
- * this lane's other named pose, never left ALERT even at the full x6 (p99
- * 20.3), so it was never the binding pose and forestair's number is the one
- * that governs.
+ * interleaved WG-189 pairs at `forestair`, the pose that bound, order
+ * rotated per repeat): full x6 delivers honestly (13,322 to 13,363 nodes
+ * against a 2,219 to 2,229 baseline, `cellsCapped` 0 once `MAX_PER_CELL` was
+ * raised alongside this, see above) but breaks the frame budget against
+ * `StatsProbe.ts`'s ALERT=25/FAIL=40 ms gate on p99: a six-sample run put its
+ * p50 median at 14.0 ms and its p99 median at 23.7 ms (three of six samples
+ * over ALERT, worst 36.3), and an earlier three-sample run on this lane's own
+ * first pass put the same arm considerably worse (p50 median 20.5, p99
+ * median 36.8, worst 52.2, over ALERT on every sample). BOTH RUNS AGREE ON
+ * THE VERDICT (x6 is not safe to ship) AND DISAGREE SUBSTANTIALLY ON
+ * MAGNITUDE, which is reported rather than hidden: this VM's frame timing
+ * carries real session-to-session background variance, so treat x6's own
+ * numbers as "clearly over, severity uncertain" rather than as a precise
+ * reading. x3 held ALL SIX of six interleaved samples under ALERT (p50
+ * median 11.6, p99 median 18.6, worst 20.7) against a x1 baseline's own
+ * worst of six (19.6) -- real, repeated margin, and the sample this
+ * multiplier is shipped on. `forestaircanopy`, this lane's other named
+ * pose, never left ALERT even at the full x6 (four-sample p99 median 20.5,
+ * worst 22.2), so it was never the binding pose and `forestair`'s number is
+ * the one that governs; see world-gen.md 6.17.1 for why (the ring's node
+ * count is nearly the same at both poses, but only `forestaircanopy` turns
+ * the extra nodes into visible triangles, so `forestair` pays the CPU cost
+ * for geometry nobody sees. That is separately routed in 6.17 as owed work
+ * this lane's brief does not cover).
  *
- * SHIPPED FRACTION: 2 of the ruling's 6 -- the largest that held clear
- * margin under ALERT at the pose that bound, documented as INTENTIONAL per
- * the ruling's own stated fallback rather than silently short of the table.
- * `?harvestx6=0` is the full kill switch back to `HARVEST_BASE_KM2` (mult 1,
- * the exact pre-lane table), not to some third intermediate value, so the
- * before arm is one page param from the shipped build either way (standing
- * rule 7).
+ * SHIPPED FRACTION: 3 of the ruling's 6, the largest that held a full,
+ * repeated margin under ALERT at the pose that bound, documented as
+ * INTENTIONAL per the ruling's own stated fallback rather than silently
+ * short of the table. `?harvestx6=0` is the full kill switch back to
+ * `HARVEST_BASE_KM2` (mult 1, the exact pre-lane table), not to some third
+ * intermediate value, so the before arm is one page param from the shipped
+ * build either way (standing rule 7).
  */
-export const HARVEST_TABLE_MULT = 2;
+export const HARVEST_TABLE_MULT = 3;
 
 export const TREE_DENSITY_KM2: readonly number[] =
   HARVEST_BASE_KM2.map((v) => v * HARVEST_TABLE_MULT);

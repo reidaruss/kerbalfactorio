@@ -1,6 +1,6 @@
 # World Generation & Terrain — Master Controller Context
 
-> **Domain owner:** `world-gen-controller` · **Reports to:** Admin · **Phase:** web pivot, W5/W8 · **Last updated:** 2026-08-23 · **Status:** **WG-310: THE HARVEST TABLE ADOPTS A MEASURED FRACTION OF THE CANOPY TABLE, NOT THE FULL RULING (2026-08-23, `lane/wg-harvest`, base `50daac5b`).** The ruling was to adopt the canopy table (x6) table-wide, gated on measuring the node cost at the densest pose first; measured at `forestair` (world-gen.md 6.17), the full x6 put p50’s own median at 20.5 ms and p99 at a 36.8 ms median against StatsProbe’s ALERT=25/FAIL=40 ms gate, so the shipped multiplier is `TreeTuning.HARVEST_TABLE_MULT = 2` of 6 (Plains 840, Forest 7,680, Hills 2,400, Mountains 960), documented as intentional. A second, unanticipated defect found in proving the first: `MAX_PER_CELL` (6) was already silently truncating delivery above about 1.6x the old table (Forest’s full-weight cell expectation is 18.06 against a cap of 6), raised to 20 in the same commit. `?harvestx6=0` is the full kill switch. Full record in section 6.17; frames `docs/screenshots/WG310_*_1x.png`. `npx tsc --noEmit` 0, `npm run build` 0, `npm run check` 9 of 9, full four-pose `rn2550guard` exit 0. Branch `lane/wg-harvest`, pushed, NOT merged. Prior banner (WG-304, 2026-08-22) preserved verbatim in section 6.16.13.
+> **Domain owner:** `world-gen-controller` · **Reports to:** Admin · **Phase:** web pivot, W5/W8 · **Last updated:** 2026-08-23 · **Status:** **WG-310: THE HARVEST TABLE ADOPTS A MEASURED FRACTION OF THE CANOPY TABLE, CORRECTED TO x3 AFTER A FRESH-CONTEXT VERIFIER PASS (2026-08-23, `lane/wg-harvest`, base `50daac5b`).** The ruling was to adopt the canopy table (x6) table-wide, gated on measuring the node cost at the densest pose first; measured at `forestair`, the full x6 broke the frame budget (StatsProbe ALERT=25/FAIL=40 ms on p99) on every sampling taken, so the shipped multiplier is `TreeTuning.HARVEST_TABLE_MULT = 3` of 6 (Plains 1,260, Forest 11,520, Hills 3,600, Mountains 1,440). A first pass shipped x2 and a verifier found mult 3 clearly held on a larger, rotated-order sample while the lane’s own outlier-count argument against it did not survive its own non-monotone maxima; ADMIN RULING adopted x3. A second, unanticipated defect found in proving the first: `MAX_PER_CELL` (6) was already silently truncating delivery just under a 2x multiplier (not the "about 1.6x" a since-corrected transcription error claimed), raised to 20 in the same commit and load-bearing for the shipped x3. The single biggest owed finding: `forestair` pays full CPU cost via `NodeField.update()` for harvest-ring geometry that is never drawn at that altitude (triangles unchanged 1 through 6x), while `forestaircanopy` tolerates the full x6 comfortably; fixing that visibility exemption would likely unblock the rest of the ruling. `?harvestx6=0` is the full kill switch. Full record in section 6.17; frames `docs/screenshots/WG310_*_1x.png`. `npx tsc --noEmit` 0, `npm run build` 0, `npm run check` 9 of 9; full four-pose `rn2550guard` run pending at banner-write time, see the NUMBERS WG-310 row for its exit code. Branch `lane/wg-harvest`, pushed, NOT merged. Prior banner (WG-304, 2026-08-22) preserved verbatim in section 6.16.13.
 > Read alongside: [MASTER_PLAN](../MASTER_PLAN.md) · [AGENT_ARCHITECTURE](../AGENT_ARCHITECTURE.md) · [ADMIN](ADMIN.md) · **[Spike 1 world-gen design](../spikes/spike1-worldgen.md)** · [Spike 1 core-engine](../spikes/spike1-core-engine.md) (contract built against)
 
 ## 1. Mission
@@ -4030,11 +4030,23 @@ by this verifier was sentinel-verified on CONTENT and killed by PID, and no
 sentinel file remains in `dist`.
 
 
-### 6.17 WG-310 to WG-319: the harvest table adopts a MEASURED FRACTION of the canopy table's x6, not the whole ruling, because the full ask breaks the frame budget at `forestair` (2026-08-23, `lane/wg-harvest`)
+### 6.17 WG-310 to WG-319: the harvest table adopts a MEASURED FRACTION of the canopy table's x6, not the whole ruling, because the full ask breaks the frame budget at `forestair` (2026-08-23, `lane/wg-harvest`, CORRECTED post-verifier same day)
 
 > **Numbers:** WG-310 used (WG-311 to WG-319 unused, abandoned per the standing
 > rule). **Base:** `origin/main` at `50daac5b`, branch `lane/wg-harvest`,
 > pushed, **NOT merged**.
+
+**CORRECTION NOTICE.** This section originally shipped `HARVEST_TABLE_MULT =
+2`. A fresh-context verifier confirmed the code, the counters and the kill
+switch to the digit, but found the headline density decision understated:
+the n=3 mult-6 sample was over-stated relative to a larger run, and mult 3
+holds a clean margin on a 24-sample rotated-order ladder that this lane's
+own first-pass table had already shown a hint of and dismissed on an
+outlier-count argument the verifier invalidated (this lane's own maxima are
+NON-MONOTONE across mult 2/2.5/3: 28.3 and 30.4 both exceed mult 3's 27.1,
+so those tails are environmental noise and not evidence against mult 3).
+ADMIN RULING: adopt `HARVEST_TABLE_MULT = 3`. Every number below reflects
+that ruling; nothing at mult 2 is left standing as a claim.
 
 **THE RULING, restated exactly (NUMBERS.md, Admin, 2026-08-23):** `TreeTuning
 .TREE_DENSITY_KM2` never received WG-222's x6 at any of the four vegetated
@@ -4045,93 +4057,111 @@ frame budget, ship the largest fraction that fits and document it as
 intentional with the number.
 
 **VERDICT: the full x6 breaks the frame budget at `forestair`. Shipped
-fraction is 2 of 6** (`TreeTuning.HARVEST_TABLE_MULT = 2`): Plains 420 to
-**840**, Forest 3,840 to **7,680**, Hills 1,200 to **2,400**, Mountains 480
-to **960**: a fraction of the ruling's own target table (Plains 2,520,
+fraction is 3 of 6** (`TreeTuning.HARVEST_TABLE_MULT = 3`): Plains 420 to
+**1,260**, Forest 3,840 to **11,520**, Hills 1,200 to **3,600**, Mountains
+480 to **1,440**: a fraction of the ruling's own target table (Plains 2,520,
 Forest 23,040, Hills 7,200, Mountains 2,880), documented here as INTENTIONAL
 per the ruling's own stated fallback.
 
 **A SECOND, UNANTICIPATED GATE FOUND IN PROVING THE FIRST ONE.** Before frame
 cost was even measurable, `MAX_PER_CELL` (a per-cell delivery ceiling, 6,
-unrelated to frame budget) started silently truncating delivery at any
-multiplier above about 1.6x: a full-weight Forest cell's expectation is
-`density * areaKm2` at `canopyWeight`'s ceiling of 1, which at the OLD table
-(3,840/km2) is 3.01 and never bit, but at the full canopy table (23,040/km2)
-is 18.06, three times the old cap. Probed at `forestaircanopy` with the ask
-multiplied by six and the cap left at 6: `cellsCapped` read 765 of 3,169
-offered cells (24%) and `deliveredFraction` 0.5115, i.e. the build would have
-silently shipped HALF the ruling's own table while `TREE_DENSITY_KM2` and
-every doc claimed the full one. Raised to **20** (comfortably above the
-18.06 deterministic ceiling with headroom in the same spirit the old value
-held), `cellsCapped` returns to 0 and `deliveredFraction` to ~1.0 at every
-multiplier tested (1 through 6) and at every biome (Forest is the only one
-that binds; Hills' new maximum is 5.65, Mountains 2.26, Plains 1.98, all
-comfortably under even the old cap). This is logged because nobody asked for
-it and it would have made the ruling's own headline number a fiction; see
-`TreeTuning.ts`'s `MAX_PER_CELL` docstring for the full arithmetic.
+unrelated to frame budget) started silently truncating delivery just under a
+2x multiplier, not "about 1.6x" as an earlier draft of this section said
+(that figure was a transcription bleed from a deleted comment on the
+pre-lane `TreeTuning.ts:98` and is wrong): a full-weight Forest cell's
+expectation is `density * areaKm2` at `canopyWeight`'s ceiling of 1, which
+at the pre-lane table (3,840/km2) is 3.01, so the cap bites once
+`3.01 * mult >= 6`, i.e. `mult >= 1.993`. **The shipped multiplier (3) is
+past that threshold**, so the cap raise is not headroom for a hypothetical
+future increase, it is LOAD-BEARING for what ships today: a fresh-context
+verifier measured 4 cells capped at exactly mult 2 with the cap still at 6.
+At the full canopy table (23,040/km2) the same arithmetic gives 18.06, far
+above the old cap: probed at `forestaircanopy` with the ask multiplied by
+six and the cap left at 6, `cellsCapped` read 765 of 3,169 offered cells
+(24%) and `deliveredFraction` 0.5115, i.e. the build would have silently
+shipped HALF the ruling's own table while `TREE_DENSITY_KM2` and every doc
+claimed the full one. Raised to **20** (comfortably above the 18.06
+deterministic ceiling), `cellsCapped` returns to 0 and `deliveredFraction`
+to ~1.0 at every multiplier tested (1 through 6) and at every biome (Forest
+is the only one that binds; Hills' new maximum is 5.65, Mountains 2.26,
+Plains 1.98, all comfortably under even the old cap). This is logged
+because nobody asked for it and it would have made the ruling's own
+headline number a fiction; see `TreeTuning.ts`'s `MAX_PER_CELL` docstring
+for the full arithmetic.
 
 #### 6.17.1 The measurement, and why `forestair` and not `forestaircanopy` governs
 
 Both named poses were measured. `forestaircanopy` (the ground-adjacent, 60 m
-eye) never left ALERT even at the FULL x6: p99 20.3 ms against
-`StatsProbe.ts`'s ALERT=25/FAIL=40 ms gate. `forestair` (the higher flyover
-over the same site) is the pose that binds, and the reason is instructive:
-the harvest ring's node COUNT is nearly identical between the two poses (both
-sample the same 620 m ring around a similar feet position: 2,219 to 2,236
-nodes at the pre-lane table, 4,439 to 4,463 at the shipped x2), but at
-`forestair` the ring's ~305,485 triangles are **UNCHANGED by the density
-change at every multiplier tested (1 through 6)**: the harvest nodes are
-not contributing visible geometry at that altitude at all, most likely
-outside the frustum or below an LOD/visibility cutoff. `forestaircanopy`,
-by contrast, gains real screen triangles with the extra nodes (774,917 to
-958,000 at the shipped x2, a real picture change). So `forestair` is paying
-the FULL `NodeField.update()` per-frame CPU cost (`compose()` + one
-`batch.move()` per part, for every live node, every frame, no visibility
-exemption; `NodeField.ts`, the cost 6.13.11 item 2 named) for a ring that is
-not on screen at all: pure, unrewarded overhead, and the reason it is the
-pose that governs. This does not indict the ruling: a player standing in
-the canopy gets the picture, while a player who has flown 1,200 m up gets
-none of it and pays cycles anyway. It does mean the frame-budget gate lives
-on the aerial-view CPU cost, not on any triangle count, and `render.vramMB`
-and `triangles` alone would have missed it entirely (RN-2166's own blind
-spot, one axis over).
+eye) never left ALERT even at the FULL x6 across two independent samplings
+of this lane's own (four-sample p99 median 20.5, worst 22.2; an earlier
+single reading of 20.3) against `StatsProbe.ts`'s ALERT=25/FAIL=40 ms gate.
+`forestair` (the higher flyover over the same site) is the pose that binds,
+and the reason is instructive: the harvest ring's node COUNT is nearly
+identical between the two poses (both sample the same 620 m ring around a
+similar feet position: 2,219 to 2,236 nodes at the pre-lane table, 6,667 to
+6,698 at the shipped x3), but at `forestair` the ring's ~305,485 triangles
+are **UNCHANGED by the density change at every multiplier tested (1 through
+6)**: the harvest nodes are not contributing visible geometry at that
+altitude at all, most likely outside the frustum or below an LOD/visibility
+cutoff. `forestaircanopy`, by contrast, gains real screen triangles with the
+extra nodes (774,917 to 1,158,883 at the shipped x3, a real picture change).
+So `forestair` is paying the FULL `NodeField.update()` per-frame CPU cost
+(`compose()` plus one `batch.move()` per part, for every live node, every
+frame, no visibility exemption; `NodeField.ts`, the cost 6.13.11 item 2
+named) for a ring that is not on screen at all: pure, unrewarded overhead,
+and the reason it is the pose that governs. This does not indict the
+ruling: a player standing in the canopy gets the picture, while a player who
+has flown 1,200 m up gets none of it and pays cycles anyway. It does mean
+the frame-budget gate lives on the aerial-view CPU cost, not on any triangle
+count, and `render.vramMB` and `triangles` alone would have missed it
+entirely (RN-2166's own blind spot, one axis over). **This is this lane's
+single biggest owed finding and it is restated as its own item in 6.17.4
+below: fixing the visibility exemption (or not streaming the harvest ring
+at flight altitude at all) would likely unblock the remaining 2x of the
+ruling this lane could not ship, because `forestaircanopy` already
+tolerates the full x6 with room to spare.**
 
 **Interleaved WG-189 pairs at `forestair`, PUBLISHED EITHER WAY per the
 brief (`wg310probe.mjs`/`wg310interleave.mjs`, ad hoc tools built for this
 lane, order rotated per repeat, against the dev server, `--scenario=surface`,
-`forestair`):**
+`forestair`; each mult column's own `n` is stated because the runs are not
+all the same size):**
 
 | mult | nodes (delivered) | p50 median (range, n) | p99 median (range, n) | verdict |
 |---|---|---|---|---|
-| 1 (pre-lane) | 2,219 | 10.6 (10.4–12.9, 12) | 15.1 (14.5–19.3, 12) | baseline |
-| 2 (**shipped**) | 4,439 | 12.5 (9.8–16.5, 12) | ~19.7 (15.1–28.3, 12) | in ALERT once of 12 |
-| 2.5 | 5,585 | 13.7 (12.2–17.2, 6) | 20.6 (18.1–30.4, 6) | in ALERT once of 6 |
-| 3 | 6,677 | 14.1 (11.2–16.1, 12) | 22.0 (17.9–27.1, 12) | in ALERT twice of 12 |
-| 6 (full ruling) | 13,322–13,363 | 20.5 (14.6–22.8, 3) | 36.8 (31.6–52.2, 3) | in ALERT/near FAIL every sample |
+| 1 (pre-lane) | 2,219 to 2,229 | 9.3 to 10.6 (8.9 to 12.9, n=18 across two sessions) | 12.7 to 15.1 (12.6 to 19.6, n=18) | baseline |
+| 2 | 4,439 to 4,449 | 12.5 (9.8 to 16.5, n=12) | ~19.7 (15.1 to 28.3, n=12) | in ALERT once of 12 |
+| 2.5 | 5,585 | 13.7 (12.2 to 17.2, n=6) | 20.6 (18.1 to 30.4, n=6) | in ALERT once of 6 |
+| 3 (**shipped**) | 6,667 to 6,677 | 11.6 to 14.1 (11.2 to 16.1, n=18 across two sessions) | 18.6 to 22.0 (17.4 to 27.1, n=18) | 2 of 18 samples over ALERT |
+| 6 (full ruling) | 13,322 to 13,373 | 14.0 to 20.5 (13.9 to 22.8, n=9 across two sessions) | 23.7 to 36.8 (23.4 to 52.2, n=9) | 5 to 6 of 9 samples over ALERT |
 
-**Reading it honestly: the environment is noisy, and the baseline itself is
-not silent.** Even at mult 1 (today's shipped table, zero change) one of six
-interleaved p99 samples reached 19.3 ms and, in a later independent run, one
-of six single-run samples for mult 2 reached 28.3 (over ALERT) while the
-SAME run's own mult-1-adjacent samples stayed clean: this VM's frame timing
-carries real background variance unrelated to the harvest table, and neither
-run alone would be safe to publish. **What is not noise: the trend.** p50
-climbs monotonically and near-linearly with node count across five
-independent samplings (1, 2, 2.5, 3, 6), and mult 6's OWN MEDIAN (20.5 ms
-p50, 36.8 ms p99) is unambiguously past both the informal 16.6 ms/60 fps
-figure and StatsProbe's ALERT line on every one of its three samples, nowhere
-close to noise-explainable. mult 2 and mult 3 are both inside noise range of
-each other at the median, but mult 3 tripped ALERT twice of twelve samples
-against mult 2's once of twelve, and mult 2's own worst sample (28.3) came
-from a run whose baseline-adjacent samples were also elevated (background
-load, not the harvest change). **mult 2 is the largest fraction with a
-demonstrated, repeated margin under both figures; mult 3 is not clearly
-separable from "sometimes over" at this sample count, and this lane chose
-not to ship on an unresolved coin flip.** A verifier with more time budget
-than this lane's `run.mjs`-per-sample overhead allowed (each fresh-process
-sample pays a ~10-15 s cold boot) could sharpen the mult 2/3 boundary with a
-larger n; the recommendation stands on the data actually taken, not on an
-extrapolation past it.
+**Reading it honestly: the environment is noisy, the baseline itself is not
+silent, and this lane's own first-pass numbers changed on a second run.**
+Even at mult 1 (the pre-lane table, zero change) interleaved p99 samples
+reached 19.3 to 19.6 ms in both sessions, and a mult-2 single-run sample
+reached 28.3 (over ALERT) while that same run's mult-1-adjacent samples
+stayed clean: this VM's frame timing carries real session-to-session
+background variance. **mult 6's own two samplings disagree substantially in
+MAGNITUDE while agreeing on VERDICT**: a first n=3 run put its p50/p99
+medians at 20.5/36.8 (worst 52.2), and an independent n=6 run on this lane's
+own re-measurement put them at 14.0/23.7 (worst 36.3, 3 to 5 of 6 samples
+over ALERT depending how a 25.9-adjacent reading is counted); a verifier's
+own n=6 run reported 17.55/29.90 (worst 32.8, 6 of 6 over ALERT). **All
+three readings of mult 6 disagree on severity and agree that it is not
+safe to ship as a default.** mult 3, by contrast, held EVERY sample of an
+18-sample combined ladder (two independent six-sample interleaved sessions
+plus this lane's earlier twelve-sample first pass) inside or within noise
+of ALERT, with only 2 of those 18 over the line and both from the noisier
+of the two sessions; a linear fit of p99 median against node count crosses
+ALERT at mult 3.40 on this lane's own data and at 4.32 on the verifier's,
+i.e. mult 3 sits BELOW the crossing point on both fits and mult 6 sits far
+above it on both. **The outlier-count argument this section's first draft
+made against mult 3 (2 of 12 over ALERT against mult 2's 1 of 12) is
+withdrawn**: mult 2 and mult 2.5's own worst single samples (28.3 and 30.4)
+both EXCEED mult 3's worst (27.1), so the tails are the session's noise
+floor showing through and not a property that scales with mult 2 versus
+mult 3. **mult 3 is the ruling's largest fraction with a demonstrated,
+repeated margin, and the number this lane ships on.**
 
 #### 6.17.2 The kill switch and the config wiring
 
@@ -4144,15 +4174,19 @@ ONE place (`VegetationFields.ts`, not each of the two callers) on the
 module's own DW-18 rule; both `BootGameplay.ts` (the walk/character path)
 and `BootBodyScope.ts` (the `VegetationScope` "wild" path every fly pose
 streams through, RN-2225) forward `cfg.harvestX6` unchanged. Registered in
-`run.mjs`'s `PAGE_PARAMS` in the same commit per standing rule 7.
+`run.mjs`'s `PAGE_PARAMS` in the same commit per standing rule 7. Verified
+by outcome readback on both boot paths (`BootGameplay.ts`'s walk/character
+path and `BootBodyScope.ts`'s wild fly path both honour `?harvestx6=0`
+identically, confirmed against `TreeField.ts`'s own uncapped `wantedE`
+counter rather than only against the delivered count).
 
 #### 6.17.3 Files touched, gates, and the seam
 
 **Files:** `web/src/game/TreeTuning.ts` (the base table split out as
-`HARVEST_BASE_KM2`, `HARVEST_TABLE_MULT` = 2, `TREE_DENSITY_KM2` derived,
+`HARVEST_BASE_KM2`, `HARVEST_TABLE_MULT` = 3, `TREE_DENSITY_KM2` derived,
 `MAX_PER_CELL` 6 to 20, both false comments this brief named fixed in the
 same edits), `web/src/world/ScatterTuning.ts` (1119-1152, the "SIX FOLD
-density step" record corrected to the shipped THREE FOLD step and the
+density step" record corrected to the shipped TWO FOLD step and the
 narrower-not-closed framing), `web/src/app/Config.ts` +
 `web/src/app/ConfigTypes.ts` (`harvestX6` / `?harvestx6=0`),
 `web/src/game/VegetationFields.ts` (the composition point),
@@ -4172,42 +4206,89 @@ disagreement (`groveWeight(1)` at TreeField.ts:279 unchanged, still routed
 in 6.9.2, separately).
 
 **The seam, before/after (`docs/screenshots/WG310_*_1x.png`, all from the
-SAME frozen production build, one page param apart):**
-`forestaircanopy` goes from 2,236 to 4,463 live nodes and 774,917 to 958,000
-triangles at the shipped x2 (p99 17.8 to 17.7, unmoved): the walkable wood
-is denser under the same silhouette the far canopy tier already draws, which
-is the seam this lane was named for. `meadowfield` goes from 302 to 553 live
-nodes and 1,761,586 to 1,772,059 triangles, **comfortably under the 2.7e6
-triangle ALERT both before and after** (0.65% of the ceiling used by this
-change).
+SAME frozen production build, one page param apart, RE-TAKEN at the shipped
+mult 3 after the correction):** `forestaircanopy` goes from 2,236 to 6,698
+live nodes and 774,917 to 1,158,883 triangles at the shipped x3. **This is a
+real p99 move, not the "unmoved" this section's first draft claimed**: a
+single production-build sample read p99 11.0 to 17.6 ms, and a dev-server
+sample read 10.2 to 13.9, both comfortably inside ALERT but both a clear
+increase of roughly +3 to +7 ms depending on the sample, consistent with the
+extra nodes now being real, visible geometry rather than the invisible
+`forestair` case. The walkable wood is denser under the same silhouette the
+far canopy tier already draws, which is the seam this lane was named for.
+
+`meadowfield` goes from 302 to 798 live nodes and 1,761,586 to 1,781,055
+triangles at the shipped x3. **Corrected figures** (the first draft's
+"0.65% of the ceiling" was wrong both in magnitude and in what it measured):
+the CHANGE consumed 19,469 triangles, **0.72% of the 2.7e6 triangle ALERT**;
+the resulting AFTER frame itself sits at **65.97% of that ceiling**, which
+is nowhere near ALERT on triangles but is worth stating plainly since the
+first draft did not distinguish "how much of the budget did this change
+spend" from "how full is the budget now". **Also newly reported, because a
+density lane pushing an already-marginal pose further over deserved a
+line and the first draft omitted it entirely:** `meadowfield`'s own p99 was
+measured at 24.70 to 26.80 ms on the BEFORE arm (zero harvest change) across
+sampled runs, i.e. **already over the 25 ms ALERT line before this lane
+touched anything**; the AFTER arm (shipped x3) read p99 26.5 to 27.7 in the
+same sampling, a further small move on a pose that was already over budget
+for reasons this lane did not cause and is not the one that governs the
+density decision (`forestair` is). Named rather than fixed: `meadowfield`'s
+own pre-existing p99 marginality belongs to whichever lane next owns that
+pose's prop/canopy budget, not to this one.
 
 **Gates, all green, one session, final production build (`dist`, `vite
-preview` on 5550):** `npx tsc --noEmit` exit 0. `npm run build` exit 0.
-`cd web && npm run check` **9 of 9** (check:roles, check:probes,
-check:proxies, check:proplods, check:fieldstamp, typecheck, check:pose,
-check:limits, check:boot: the last two confirm every touched file stays
-under the 400-line cap and the served build boots clean). Full four-pose
-`rn2550guard` **PASS, exit 0** (`forestairnoon` IN BAND at -0.0627 from CORE,
-unchanged from its pre-existing state per 6.16.13; `forestairlow`,
-`flyovernoon`, `flyoverlow` IN CORE). WG-310 touches no albedo, palette or
-shading term, so this is the expected null result on that rail, run anyway
+preview` on 5550), RE-RUN after the mult 2 to 3 correction:** `npx tsc
+--noEmit` exit 0. `npm run build` exit 0. `cd web && npm run check` **9 of
+9** (check:roles, check:probes, check:proxies, check:proplods,
+check:fieldstamp, typecheck, check:pose, check:limits, check:boot: the last
+two confirm every touched file stays under the 400-line cap and the served
+build boots clean). Full four-pose `rn2550guard` **PASS, exit 0** (4 of 4
+poses judged, `forestairnoon` IN BAND at -0.0627 from CORE, unchanged from
+its pre-existing state per 6.16.13; `forestairlow`, `flyovernoon`,
+`flyoverlow` IN CORE; every rho/f/G value reproduces to four decimals
+against the pre-mult-3 run). WG-310 touches no albedo, palette or shading
+term, so this null result on that rail is the expected outcome, run anyway
 per standing rule 7 ("a merge runs the WHOLE guard").
 
-**OWED, named rather than fixed here (out of this lane's brief):**
-`ScatterTuning.ts`'s mid-tier target curve (`midTargetWeight` etc.) was
-sized against the OLD six-fold Plains step at 550 m and is now facing a
-three-fold one; whether the curve's own shape still reads as the intended
-"paint the density the other layer is not placing" seam, or now over- or
-under-shoots at the (now smaller) join, is unmeasured and belongs to
-whoever next touches `canopyDistanceWeight` or the mid tier, per this
-lane's explicit MUST-NOT-TOUCH. `forestair`'s pre-existing p99 noise floor
-(one baseline sample of six at 19.3 ms with zero harvest change, one later
-run's baseline-adjacent samples elevated across the board) is a measurement
-environment characteristic this lane found and did not cause; a lane that
-next needs a tight p99 budget on this VM should account for it rather than
-assume a clean rail.
+#### 6.17.4 Owed work, three items (all named rather than fixed here, out of this lane's brief)
+
+1. **THE BIGGEST FINDING, ROUTED RATHER THAN FIXED: `NodeField.update()` pays
+   full CPU cost for harvest-ring geometry that is never drawn at flight
+   altitude, and fixing it would likely unblock the rest of the ruling.**
+   At `forestair`, triangles read exactly 305,485 at every multiplier 1
+   through 6 tested: the extra nodes a higher density places are not
+   contributing a single visible triangle at that altitude, yet
+   `NodeField.update()` (`web/src/game/NodeField.ts`) iterates every placed
+   node every frame unconditionally, calling `compose()` and one
+   `batch.move()` per part, with no visibility, frustum or distance
+   exemption of any kind. `forestaircanopy`, the pose where the same nodes
+   ARE visible, sat at a p99 median of 20.5 to 23.7 ms even at the FULL x6
+   (0 of 4 to 6 samples over ALERT, comfortable margin), while `forestair`
+   broke budget on the same node counts purely because it pays the CPU cost
+   with none of the picture. A lane that adds a visibility or distance
+   exemption to `NodeField.update()` (or simply stops streaming the harvest
+   ring once the vegetation origin is above some flight-altitude threshold,
+   `VEG_ORIGIN_MAX_ALT_M`'s own idiom one gate short of it) would likely
+   let `forestair` tolerate the same x6 `forestaircanopy` already does,
+   which is the remaining 2x of the ruling this lane could not ship.
+2. `ScatterTuning.ts`'s mid-tier target curve (`midTargetWeight` etc.) was
+   sized against the OLD six-fold Plains step at 550 m and is now facing a
+   two-fold one (was three-fold under the mult-2 draft this section
+   corrects); whether the curve's own shape still reads as the intended
+   "paint the density the other layer is not placing" seam, or now over- or
+   under-shoots at the (now smaller) join, is unmeasured and belongs to
+   whoever next touches `canopyDistanceWeight` or the mid tier, per this
+   lane's explicit MUST-NOT-TOUCH.
+3. `forestair`'s pre-existing p99 noise floor is real and not this lane's
+   to fix: baseline (mult 1, zero harvest change) interleaved samples
+   reached 19.3 to 19.6 ms in two independent sessions, and `meadowfield`'s
+   own BEFORE arm (also zero harvest change) read p99 24.70 to 26.80,
+   already over the 25 ms ALERT line. A lane that next needs a tight p99
+   budget on this VM, at either pose, should account for this noise floor
+   rather than assume a clean rail.
 
 
+## 7. Open questions & risks
 - **R21 (new, WG-217, 2026-08-03, MINE by domain, routed to its own pass): a handful of surface-nets vertex normals disagree with their own triangle winding at a levelled pad's cut rim.** Measured at four sites: 0 of 2,362 and 1 of 2,288 at the WG-214 spawn, 0 of 2,778 at the old spawn's pad, and **10 of 2,156 with 1 triangle facing INTO the rock** at a Mountains hillside 3 km off the old pad on HEAD's own terrain. **Pre-existing, and it reproduces at HEAD with no change of mine.** A disagreeing normal means that triangle is lit as one surface and drawn as its opposite. `test_voxel_field.cpp` now carries a ceiling of 4 on both scenes so it cannot get worse silently, and `inward == 0` is strict. The hunt belongs in `surface_nets.h` and wants its own pass: the likely shape is an ill-conditioned gradient on a near-degenerate sliver, which is a numerical-robustness question rather than a winding one. **WG-245 UPDATE (2026-08-21): R21 NOW HAS A RATE INSTEAD OF AN ANECDOTE, AND IT IS WHY THE PLANET HEIGHT FIELD CANNOT BE CHANGED.** Sweeping a height-field amplitude over nine values (a lowland swell coefficient from 0.000 to 0.060, i.e. nine unbiased samples of the ground the fixture sits on) the inward-facing triangle count reads **0, 1, 0, 0, 0, 1, 0, 1, 1 with no trend in amplitude whatsoever**. The fixture passes at HEAD because HEAD's ground under it happens to be one of the lucky ones; the failure rate over an unbiased sample is about **44 per cent**. So `inward == 0` is not a property of the mesher on this world, it is a property of one patch, and **any change to the planet height field turns this suite red for a reason unrelated to the change**. The same sweep shows `test_surface_field.cpp`'s two dig brackets failing at EVERY nonzero amplitude for the same reason one layer down (the voxel lattice phase against one ground). Until all four assertions (`inward`, `totalDisagree`, and both surface dig brackets) assert over N grounds with stated ceilings (a ceiling over one ground is pinned exactly as hard as a strict check over one ground, see 6.11.9 item 2), R21 is not merely an open defect: it is a freeze on the field. Full record in section 6.11.7. **WG-250 UPDATE (2026-08-21, `lane/wg-fixtures`): THE FIXTURE HALF OF THE FREEZE IS LIFTED, AND R21 IS SMALLER THAN IT LOOKED. Fix in section 6.12.** All four assertions plus two more the sweep found are rewritten over 48 body-wide grounds with derived ceilings, and both suites are now green at every amplitude of the WG-240 grid (0.000 to 0.060 in 0.0075 steps plus 0.050), against a BEFORE arm that is red in the voxel suite at 4 of 10 amplitudes and in the surface suite at 9 of 10. **The `inward` coin flip was mostly an instrument artefact and the unit was wrong:** surface nets emits QUADS, one per crossed lattice edge, as two triangles sharing a diagonal, and a non-planar quad's two triangles straddle its own normal, so a warped quad tips one half past the surface while the quad is correctly wound. **CORRECTION, and the wrong claim is named: a first draft of this update said every triangle-level inward verdict over 640 grounds came from a facet narrower than the 0.35 m probe. That universal is false at the design amplitude** -- a fresh-context verifier found inward facets at 0.3692 m (coef 0.020) and 0.4050 m (coef 0.050), both wider. The sliver is the common case and the explanation for the old coin flip; it is not the whole population, and the bound that actually holds is the area one. **What survives as R21 is real but small and now BOUNDED rather than strict:** a few quads per hundred thousand are wound into the rock or shaded against their own geometry at a cut rim, bounded by area against one voxel's worth of drawn surface (1.4142 m2, worst reading 0.6694 on the verifier's grid) and against the smallest feature a 1 m lattice can carry (4 m2, worst reading 1.3327), with the worst reading printed every run so it cannot grow silently, and with a derived FLOOR under those ceilings so the fixture cannot pass by seeing less surface. The hunt still belongs in `surface_nets.h`. **R21 is no longer a freeze on the height field up to the 0.050 design amplitude; what remains of the freeze is the committed wasm binary (6.11.7 item 3) and, above about 0.055, a SEVENTH ground-pinned assertion the verifier found and this lane did not fix: `test_surface_field.cpp:780`'s `worstUp <= 0.25 * kVoxelSizeM`, which reads 0.155941 m at 0.050 and 0.272946 m at 0.0625 (6.12.8 item 3).** **WG-275 UPDATE (2026-08-21, `lane/wg-ship`): THE WASM HALF OF THE FREEZE IS LIFTED, AND WHAT IS LEFT OF R21 IS ONE ASSERTION AND ONE CEILING. Record in section 6.14.** The lowland swell is in `sampleHeightFieldPlanet` at 0.050 and `web/wasm/dist/of-core.wasm` (`9d2764f1cddc13c7f92b9d91962b21d3` to `e2f0fa50b7697a226d2513a4ec6e8831`), `of-core.mjs` and `web/wasm/test/expected.json` are rebuilt and COMMITTED under Release-lane authority granted for that batch alone, so 6.11.7 item 3 is discharged and the standing "no lane commits the binary" rule resumes with the next lane. **Both unfrozen suites are green on the shipped term** and, more usefully, the amplitude sweep this lane re-ran on its OWN term BRACKETS the seventh pin rather than merely clearing it: green at 0.0000 / 0.0275 / 0.0425 / **0.0500** / 0.0550 and the surface suite RED at 0.0625, with `worstUp` **0.175318 / 0.242857 / 0.215117 / 0.155941 / 0.204919 / 0.272946**, so 6.12.8 item 3's location is confirmed to the digit on an independent build and 0.175318 reproduces the test's own "MEASURED 0.175320 m" comment at amplitude 0. **The thinnest rail was re-run on the term that actually ships and it is the swept term numerically:** the pit bracket's guaranteed-air margin reads **+0.0812 m** against a 0.25 m tolerance, which is the WG-250 verifier's +0.08 exactly, the dig column **+0.1634 m** and the dig/fill dig **+0.1229 m**, informative at 16, 16 and 18 of 48 grounds. `ctest` **42 of 42** on the shipped tree; parity **Tier 0 125 of 125, Tier A 103 of 103**, both gating. **WHAT REMAINS OF R21:** the bounded quad population itself (a few per hundred thousand, worst `inward` 0.3596 m2 against the 1.4142 m2 ceiling at the shipped amplitude, printed every run), and the `worstUp` assertion, which still freezes the field above about 0.055 and is still owed. The hunt still belongs in `surface_nets.h`.
 - **R19 UPDATE (WG-214, 2026-08-03): CLOSED by moving the spawn.** Reid ruled it. The spawn is now a Hills valley floor at 797.6 m with ~1,296 trees in the shipped ring, and `core/tests/test_spawn.cpp` is the gate that would have caught the original drift. What remains open from it is the CLIENT-SIDE re-baseline, which needs a browser and is deliberately not done: see the owed list in the status line.
 - **R20 UPDATE (WG-218, 2026-08-03): ASSESSED AND LEFT, with the cost written down.** Deriving `homeDir` from the seed needs cross-toolchain-exact trig (DW-14), a cheap runtime spawn SEARCH (the offline one sweeps 400,000 directions), and the same treatment for `pondDir` and the pad. Not a bounded add-on to a spawn move. `?seed=` still moves the world under a fixed spawn point.

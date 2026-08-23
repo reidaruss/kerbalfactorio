@@ -1133,9 +1133,9 @@ const ramp = (x: number, a: number, b: number): number => sstep((x - a) / (b - a
  * canopy table table-wide; the lane measured the node cost at the densest
  * pose FIRST (standing rule 7) and found the full six-fold ask broke the
  * frame budget at `forestair` (world-gen.md 6.17), so the shipped multiplier
- * is `TreeTuning.HARVEST_TABLE_MULT` = 2 of 6, documented there as
- * intentional. The Plains ask is now 840 against this tier's still-2,520 --
- * a THREE FOLD step at 550 m, smaller than the six fold this record first
+ * is `TreeTuning.HARVEST_TABLE_MULT` = 3 of 6, documented there as
+ * intentional. The Plains ask is now 1,260 against this tier's still-2,520,
+ * a TWO FOLD step at 550 m, smaller than the six fold this record first
  * measured but the same WALL in kind, only lower. Re-measuring it is this
  * seam's own owed work and not this lane's (WG-310 did not touch
  * `canopyDistanceWeight` or this file's target curve, per its brief).
