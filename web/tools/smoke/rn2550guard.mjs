@@ -416,9 +416,12 @@ const F_MIN = 0.10;
 //
 // ===========================================================================
 // RN-2661, 2026-08-22. THE RESIDUE IS PAID OUT OF THE PAINT'S COVERAGE, NOT
-// ITS FLOOR. `boxSurf` IS DISCHARGED AND OVER-PAID; `boxShip` IS 84 PER CENT
-// PAID AND THE 0.0036 THAT IS LEFT IS REPORTED AS A SHORTFALL WITH THE ARM
-// THAT PRICES IT.
+// ITS FLOOR. `boxSurf` IS DISCHARGED AND OVER-PAID; `boxShip` IS 53 PER CENT
+// PAID ON THIS TREE AND THE 0.0105 THAT IS LEFT IS REPORTED AS A SHORTFALL
+// WITH THE ARM THAT PRICES IT. (The floor shade ALONE pays 84 per cent of
+// boxShip; RN-2665's mottle gives part of that back, and the net is 53. An
+// earlier draft of this line quoted the floor shade's own figure as the
+// block's headline and so contradicted its own body four lines down.)
 // ===========================================================================
 // RN-2645 measured that no ambient-floor handle on either half could close
 // this and routed the residue (0.0225 boxShip / 0.0223 boxSurf against
@@ -446,7 +449,9 @@ const F_MIN = 0.10;
 //
 // **THE FLOOR SHADE ALONE PAYS -0.0189 / -0.0420, which is 84 and 188 PER
 // CENT of the residue. RN-2665's STAND MOTTLE THEN GIVES BACK +0.0069 /
-// +0.0095 of it, 31 and 43 per cent of what the floor shade bought, and the
+// +0.0095 of it, which is 31 and 43 per cent of the RESIDUE and 36.5 and
+// 22.6 per cent of what the floor shade bought (an earlier draft named the
+// second denominator and printed the first), and the
 // SHIPPED frame pays -0.0120 / -0.0325, i.e. 53 and 146 PER CENT.** boxSurf is
 // still DISCHARGED with 0.0102 in hand; boxShip is 53 per cent paid with a
 // SHORTFALL of 0.0105.
@@ -480,8 +485,12 @@ const F_MIN = 0.10;
 // view-side half of the same expression, is a Boolean crown-overlap law on the
 // plan index, and running the sun ray through a homogeneous leaf soup two
 // lines away would be two different woods in one term. The refusal is a
-// physics decision that costs 0.0036 of a ratchet, and it is written here so
-// the next reader sees the price rather than only the choice.
+// physics decision, and its price is the FORGONE darkening rather than the
+// shortfall: the refused arm reads 0.9199 boxShip against the shipped 0.9448
+// on this tree, so 0.0249 of ratchet is given up (0.0214 on merged main). An
+// earlier draft printed 0.0036 here, which is the boxShip SHORTFALL and a
+// different quantity entirely. It is written down so the next reader sees the
+// price rather than only the choice.
 //
 // `rho` IS UNMOVED TO FOUR DECIMALS AT ALL FOUR POSES (0.1890 / 0.2996 /
 // 0.4762 / 0.4016 before and after), which is RN-2645's second logged decision
@@ -501,10 +510,11 @@ const F_MIN = 0.10;
 // ONE INSTRUMENT INTERACTION IS WORTH THE NEXT LANE'S ATTENTION. Darkening the
 // terrain pushes more of it toward exactly black, so `?proppaint=1`'s
 // blackFrac (`fB`, the arm section 3 already refutes as a coverage
-// instrument) RISES: at `forestairlow` it goes 0.2796 -> 0.4022 against an
-// `fA` of 0.4447. The `fB <= fA + COV_TOL` assertion still holds with 0.0425
-// of margin, but a further darkening of the far paint could trip it, and the
-// failure would be the instrument rather than the frame.
+// instrument) RISES: at `forestairlow` it goes 0.2796 -> 0.3190 against an
+// `fA` of 0.4447, so the `fB <= fA + COV_TOL` assertion holds with 0.1257 of
+// margin. **An earlier draft quoted 0.4022 and 0.0425 here and overstated the
+// alarm threefold: that reading is the REFUSED `?treelinefloorlaw=1` arm, not
+// the shipped frame.** It is a real direction to watch and not a near miss.
 //
 // Every value below marked RN-2605 was measured on `lane/n13-backface`'s final
 // build, server 127.0.0.1:5605 --strictPort, sentinel CONTENT verified over the
@@ -530,8 +540,17 @@ const BASE = {
   // at the lane's FINAL shipped frame. boxSurf is the debt DISCHARGED (146 per
   // cent) and boxShip is 53 per cent of it with a 0.0105 shortfall reported
   // rather than renegotiated. See the RN-2661 block above for the two-step
-  // arithmetic and for why the mottle gives 31 and 43 per cent of the floor
-  // shade's payment back.
+  // arithmetic and for why the mottle gives back 31 and 43 per cent of the
+  // RESIDUE (36.5 and 22.6 per cent of the floor shade's own payment).
+  //
+  // ON THE MERGE CONFLICT IN THIS TABLE: MAIN'S VALUES WIN. `lane/wg-reach`
+  // re-pinned this pose to 0.9289 / 0.8671 on merged main, and 0.9448 / 0.8918
+  // is a RAISE against that, which this file's own rule forbids without a
+  // logged decision. The pin below is this lane's PRE-MERGE frame and is
+  // correct for the tree it was measured on; it must not survive the conflict.
+  // Re-pinning instead to the merged-tree measurement (0.9190 / 0.8406, or the
+  // c896dff2 figures once that tree is the base) is also defensible and is
+  // strictly tighter. Admin resolves; rendering.md 2.44.10 item 6 carries it.
   flyovernoon: { boxShip: 0.9448, boxSurf: 0.8918, boxClearY: 0.288112,
     crownClearY: 0.148116, rho: 0.2488, rhoOut: null },
   flyoverlow: { boxShip: 0.9774, boxSurf: 0.8884, boxClearY: 0.147985,
