@@ -16632,4 +16632,23 @@ same style as `canopyChunkKm2` beside it. world-gen.md 6.16.13's own "related
 gap" item (`CANOPY_CHUNK_MAX` has no page param) is now closed; nothing else
 in that section's three documentation defects was touched.
 
+### 2.45.8 REBASED ONTO THE ADVANCED BASE, RE-VERIFIED
+
+Built at `origin/main` @ `d45c712a`; main advanced mid-lane to `66b1893a`
+(BT-340 to BT-344, `rn2550guard`'s own BASE pins refreshed under a third
+logged decision, comments/data only). Zero file overlap with this lane except
+`docs/web/NUMBERS.md`, where the rebase auto-merged as two adjacent but
+independent table rows and one two-line hunk was resolved by hand (this
+lane's RN-2675 row kept, BT-340's row kept, nothing else touched). Rebased
+rather than merged, since the brief requires a rebased branch pushed and not
+merged. **Re-verified on the rebased tree rather than assumed clean**:
+`npx tsc --noEmit` clean, `npm run build` clean, `npm run check` **9 of 9**,
+and the full four-pose `rn2550guard` against the NEW pins reads **identically
+to the pre-rebase run to the digit** (`forestairnoon` 0.9359/0.8844 rho
+0.1873 IN BAND, `forestairlow` 0.9177/0.6778 rho 0.2987, `flyovernoon`
+0.9190/0.8406 rho 0.4762, `flyoverlow` 0.9334/0.7050 rho 0.4016, all IN CORE
+except `forestairnoon`) -- expected, since BT-340 adopted exactly these
+measured values as its new pins and this lane touches no shading, density or
+geometry path. HEAD after rebase: `f4c94703`.
+
 Branch `lane/n17-poolroom`, pushed, **not merged**.
