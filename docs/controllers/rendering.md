@@ -16669,9 +16669,12 @@ R5's five was therefore re-run on `rn2664scale.mjs` before any new ranking:
    3.4 to 4.5 km reads **6.563**, and 4.5 to 15.2 km reads **2.094 to 2.328**, against
    6.3 to 18.9 inside 4.5 km. WG-295's tail and RN-2665's mottle closed the inner
    third. Over the remaining outer band `?treeline=0` costs only **5.0 per cent** at
-   32 px while `?aerosol=0` **adds 215.7 per cent**, so what remains is the atmosphere
-   and not the paint. This is 2.44.10 item 1's routed lane, now with a measured trade
-   curve under it.
+   32 px while `?aerosol=0` **adds 214.4 per cent** (correction pass: the first draft
+   printed 215.7, which belongs to section 4.1's sweep table on a different rect; this
+   table's own reading is 214.4), so what remains is the atmosphere and not the paint.
+   This is 2.44.10 item 1's routed lane, now with a measured trade curve under it, and
+   the aerosol has since been re-classed as a Reid look decision rather than a lane
+   dispatch (2.46.8).
 2. **Rank 2 (the beach's treeless disc): SURVIVES INTACT.** `?beachcanopy=0` moves the
    near field by 0.047 counts at 1 px and 0.026 at 64 px, at every scale, which is this
    instrument's own noise floor. Still Reid-blocked on the coastline decision.
@@ -16687,11 +16690,15 @@ R5's five was therefore re-run on `rn2664scale.mjs` before any new ranking:
    **71.22 to 50.57 = -20.65** against R5's published -30.19 and WG-295's -17.33 on an
    intermediate base. **R5's endpoints do not reproduce and nobody had reconciled the
    three; row 462 reproduces WG-295 to the digit.** The density half at 550 m is
-   untouched and is **exactly 6.0** (`TreeTuning.ts:116`'s 420 against
-   `Registry.ts:354-356`'s `(100+30+290) x DENSITY_SCALE 6`), and WG-295/301/304 are
-   all gated on `groundOk` at `Scatter.ts:530` and cannot reach it. Its character has
-   changed: WG-260's mid tier removed the visible cliff, so it is now a standing
-   disagreement between the wood a player can harvest and the wood they can see.
+   untouched and is **exactly 6.0 at all four vegetated biomes, not Plains alone**
+   (correction pass: `TreeField.ts:264` applies `TREE_DENSITY_KM2[biome]` identically
+   for every biome; Plains 420 against 2,520, Forest 3,840 against 23,040, Hills 1,200
+   against 7,200, Mountains 480 against 2,880, each `TreeTuning.ts:113-119` against
+   `Registry.ts:347-363`'s canopy sums times `DENSITY_SCALE` 6), and WG-295/301/304
+   are all gated on `groundOk` at `Scatter.ts:530` and cannot reach it. Its character
+   has changed: WG-260's mid tier removed the visible cliff, so it is now a standing
+   disagreement between the wood a player can harvest and the wood they can see, at
+   every vegetated biome.
 5. **Rank 5 (the carpet's lift): THE NUMBER SURVIVES UNMOVED AND IS THE WRONG NUMBER.**
    All six lift rungs reproduce R5 to two decimals, so no lane touched it. The ladder
    says the carpet is a veil rather than a wash (it **adds 55 per cent** of 16 px
@@ -16701,10 +16708,15 @@ R5's five was therefore re-run on `rn2664scale.mjs` before any new ranking:
 ### 2.46.2 The rank 1 finding, and the correction this lane made to its own first draft
 
 At `flyover` over 4.5 to 15.2 km the coarse lateral structure is 2.240 shipped against
-7.073 with `?aerosol=0`. The retained fraction 0.317 over an effective 8 km implies
-`sigma = 1.44e-4` against the authored `aerosolSigma = 1.4e-4`
-(`Atmosphere.glsl.ts:154`), **three per cent apart**, so the term is doing exactly what
-its constant says and no lane should hunt a bug. `?aerosol=` is an amplitude
+7.073 with `?aerosol=0`. The retained fraction 0.317 implies `sigma = 1.44e-4` at a
+chosen 8 km effective range, or `sigma = 1.58e-4` row-weighted over the same band,
+against the authored `aerosolSigma = 1.4e-4` (`Atmosphere.glsl.ts:154`).
+**Correction pass softening:** the first draft called this "three per cent apart",
+which overstates the precision of a chosen (not derived) 8 km range; the honest
+statement is that the measurement **brackets the authored constant across any
+reasonable effective range** (1.44e-4 to 1.58e-4 spans 1.4e-4 by a comfortable
+margin either way). The conclusion is unchanged: the term is doing what its constant
+says and no lane should hunt a bug. `?aerosol=` is an amplitude
 (`Atmosphere.glsl.ts:486-490`), so the trade was swept rather than deleted: 0.75 buys
 +26.1 per cent of 32 px structure, 0.50 buys +67.7, 0.25 buys +128.2, monotone with no
 knee, and 0.50 keeps the depth cue by eye at 1x.
@@ -16731,10 +16743,12 @@ the single thing this campaign has most often been wrong about.
 At `meadowfield` (pitch -12, 1.62 m eye) the geometric horizon is row 286 and the whole
 84 m-to-horizon band occupies about **twelve frame rows**. A wide-x row profile flattens
 the eye's apparent carpet cut to a **3.54-count** maximum step over rows 292 to 316, and
-R5's `r250` scores the same band a lift of 1.009 and calls it healthy. `forestaircanopy`
-is the precedent (added by R5 for exactly this reason over Forest) and **Plains has no
-twin**; `midfield` declares `props: false` and cannot judge a carpet. Ranked 5 in the
-audit as a pose request and nothing else.
+R5's `r250` scores the same band a lift of 1.009 and calls it healthy. **The claim that
+the carpet ends in a ruler-straight cut is struck on this measurement**, matching
+NUMBERS.md's record of this pass. `forestaircanopy` is the precedent (added by R5 for
+exactly this reason over Forest) and **Plains has no twin**; `midfield` declares
+`props: false` and cannot judge a carpet. Ranked 5 in the audit as a pose request and
+nothing else.
 
 ### 2.46.5 Three things the eye found that no round had ranked
 
@@ -16746,11 +16760,22 @@ audit as a pose request and nothing else.
   inversion at one row under one light. It is the highest-contrast near-field object in
   `vista`, `vistadawn` and `mtnslope`, and **neither half is blocked** on Polyhaven or
   the coastline.
-- **The emissive is bright and is not a light source.** `smelternight` is valid on this
-  build and is the first frame that can separate "contributes nothing" from "the sun is
-  drowning it": the machine glows beautifully and the grass beside it sits at the frame
-  edge's value. Ranked on the frame, with the rectangle set named as the lane's first
-  deliverable rather than spent here.
+- **The emissive is live and registered, and the ground's own tap on it delivers
+  exactly zero.** **Correction pass rewrite:** the first draft asked "is there a light
+  at all" and this is refuted by the document's own committed
+  `R6_smelternight.json` (`emit: { installed: true, registered: 1, selected: 1,
+  spliced: 103, reach: 40 }`) and by `EmissiveLight.ts` (RN-2385), a shipped
+  local-irradiance system built specifically because a real point-light pool was
+  measured to cost a 441 ms stall and 30 new programs, consumed by the terrain at
+  `TerrainFragLight.glsl.ts:158-159` through `uEmitGround`. `smelternight` was built
+  by R3 for exactly this separation (`WORLD-AUDIT-R3-2026-08-21.md:158`). Shipped
+  against `?firelight=0` moves `hearthL` 6.60 to 3.99, `hearthR` 7.37 to 4.76 and
+  `bandLit` 24.67 to 10.74 (35 to 56 per cent), proving the model is live; shipped
+  against `?firelightground=0` (`TerrainAmpQuery.ts:320-338`) is **bit-identical at
+  every committed rectangle**, proving the ground's own share is exactly zero. This is
+  now a one-file, sonnet-sized question (why `uEmitGround` delivers zero), reclassed
+  from opus diagnosis to sonnet fix, and it is the rank this correction pass moves to
+  third in the adopted re-ranking (2.46.8).
 - **The beach substrate's corduroy is `groundrelief`'s**, proven by a one-flag pair
   (`R6_beach_crop_ripple.png` against `R6_beach_crop_ripple_relief0.png`): the term
   disappears and an isotropic mottle is left. The defect is that its direction field is
@@ -16781,3 +16806,35 @@ the audit says so rather than promoting it.
 not the "0.13 to 0.32" R5's section 8 carried; the worst pose (`forestairnoon`, 0.4001)
 is worse by a quarter of the rectangle than the record says. No source file under
 `web/src/` was touched. Branch `audit/r6`, pushed, **not merged**.
+
+### 2.46.8 Correction pass (2026-08-23, fresh-context verifier, verdict FIX, applied by mini-lane)
+
+A fresh-context verifier that never touched this drafting reproduced the audit's own
+tables to the digit and routed ten corrections, applied doc-only across the audit
+document, this section and NUMBERS.md's RN-2685 row. The two that change this
+section's own reading of the work:
+
+1. **The emissive finding (2.46.5) rewritten.** It is not "is there a light", it is
+   "a live, registered, 40 m-reach emitter delivers exactly zero through
+   `uEmitGround`". Reclassed from an opus diagnosis to a one-file sonnet lane, and
+   moved to third in the adopted re-ranking below.
+2. **The harvest/tier-seam density half (2.46.1 item 4) widened from Plains alone to
+   all four vegetated biomes**, each at exactly 6.0, per `TreeField.ts:264` applying
+   `TREE_DENSITY_KM2[biome]` uniformly.
+
+Also corrected in this section: the rank 1 32 px `?aerosol=0` figure (215.7 to 214.4
+per cent, a rect mismatch with section 4.1's sweep table), the aerosol constant's
+"three per cent apart" softened to "brackets the authored constant across any
+reasonable effective range" (1.44e-4 to 1.58e-4 depending on how the effective range
+is taken), and the plains carpet-cut claim (2.46.4) labelled struck to match
+NUMBERS.md's existing record.
+
+**Adopted re-ranking (full detail in the audit document's section 12):** the snow
+patch first, the harvest gap table-wide second (Admin ruling against scaling the
+table up to close it), the `uEmitGround` sonnet lane third, the plains pose fourth,
+and the aerosol re-classed as a Reid decision preceded by a small measurement lane
+covering `vista`, `limb` and the never-swept `aerosolScaleM`. A pre-Reid
+consolidation wave (SE reference board scaffolding, a one-page Reid decision sheet,
+and a guard-instruments hygiene lane) is also adopted and needs no Reid to start.
+
+No source file under `web/src/` was touched by this pass. No frame was retaken.
