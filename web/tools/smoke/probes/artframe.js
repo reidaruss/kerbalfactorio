@@ -1256,6 +1256,117 @@
         + 'band spans tens of rows instead of the half a pixel a standing eye '
         + 'sees (rendering.md 2.36.4/2.36.11 item 2)',
     },
+    // RN-2725 (WORLD AUDIT R6, RANK 5). THE POSE THAT CAN MEASURE ITS OWN MID
+    // FIELD, and the shot set had no such thing over Plains.
+    //
+    // WHY IT IS ADDED. `meadowfield` (pitch -12, 1.62 m standing eye) is the
+    // plains hero and R6 4.5 found it cannot judge its own headline complaint
+    // ("the world ends at the carpet"): the 84 m-to-horizon band -- the near
+    // sward is dense to about 85 m and then a flat, textureless plane runs to
+    // the treeline -- occupies about TWELVE frame rows at that pose, so the
+    // scale ladder reads shipped and `?grass=0` identically (20.78 and 20.78
+    // at 16 px) not because there is no carpet edge but because no committed
+    // rectangle can hold a twelve-row band without straddling sky, terrain and
+    // the horizon all at once. `forestaircanopy` (RN-2585, this file's own
+    // block above) is the precedent and the model: it solved the SAME class of
+    // problem for the far treeline by raising the eye, and this shot applies
+    // its exact method to the near carpet instead.
+    //
+    // SITE AND YAW ARE `meadowfield`'s OWN, TO THE DIGIT (lat -7.9675, lon
+    // 116.53189, yaw 150), so the two poses are ONE CAMERA MOVE APART and not
+    // one scene apart: the only things that change are the eye's altitude and
+    // its pitch. Sun pin is `meadowfield`'s own (dot 0.70, tol 0.06) for the
+    // same reason. Props are LEFT ON (no `props: false` field, and the FLY
+    // dispatch branch this shot takes never calls `propsVisible(false)`),
+    // because `midfield` already proved a props-off pose cannot judge a
+    // carpet (R6 4.5b) and this shot exists to succeed where that one cannot.
+    //
+    // THE EYE HEIGHT IS SOLVED, NOT GUESSED, on `forestaircanopy`'s own
+    // trigonometry (rendering.md 2.36.4's formula, Forge R = 6e5 m): at eye
+    // height h, the depression to ground at range s is `s/(2R) + h/s`
+    // radians and the horizon's own dip is `sqrt(2h/R)`, so the band a raised
+    // eye adds between the carpet's own edge (s = 84 m) and the true horizon
+    // is the DIFFERENCE:
+    //
+    //   band(h) = 84/(2R) + h/84 - sqrt(2h/R)          (radians)
+    //
+    // Solving band(h) = 2 degrees (0.034907 rad), `forestaircanopy`'s own
+    // floor for "worth a pose", gives h = 3.20 m -- already more than double
+    // `meadowfield`'s 1.62 m eye. THAT FLOOR IS NECESSARY BUT NOT SUFFICIENT
+    // HERE, and this is where this shot's derivation has to go one step past
+    // `forestaircanopy`'s: `forestaircanopy` asked one band (690 m to horizon)
+    // to clear the floor, but this pose's whole point is a six-rung LADDER
+    // (85 to 800 m) that must stay resolvable rung-to-rung, and the SAME flat-
+    // plane relation that places every rung (`rangeAtRow`/`rowAtRange`, this
+    // file, below) compresses the FAR pairs hardest: applying the identical
+    // "clear 2 degrees, then double for margin" test to the ladder's OWN
+    // tightest adjacent pair (600 to 800 m, the pair nearest the horizon and
+    // therefore the pair the flat-plane mapping crushes most) gives
+    // atan(h/600) - atan(h/800) = 2 degrees at h = 85.07 m (solved
+    // numerically) -- roughly 26x `meadowfield`'s eye and an order of
+    // magnitude past the single-band floor above. Rounded up for margin to
+    // h = 100 m (band at h = 100 is already 2.337 degrees, not merely
+    // doubled: see the captured row table below for what that margin buys),
+    // the true horizon sits at `sqrt(2Rh)` = 10,954 m,
+    // comfortably past every `rangeRects` rung (max 800 m), and the flat-
+    // plane mechanism's own omitted curvature term (`s/(2R)`, under 0.04
+    // degree even at s = 800 m) stays negligible next to the metres-per-
+    // hundred depression angles this height produces -- unlike the
+    // kilometres-scale grazing incidence `forestaircanopy`'s own far band is
+    // measured at, where the same omission would be the order-of-magnitude
+    // error 2.32.3 catalogued.
+    //
+    // THE PITCH IS -25, CHOSEN AND THEN PROVEN LIVE (`forestaircanopy`'s own
+    // note holds here too: the pitch shifts WHERE the ladder sits far more
+    // than how wide each rung's gap is). At h = 100 a shallow pitch pushes
+    // the 85 m rung off the bottom of the frame outright (measured: pitch
+    // -10 refuses with `rangeRects 85 m falls off the frame`, fy 1.217); -25
+    // was the value that brought it back to a safe margin, and the row table
+    // below is this build's own captured output, not the formula's:
+    //
+    //   rangeM   row (of 900)   gap to next rung
+    //      85      805-810              --
+    //     150      567-572             238
+    //     250      404-409             163
+    //     400      297-302             107
+    //     600      231-236              66
+    //     800      196-201              35
+    //
+    // Every gap clears "tens of rows" with margin, the tightest (600 to 800,
+    // the pair the derivation above targeted) at 35, and the total ladder
+    // (85 to 800 m) spans 609 rows against `meadowfield`'s twelve. `box`
+    // (below) reads the r250 rung's own rectangle: RGB (106.69, 131.53,
+    // 70.76), green-dominant, and every other rung's RGB is checked the same
+    // way in rendering.md 2.50 -- all six read as ground, none as sky, which
+    // is this pose's own proof against the machine-rect trap (NUMBERS.md
+    // rule: a rectangle is not a measurement until its content is verified).
+    //
+    // `rangeRects` PLACES THE RUNGS LIVE OFF THIS CAPTURE'S OWN OBSERVER, the
+    // same mechanism `meadowfield` and `midfield` use (not hand-derived rows
+    // like `forestaircanopy`, because at this eye height and these ranges the
+    // flat-plane inversion the mechanism already implements is the thing
+    // whose OWN output the table above reports -- there is no separate
+    // curvature-correct placement to disagree with it): 85, 150, 250, 400,
+    // 600 and 800 m, spanning the carpet's own edge to well past it.
+    //
+    // ADDITIVE ONLY: a new key, nothing above it moved. It takes the FLY
+    // dispatch branch by NAME (added to the `if` alongside `forestair`/
+    // `flyover`/`limb`, on that block's own "ADDING A SHOT MEANS ADDING IT
+    // HERE TOO" instruction) rather than by prefix, because `plainsmid`
+    // shares no name family with the existing FLY shots.
+    plainsmid: {
+      scenario: 'surface', needsSandbox: false, fly: true,
+      lat: -7.9675, lon: 116.53189, altM: 100,
+      yaw: 150, pitch: -25,
+      sunDot: 0.70, sunTol: 0.06,
+      box: [0.15, 0.448889, 0.85, 0.454444],
+      rangeRects: [85, 150, 250, 400, 600, 800],
+      rangeRowsPx: 5,
+      why: 'the MID-EYE POSE OVER PLAINS: meadowfield\'s own site and yaw, '
+        + 'eye raised and pitch solved so the 84 m-to-horizon carpet-edge '
+        + 'band spans tens of rows instead of the twelve a standing eye '
+        + 'sees (WORLD-AUDIT-R6-2026-08-23.md 4.5, rendering.md 2.50)',
+    },
     // RN-2622 (WORLD AUDIT R5). THE POSE THAT STANDS ON A BEACH, and the shot
     // set has never had one.
     //
@@ -2473,7 +2584,7 @@
   // moment a fifth angle is added, which is the exact shape of the trap the
   // dispatch guard forty lines down exists to catch. `limb` stays named.
   if (name.startsWith('flyover') || name.startsWith('forestair')
-      || name === 'limb') {
+      || name === 'limb' || name === 'plainsmid') {
     posed = true;
     const o0 = of.world().observer;
     if (o0.mode !== 'FLY') {
