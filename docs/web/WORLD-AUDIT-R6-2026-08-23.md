@@ -202,8 +202,17 @@ because it never took an aerosol arm.** Three arms on rect `x560 y330 900x140`
 |---|---|---|---|
 | 1 | 3.358 | 2.911 (**-13.3%**) | 8.750 (**+160.6%**) |
 | 16 | 2.650 | 2.410 (-9.1%) | 7.581 (+186.0%) |
-| 32 | 2.253 | 2.139 (**-5.0%**) | 7.073 (**+215.7%**) |
+| 32 | 2.253 | 2.139 (**-5.0%**) | 7.082 (**+214.4%**) |
 | 64 | 1.791 | 1.708 (-4.6%) | 6.751 (+276.9%) |
+
+**Correction pass note:** the 32 px `?aerosol=0` cell above originally printed
+7.073 (+215.7 per cent), which is section 4.1's sweep-table cell for rect
+`x560 y340 900x130`, not this table's own rect `x560 y330 900x140`. This
+table's own reading is **7.082 (+214.4 per cent)**; the arithmetic tell is that
+`7.073 / 2.253 - 1 = 213.9`, not 215.7, so the printed figure could not have
+come from this table's own shipped baseline of 2.253. Section 4.1's sweep
+table is unaffected: its own baseline there is 2.240, not 2.253, and
+`7.073 / 2.240 - 1 = 215.7` reproduces correctly on that table's own numbers.
 
 The paint is worth **5 per cent** of a small number at the coarse end. The atmosphere
 is worth **68 per cent** of a number three times larger. **Rank 1 survives on the
@@ -296,17 +305,21 @@ project: the two tiers are no longer a wall, they are a **standing disagreement
 between the wood a player can harvest and the wood a player can see**, and gathering
 wood is step one of the progression spine. It becomes this round's rank 2.
 
-**One correction to R5's own account of the cause, from this pass.** R5 said the
-`x6` comment beside 420 "refers to an EARLIER multiply, so a reader concludes it is
-current". The arithmetic in that comment is in fact **honest**: `18+5+47 = 70`, times
-`DENSITY_SCALE` 6, is 420, and that multiply genuinely was applied to this table.
-What is stale is the **row it cites**: `18+5+47` is the pre-WG-222 canopy table and
-no longer exists anywhere, and today's row is `100+30+290`. The comment is worse than
-R5 described, not better, because a reader who checks its arithmetic finds it correct
-and stops. Two sentences of the same file's header are now simply false:
-`TreeTuning.ts:90-91` still claims the table is "the retired canopy tier's own asks,
-row for row", and `:105` still claims the harvest field "is now DENSER than the
-canopy's".
+**A sharpening of R5's own account of the cause, from this pass, not a first
+correction of it.** R5 said the `x6` comment beside 420 "refers to an EARLIER
+multiply, so a reader concludes it is current". The arithmetic in that comment is in
+fact **honest**: `18+5+47 = 70`, times `DENSITY_SCALE` 6, is 420, and that multiply
+genuinely was applied to this table. What is stale is the **row it cites**:
+`18+5+47` is the pre-WG-222 canopy table and no longer exists anywhere, and today's
+row is `100+30+290`. **world-gen.md 6.13.11 item 5(b) already said this**, in the
+same words: the `x6` comment "refers to an EARLIER x6, the `DENSITY_SCALE` multiply
+that took the pre-WG-222 canopy asks 70 to 420, and NOT to WG-222's table multiply".
+This pass sharpens that record's framing (the comment is worse than R5's own first
+description, not better, because a reader who checks its arithmetic finds it correct
+and stops) rather than discovering it fresh. Two sentences of the same file's header
+are now simply false: `TreeTuning.ts:90-91` still claims the table is "the retired
+canopy tier's own asks, row for row", and `:105` still claims the harvest field "is
+now DENSER than the canopy's".
 
 ### 3.5 R5 RANK 5, the carpet's lift: **THE NUMBER SURVIVES UNMOVED AND IT IS THE WRONG NUMBER**
 
@@ -323,8 +336,10 @@ Re-read from `meadowfield`'s own capture, `?grass=0` one flag apart, same build:
 
 **Every row reproduces R5 to two decimals**, which is the honest way to say that not
 one of the eleven merged lanes went anywhere near this. What the ladder adds is that
-the statistic was never the defect. At `meadowfield`, bands of 60 rows,
-shipped against `?grass=0`:
+the statistic was never the defect. At `meadowfield`, bands of 60 rows, rect
+`x560 w900` (the ladder's own default and not separately recorded when this table
+was built; stated here rather than left silent, on the correction pass's own finding
+below), shipped against `?grass=0`:
 
 | rows | range | s=1 shipped / bare | s=16 shipped / bare |
 |---|---|---|---|
@@ -332,6 +347,18 @@ shipped against `?grass=0`:
 | 300 to 360 | 84 m to 17 m | **29.50 / 33.84** | **14.96 / 9.67** |
 | 360 to 420 | 17 m to 9 m | 32.61 / 34.38 | 12.28 / 12.26 |
 | 660 to 720 | 3 m | 40.81 / 38.29 | 23.90 / 28.40 |
+
+**Correction pass note, on the rect this table never stated.** This is the one table
+in the document with no rect printed beside it, and rank 5 in section 4.5 rests on it.
+The audit tooling's own default (`rn2686bands.mjs`, `--rect` unset) is `x560 w900`,
+which is stated above as the closest reproducible choice rather than left implicit. A
+fresh-context reproduction on that default rect reads **34.364 / 35.125** at s=1 and
+**20.546 / 20.546** at s=16 over rows 240 to 300, close to but not identical with the
+33.99/34.73 and 20.78/20.78 printed above. The two readings agree on both conclusions
+that matter (shipped and bare are within a point of each other at s=1, and identical
+to three figures at s=16), so this is recorded as **rect-sensitivity evidence**, not
+as a correction to the row values themselves: the finding does not depend on which
+reasonable rect was used, and the exact rect the first draft used remains unrecorded.
 
 Two readings, both real and not in conflict. Through 17 to 84 m the carpet **adds 55
 per cent of coarse structure** (14.96 against 9.67) while **removing 4.34 counts of
@@ -350,10 +377,18 @@ this round's rank 5, as an instrument gap with a deliverable.
 
 ## 4. THE RANKED FIVE
 
-Ranked by what the eye loses most against the Space Engineers bar first, then by
-exposure against `story_line_outline_v1.txt`. Feasibility classes as R5: **(a)**
-art or tuning inside the current stack, **(b)** engine work inside WebGL2,
-**(c)** likely WebGPU, **(d)** plausibly native.
+**Correction pass note on the criterion actually used.** The first draft stated this
+ranking as "by what the eye loses most against the Space Engineers bar first, then by
+exposure". That is not the criterion this document actually applied, and section 5
+item 7 already concedes it in the same breath it is stated: the far material (item 7)
+and the terrain's missing material layers (item 7/8.4, FIDELITY-GAP item 2) are, "by
+eye, larger than three of this round's ranked five," yet neither is in the ranked
+five, because both are blocked on a licensing and asset-pipeline decision no lane can
+act on today. **The actual criterion is ACTIONABILITY**: what a lane can measure,
+scope and fix now, weighted by exposure against `story_line_outline_v1.txt`, with raw
+eye-loss magnitude breaking ties among items a lane can actually take. Feasibility
+classes as R5: **(a)** art or tuning inside the current stack, **(b)** engine work
+inside WebGL2, **(c)** likely WebGPU, **(d)** plausibly native.
 
 ### 4.1 RANK 1: TWO THIRDS OF THE AERIAL WORLD IS A PHOTOGRAPH OF THE ATMOSPHERE, AND THE GEOMETRY UNDERNEATH IT IS ALREADY DRAWN. **BLOCKING** · class (a)
 
@@ -384,12 +419,18 @@ Monotone, smooth and with no knee, so every value on it is available and none is
 privileged by the data.
 
 **The term is not broken, which is the important half.** Retained coarse structure
-over the band is `2.240 / 7.073 = 0.317`, so the implied optical depth at the band's
-effective mid-range of about 8 km is `ln(1/0.317) = 1.15`, giving
-`sigma = 1.44e-4` per metre against the authored `aerosolSigma = 1.4e-4`
-(`Atmosphere.glsl.ts:154`). **The measurement reproduces the authored constant to
-three per cent.** Nothing is mis-scaled, nothing is gated off, and no lane should go
-looking for a bug.
+over the band is `2.240 / 7.073 = 0.317`, so the implied optical depth is
+`ln(1/0.317) = 1.15`, giving `sigma = 1.44e-4` per metre at a chosen effective
+mid-range of 8 km, against the authored `aerosolSigma = 1.4e-4`
+(`Atmosphere.glsl.ts:154`). **Correction pass note:** the 8 km figure was chosen, not
+derived, and row-weighting the same band's actual depth distribution instead gives
+`sigma = 1.58e-4`, about 13 per cent from the authored value rather than three. So
+the honest statement is that **the measurement brackets the authored constant across
+any reasonable effective range**, not that it reproduces it to a stated digit: 1.4e-4
+sits inside the spread that 8 km-chosen and row-weighted give (1.44e-4 to 1.58e-4),
+and neither reading is off by an order of magnitude or by a sign. Nothing is
+mis-scaled, nothing is gated off, and no lane should go looking for a bug; that
+conclusion does not depend on which of the two readings is used.
 
 **And the constant's own tuning record was scored on the other axis.** The block
 above that constant states its design bar as "a 20 km silhouette desaturated and
@@ -413,9 +454,9 @@ assumed.
 
 **(d) DRAFT ALLOCATION ROW.**
 
-> `RN-27xx to RN-27yy` | rendering, **THE AERIAL PERSPECTIVE'S LATERAL COST** (opus, look call with a measured curve): at `flyover` over 4.5 to 15.2 km the ground carries 2.24 counts of 32 px lateral structure against 7.07 with `?aerosol=0`, so the atmosphere removes 68 per cent of what the geometry already draws across two thirds of the visible depth, while the same rows carry 6.3 to 18.9 counts inside 4.5 km. **The term is correct and the constant is the decision:** the retained fraction implies `sigma = 1.44e-4` against the authored 1.4e-4, three per cent apart, and `aerosolSigma`'s own comment block prices it as a 28 km Koschmieder visual range. The sweep is committed: 0.75 buys +26.1 per cent of 32 px structure, 0.50 buys +67.7, 0.25 buys +128.2. **The lane's job is to pick a value and prove what it costs, not to find a bug.** `aerosolScaleM` is the surgical handle for the aerial poses (2.44.10 item 1) and must be tried before `aerosolSigma`, which moves ground-level rays too. **Owns:** `render/materials/Atmosphere.glsl.ts`'s aerosol pair and `SkyProbe.ts`'s read of the scale height. **Must not touch:** `TerrainTreeline*` (the paint is worth 5 per cent here and is not the lever), `ScatterTuning`, any palette, the Rayleigh half. **Done when:** the 4.5-to-15.2 km band's 32 px sd reaches a stated multiple of 2.240 with the 20 km silhouette's sky-to-ground step held at or above 20.0 counts; `vista`'s far mountain still reads as distant by eye (that frame's blue haze is doing real work and a global cut will damage it); `limb` re-taken as a regression rather than assumed away, because the vertical column through the layer is exactly `sigma x H`; `meadow` and `mtnslope` inside stated bands; `rn2550guard` exit 0 on all four poses. Opus: the measurement is finished and what remains is a judgement across four poses that pull in different directions.
+> `RN-27xx to RN-27yy` | rendering, **THE AERIAL PERSPECTIVE'S LATERAL COST** (opus, look call with a measured curve): at `flyover` over 4.5 to 15.2 km the ground carries 2.24 counts of 32 px lateral structure against 7.07 with `?aerosol=0`, so the atmosphere removes 68 per cent of what the geometry already draws across two thirds of the visible depth, while the same rows carry 6.3 to 18.9 counts inside 4.5 km. **The term is correct and the constant is the decision:** the retained fraction implies `sigma = 1.44e-4` at a chosen 8 km effective range, or 1.58e-4 row-weighted, both bracketing the authored 1.4e-4 rather than landing on it to a stated digit, and `aerosolSigma`'s own comment block prices it as a 28 km Koschmieder visual range. The sweep is committed: 0.75 buys +26.1 per cent of 32 px structure, 0.50 buys +67.7, 0.25 buys +128.2. **The lane's job is to pick a value and prove what it costs, not to find a bug.** `aerosolScaleM` is the surgical handle for the aerial poses (2.44.10 item 1) and must be tried before `aerosolSigma`, which moves ground-level rays too. **Owns:** `render/materials/Atmosphere.glsl.ts`'s aerosol pair and `SkyProbe.ts`'s read of the scale height. **Must not touch:** `TerrainTreeline*` (the paint is worth 5 per cent here and is not the lever), `ScatterTuning`, any palette, the Rayleigh half. **Done when:** the 4.5-to-15.2 km band's 32 px sd reaches a stated multiple of 2.240 with the 20 km silhouette's sky-to-ground step held at or above 20.0 counts; `vista`'s far mountain still reads as distant by eye (that frame's blue haze is doing real work and a global cut will damage it); `limb` re-taken as a regression rather than assumed away, because the vertical column through the layer is exactly `sigma x H`; `meadow` and `mtnslope` inside stated bands; `rn2550guard` exit 0 on all four poses. Opus: the measurement is finished and what remains is a judgement across four poses that pull in different directions.
 
-### 4.2 RANK 2: THE WOOD A PLAYER CAN HARVEST IS SIX TIMES THINNER THAN THE WOOD THEY WALKED TOWARD, EXACTLY, AND THE TABLE'S OWN COMMENT DEFENDS IT. **BLOCKING** · class (a)
+### 4.2 RANK 2: THE WOOD A PLAYER CAN HARVEST IS SIX TIMES THINNER THAN THE WOOD THEY WALKED TOWARD, EXACTLY, AND AT EVERY VEGETATED BIOME. **BLOCKING** · class (a)
 
 **(a) THE EYE.** `R6_forestaircanopy.png` at 1x is the clearest picture the project
 has of it. The near tier is a **savanna**: individual trees standing far apart on
@@ -424,21 +465,34 @@ square. Behind them, beginning abruptly around row 470, is a continuous near-bla
 mass of impostors with no gaps in it at all. They are not one forest at two
 distances; they are an orchard in front of a hedge. The same relationship is what
 `R6_meadowfield.png` shows from the ground, where two isolated trees stand on a flat
-green plane in front of a solid treeline.
+green plane in front of a solid treeline. **Correction pass note:** `forestaircanopy`
+is `forestair`'s own site (`artframe.js:1060-1063`, "biome 3 ... the canopy fills the
+frame to the horizon line"), and biome 3 is **Forest**, not Plains. The picture above
+is a Forest pose; the table below shows the ratio holds there too, at Forest's own
+numbers, not at Plains' borrowed ones.
 
-**(b) THE INSTRUMENT.** Two tables, read on this commit, quoted as literals:
+**(b) THE INSTRUMENT, table-wide and not one biome.** `TreeField.ts:264` applies
+`TREE_DENSITY_KM2[biome] * this.densityScale` identically for every biome, so the
+seam is not a Plains peculiarity. Harvest (`TreeTuning.ts:113-119`) against canopy
+(`Registry.ts:347-363`'s per-biome sums, each times `DENSITY_SCALE = 6` at
+`Registry.ts:147`), all four vegetated biomes, read on this commit:
 
-- `web/src/game/TreeTuning.ts:116` reads `420,    // Plains    (isolated copses in open grass; canopy 18+5+47, x6)`
-- `web/src/assets/Registry.ts:354-356` reads `C('Canopy_Pine', 100), C('Canopy_Fir', 30), C('Canopy_Broadleaf', 290)`, and `C` at `Registry.ts:172-175` multiplies by `DENSITY_SCALE = 6` (`Registry.ts:147`).
+| biome | harvest (`TreeTuning.ts`) | canopy sum x 6 (`Registry.ts`) | ratio |
+|---|---|---|---|
+| Plains | 420 | `(100+30+290) x 6` = 2,520 | 6.0 |
+| **Forest** (the pose above) | 3,840 | `(1200+360+2280) x 6` = 23,040 | 6.0 |
+| Hills | 1,200 | `(360+120+720) x 6` = 7,200 | 6.0 |
+| Mountains | 480 | `(330+150) x 6` = 2,880 | 6.0 |
 
-`(100 + 30 + 290) x 6 = 2,520` against `420`. **The ratio is exactly 6.0.** Ranges,
-all from `ScatterTuning.ts`: the harvest ring is uniform to `TREE_RADIUS_M` 620 m with
-a `TREE_EDGE_WANDER_M` of 70 m either side, so it covers fully to 550 m and is gone by
-690 m; the canopy tier is identically zero below `CANOPY_NEAR_M` 550 m and at full
-density from `CANOPY_NEAR_FULL_M` 690 m; WG-260's mid tier ramps the canopy population
-quadratically from `MID_NEAR_M` 170 m to `MID_FULL_M` 550 m. So the seam is a 380 m
-ramp with a factor of six across it, and it is **out of reach of every lane that has
-touched scatter since**: WG-295, WG-301 and WG-304 are gated on
+**The ratio is exactly 6.0 at all four rows, not a Plains coincidence.** Ranges,
+all from `ScatterTuning.ts` and biome-independent: the harvest ring is uniform to
+`TREE_RADIUS_M` 620 m with a `TREE_EDGE_WANDER_M` of 70 m either side, so it covers
+fully to 550 m and is gone by 690 m; the canopy tier is identically zero below
+`CANOPY_NEAR_M` 550 m and at full density from `CANOPY_NEAR_FULL_M` 690 m; WG-260's
+mid tier ramps the canopy population quadratically from `MID_NEAR_M` 170 m to
+`MID_FULL_M` 550 m. So the seam is a 380 m ramp with a factor of six across it at
+every vegetated biome, and it is **out of reach of every lane that has touched
+scatter since**: WG-295, WG-301 and WG-304 are gated on
 `groundOk = cell <= MAX_CELL_M` at `Scatter.ts:530` and bind only on chunks the ground
 tiers already refuse.
 
@@ -456,18 +510,21 @@ not fixed: `web/src/game/TreeField.ts:291-298` records that the harvest ring pas
 `grove = 1` while the canopy tier takes the real grove field, so "the two layers now
 disagree about groves across the 550-690 m crossfade".
 
-**(c) THE FILE SEAM.** `web/src/game/TreeTuning.ts` (the table, its inline comment and
-its two false header sentences). `web/src/world/ScatterTuning.ts:1126-1130` holds the
-only written record of the defect and must be updated in the same commit or it becomes
-a docstring that outlives its cause. **The node budget is the constraint and it is
-world-gen's**: world-gen.md 6.13.11 records that raising the harvest density means
-`/core` nodes with a per-frame matrix compose each, which is the cost RN-2228 exists to
-avoid, and that an Admin decision on the budget is owed. This is a two-domain item and
-must not be taken as a one-line table edit.
+**(c) THE FILE SEAM.** `web/src/game/TreeTuning.ts` (the whole table, its inline
+comments and its two false header sentences), not the Plains row alone.
+`web/src/world/ScatterTuning.ts:1126-1130` holds the only written record of the
+defect and must be updated in the same commit or it becomes a docstring that outlives
+its cause. **The node budget is the constraint and it is world-gen's, and it is a
+table-wide question, not a Plains one**: world-gen.md 6.13.11 records that raising
+the harvest density means `/core` nodes with a per-frame matrix compose each, which
+is the cost RN-2228 exists to avoid, and that an Admin decision on the budget is
+owed across all four rows at once, since a per-biome ruling would leave three biomes
+still six-fold thin. This is a two-domain item and must not be taken as a one-line
+table edit.
 
 **(d) DRAFT ALLOCATION ROW.**
 
-> `RN-27xx to RN-27yy` | world-gen/rendering, **THE SIX-FOLD HARVEST GAP** (sonnet after Admin rules the node budget, opus if the budget question is taken with it): `TREE_DENSITY_KM2[Plains] = 420` (`TreeTuning.ts:116`) against `(100+30+290) x DENSITY_SCALE 6 = 2,520` (`Registry.ts:354-356`, `:147`) is a ratio of **exactly 6.0** and is untouched by WG-295/301/304, all three of which are gated on `groundOk` at `Scatter.ts:530` and cannot reach a 550 m seam. WG-260's mid tier removed the visible CLIFF, so this is no longer a wall: it is a standing disagreement between the wood a player can harvest inside 620 m and the wood they can see beyond 690 m, and gathering wood is step one of the progression spine. **Take the table and its documentation together and nothing else.** The inline `x6` comment's arithmetic is honest and its cited row (`18+5+47`) is a table that no longer exists; `TreeTuning.ts:90-91` and `:105` are false as written and must be corrected in the same commit as any value change, and `ScatterTuning.ts:1126-1130`'s record of the defect must be updated or struck rather than left to contradict the code. **Blocked on an Admin ruling first:** world-gen.md 6.13.11 prices the harvest tier at one `/core` node with a per-frame matrix compose each, so "make 420 into 2,520" is a node-count decision and not a look decision. **Owns:** `game/TreeTuning.ts`, and `ScatterTuning.ts`'s docstring at 1126-1130. **Must not touch:** `Registry.CANOPY_*` (the canopy table is the reference, not the variable), `MID_*` and `canopyDistanceWeight` (WG-260's ramp is the thing that made this survivable and must not be retuned in the same lane), `TreeField.ts`'s grove disagreement (a separate routed item). **Done when:** the two tables agree at Plains or the difference is documented as intentional with a number and a reason; the seam's realised density is measured at `meadowfield` and `forestaircanopy` before and after; `meadow` stays under the 2.7e6 triangle ALERT; the full four-pose `rn2550guard` exits 0 (standing rule 7: a density change is judged at the densest pose and a merge runs the whole guard). Sonnet: the arithmetic is settled and the only judgement left is Admin's node budget.
+> `RN-27xx to RN-27yy` | world-gen/rendering, **THE SIX-FOLD HARVEST GAP, TABLE-WIDE** (sonnet after Admin rules the node budget, opus if the budget question is taken with it): `TreeField.ts:264` applies `TREE_DENSITY_KM2[biome]` identically for every biome, and the ratio is **exactly 6.0 at all four vegetated rows**: Plains 420 against 2,520, Forest 3,840 against 23,040, Hills 1,200 against 7,200, Mountains 480 against 2,880 (`TreeTuning.ts:113-119` against `Registry.ts:347-363`'s canopy sums times `DENSITY_SCALE` 6 at `Registry.ts:147`). Untouched by WG-295/301/304, all three of which are gated on `groundOk` at `Scatter.ts:530` and cannot reach a 550 m seam. WG-260's mid tier removed the visible CLIFF, so this is no longer a wall: it is a standing disagreement between the wood a player can harvest inside 620 m and the wood they can see beyond 690 m, at every vegetated biome, and gathering wood is step one of the progression spine. **Take the table and its documentation together and nothing else.** The inline `x6` comments' arithmetic is honest and their cited rows are tables that no longer exist; `TreeTuning.ts:90-91` and `:105` are false as written and must be corrected in the same commit as any value change, and `ScatterTuning.ts:1126-1130`'s record of the defect must be updated or struck rather than left to contradict the code. **Blocked on an Admin ruling first, and the ruling is table-wide:** world-gen.md 6.13.11 prices the harvest tier at one `/core` node with a per-frame matrix compose each, so "make 420 into 2,520" (and the same move at the other three rows) is a node-count decision across the whole table and not a look decision, and not a decision that can be made at one biome and left open at the others. **Owns:** `game/TreeTuning.ts`, and `ScatterTuning.ts`'s docstring at 1126-1130. **Must not touch:** `Registry.CANOPY_*` (the canopy table is the reference, not the variable), `MID_*` and `canopyDistanceWeight` (WG-260's ramp is the thing that made this survivable and must not be retuned in the same lane), `TreeField.ts`'s grove disagreement (a separate routed item). **Done when:** the four tables agree at every vegetated biome or the difference is documented as intentional with a number and a reason at each row; the seam's realised density is measured at `meadowfield` and `forestaircanopy` before and after; `meadow` stays under the 2.7e6 triangle ALERT; the full four-pose `rn2550guard` exits 0 (standing rule 7: a density change is judged at the densest pose and a merge runs the whole guard). Sonnet: the arithmetic is settled at all four rows and the only judgement left is Admin's node budget.
 
 ### 4.3 RANK 3: THE MOUNTAIN SNOW IS A FACETED PLASTIC SLAB, AND IT IS THE HIGHEST-CONTRAST OBJECT IN THREE HERO POSES. **CLEARLY BEHIND** · class (a)
 
@@ -509,45 +566,81 @@ coastline ruling**, which is why this ranks above several larger gaps that do.
 
 **(d) DRAFT ALLOCATION ROW.**
 
-> `RN-27xx to RN-27yy` | rendering, **THE SNOW PATCH IS A FACETED PLASTIC SLAB** (sonnet): `Mtn_SnowPatch` (`tools/blender/build_props_mountains.py:83-97`) is three `seg=6` lobes with two rings, so it reads as a hexagonal shard rather than a drift, and its role is `Ice: 'flat'` (`SurfaceRoles.ts:197`), the same surface family as glass and status chips. At `mtnslope` a shaded facet reads warm **-11.40** against the substrate beside it at **+34.81** on the same row, a 46.2-count inversion, and the prop is the highest-contrast object in the near field of `vista`, `vistadawn` and `mtnslope`. **Two independent halves, and take the geometry first:** raise `seg` and the ring count until the silhouette stops faceting, and give the edge a thin taper so it meets the ground instead of ending; then decide whether `Ice` deserves a surface role of its own rather than `flat`. **Owns:** `tools/blender/build_props_mountains.py`'s `snow_patch` and `SNOW` box, the regenerated `props_mountains.glb`, and `SurfaceRoles.ts`'s `Ice` row. **Must not touch:** `scree_sheet`, `talus_fan` or `frost_shards` in the same file (their bytes are deliberately held still so the atlas diff stays attributable, which is that file's own stated rule), any terrain material, any palette. **Done when:** the patch's silhouette shows no straight facet longer than a stated pixel count in a 4x crop at `mtnslope`; the shaded-facet warm at `mtnslope` row 191 comes inside a stated distance of the substrate's; `vistadawn` no longer contains the coldest object in a warm-graded frame by eye at 1x; the glb's triangle count is stated and `meadow` stays under the 2.7e6 ALERT; no other prop in the atlas changes byte for byte. Sonnet: two small, separable, fully named changes with a measured target on each.
+> `RN-27xx to RN-27yy` | rendering, **THE SNOW PATCH IS A FACETED PLASTIC SLAB** (sonnet): `Mtn_SnowPatch` (`tools/blender/build_props_mountains.py:83-97`) is three `seg=6` lobes with two rings, so it reads as a hexagonal shard rather than a drift, and its role is `Ice: 'flat'` (`SurfaceRoles.ts:197`), the same surface family as glass and status chips. At `mtnslope` a shaded facet reads warm **-11.40** against the substrate beside it at **+34.81** on the same row, a 46.2-count inversion, and the prop is the highest-contrast object in the near field of `vista`, `vistadawn` and `mtnslope`. **Two independent halves, and take the geometry first:** raise `seg` and the ring count until the silhouette stops faceting, and give the edge a thin taper so it meets the ground instead of ending; then decide whether `Ice` deserves a surface role of its own rather than `flat`. **Owns:** `tools/blender/build_props_mountains.py`'s `snow_patch` and `SNOW` box, the regenerated `props_mountains.glb`, and `SurfaceRoles.ts`'s `Ice` row. **Must not touch:** `scree_sheet`, `talus_fan` or `frost_shards` in the same file (out of scope for this lane; **correction pass note:** the "held still" clause in the file's own docstring is attached to `snow_patch` itself, "this is the one prop in the atlas that is not rock ... its bytes are held still so that the atlas diff is entirely the rock work," which licenses a ROCKS lane to leave snow untouched, and this lane's entire job IS the snow prop, so it is precisely the lane licensed to move those bytes rather than the one barred from it; the audit's first draft had this backwards), any terrain material, any palette. **Done when:** the patch's silhouette shows no straight facet longer than a stated pixel count in a 4x crop at `mtnslope`; the shaded-facet warm at `mtnslope` row 191 comes inside a stated distance of the substrate's; `vistadawn` no longer contains the coldest object in a warm-graded frame by eye at 1x; the glb's triangle count is stated and `meadow` stays under the 2.7e6 ALERT; no other prop in the atlas changes byte for byte. Sonnet: two small, separable, fully named changes with a measured target on each.
 
-### 4.4 RANK 4: THE SMELTER AT NIGHT IS THE BRIGHTEST THING IN THE WORLD AND IT LIGHTS NOTHING. **CLEARLY BEHIND** · class (b)
+### 4.4 RANK 4: A REGISTERED, SELECTED, FORTY-METRE-REACH EMITTER DELIVERS EXACTLY ZERO TO THE GROUND THROUGH ITS OWN UNIFORM, AND THE QUESTION IS ONE FILE WIDE. **CLEARLY BEHIND** · class (a)
 
-**(a) THE EYE.** `R6_smelternight.png` at 1x, and this is the first frame in the
-project that can settle the question rather than infer it. The machine itself is
-genuinely good: the hearth glows, the casting bed glows, bloom sits on it correctly,
-it reads as hot metal. Then look at the grass to the left and right of it. It is
-uniform blue-black, at the same value it holds at the frame edges, receiving no
-orange at all. There is no pool of light on the ground, no falloff, no rim on the
-nearest blades, no bounce onto the machine's own surroundings. A furnace this bright
-would light twenty metres of meadow, and this one lights a strip of its own plinth.
-The frame's box iqr is 147.97, the highest in the set by a factor of two, which is
-exactly what "a very bright object on a very dark ground with nothing in between"
-looks like as a number.
+**Correction pass rewrite, credited to a fresh-context verifier.** The first draft of
+this rank asked "is there a light at all" and framed `smelternight` as "the first
+frame that can settle the question rather than infer it". Both are refuted by this
+audit's own committed evidence: `docs/screenshots/R6_smelternight.json`'s own `emit`
+block reads `installed: true, registered: 1, selected: 1, spliced: 103, reach: 40`.
+There is a light. It is wired into 103 programs, one emitter is registered and
+selected for this frame, and its reach is 40 m, more than enough to cover the grass
+either side of the machine. The real question, stated below, is why the ground's own
+share of it measures zero.
 
-**(b) THE INSTRUMENT.** This audit ranks it on the frame and does not add a new
-number, and says so. What it does supply is the **arm that makes it measurable for the
-lane**, which no previous round had: `smelternight` exists, it is valid on this build,
-and the pair a lane needs is that pose against itself with the emissive suppressed,
-measured on rectangles placed on the GRASS at stated distances from the machine rather
-than on the machine. Every previous statement of this finding (R2 rank 12, R4, R5 item
-14) was taken from a daylit frame and could not separate "an emissive that contributes
-nothing" from "an emissive the sun is drowning". That separation is now available and
-this audit did not spend it; the lane should, and the rectangles are its first
-deliverable.
+**(a) THE EYE.** `R6_smelternight.png` at 1x. The machine itself is genuinely good:
+the hearth glows, the casting bed glows, bloom sits on it correctly, it reads as hot
+metal. The grass to the left and right of it is uniform blue-black, at the same value
+it holds at the frame edges, receiving no orange at all. That observation stands; what
+changes is the explanation. The frame's box iqr is 147.97, the highest in the set by a
+factor of two.
 
-**(c) THE FILE SEAM.** Emissive materials are in the machine batch
-(`machinemat` family) and the illumination question is not a material question: it is
-whether anything registers a light for a hot machine at all. The scene's light list and
-`PropSkyAmbient`/`TerrainAmbient` are the surfaces to read first. This is class (b)
-rather than (a) because it is a light that does not exist rather than a constant that
-is wrong, and it is explicitly **not** the clustered many-light wall that
-FIDELITY-GAP option C names: one or two point lights for a hot machine is ordinary
-WebGL2 work.
+**(b) THE INSTRUMENT, and it already exists and was already run.**
+`web/src/render/materials/EmissiveLight.ts` (RN-2385) is a **shipped** emissive
+local-irradiance system, not an absent one: `EMIT_MAX = 6` emitters live per frame,
+summed with a windowed inverse-square falloff, added to the terrain fragment at
+`TerrainFragLight.glsl.ts:158-159` through the `uEmitGround` uniform. Its own header
+records that a pool of real `THREE.PointLight`s was considered and **rejected on two
+measured numbers**: `TerrainShader` reads no three.js light at all, so a real point
+light could not reach the ground either way, and `Headlamp.ts` measured a real point
+light costing a **441 ms stall and 30 new shader programs** the first time one
+appeared, because the light count is part of the program cache key. The
+local-irradiance term was built specifically to avoid both, and `smelternight` was
+built by R3 specifically to measure it (`WORLD-AUDIT-R3-2026-08-21.md:158`: "the only
+frame in the file where a hot machine is the brightest object in the world" and the
+frame that lets "nothing emissive lights anything" become "a measurement instead of
+an inference from a daylit frame"). **Two control arms already exist and were not
+run by the first draft**: `?firelight=0` zeroes the whole emissive model, and
+`?firelightground=0` (`TerrainAmpQuery.ts:320-338`) zeroes only the terrain's share,
+holding every machine surface exactly as shipped, for precisely this separation.
+
+Both arms, taken against `smelternight`, one build:
+
+| rectangle | shipped | `?firelight=0` | delta |
+|---|---|---|---|
+| `hearthL` | 6.60 | 3.99 | -40.5% |
+| `hearthR` | 7.37 | 4.76 | -35.4% |
+| `bandLit` | 24.67 | 10.74 | -56.5% |
+| grass columns at 20 m | (baseline) | (baseline) | 0.05 to 0.12 counts |
+
+The whole-model kill switch moves the machine-adjacent rectangles by 35 to 56 per
+cent, so the model is doing real work close in, and it moves grass at 20 m by only
+0.05 to 0.12 counts, near this instrument's own noise floor, which is consistent
+with a 40 m windowed inverse-square term that is genuinely weak at range. **Then
+`?firelightground=0` is bit-identical to shipped at every committed rectangle**, a
+0.000-count delta everywhere the twelve rectangles look, including the ones closest
+to the machine. A term that is installed, registered, selected, spliced into 103
+programs and reaches 40 m returns **exactly zero** through the one uniform whose job
+is to carry it to the terrain. That is not "no light exists"; it is "the terrain's
+own tap on an existing light is shut all the way off," and it is a one-file question:
+why does `uEmitGround` deliver zero.
+
+**(c) THE FILE SEAM.** `web/src/render/materials/TerrainProgram.ts:171` sets
+`uniforms.uEmitGround = emitGround`; `TerrainAmpQuery.ts:335-338`'s
+`emitGroundFromQuery()` is the only other place that name appears outside the shader
+and the pars declaration. The bug is somewhere on the path from whatever supplies
+`emitGround` at `TerrainProgram.ts:171` to the value the shader actually multiplies
+by at `TerrainFragLight.glsl.ts:159`, and it is contained to that path: not the
+`machinemat` family, not the light list, not `PropSkyAmbient`/`TerrainAmbient`, none
+of which this correction touches. This is class (a), not (b): it is not a light that
+does not exist, and it is not the clustered many-light wall FIDELITY-GAP option C
+names. It is a wiring defect in one term that is already live, and it is sonnet-sized.
 
 **(d) DRAFT ALLOCATION ROW.**
 
-> `RN-27xx to RN-27yy` | rendering, **EMISSIVES ARE BRIGHT AND ARE NOT LIGHT SOURCES** (opus, diagnosis first): at `smelternight` the smelter is the brightest object in the world (box iqr 147.97, twice the next pose) and the grass beside it is at the same value as the grass at the frame edge. Five audits have carried this claim from DAYLIT frames where an emissive that contributes nothing cannot be told from one the sun is drowning; `smelternight` separates them and this is the first round in which the frame exists and is valid. **First deliverable is the rectangle set and the arm, not a light:** place rectangles on the GRASS at stated distances and bearings from the machine, take the pose against itself with the emissive suppressed, and publish what the emissive is worth in counts at each distance before adding anything. Then decide whether a hot machine registers a real light, and price it. **Owns:** the machine emissive path and whatever light registration it gains, plus `probes/artframe.js`'s `smelternight` rectangles (additive only; the twelve existing ones are RN-2365's and are quoted across three audits). **Must not touch:** `TerrainAmbient`'s daylight ladder, any canopy term, the post stack's bloom constants (audit rank 8's night halo is a separate owed item, 2.31.6 item 4). **Done when:** the emissive's contribution to the grass at a stated distance is published in counts on both arms; a player standing at the machine at night can see the ground by eye at 1x; `meadownight` (no machine) is unchanged to the digit; the daylit `machine` and `smelterhero` frames are inside stated bands, because a light added for the night must not brighten the day. Opus: the first job is to find out whether there is a light at all, and that is a diagnosis.
+> `RN-27xx to RN-27yy` | rendering, **`uEmitGround` DELIVERS ZERO** (sonnet, not opus: the diagnosis is already done): `R6_smelternight.json`'s own `emit` block reads `installed: true, registered: 1, selected: 1, spliced: 103, reach: 40`, so `EmissiveLight.ts` (RN-2385) is live, wired into 103 programs and within reach of the grass either side of the machine. Shipped against `?firelight=0` (the whole-model kill switch) moves `hearthL` 6.60 to 3.99 (-40.5%), `hearthR` 7.37 to 4.76 (-35.4%) and `bandLit` 24.67 to 10.74 (-56.5%), and moves grass columns at 20 m by only 0.05 to 0.12 counts, so the term is real and is weak at range as designed. Shipped against `?firelightground=0` (`TerrainAmpQuery.ts:320-338`, the terrain-only kill switch) is **bit-identical at every committed rectangle**, a 0.000-count delta everywhere, which means the ground's own tap on this light returns exactly zero regardless of distance. **The job is to find why `uEmitGround` (`TerrainProgram.ts:171`, consumed at `TerrainFragLight.glsl.ts:158-159`) is always zero on the shipped path when the emitter feeding it is registered and selected**, not to decide whether a light should be added. **Owns:** the `emitGround` value's path from wherever `TerrainProgram.ts:171` sources it back to its origin, and `TerrainAmpQuery.ts`'s `emitGroundFromQuery()` only if the fault is there. **Must not touch:** `EmissiveLight.ts`'s emitter model, selection or falloff (all proved live and correct by the `?firelight=0` arm above), the `machinemat` family, any light list, `TerrainAmbient`'s daylight ladder, the post stack's bloom constants (audit rank 8's night halo is a separate owed item, 2.31.6 item 4). **Done when:** `?firelightground=0` and shipped diverge by a stated, non-zero amount on at least the rectangles closest to the machine; the divergence is published in counts the same way the two arms above are; **`meadownight` is not used as an unchanged-control without qualification**, because it carries this round's own item 15, an undiagnosed light pool at about (820, 600), so any "unchanged to the digit" claim on that pose must state that the pool is a confound and was checked separately; the daylit `machine` and `smelterhero` frames are inside stated bands, because a fix to the ground path must not brighten the day. Sonnet: the light exists, the two control arms exist, the failing uniform is named, and the remaining work is inside one file's data path.
 
 ### 4.5 RANK 5: THE PLAINS HERO POSE CANNOT MEASURE ITS OWN MID FIELD, WHICH IS WHY "THE WORLD ENDS AT THE CARPET" HAS SURVIVED FOUR ROUNDS WITH NO NUMBER UNDER IT. **CLEARLY BEHIND** · class (a), one pose
 
@@ -569,9 +662,11 @@ whole of 84 m to the horizon occupies roughly **twelve frame rows**. A wide-x ro
 profile across the apparent edge confirms the problem from the other side: over
 `x[300,1300)` the largest row-to-row step anywhere in rows 292 to 316 is **3.54
 counts**, so the ruler-straight cut the eye reports is not at a fixed row and averaging
-along x erases it. **The eye is seeing something real that no committed instrument at
-this pose can score**, and this audit refuses to publish a number for it rather than
-publishing one from a rectangle that cannot hold the subject. R5's `r250` rectangle
+along x erases it. **The claim that the carpet ends in a ruler-straight cut is struck
+here, on this audit's own measurement, rather than quietly dropped**, matching the
+NUMBERS.md record of this pass. The eye is seeing something real that no committed
+instrument at this pose can score, and this audit refuses to publish a number for it
+rather than publishing one from a rectangle that cannot hold the subject. R5's `r250` rectangle
 reads a lift of 1.009 there and calls it healthy, which is the same blindness wearing a
 number.
 
@@ -637,7 +732,7 @@ Carried, re-judged by eye on this build, not re-derived.
 | item | verdict | evidence |
 |---|---|---|
 | **The reach tail and the mottle closed the inner third of R5 rank 1's own band.** | **CLOSED, and the headline movement of the fortnight.** | Section 3.1's ladder: 3.4 to 4.5 km now reads **6.563** at 32 px against 2.094 to 2.328 beyond it. Before and after by eye: `docs/screenshots/RN2660_flyover_pre.png` against `R6_flyover.png`, which is the same camera with the placed forest reaching 5,099.5 m instead of 3,500 and world-gen's two density octaves live in the paint. |
-| **The crown arc.** `rho0` spread 8.41x to 2.43x; `forestairnoon` `rho` 0.0992 to 0.1890 and in band for the first time in the R4 stage-2 sequence; the crown's specular share 51-71 per cent down to 40-61. | **CLOSED pending Reid's taste calls.** | The record at rendering.md 2.39, 2.41 and 2.43. Visible in this round's frames as the tone half of the tier join shrinking: section 3.4's cliff is **20.65 counts against R5's published 30.19** over the same rows and window. Before and after: `docs/screenshots/RN2590_crowns_prelane_3x.png` against `RN2645_crowns_shipped_3x.png`. |
+| **The crown arc.** `rho0` spread 8.41x to 2.43x; `forestairnoon` `rho` 0.0992 to 0.1890 and in band for the first time in the R4 stage-2 sequence; the crown's specular share 51-71 per cent down to 40-61. | **CLOSED pending Reid's taste calls.** | The record at rendering.md 2.39, 2.41 and 2.43. **Correction pass softening:** section 3.4 itself is non-monotone here and this row is brought into line with it rather than restating the first draft's "shrinking". R5's published 30.19 does not reproduce on any later base and is excluded; between the two trustworthy points, WG-295's 17.33 and this build's 20.65, the tone step is **growing by 3.32 counts**, not shrinking, though it remains well under R5's own unreproducing figure. Before and after: `docs/screenshots/RN2590_crowns_prelane_3x.png` against `RN2645_crowns_shipped_3x.png`. |
 | **The far paint's debt.** RN-2605 raised two `flyovernoon` ceilings by 0.0248/0.0251 under the project's first logged guard decision. | **OVERPAID.** | WG-304's re-pin puts `flyovernoon` at 0.9289/0.8671, below RN-2605's pre-raise 0.9343/0.9020 by 0.0054 and 0.0349. |
 | **The dry sea's chroma step.** | **CLOSED as chroma; the survivor is re-attributed.** | 25.46 to 12.60 counts, and shipped Ocean's warm within 0.78 counts of the frame's own Forest ground. Section 3.3 then **refutes** the "flat untextured value dip" that was blamed for the survivor, and routes the remainder to shape. Before and after: `RN2635_crop_before_3x.png` against `RN2635_crop_after_3x.png`. |
 | **The guard.** Rebuilt as the project's first look assertion, re-pinned five times including two logged Admin decisions, all eight box ceilings lowered with a four-pose control split. | **CLOSED as a rail.** | Section 9. |
@@ -779,9 +874,12 @@ Three observations that outlive whatever this particular run printed:
 - **Any quality tier but `high`.** Sixth round running.
 - **Absolute frame times.** Captured in every report and judged nowhere; no
   millisecond is quoted as a verdict anywhere in this document.
-- **The emissive's actual contribution in counts.** Rank 4 is ranked on a frame and
-  says so; the rectangles that would price it are the lane's first deliverable, not
-  this audit's.
+- **The emissive's actual contribution in counts, at the machine.** **Correction pass
+  update:** this is now priced (section 4.4, `?firelight=0` moves `hearthL`,
+  `hearthR` and `bandLit` by 35 to 56 per cent), and the ground's share of it is
+  proved to be exactly zero via `?firelightground=0`. What remains unpriced is the
+  contribution the ground WOULD receive once `uEmitGround` is fixed, which the
+  reassigned lane's own "Done when" makes its first deliverable.
 - **Thirteen poses taken, not twenty-three.** Not photographed: `vistanoon`,
   `dawnsun`, `forestfloor`, `machine`, `smelterhero`, `ruin`, `ruinwall`, `basedusk`,
   `station`, `voxelface`, `midfield` and the `flyover*` / `forestair*` sun variants.
@@ -814,3 +912,129 @@ Three observations that outlive whatever this particular run printed:
 - **Domain memory:** rendering.md section 2.46.
 - **Numbers row:** NUMBERS.md, RN-2685. **RN-2685 and RN-2686 USED**;
   **RN-2687 to RN-2699 SURRENDERED UNUSED** (abandoned per rule 4, never reuse).
+
+---
+
+## 12. NEXT LANES, ADOPTED BY ADMIN
+
+The fresh-context verifier that produced the correction pass in section 13 also
+re-ranked the dispatch order against what this round actually found, and Admin has
+adopted that re-ranking rather than the order section 4 shipped with. Stated here so
+the next dispatch reads it rather than re-deriving it.
+
+**The re-ranking.**
+
+1. **The snow slab (section 4.3) first.** Blocked on nothing, sonnet-sized, two
+   separable and fully named geometry and material-role changes.
+2. **The harvest gap, table-wide (section 4.2) second**, and **Admin rules against
+   scaling the four-biome table up to close it**: the node budget that RN-2228 exists
+   to protect does not clear a table-wide 6x on the harvest tier, so the lane that
+   picks this up should expect a documented-difference outcome (each row's gap stated
+   and justified with a number) rather than a table-matching one, pending any later
+   reversal of that ruling.
+3. **The `uEmitGround` sonnet lane (section 4.4) third.** The diagnosis is finished;
+   what remains is finding why one uniform delivers zero on a path that is otherwise
+   fully wired, registered and selected.
+4. **The plains hero pose (section 4.5) fourth.** A derived camera addition only,
+   changes no rendered pixel, and gives the mid-field complaint an instrument for the
+   first time in four rounds.
+5. **The aerosol (section 4.1) is RE-CLASSED, not ranked fifth as a lane dispatch.**
+   Correction pass item 5 established that the measurement brackets the authored
+   constant rather than reproducing it to a stated digit, and the term itself is not
+   broken at any reading. What is left is a **Reid look-and-value decision** (which
+   amplitude to ship, traded against `vista` and `limb`'s far-haze depth cue), not a
+   bug for a lane to find. It should be **preceded by a small measurement lane**, not
+   the full opus dispatch section 4.1's original draft row asked for, covering exactly
+   three things the sweep did not: `vista`'s far mountain silhouette under the same
+   amplitudes, `limb`'s vertical column (named as a regression risk in section 4.1 and
+   never taken), and `aerosolScaleM`, the "surgical" handle 2.44.10 item 1 named and
+   this audit never swept at all. That small lane hands Reid a decision with numbers
+   attached rather than asking Reid to guess.
+
+**The pre-Reid consolidation wave, needing no Reid to start:**
+
+- **The SE reference board's own first half needs no Reid.** Freeze this round's
+  three hero frames (`flyover`, `forestaircanopy`, `mtnslope` are the ones already
+  quoted hardest against the bar) and build the side-by-side page itself with empty
+  reference slots, so the day Reid supplies Space Engineers frames the board is a
+  drop-in rather than a build. Section 8.3's blocker is the source frames, not the
+  page.
+- **The one-page Reid decision sheet.** Collect the five items already waiting on
+  Reid alone into one page with frames beside each: the coastline ruling (8.1), the
+  Polyhaven asset decision (8.4), the crownflank trade (8.5), the crown taste calls
+  (8.6), and the aerosol amplitude (this round's rank 1, re-classed above). One sheet
+  a decision-maker can go through once rather than five scattered document sections.
+- **The guard-instruments hygiene lane**, small and unglamorous, bundling four
+  standing instrument defects that have each been carried across multiple rounds
+  without a lane: `b.rho`'s unreachable branch (section 9 observation 2), the
+  `?proppaint=1` card-black leak that keeps every guard ratio on one un-comparable
+  convention (section 9 observation 3), the inert `?firelightground=0` control now
+  proved to change nothing on the SHIPPED path for a different reason than assumed
+  (it is not that the flag is wired wrong; it is that the ground never received the
+  light it is supposed to gate, per section 4.4), and `?iblground=0`'s black mid-field
+  (section 5 item 17). None of the four needs Reid; all four are instrument
+  reliability, not look decisions.
+
+**Other look lanes are held until Reid reads the decision sheet above.**
+
+---
+
+## 13. CORRECTION PASS (2026-08-23, fresh-context verifier, verdict FIX, applied by mini-lane)
+
+A fresh-context verifier that never touched the drafting of this document reproduced
+its own tables to the digit and routed ten corrections. Applied here, doc-only, on
+`audit/r6`:
+
+1. **Rank 4 (the emissive) rewritten.** The premise ("is there a light at all") is
+   refuted by this document's own committed `R6_smelternight.json` and by
+   `EmissiveLight.ts` (RN-2385), a shipped local-irradiance system that explicitly
+   rejects point lights on measured numbers, consumed by the terrain through
+   `uEmitGround`. The real finding, now in section 4.4: the term is live, registered
+   and reaches 40 m, and `?firelightground=0` is bit-identical to shipped at every
+   rectangle, so the ground's own tap on it returns exactly zero. Reclassed from an
+   opus diagnosis (class b) to a one-file sonnet lane (class a).
+2. **Rank 2 (the harvest gap) widened to all four vegetated biomes.** The 6.0 ratio
+   holds at Plains, Forest, Hills and Mountains alike; the hero picture for this rank,
+   `forestaircanopy`, is itself a Forest pose, so section 4.2 now uses Forest's own
+   numbers beside the picture instead of Plains' borrowed ones, and the Done-when and
+   the Admin node-budget question are re-scoped to the whole table. The "one
+   correction to R5's own account" language is softened to a sharpening, since
+   world-gen.md 6.13.11 item 5(b) already named the `x6` comment's true referent.
+3. **Section 3.1's three-arm table's 32 px `?aerosol=0` cell corrected** from
+   7.073 (+215.7%) to **7.082 (+214.4%)**; the printed figure belonged to section
+   4.1's sweep table (a different rect) and did not arithmetically match this table's
+   own baseline. The matching figure in rendering.md's mirror of this table is
+   corrected the same way.
+4. **Section 3.5's band table's rectangle, previously unstated, is now given**
+   (`x560 w900`, the tooling's own default), with the verifier's own reproduction on
+   that rect (34.364/35.125 at s=1, 20.546/20.546 at s=16) recorded beside it as
+   rect-sensitivity evidence rather than as a value correction.
+5. **The aerosol constant's "reproduces to three per cent" claim softened** to
+   "brackets the authored constant across any reasonable effective range": the 8 km
+   effective range was chosen, not derived, and row-weighting the same band gives
+   1.58e-4 instead of 1.44e-4. The underlying conclusion, that the term is correct and
+   no lane should hunt a bug, is unchanged by this softening.
+6. **The `build_props_mountains.py` "held still" citation in rank 3 fixed.** The
+   docstring's own held-still clause is attached to `snow_patch` itself, licensing a
+   ROCKS lane to leave snow untouched; it does not bar the SNOW lane from moving its
+   own bytes, which is precisely this rank's job. The first draft had the direction of
+   the rule backwards.
+7. **The carpet-cut "ruler-straight" claim labelled struck in this document**, in
+   section 4.5, matching NUMBERS.md's existing record so all three records (this
+   document, rendering.md, NUMBERS.md) agree.
+8. **Section 4's ranking criterion restated as actionability**, not raw eye-loss, on
+   the document's own section 5 item 7 conceding that FIDELITY-GAP items 1 and 2 are
+   larger by eye than three of the ranked five and are excluded only because they are
+   blocked on a licensing decision no lane can act on.
+9. **Section 7's "tone half of the tier join shrinking" softened** to match section
+   3.4's own non-monotone finding: R5's 30.19 is excluded as non-reproducing, and
+   between the two trustworthy points the step is growing (17.33 to 20.65), not
+   shrinking.
+10. **Section 12 added**, carrying the verifier's re-ranking (snow first, harvest
+    table-wide second under Admin's ruling against scaling the table, the
+    `uEmitGround` lane third, the plains pose fourth, the aerosol re-classed as a
+    Reid decision preceded by a small measurement lane) and the pre-Reid
+    consolidation wave, both adopted by Admin.
+
+No source file under `web/src/` was touched by this pass. No frame was retaken. No
+number outside the ten items above was altered.
