@@ -35,6 +35,7 @@ import type { DepthPolicy } from '../DepthPolicy.js';
 import { ATMOSPHERE_PARS } from '../materials/Atmosphere.glsl.js';
 import { CASCADE_GLSL } from '../materials/CascadeShadow.glsl.js';
 import { TERRAIN_SUN_IRRADIANCE } from '../materials/TerrainAmbient.js';
+import { EMIT_DECL_GLSL, EMIT_INSTALLED } from '../materials/EmissiveLight.js';
 
 /** Inlined for TerrainFragLight's reason: it emits the same characters the
  *  ground emits, from the same exported constant, so the two cannot drift. */
@@ -227,6 +228,15 @@ export function grassFragmentShader(depth: DepthPolicy): string {
      *  side). See the note beside its one use below. ?grassbend=0 is the
      *  exact pre-RN-2220 control (mix identity). */
     uniform float uBendUp;
+    // RN-2735. THE SAME GROUND ISOLATOR the terrain reads, ?firelightground=0
+    // (TerrainAmpQuery.emitGroundFromQuery, TerrainFragPars.glsl.ts's own
+    // declaration beside this note's twin). Declared unconditionally, exactly
+    // as the terrain declares it, so the pre/post-splice programs differ only
+    // in whether ofEmitIrradiance exists below, not in this uniform's
+    // presence. GrassMaterial.ts binds it to tu.uEmitGround, the SAME object
+    // TerrainProgram.ts assigns to the terrain material it was built beside,
+    // not a second query read: one flag, one value, both materials.
+    uniform float uEmitGround;
 
     varying vec3 vWorld;
     varying vec3 vUp;
@@ -237,6 +247,13 @@ export function grassFragmentShader(depth: DepthPolicy): string {
     varying float vViewZ;
 
     ${CASCADE_GLSL}
+    // RN-2735. The emissive-irradiance model, one copy, imported from the same
+    // module the terrain and the machine programs take it from
+    // (EmissiveLight.ts). Under ?firelight=off the declaration is not spliced
+    // at all, on TerrainFragPars's own precedent, so the pre-splice arm is the
+    // exact pre-RN-2735 program and the per-fragment cost is measured against
+    // the same three-state flag every other emissive consumer uses.
+    ${EMIT_INSTALLED ? EMIT_DECL_GLSL : ''}
 
     void main() {
       ${depth.fragmentBody}
@@ -349,6 +366,28 @@ export function grassFragmentShader(depth: DepthPolicy): string {
 
       vec3 lit = albedo * (uAmbient + skyAmb * skyView + ground * (1.0 - skyView)
         + sunT * (${SUN_IRR} * ndl * shadow)) + trans;
+
+      // RN-2735. THE SAME TERM THE GROUND TAKES (TerrainFragLight.glsl.ts's own
+      // lit += albedo * ofEmitIrradiance(pM + uBodyCenter, n) * uEmitGround;),
+      // not a parallel one: pM + uBodyCenter is that seam's own round-trip
+      // back to engine-space world position (2.47(d) measured the round-trip
+      // exact and the float32 cancellation below the instrument's noise floor),
+      // and vWorld already IS that position here, so this is the identical
+      // computation written without re-deriving it.
+      //
+      // THE NORMAL IS n, not ns: it carries GrassCard's own baked BEND_UP
+      // (0.74 toward local up, GrassCard.ts) as every use of n in this file
+      // does, and what is skipped here is only this file's SECOND blend,
+      // uBendUp, on the trans term's own precedent four lines up. A firebox
+      // is a LOCAL, mostly-horizontal source, and applying that second blend
+      // toward up before this dot product would wash every blade to the same
+      // faint reading regardless of which way it faces the fire, which is
+      // the one thing a standing blade near a furnace should NOT do. ns
+      // stays reserved for ndl/skyView, the ground-substitute terms this
+      // residual (GrassGlsl's own RN-2220 note) was written for.
+      ${EMIT_INSTALLED ? `
+      lit += albedo * ofEmitIrradiance(vWorld, n) * uEmitGround;
+      ` : ''}
 
       // Aerial perspective and the boundary-layer aerosol, same functions and
       // same parameters as the ground under it, so a carpet at 80 m and the

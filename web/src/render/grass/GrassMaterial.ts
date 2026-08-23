@@ -18,6 +18,7 @@ import type { DepthPolicy } from '../DepthPolicy.js';
 import type { AtmosphereUniforms } from '../materials/Atmosphere.glsl.js';
 import { surfaces } from '../instancing/SurfaceBind.js';
 import { windUniforms } from '../instancing/PropWind.js';
+import { EMIT_UNIFORMS } from '../materials/EmissiveLight.js';
 import { grassFragmentShader, grassVertexShader } from './GrassGlsl.js';
 import { FADE_PX_HI, FADE_PX_LO, GROW_M, GROW_MAX } from './GrassTuning.js';
 
@@ -91,6 +92,21 @@ export function createGrassMaterial(o: GrassMaterialOptions): GrassMaterialHandl
     uWindTime: wind.uWindTime,
     uWindAmp: wind.uWindAmp,
   });
+  // RN-2735. THE SAME EMISSIVE BUNDLE THE TERRAIN TAKES, on this file's own
+  // header rule ("cover and substrate cannot disagree") applied to the fire
+  // the way it was already applied to the sky: `EMIT_UNIFORMS` is
+  // EmissiveLight.ts's one set of emitter holders (the same four objects the
+  // machine programs and the terrain read), and `tu.uEmitGround` is NOT a
+  // second `emitGroundFromQuery()` read -- it is TerrainProgram.ts's own
+  // `uEmitGround` object, taken off the terrain material this rung was built
+  // beside. `?firelightground=0` therefore stays a COMPLETE kill of the ground
+  // term: there is one flag value, shared by reference, not two switches that
+  // happen to agree today. Assigned unconditionally, on `EMIT_UNIFORMS`'s own
+  // precedent in TerrainProgram.ts: the entries go nowhere when
+  // `?firelight=off` compiles the declaration out of GrassGlsl's program, and
+  // an unused uniform is free rather than a branch to avoid.
+  Object.assign(uniforms, EMIT_UNIFORMS);
+  uniforms.uEmitGround = tu.uEmitGround;
   Object.assign(uniforms, {
     uCard: { value: null as THREE.Texture | null },
     uAlphaTest: { value: 0.35 },

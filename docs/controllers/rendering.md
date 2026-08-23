@@ -1,13 +1,13 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2730 to RN-2734, `lane/aerosol-measure`, corrected same day per Admin's ruling on a fresh-context verifier's FIX verdict, **MEASUREMENT ONLY, NO SHIPPED CONSTANT MOVED: AT `vista` THE HAZE INVERTS THE FAR SKYLINE'S LUMINANCE POLARITY WHILE HUE CARRIES THE EDGE; AT `limb` THE TERM IS 300 SCALE HEIGHTS OUT OF REACH; AND `aerosolScaleM` HAS NO PAGE PARAMETER AND THREE CONSUMERS.** World Audit R6 re-classed the aerosol amplitude from a lane dispatch to a Reid look-and-value decision and prescribed a small measurement lane over the three things its `flyover` sweep never covered. Taken, in one session, one build, one sentinel-verified server, twenty-eight frames each in its own browser process, with `?aerosol=`'s arming READ BACK OFF EACH PHOTOGRAPHED PAGE (`artframe.js` gained an additive `atmos` block over `window.__ofAtmos`; `sigma` is `uAerosol.x` AFTER the amplitude, so an arm that never reached the program is caught rather than tabulated as a null). **THE INSTRUMENT IS PROVED AGAINST THE AUDIT FIRST**: R6 4.1's own rect and ladder reproduce to a worst 0.034 counts (3.397/2.572/2.233/1.720 shipped against R6's 3.402/2.578/2.240/1.726, and the intermediate 32 px rungs +26.0/+67.5/+127.8 against R6's +26.1/+67.7/+128.2, a one-per-cent disagreement inside tolerance and now annotated in both records) and `flyover` `box` luma reads 2.44.9's own 113.39. **NOISE FLOORS, PER POSE, IN TWO DOMAINS THAT DISAGREE BY THREE ORDERS OF MAGNITUDE, AND PUBLISHED AS BOUNDS RATHER THAN AS ONE PAIR**: eight repeat pairs give within-session `pngdiff` 0.04 / 0.30 to 0.67 / 0.02 to 0.04 per cent at `flyover`/`vista`/`limb` against rectangle-statistic nulls of 0.000 to 0.038 counts on the same pairs, and the fresh-context verifier's own session read `vista` at **2.21 per cent and 0.198 counts**, so **the cross-session floor a later lane must budget against is 0.67 per cent and 0.20 counts**, not the within-session figure this lane first published. A suspected first-frame warm-up effect is named and explicitly NOT isolated, because in every batch the shipped arm is capture one. **`vista`, SUBJECT 1, AND THE FIRST DRAFT OF THIS RESULT WAS WRONG IN A WAY WORTH RECORDING.** The committed `hzBand`, documented as "the furthest ridge in the frame", is refused with a number: its maximum is **225.25 counts in all six arms including `?atmos=0`**, **11.5 counts above the frame's own terrain maximum of 213.73** (measured on a 358,800 px HUD-free ground rect; an earlier draft said 25 counts by comparing against the far zone's 200.06), and HUD glyphs span **18 of its 90 rows across its top 51**. ONE new rectangle, `vistaSil` `x460 y426 320x90`, placed by `rn2730sky.mjs`'s per-column skyline finder on the haze-off frame and PROVED by `?atmos=0`: the `sky` zone is **0.000 mean, 0.000 max, all 3,840 px pure void** and the `far` zone is 181.452 of lit terrain. Over the ladder the LUMINANCE step runs **-29.894 / -27.456 / -19.094 / -1.773 / +9.985** and crosses zero near 0.25, **but a zero luminance step is not invisibility and this lane's own instrument says so**: `rn2730sky.mjs` had to be a CHROMA detector because luma has nothing to lock onto at this pose. The chroma step **never approaches zero**, is **smallest at shipped (-26.53)** and **largest at 0.50 (-68.33)**, reads -39.09 at 0.25, and the sky-to-far RGB separation runs 52.39/56.10/54.22/27.88/28.63; the committed 3x crops agree, with 0.50 the most legible skyline and shipped the least. **So the corrected result is a POLARITY finding**: shipped haze puts the far ground 30 counts brighter than the sky over it, which is upside down for a horizon, and it is also the worst of the five arms for the hue contrast that actually carries the edge. The first draft's "all but vanishes", "1.77 counts from invisible" and its reclassing of 0.25 as out are **struck**; 0.50 is recommended more strongly than before, on the chroma column and the crops. Far-ground structure rises monotonically +14.2/+70.1/+143.7/+239.4 per cent at 32 px, the same shape as `flyover`'s. `?skyaero=0` splits the pose exactly, reproducing the full-off sky **to three decimals** (201.820) while moving the ground band **0.016 counts**, which is what makes the inversion attributable to the sky half. **`limb`, SUBJECT 2, AND THE AUDIT'S NAMED REGRESSION RISK IS MIS-LOCATED.** The committed `ring` is 91.693 shipped and **91.693 at `?aerosol=0`** (span 0.037 over the whole sweep, non-monotone, null 0.006); `?skyaero=0` gives an identical 68.30 `box` luma. Rule 6 first: `?atmos=0` drops `ring` to **0.149 mean, p50 0** while `ground` keeps 20.735, so the rect is atmosphere and nothing else. Rule 8 then classes it a REACH null: `ofAtmoSkyAero` opens with `exp(-h0/H)`, the readbacks give h0 = 120,000 m over H = 400 m, so the factor is **exp(-300) = 5.1e-131, exactly zero in float32**. **That bound is a property of `ofChapman`'s PARAMETERISATION** (anchored on density at the eye, ray assumed rising) **and not proof that a boundary layer is physically absent from a limb view**; a grazing ray does pass the layer near its tangent point, and the reason it is moot is magnitude, about one pixel at 399 km. What DOES move at `limb` is the sunlit disc, chromatically far more than photometrically: luma -8.33 counts over the sweep against red **-30.33** and blue **+14.23**, and the `seam` LOD-ribbon defect gains 10 per cent of visibility at the provisional 0.50. **`aerosolScaleM`, SUBJECT 3: THERE IS NO SWITCH, THERE ARE THREE CONSUMERS, AND THE READBACK PROVES THE FIRST HALF EMPIRICALLY** (`scaleM` reads 400 in all twenty-eight frames). The consumers are the shader's ground entry, the shader's sky entry, and **`SkyProbe.ts:138-139`, a CPU sky-ambient probe that reads `p.aerosolScaleM` directly and feeds `uSkyIrr` into the ambient fill on every surface**, following the sky entry's factor rather than the ground's. No `web/src` was touched; the ladder {100,200,300,400,600,800}, derived as R6's own {0.25,0.50,0.75,1.00} fractions of the code's 400 m plus 1.5x and 2x, is DERIVED from the shader's own integral by `rn2730scale.mjs`, licensed by an identity: both constants meet exactly once per entry point as `uAerosol.x * column(uAerosol.y)` and everything downstream is a function of `od` alone, the phase takes neither and `sunT` is Rayleigh and Mie only. **WITHIN a pose the scale height is NOT a distinct handle in the ground entry** (one amplitude reproduces it to 3.2 per cent across `flyover`'s whole band, 0.0 per cent at `limb`). **ACROSS poses the GROUND entry is selective and 2.44.10 item 1 is vindicated with a number**: A_eq is **1.0000 at `vista` at every rung** and **H/400 at `flyover` and `limb`**, so `aerosolScaleM = 200` costs the aerial poses 47 per cent of their optical depth and `vista`'s ground band nothing. **That scope is the ground entry only**: the same cut moves `vista`'s low sky (A_sky(H=200) about 0.55, putting it near the 0.50 arm's 169.1 against a ground band still at 179.9, about two thirds of the silhouette step gone) and shifts the ambient through the third consumer, so a standing eye's world is NOT left alone, only its far ground band is. No emulated frame is committed, because an amplitude matched to the ground band is wrong in the same frame's sky by up to 5.5x. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, full four-pose **`rn2550guard` PASS 4 of 4, exit 0** (expected null; `web/src/` untouched). Four files changed under `web/`, all additive instruments: `probes/artframe.js` (one added `atmos` report block), `rn2730arms.mjs`, `rn2730sky.mjs`, `rn2730scale.mjs`. Owed and routed: **`aerosolScaleM` needs a page parameter and `SkyProbe.ts:138-139` is a second authority that must move with it, not a re-check**; `vista`'s `hzBand` should be re-placed or retired; `rn2730arms.mjs` should take a throwaway first frame so its nulls stop carrying the warm-up bias; and the orbital disc's warmth is a second cost on the same call, now on the sheet. Full record in section 2.51; the decision sheet's slot is filled at `docs/REID-DECISIONS-2026-08-27.md` section 6; frames `docs/screenshots/RN2730_*`. THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2735 to RN-2739, `lane/grass-emit`, corrected same day per a fresh-context verifier's FIX verdict, **THE GRASS MESH LEARNS THE FIRELIGHT THE TERRAIN ALREADY KNOWS, AND THIS LANE'S OWN FIRST DRAFT UNDER-SOLD IT: ACCEPTANCE WAS MET AT PARITY.** N19 (2.47) proved `uEmitGround` reaches the terrain but not the grass mesh. This lane splices the SAME `EMIT_UNIFORMS`/`ofEmitIrradiance` the terrain takes into the grass fragment stage, `uEmitGround` **by reference off the terrain material itself**, so `?firelightground=0` stays one flag governing both surfaces by construction. Position is `vWorld` directly (the terrain's own `pM + uBodyCenter` round-trip is real-arithmetic-exact, not bit-exact -- it carries about 6 cm of float32 quantisation at this planet's scale that grass, taking `vWorld` directly, does not); normal is `n`, which CARRIES GrassCard's own baked `BEND_UP` (only the second `uBendUp` blend, `ns`, is skipped) -- corrected from a first-draft comment that called `n` "unbent", the choice itself unaffected. **ACCEPTANCE, CORRECTED: MET AT PARITY, not "approaches".** This lane's first draft classified `groundL`/`groundR` pixels by a pre-lane zero/nonzero mask and called the nonzero bucket "soil-influenced"; a fresh-context verifier's own `?grass=0` differencing found that bucket **96.1% grass-painted, not soil**, and relabelled it blade-edge/partial-coverage. Measured instead against TRUE pure soil (a `?grass=0` arm pair, no grass present anywhere in the rectangle): **relative 0.97 (groundL) / 1.02 (groundR), absolute 0.72/0.53 counts** -- parity, `groundR` slightly ABOVE the soil figure. The units in 2.47(b)'s own prior blade/soil pair DO reconcile (absolute 8-bit counts, per cent of the pixel's own value; N19's 28-32% soil figure reproduces at 29.0%/27.9%), and that section's own "1% blade" figure is corrected AT ITS SOURCE as a was-X: a fully-covered blade pixel moved by construction exactly zero pre-splice, so it was AA contamination, never a blade reading. `firelightgroundarm.mjs` still PASSES (27.5%/33.5%, up from N19's 6.7%/10.6%). All twelve of `smelternight`'s machine rectangles bit-identical, AND the same 0-of-12 control reproduces at `smelterhero` (day). `meadownight` and `smelternight`'s whole-frame nulls are republished as cross-session bounds (0.14%/0.25% and 0.25%/0.33%, up to 8x this lane's own optimistic first session), with each pose's conclusion now resting on construction proof or per-rectangle instruments rather than the whole-frame margin alone. **The `meadow` "byte-identical PNG" claim is STRUCK as impossible** (its HUD carries live fps/p50/p99 telemetry, so no two captures of any build can match to the byte) and replaced with the construction proof the verifier read live: `registered: 0, selected: 0`, so `uEmitN` is 0 and the added term is exactly `vec3(0.0)` in IEEE-754 -- the claim was right, the evidence was wrong, now a NUMBERS.md trap. `smelterhero`'s own day-pose move (-8.06%/-2.94%) is corroborated by the verifier's independent terrain-only re-measurement at the same pose (-2.07%/-0.82%, no day gate anywhere in the model) and by `machine`'s own smaller -0.07%/-0.06%; `basedusk` has no reachable rect either way. `EmissiveLight.ts:92`'s header is corrected twice over (terrain and grass listed; its own follow-on "nothing left unlisted" line was ALSO false, since `WaterMaterial.ts` has no splice -- routed as a named owed item, alongside the grass ground-substitute terms that still do not read `uEmitGround`, both stated in 2.52's own opening section). Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, full four-pose **`rn2550guard` PASS 4 of 4, exit 0**, independently re-confirmed by the verifier to four decimals. `TerrainProgram.ts`/`TerrainFragLight.glsl.ts`/`TerrainAmpQuery.ts`/every palette row/every pose or rectangle in `artframe.js` untouched throughout, before and after this correction. Full record in section 2.52 (2.52.6 is the correction pass itself); 2.47(b) carries its own was-X note at its source. Frames `docs/screenshots/RN2735_*`, none retaken (no shipped pixel moved by this correction). THIS LINE IS A POINTER: replace it, never append to it.
 
 >
-> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2725, `lane/plains-pose`, **THE PLAINS HERO GETS TWO EYES, NOT ONE, BECAUSE THE FIRST ONE'S OWN NULL WAS VACUOUS: A GRASS CARD CULLS ON SLANT RANGE AND A 100 M EYE NEVER GETS WITHIN 70 M OF ANYTHING.** R6 rank 5 dispatched per its own draft row (WORLD-AUDIT-R6-2026-08-23.md 4.5d): `meadowfield` (pitch -12, 1.62 m eye) cannot judge its own headline complaint ("the world ends at the carpet") because the 84 m-to-horizon band occupies about twelve frame rows, so the scale ladder reads shipped and `?grass=0` identically. **FIRST DRAFT SHIPPED ONE SHOT, `plainsmid` (h = 100 m, pitch -25, `rangeRects` 85 to 800 m), read a bit-identical scale ladder and called it the carpet's absence proved with a number. A FRESH-CONTEXT VERIFIER FOUND THE NULL VACUOUS**: `GrassGlsl.ts`'s mat rung culls on SLANT range (`dist = length(iPos - cameraPosition)`, not horizontal), `GrassCover.ts`'s `outM = (30, 70)` windows it to exactly zero past 70 m of slant, and at h = 100 m every visible point's slant range is already >= 100 m, so the grass system's own 38,340 resident mat instances draw and paint ZERO pixels regardless of the flag -- proved live (the same site/yaw/pitch at altM 40 moves 23,318 pixels, 2.05 per cent, against `?grass=0`). A rectangle proved to hold ground is not a rectangle proved to hold a REACHABLE subject: the machine-rect trap generalised from surface identity to reach, now NUMBERS.md rule 8. **SHIPPED TWO POSES per Admin's ruling (the verifier's own option B).** `plainsmid` KEPT AT h = 100 UNCHANGED, record corrected to claim only the far ground material/splat (`TerrainCoverFar*`), aerial perspective 85-800 m, scatter density/LOD and relief -- explicitly not the carpet. **`plainslow` ADDED**, same site/yaw/pitch, h = 20 m, `rangeRects` 20/30/45/60/85/150/250/400 m (capped at 400: one pose cannot hold a rung inside the carpet AND 800 m at tens of rows, which is the exact impossible demand that broke `plainsmid`). **`plainslow` SEPARATES SHIPPED FROM `?grass=0` FOR REAL**: per-rect RGB moves 4 to 9 counts at 20/30/45 m (bit-identical at 60 m and past it, matching the slant-range prediction), a full-frame `pngdiff` moves 563,363 of 1,440,000 pixels (39.12 per cent, `maxDelta` 185, split both ways), and `rn2664scale.mjs` over the carpet zone reads a -0.529-count delta at 16 px against a measured 0.000-count repeat-capture noise floor -- more than ten times the brief's 0.05-count floor, and the far-of-carpet zone stays bit-identical, corroborating the cutoff. Two corrections also made at this pass: the manifest's "double for margin" language (85.07 to 100 m is +17.5 per cent, not a doubling) and a banner note that mis-called the base's single previous-pointer block (`lane/n19-emitground`, merged after `lane/n18-snow` despite a lower RN number) a duplicate. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, full four-pose **`rn2550guard` PASS 4 of 4, exit 0** (expected null: no rendered pixel changed; `web/src/` untouched). One file changed under `web/`: `web/tools/smoke/probes/artframe.js`, additive only, two shots plus one dispatch-guard clause (diff proves every other shot untouched). Full record in section 2.50; frames `docs/screenshots/RN2725_plainsmid_1x.png` and `docs/screenshots/RN2725_plainslow_1x.png`. THIS LINE IS A POINTER: replace it, never append to it.
+> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2730 to RN-2734, `lane/aerosol-measure`, corrected same day per Admin's ruling on a fresh-context verifier's FIX verdict, **MEASUREMENT ONLY, NO SHIPPED CONSTANT MOVED: AT `vista` THE HAZE INVERTS THE FAR SKYLINE'S LUMINANCE POLARITY WHILE HUE CARRIES THE EDGE; AT `limb` THE TERM IS 300 SCALE HEIGHTS OUT OF REACH; AND `aerosolScaleM` HAS NO PAGE PARAMETER AND THREE CONSUMERS.** World Audit R6 re-classed the aerosol amplitude from a lane dispatch to a Reid look-and-value decision and prescribed a small measurement lane over the three things its `flyover` sweep never covered. Taken, in one session, one build, one sentinel-verified server, twenty-eight frames each in its own browser process, with `?aerosol=`'s arming READ BACK OFF EACH PHOTOGRAPHED PAGE (`artframe.js` gained an additive `atmos` block over `window.__ofAtmos`; `sigma` is `uAerosol.x` AFTER the amplitude, so an arm that never reached the program is caught rather than tabulated as a null). **THE INSTRUMENT IS PROVED AGAINST THE AUDIT FIRST**: R6 4.1's own rect and ladder reproduce to a worst 0.034 counts (3.397/2.572/2.233/1.720 shipped against R6's 3.402/2.578/2.240/1.726, and the intermediate 32 px rungs +26.0/+67.5/+127.8 against R6's +26.1/+67.7/+128.2, a one-per-cent disagreement inside tolerance and now annotated in both records) and `flyover` `box` luma reads 2.44.9's own 113.39. **NOISE FLOORS, PER POSE, IN TWO DOMAINS THAT DISAGREE BY THREE ORDERS OF MAGNITUDE, AND PUBLISHED AS BOUNDS RATHER THAN AS ONE PAIR**: eight repeat pairs give within-session `pngdiff` 0.04 / 0.30 to 0.67 / 0.02 to 0.04 per cent at `flyover`/`vista`/`limb` against rectangle-statistic nulls of 0.000 to 0.038 counts on the same pairs, and the fresh-context verifier's own session read `vista` at **2.21 per cent and 0.198 counts**, so **the cross-session floor a later lane must budget against is 0.67 per cent and 0.20 counts**, not the within-session figure this lane first published. A suspected first-frame warm-up effect is named and explicitly NOT isolated, because in every batch the shipped arm is capture one. **`vista`, SUBJECT 1, AND THE FIRST DRAFT OF THIS RESULT WAS WRONG IN A WAY WORTH RECORDING.** The committed `hzBand`, documented as "the furthest ridge in the frame", is refused with a number: its maximum is **225.25 counts in all six arms including `?atmos=0`**, **11.5 counts above the frame's own terrain maximum of 213.73** (measured on a 358,800 px HUD-free ground rect; an earlier draft said 25 counts by comparing against the far zone's 200.06), and HUD glyphs span **18 of its 90 rows across its top 51**. ONE new rectangle, `vistaSil` `x460 y426 320x90`, placed by `rn2730sky.mjs`'s per-column skyline finder on the haze-off frame and PROVED by `?atmos=0`: the `sky` zone is **0.000 mean, 0.000 max, all 3,840 px pure void** and the `far` zone is 181.452 of lit terrain. Over the ladder the LUMINANCE step runs **-29.894 / -27.456 / -19.094 / -1.773 / +9.985** and crosses zero near 0.25, **but a zero luminance step is not invisibility and this lane's own instrument says so**: `rn2730sky.mjs` had to be a CHROMA detector because luma has nothing to lock onto at this pose. The chroma step **never approaches zero**, is **smallest at shipped (-26.53)** and **largest at 0.50 (-68.33)**, reads -39.09 at 0.25, and the sky-to-far RGB separation runs 52.39/56.10/54.22/27.88/28.63; the committed 3x crops agree, with 0.50 the most legible skyline and shipped the least. **So the corrected result is a POLARITY finding**: shipped haze puts the far ground 30 counts brighter than the sky over it, which is upside down for a horizon, and it is also the worst of the five arms for the hue contrast that actually carries the edge. The first draft's "all but vanishes", "1.77 counts from invisible" and its reclassing of 0.25 as out are **struck**; 0.50 is recommended more strongly than before, on the chroma column and the crops. Far-ground structure rises monotonically +14.2/+70.1/+143.7/+239.4 per cent at 32 px, the same shape as `flyover`'s. `?skyaero=0` splits the pose exactly, reproducing the full-off sky **to three decimals** (201.820) while moving the ground band **0.016 counts**, which is what makes the inversion attributable to the sky half. **`limb`, SUBJECT 2, AND THE AUDIT'S NAMED REGRESSION RISK IS MIS-LOCATED.** The committed `ring` is 91.693 shipped and **91.693 at `?aerosol=0`** (span 0.037 over the whole sweep, non-monotone, null 0.006); `?skyaero=0` gives an identical 68.30 `box` luma. Rule 6 first: `?atmos=0` drops `ring` to **0.149 mean, p50 0** while `ground` keeps 20.735, so the rect is atmosphere and nothing else. Rule 8 then classes it a REACH null: `ofAtmoSkyAero` opens with `exp(-h0/H)`, the readbacks give h0 = 120,000 m over H = 400 m, so the factor is **exp(-300) = 5.1e-131, exactly zero in float32**. **That bound is a property of `ofChapman`'s PARAMETERISATION** (anchored on density at the eye, ray assumed rising) **and not proof that a boundary layer is physically absent from a limb view**; a grazing ray does pass the layer near its tangent point, and the reason it is moot is magnitude, about one pixel at 399 km. What DOES move at `limb` is the sunlit disc, chromatically far more than photometrically: luma -8.33 counts over the sweep against red **-30.33** and blue **+14.23**, and the `seam` LOD-ribbon defect gains 10 per cent of visibility at the provisional 0.50. **`aerosolScaleM`, SUBJECT 3: THERE IS NO SWITCH, THERE ARE THREE CONSUMERS, AND THE READBACK PROVES THE FIRST HALF EMPIRICALLY** (`scaleM` reads 400 in all twenty-eight frames). The consumers are the shader's ground entry, the shader's sky entry, and **`SkyProbe.ts:138-139`, a CPU sky-ambient probe that reads `p.aerosolScaleM` directly and feeds `uSkyIrr` into the ambient fill on every surface**, following the sky entry's factor rather than the ground's. No `web/src` was touched; the ladder {100,200,300,400,600,800}, derived as R6's own {0.25,0.50,0.75,1.00} fractions of the code's 400 m plus 1.5x and 2x, is DERIVED from the shader's own integral by `rn2730scale.mjs`, licensed by an identity: both constants meet exactly once per entry point as `uAerosol.x * column(uAerosol.y)` and everything downstream is a function of `od` alone, the phase takes neither and `sunT` is Rayleigh and Mie only. **WITHIN a pose the scale height is NOT a distinct handle in the ground entry** (one amplitude reproduces it to 3.2 per cent across `flyover`'s whole band, 0.0 per cent at `limb`). **ACROSS poses the GROUND entry is selective and 2.44.10 item 1 is vindicated with a number**: A_eq is **1.0000 at `vista` at every rung** and **H/400 at `flyover` and `limb`**, so `aerosolScaleM = 200` costs the aerial poses 47 per cent of their optical depth and `vista`'s ground band nothing. **That scope is the ground entry only**: the same cut moves `vista`'s low sky (A_sky(H=200) about 0.55, putting it near the 0.50 arm's 169.1 against a ground band still at 179.9, about two thirds of the silhouette step gone) and shifts the ambient through the third consumer, so a standing eye's world is NOT left alone, only its far ground band is. No emulated frame is committed, because an amplitude matched to the ground band is wrong in the same frame's sky by up to 5.5x. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, full four-pose **`rn2550guard` PASS 4 of 4, exit 0** (expected null; `web/src/` untouched). Four files changed under `web/`, all additive instruments: `probes/artframe.js` (one added `atmos` report block), `rn2730arms.mjs`, `rn2730sky.mjs`, `rn2730scale.mjs`. Owed and routed: **`aerosolScaleM` needs a page parameter and `SkyProbe.ts:138-139` is a second authority that must move with it, not a re-check**; `vista`'s `hzBand` should be re-placed or retired; `rn2730arms.mjs` should take a throwaway first frame so its nulls stop carrying the warm-up bias; and the orbital disc's warmth is a second cost on the same call, now on the sheet. Full record in section 2.51; the decision sheet's slot is filled at `docs/REID-DECISIONS-2026-08-27.md` section 6; frames `docs/screenshots/RN2730_*`.)*
 
 >
-> *(the pointer before that, `lane/n18-snow` section 2.48, is no longer kept inline per the one-deep rule; see git history or section 2.48 itself. The note that stood here about `lane/n19-emitground` section 2.47, and about rotation order being MERGE order rather than RN-number order, is retired with it and is preserved in git history at 79d06563.)*
+> *(the pointer before that, `lane/plains-pose` section 2.50, is no longer kept inline per the one-deep rule; see git history or section 2.50 itself. The note that stood here about `lane/n18-snow` section 2.48, and about rotation order being MERGE order rather than RN-number order, is retired with it and is preserved in git history at 79d06563.)*
 
 
 ## 1. Mission
@@ -16914,6 +16914,19 @@ machine-rectangle coverage gap one audit before R6 repeated it**, and that
 effect** -- so the "exactly 0.000" claim contradicted the project's own record
 twice over, not only the rectangle geometry argued in (a).
 
+**WAS-X CORRECTION (2026-08-23, `lane/grass-emit`'s own fresh-context
+verifier, applied where the claim was made rather than silently edited).** The
+"individual grass blades move about 1% at `dR` 0.010" figure two paragraphs up
+CANNOT BE A BLADE FIGURE AT ALL, and is struck as one. Before RN-2735 the grass
+shader had no `ofEmitIrradiance` term of any kind, so a fully-covered blade
+pixel moved by construction EXACTLY ZERO under `?firelightground=0`, not 1%; a
+non-zero reading at "blade" locations from that era's row-band tool was AA
+contamination bleeding in from adjacent soil-visible pixels, not a blade
+reading. The **soil figure stands and reproduces**: RN-2735's own verifier
+independently re-measured the bare-soil, grass-free response at 29.0/27.9%,
+inside this paragraph's own 28 to 32% band. Full account and the corrected
+blade-side numbers: rendering.md 2.52.1 and 2.52.6.
+
 **(c) THE DAYLIT CONTROL, READ HONESTLY RATHER THAN FORCED TO MATCH THE BRIEF'S
 OWN GUESS.** The brief's boundary text expected `smelterhero` (daylit, `sunDot`
 0.45) to be bit-identical under the same flag ("emissive drowned"). Measured:
@@ -18719,3 +18732,440 @@ hiding inside the first" to "a second cost on the same call, now on the sheet".
 Three findings this pass did NOT disturb, stated so the scope is auditable: the
 `limb` reach null itself, the entry-point identity and every `A_eq` derived from
 it, and the `?skyaero=0` decomposition at both surface poses.
+
+---
+
+## 2.52 THE GRASS MESH LEARNS THE FIRELIGHT THE TERRAIN ALREADY KNOWS, AND "ZERO IN DAYLIGHT" IS TRUE ONLY WHERE NO EMITTER IS IN REACH (RN-2735 to RN-2739, 2026-08-23, `lane/grass-emit`)
+
+**THE SPLICE, ONE SEAM, NO PARALLEL COPY.** N19 (2.47) proved `uEmitGround`
+reaches the terrain and measured the visible "unlit lawn" to a second material's
+own gap: `GrassGlsl.ts` imported nothing from `EmissiveLight.ts` at all. This
+lane closes that gap by taking the SAME three things the terrain takes, not
+re-derived copies: `EMIT_UNIFORMS` and `EMIT_DECL_GLSL` straight from
+`EmissiveLight.ts` (one function, `ofEmitIrradiance`, one copy), and
+`uEmitGround` **by reference off the terrain material itself**
+(`GrassMaterial.ts`'s `tu = o.terrain.uniforms`, already the pattern this file
+uses for `uAmbient`/`uSkyAmbient`/`uBodyCenter`) rather than a second
+`emitGroundFromQuery()` read. **This is the kill-switch decision the brief asked
+for, made explicitly: `?firelightground=0` governs grass and terrain through
+ONE shared uniform object, so the flag stays a complete kill of the ground term
+by construction, not by two independent reads that happen to agree today.**
+`web/src/render/materials/TerrainProgram.ts`, `TerrainFragLight.glsl.ts` and
+`TerrainAmpQuery.ts` are untouched (`git diff` against `origin/main` on all
+three is empty).
+
+The use-site (`GrassGlsl.ts`, fragment stage, after the diffuse+trans `lit` is
+assembled): `lit += albedo * ofEmitIrradiance(vWorld, n) * uEmitGround;`,
+compiled out entirely under `?firelight=off` on `EMIT_INSTALLED`'s own
+precedent, exactly as the terrain's equivalent line is. Two choices worth
+stating rather than leaving implicit:
+
+- **Position is `vWorld` directly, not a re-derived round-trip, and the two
+  are REAL-ARITHMETIC-EXACT rather than bit-exact (softened from 2.47(d)'s own
+  "proved-exact" phrasing on a fresh-context verifier's correction).** The
+  terrain's own line reads `ofEmitIrradiance(pM + uBodyCenter, n)`, a
+  `vWorld -> planet-centred metres -> vWorld` round-trip that is the identity
+  in real arithmetic and 2.47(d) measured as below its instrument's own noise
+  floor, not as literally bit-identical: `pM = (vWorld - uBodyCenter) *
+  uMetresPerUnit` and its inverse carry a float32 quantisation of roughly 6 cm
+  at this planet's scale, present in every terrain fragment whether or not
+  this lane exists. Grass takes `vWorld` directly and therefore carries NONE
+  of that quantisation, which is a small, one-directional improvement over
+  the terrain's own path rather than a difference this lane needed to correct
+  for; it is stated here so "the identical computation" above is not
+  overread as "the identical floating-point result".
+- **Normal is `n` (GrassCard's baked facet, carrying its own BEND_UP 0.74; only this file's second `uBendUp` blend is skipped), not `ns`.** `GrassGlsl.ts` already carries
+  two normals: `n` (GrassCard's own baked 0.74 up-bend plus a per-instance
+  facet, used by the `trans` thin-tissue term) and `ns` (a SECOND blend toward
+  `up`, reserved for the ndl/skyView ground-substitute terms, RN-2220). A
+  firebox is a local, mostly-horizontal source; blending the shading normal
+  toward `up` before this dot product would wash every blade toward the same
+  faint reading regardless of which way it faces the fire, which is the one
+  thing a standing blade near a furnace should not do. `n` lets a
+  facing-the-fire blade read brighter than one turned away, which is the actual
+  visible effect in the frames below.
+
+**MEASUREMENT SESSION.** One build (this lane's `HEAD`), one pre-lane baseline
+build (`origin/main` at the RN-2735 allocation commit `ec2f9631`, i.e. N19's
+work with no grass splice at all, checked out into its own worktree and built
+separately), sentinel-verified `vite preview` servers on both (content read
+back over HTTP before any measurement, killed by PID after), fresh `run.mjs`
+process per capture throughout. `?wind=0` held on every capture used for a
+per-pixel comparison: two fresh-process captures of the IDENTICAL arm (same
+build, same flags) came back **at or under a 16-of-50,600-pixel, 1-count bound** inside `groundL`
+-- a same-build null bounded at 16 of 50,600 pixels at 1 count or less (groundL; 33 of 44,000 at up to 4 counts on groundR), a merge-time re-verify bound replacing an "exactly zero" first reading for this metric, so every delta reported
+below is real signal, not cross-process jitter (grass sway phase is real jitter
+otherwise: `PropWind`'s clock ticks on real elapsed settle time, which the wind
+freeze removes).
+
+**A ROUTED UNDER-COUNT, NAMED RATHER THAN PAPERED OVER.** `GrassMaterial.ts`'s
+own header states the carpet's governing rule as "cover and substrate cannot
+disagree", and this lane only half-applies it: the grass ground-SUBSTITUTE
+terms (`ground`, `skyView`, the ambient/sky-ambient blend RN-2220 built for a
+blade standing where flat ground would be) still do not read `uEmitGround` at
+all, only the new additive term does. So a blade's diffuse/ambient floor is
+still computed as if no fire existed nearby, and only the additive line on top
+carries the firelight; the terrain, by contrast, folds its own emissive term
+into one unified `lit` expression with every other term sharing the same
+ground-truth. The two materials therefore still can disagree at the margin (a
+blade at grazing incidence to the fire, where the additive term is small but
+the substitute-ground floor is now measurably wrong for a lit environment).
+Not fixed here: `GrassGlsl.ts`'s `ground`/`skyView` block is a bigger, RN-2220-
+adjacent change than this lane's own scope, and the additive-only splice
+already meets this lane's acceptance target (2.52.1). Routed as a named owed
+item for whichever lane next touches grass ground-substitute lighting.
+
+### 2.52.1 THE BLADE FIGURE, CORRECTED: THE "SOIL-INFLUENCED" BUCKET WAS BLADE-EDGE ALL ALONG, AND THE PURE-SOIL COMPARISON MEETS PARITY
+
+**CORRECTED BY A FRESH-CONTEXT VERIFIER (2026-08-23, same day, verdict FIX,
+record and comments only: the splice itself, the `uEmitGround` uniform-object
+identity, the program count/draw calls/VRAM and the four-pose guard were all
+independently re-checked and stand unchanged).** This subsection's first draft
+was wrong in two linked ways, corrected here rather than deleted, per this
+file's own rule for a superseded finding.
+
+**(a) THE BUCKET WAS MISLABELLED.** The "soil-influenced" bucket (base-build
+delta >= 1, 22.6% of `groundL`) is NOT soil. The verifier's own `?grass=0`
+differencing (comparing the shipped, grass-present frame against grass removed
+entirely) found it **96.1% grass-painted**. It is renamed **blade-edge /
+partial-coverage**: pixels at a blade's alpha-tested, MSAA-resolved silhouette,
+where a sliver of the terrain behind leaks through exactly the way the
+pre-lane build's terrain-only splice could already reach it, but where the
+DOMINANT covering material in the shipped frame is still blade, not open
+ground. This lane's first draft argued "AA dilutes the soil bucket toward
+blade, biasing the ratio down, a conservative direction" -- **the composition
+was backwards**: the bucket was never mostly soil, so it was never a valid
+soil denominator to begin with, in either direction.
+
+**(b) THE UNITS DO RECONCILE; "COULD NOT BE RECONCILED" IS WITHDRAWN.**
+2.47(b)'s own pair -- "about 1% at `dR` 0.010" and "28 to 32% at `dR` 0.71 to
+0.77" -- reads consistently as (per cent of the pixel's own shipped value,
+absolute 8-bit count): 0.010 counts is about 1% of a roughly 1-count shipped
+value, and 0.71-0.77 counts is 28-32% of a roughly 2.5-count shipped value.
+Applying the same method fresh (a `?grass=0` arm pair, isolating PURE soil
+with zero grass present anywhere in the rectangle) **reproduces N19's own
+28-to-32% figure almost exactly: 29.0% (`groundL`), 27.9% (`groundR`).** What
+does NOT reconcile, and is corrected at its source rather than only here, is
+the BLADE half of that same 2.47(b) pair (see rendering.md 2.47(b)'s own
+WAS-X note): "1% at `dR` 0.010" was never a blade reading, because a
+fully-covered blade pixel moved by construction EXACTLY ZERO before this
+lane's splice existed; it was AA contamination from the row-band tool,
+bleeding blade-edge/partial-coverage pixels (this subsection's own (a)) into
+what it called "blade".
+
+**THE ACCEPTANCE FIGURE, AGAINST TRUE PURE SOIL, MET AT PARITY, NOT MERELY
+"APPROACHES" AS FIRST PUBLISHED.** Method: a `?grass=0` arm pair (grass mesh
+absent from BOTH the shipped and the `?firelightground=0` capture, so every
+pixel in `groundL`/`groundR` is unambiguously terrain, none of it diluted by
+blade coverage of any kind), read against this lane's own BLADE figure (the
+still-valid 77.4%-of-box "base-build delta == 0" bucket below, unaffected by
+(a)'s mislabelling since it was never the mislabelled bucket). **Relative:
+0.97 (`groundL`), 1.02 (`groundR`). Absolute, R-channel counts: 0.72
+(`groundL`), 0.53 (`groundR`).** At `groundR` the blade figure measures
+slightly ABOVE the pure-soil figure; at `groundL` it sits at 97% of it. This
+is the acceptance criterion's own comparison (blade response against the
+inter-blade soil's, same standoff) and it is MET AT PARITY.
+
+The original per-pixel classification table (this lane's own base-build
+zero/nonzero mask) is kept below, relabelled, as a SECOND and DIFFERENT
+measurement of the same splice -- blade against blade-edge, not blade against
+pure soil -- which is why its own internal ratio reads lower without either
+number being wrong; the two answer different questions and the pure-soil
+comparison above is the one this lane's acceptance criterion asks for:
+
+| class (by base-build mask) | n | groundL dR mean | groundL mean \|deltaR\| (counts) | groundR dR mean | groundR mean \|deltaR\| (counts) |
+|---|---|---|---|---|---|
+| blade (base delta == 0), UNCHANGED, never mislabelled | 39,176 / 33,611 | **0.2507** | 1.602 | **0.2818** | 1.615 |
+| blade-edge / partial-coverage (base delta >= 1), RENAMED from "soil-influenced" | 11,424 / 10,389 | 0.3407 | 2.328 | 0.3434 | 2.816 |
+
+`dR` in this table is `mean(|deltaR| / R_shipped)` per pixel, on the HEAD
+build, R channel, 8-bit encoded; it is a DIFFERENT statistic from the
+pure-soil comparison's own relative/absolute pair above and the two are not
+directly comparable without accounting for that.
+
+**Sanity check, unaffected by the correction: `firelightgroundarm.mjs` still
+measures a MUCH LARGER box-mean move than N19's own terrain-only baseline**
+(N19: `groundL` -6.7%, `groundR` -10.6%; this lane's build, same instrument,
+same pose: `groundL` -27.5%, `groundR` -33.5%, per-channel, R-specific in both
+eras) -- the correct-direction, correct-order-of-magnitude signature of
+blades now participating, read a second, coarser way.
+
+### 2.52.2 THE FRAME: BLADES CATCH THE FIRE, VISIBLY, NOT ONLY INSTRUMENTALLY
+
+Unlike N19's own diagnostic (a private, unshipped source patch to reach a 200x
+gain), this lane's illustrative overlay uses ONLY the already-supported
+`?firelight=200` query parameter (`EmissiveLight.ts`'s own `AMP`, a legitimate,
+reproducible URL flag, no code patch) to confirm the splice is wired to the
+right geometry before trusting the pixel-level numbers above:
+`docs/screenshots/RN2735_grass_amp200_crop_diagnostic_only.png` shows
+individual blades with a bright, facing-dependent warm lit side and a dark
+shadow side, and the ground between them glowing the same warm colour --
+exactly the picture 2.47(d)'s terrain-only 200x overlay showed for the SOIL
+alone, now also true of the blades stood in it. Labelled diagnostic-only
+because the amplitude is not a shipped value, but reproducible by anyone from
+a URL, unlike N19's patch.
+
+**At NATURAL exposure the real (unamplified, shipped) change is visible to the
+eye once the night frame's own shadows are lifted for viewing** (a display-side
+gain+gamma lift on the already-rendered bytes, not a re-render; N19's own
+crops were dark enough to read as "visually identical" at raw exposure, and
+this lane's are not, because the achieved dR is roughly 25-30x N19's own
+terrain-only ground-rectangle move):
+`docs/screenshots/RN2735_grass_crop_before_boosted.png` (pre-lane, uniformly
+cool moonlit blue-green) against
+`docs/screenshots/RN2735_grass_crop_after_boosted.png` (post-lane, a visible
+warm/tan cast on blade tips and soil alike, same crop, same boost). Full,
+un-boosted 1x frames: `RN2735_smelternight_before.png` (base build) and
+`RN2735_smelternight_after.png` (this lane's build), with their JSON reports
+alongside.
+
+### 2.52.3 THE ACCEPTANCE TABLE, CORRECTED WHERE THE EVIDENCE WAS WRONG EVEN THOUGH THE CLAIM WAS RIGHT
+
+- **All twelve of `smelternight`'s pre-existing committed rectangles bit-identical,
+  shipped vs `?firelightground=0`, on this lane's build**: `box`, `sunface`,
+  `firebox`, `band`, `plate`, `hearthL`, `hearthR`, `peep`, `strip`, `placard`,
+  `bandLit`, `bandShade` -- every field of every stat object equal to the digit,
+  checked programmatically (not sampled). Unaffected by construction: this lane
+  changes grass shading only, no geometry, no machine material. **The
+  fresh-context verifier ran the SAME attribution control at `smelterhero`
+  (day) and found the identical result: 0 of 12 machine rects differ**,
+  confirming the -8.06%/-2.94% day-pose ground move in 2.52.4 is confined to
+  the ground term exactly as it is at night, not a general daylight drift.
+- **`firelightgroundarm.mjs` still PASSES** on this lane's build (re-run
+  directly, not assumed): sanity arm and arming arm both fire, now at 27.5%/
+  33.5% largest per-channel move rather than N19's 6.7%/10.6%, since the
+  instrument's own `groundL`/`groundR` are mostly grass and grass now
+  participates.
+- **`meadownight` unregressed, same-build-null-aware (RN-2700's own rule),
+  REPUBLISHED AT THE CROSS-SESSION BOUND, not the tighter within-session
+  figure this lane first measured.** This lane's own single session read a
+  same-build null of 0.12% against a 0.04% base-vs-head pair, which looked
+  like a clean "under the null" result; the fresh-context verifier's own
+  session reproduced the SAME pose at **0.14% null / 0.25% pair**, up to
+  roughly 8x tighter in this lane's own first draft than a second session
+  actually reproduces (RN-2730's own rule: "the cross-session floor a later
+  lane must budget against" is the wider figure, not the first session's
+  optimistic one). The pair sits modestly above this wider null (about 1.8x),
+  which this file's own rule treats as inconclusive by pixel-diff alone rather
+  than as a clean pass -- but `meadownight` has no emitter registered within
+  reach (the same site as `meadow`, earlier in this section), so the PRIMARY proof for
+  this pose is the construction argument, not the pixel diff: `uEmitN` reads
+  0 there, so the added term is exactly `+0.0` in IEEE-754 regardless of what
+  the whole-frame instrument's own noise does. The pixel-diff figures are kept
+  as a secondary, honestly-bounded corroboration, not the load-bearing proof.
+- **Day poses read exactly zero WHERE NO EMITTER IS IN REACH, by construction,
+  proved via a live readback rather than a "byte-identical PNG" claim that
+  turned out to be impossible to make (see 2.52.6 item 1).** `meadow` (the day
+  counterpart of `meadownight`, no machine anywhere in frame): the
+  verifier's own live readback shows `registered: 0, selected: 0`, so
+  `uEmitN` is 0, the `ofEmitIrradiance` loop's own
+  `if (float(ofEi) >= uEmitN) break;` fires on its first iteration, and the
+  added term is exactly `vec3(0.0)` in IEEE-754 -- this is the proof, not an
+  inference from a pixel diff. The honest, null-aware pixel figure alongside
+  it: same-build null and base-vs-head pair are BOTH the SAME order as
+  `meadownight`'s own cross-session bound above (the HUD's own live
+  fps/p50/p99 telemetry text moves every frame regardless of this lane, which
+  is exactly what makes a byte-identity claim on this pose impossible and is
+  recorded as its own NUMBERS.md trap, 2.52.6 item 1).
+- **`smelternight` itself is a real, attributed, directionally-consistent
+  content change, not a regression, REPUBLISHED AT THE CROSS-SESSION BOUND.**
+  This lane's own single session read a 0.03% same-build null against a 0.17%
+  base-vs-head pair (5.7x); the verifier's fresh session reproduced the same
+  pose at **0.25% null / 0.33% pair** (about 1.3x). The whole-frame margin
+  over null is therefore modest at the honest bound and is NOT, by itself,
+  what carries this finding: the load-bearing evidence is the targeted,
+  per-channel instrument (`firelightgroundarm.mjs`'s 27.5%/33.5%, the blade/
+  soil classification in 2.52.1, and the twelve-rectangle attribution control
+  above), all of which are per-rectangle statistics with their own much
+  smaller, effectively-zero same-build nulls (2.52's own opening paragraph:
+  a 16-of-50,600-px 1-count bound for the per-pixel metric). The whole-frame `pngdiff`'s own
+  **direction** still corroborates in both sessions, though not at this
+  session's strength: **1,890 of 1,892 moved pixels moved LIGHTER here** against
+  2,753 of 3,812 (72 per cent) in the merge-time re-verify's session, both
+  consistent with an additive brightening from a term that did not exist before.
+- **A further day-pose accounting the verifier added, folded in here rather
+  than left in a separate report.** `machine` (a different day framing of the
+  same scene) was also checked and measured a smaller but still non-zero
+  move, -0.07%/-0.06%, the same "drowned, not absent" shape at yet another
+  camera angle on the identical machine. `basedusk` (a built base at a low
+  sun) has **no rectangle that reaches exposed ground or grass at all**, so it
+  contributes no reachable-subject evidence in either direction and its own
+  bit-identical machine rects must not be read as proof of a zero ground term
+  there (the same machine-rect-reach trap NUMBERS rule 8 already names,
+  applied to a day pose this time rather than a slant-range one).
+
+### 2.52.4 THE ONE PLACE "ZERO IN DAYLIGHT" IS FALSE, MEASURED RATHER THAN ASSUMED AWAY
+
+The brief's own boundary text expected the emitter term to read zero in
+daylight. **Measured at `smelterhero` (day, `sunDot` 0.45, the one committed
+day pose that DOES have an emitter in frame): it is not zero.** `groundL` R
+moves 21.10 -> 19.40 (-8.06%) and `groundR` R moves 53.83 -> 52.25 (-2.94%)
+under `?firelightground=0`, on this lane's build, `--lamp=0 --props=0 --wind=0`
+matching the night-pose methodology. This is not a defect: `ofEmitIrradiance`'s
+own model (EmissiveLight.ts's header) is purely geometric -- radiance, area,
+wrap and an inverse-square window, with no dependence on `sunDot` anywhere in
+its expression -- so the ABSOLUTE contribution is the same day or night, only
+DROWNED by a sun roughly forty times brighter at day. This is the exact same
+shape 2.47(c) already measured for the TERRAIN at this identical pose (a
+1.3% `R` move, "the expected shape of drowned, not absent"), now also true of
+the grass stood on it, and the fresh-context verifier's own independent
+re-measurement of the TERRAIN alone at `smelterhero` corroborates the shape
+with fresh numbers: **-2.07%/-0.82%, with no day gate anywhere in the term's
+own code** -- the terrain has never had a daylight cutoff, so neither should
+(and neither does) the grass splice built on the same model. **The correct,
+provable claim is narrower than "day poses are bit-identical": it holds only
+where no emitter is within reach (2.52.3's `meadow` result, proved via a live
+`registered`/`selected` readback, not a byte-identity claim that turned out to
+be impossible on a HUD-bearing frame), and is FALSE at a day pose that has
+one.** Recorded here plainly rather than rounded to the brief's own
+assumption, on this file's standing rule about a control that does not go
+exactly as predicted.
+
+### 2.52.5 THE COMMENT FIXES
+
+`EmissiveLight.ts:92`'s header read "The machine programs... and the prop /
+node programs... It does NOT reach the terrain", stale since RN-2422 spliced
+exactly that consumption into `TerrainFragLight.glsl.ts` (2.47(e) named this
+the same defect). Corrected to list all four current consumers -- machine,
+props, terrain (since RN-2422), and now grass (since this lane, gated by the
+same `uEmitGround` the terrain reads) -- comment only, no code path touched.
+**A second pass on this same header, by the fresh-context verifier**, found
+the correction's own closing line, "nothing left unlisted above", ALSO false:
+`WaterMaterial.ts` is a bare `ShaderMaterial` with no splice of any kind, and
+`pondside` is a committed pose standing beside water that would be the one to
+exercise it if it were wired. Corrected again in place (not a third rewrite of
+the surrounding sentence, only the closing claim) and routed as its own named
+owed item (2.52.6 item 6) rather than fixed in this lane, which owns
+`GrassGlsl.ts`/`GrassMaterial.ts` only.
+
+`GrassGlsl.ts`'s own new comment (lines 378-380 as first drafted) claimed `n`
+is "the UNBENT one", which is also false and is corrected in place: `n`
+carries GrassCard's own baked `BEND_UP` (0.74 toward local up, `GrassCard.ts`)
+on every use in this file, lines 227 and 322 already say so correctly, and
+this lane's own new comment simply forgot it three lines later. What this
+line actually skips is only this file's SECOND blend, `uBendUp` (the one that
+produces `ns`) -- the CHOICE (use `n`, not `ns`, for the emitter term) was
+never wrong and stands unchanged; only the parenthetical describing `n` was.
+
+**Gates.** `npx tsc --noEmit` clean. `npm run build` clean. `npm run check`
+**9 of 9**. Full four-pose `rn2550guard` **PASS 4 of 4, exit 0** (both a direct
+run against a manually sentinel-verified server and via `npm run check:full`'s
+own self-managed sentinel server; zero terrain shader bytes changed, so this
+result is unsurprising but was not skipped). The fresh-context verifier
+independently re-confirmed the guard's own four-decimal pin and the program
+count/draw-call/VRAM claims unchanged. Per-frame cost: one texture-free,
+branch-free additive term compiled into an already-existing `ShaderMaterial`
+program (`GrassMaterial.ts` builds it once, not per frame); no new draw call,
+no new uniform array size, no program permutation added beyond the
+pre-existing `EMIT_INSTALLED` three-state split every other emissive consumer
+already pays.
+
+### 2.52.6 CORRECTION PASS (2026-08-23, fresh-context verifier, verdict FIX, applied by this lane)
+
+A fresh-context verifier that never touched this lane's own work independently
+confirmed the uniform-object identity in code, the program count/draw calls/
+VRAM and the four-pose guard's own four-decimal pin, ruled the day behaviour
+correct-as-consistent-with-the-terrain's-own (no day gate exists anywhere in
+the model), and found this lane's acceptance was **MET AT PARITY, under-sold
+by this lane's own first draft**. Eight corrections, all applied above at the
+place each conclusion was drawn, not quietly dropped:
+
+1. **The `meadow` "byte-identical PNG" claim (old 2.52.3) is IMPOSSIBLE and is
+   struck.** The frame's own HUD carries live fps/p50/p99 telemetry text, which
+   changes every frame regardless of any code this lane touched; the verifier's
+   own same-build repeat differs at byte 47 and reads a 6.42% same-build null
+   over the world region. **The underlying CLAIM was still true** (this pose
+   has no reachable emitter and the added term is genuinely zero there); only
+   the EVIDENCE was wrong. Replaced with the construction proof the verifier
+   validated live: `registered: 0, selected: 0` at `meadow`, so `uEmitN` is 0,
+   the loop breaks on its first iteration, and `ofEmitIrradiance` returns
+   `vec3(0.0)`, exactly, in IEEE-754 -- not inferred from a pixel diff, read
+   off the running program. A new NUMBERS.md trap is added for this shape of
+   mistake: a byte-identity claim on any frame carrying a live-telemetry HUD is
+   impossible on its face, and a same-build repeat is the tell that would have
+   caught it before publishing.
+2. **The "soil-influenced" bucket (2.52.1) is RELABELLED blade-edge/partial-
+   coverage**, measured 96.1% grass-painted by the verifier's own `?grass=0`
+   differencing, not soil at all; this lane's own "AA dilution is conservative"
+   argument had the composition backwards. The acceptance ratio is republished
+   against TRUE pure soil from a grass-free arm pair: relative 0.97/1.02,
+   absolute 0.72/0.53 counts, **parity**, not the "approaches, likely a lower
+   bound" framing first published.
+3. **"Could not be reconciled unit-for-unit" (2.52.1) is WITHDRAWN.** The units
+   reconcile as (absolute 8-bit counts, per cent of the pixel's own shipped
+   value); N19's 28-to-32% soil figure reproduces almost exactly at 29.0%/
+   27.9% once measured the same way. `rendering.md` 2.47(b) is corrected AT ITS
+   SOURCE (a WAS-X note, not a silent edit) because its "1% at `dR` 0.010"
+   blade figure cannot be a blade reading at all: a fully-covered blade pixel
+   moved by construction exactly zero before this lane's splice existed, so
+   that number was always AA contamination from the row-band tool's own
+   blade-edge pixels, not a blade.
+4. **The whole-frame nulls (2.52.3) are republished as cross-session bounds**,
+   per the RN-2730 rule that a within-session pair understates the true floor:
+   `meadownight` **0.14% null / 0.25% pair** (this lane's own first session
+   read 0.12%/0.04%, up to 8x tighter); `smelternight` **0.25% null / 0.33%
+   pair** (this lane's own first session read 0.03%/0.17%). Neither
+   conclusion changes -- `meadownight` is read via the construction argument
+   rather than the pixel diff, and `smelternight`'s real-change finding rests
+   on the per-rectangle instruments, not the whole-frame margin -- but the
+   published floor is now the honest, wider one.
+5. **`GrassGlsl.ts`'s own new comment (2.52.5) is corrected**: `n` is not
+   unbent, it carries GrassCard's baked `BEND_UP`; only the second `uBendUp`
+   blend is skipped. The choice of `n` over `ns` for the emitter term is
+   unaffected and stands.
+6. **`EmissiveLight.ts`'s "nothing left unlisted above" line (2.52.5) is
+   corrected**: `WaterMaterial.ts` has no splice and `pondside` is a pose that
+   would exercise one. Routed as a named owed item rather than fixed in this
+   lane's own scope.
+7. **The day-pose attribution control is folded in (2.52.3, 2.52.4)**: 0 of 12
+   machine rects differ at `smelterhero` under the same flag pair that moves
+   `groundL`/`groundR`, and the terrain's own independent day residual at that
+   pose reproduces at -2.07%/-0.82% with no day gate in the model anywhere,
+   corroborating 2.47(c)'s own 1.3% finding rather than replacing it. `machine`
+   (a second day framing) moves a smaller but still non-zero -0.07%/-0.06%;
+   `basedusk` has no rectangle that reaches ground or grass at all and
+   contributes no reachable-subject evidence in either direction.
+8. **2.47(d)'s "proved-exact" is softened to real-arithmetic-exact** (2.52's
+   own opening section): the terrain's `pM + uBodyCenter` round-trip carries a
+   roughly 6 cm float32 quantisation at this planet's scale, present with or
+   without this lane; grass takes `vWorld` directly and carries none of it,
+   which is stated as a small asymmetry rather than left implied by "identical
+   computation".
+
+**Adopted as this lane's own correction, not an Admin ruling** (this is a
+same-lane fix on its own fresh-context verifier's report, not a cross-lane
+arbitration): the routed under-count named in 2.52's own opening section (the
+grass ground-substitute terms still do not read `uEmitGround`, only the
+additive line does, so "cover and substrate cannot disagree" is only
+half-applied) stands as written and is not disturbed by this pass.
+
+**Files touched.** `web/src/render/grass/GrassGlsl.ts` (uniform declaration,
+conditional `ofEmitIrradiance` splice, one additive `lit +=` line, comments,
+corrected this pass). `web/src/render/grass/GrassMaterial.ts` (import
+`EMIT_UNIFORMS`, wire `uEmitGround` by reference off the terrain material,
+comments). `web/src/render/materials/EmissiveLight.ts` (comment only, line
+92's header, corrected this pass). Nothing under `TerrainProgram.ts`,
+`TerrainFragLight.glsl.ts`, `TerrainAmpQuery.ts`, any palette row, or any
+pose/rectangle in `artframe.js` (verified: `git diff origin/main` on all four
+is empty). `docs/controllers/rendering.md` (this section and 2.47(b)'s own
+WAS-X note). `docs/web/NUMBERS.md` (the RN-2735 allocation row, completed per
+rules 4/5, plus a new trap entry and the RN-2736 to RN-2739 surrender note per
+rule 4). Frames: `docs/screenshots/RN2735_smelternight_before.png`,
+`RN2735_smelternight_after.png` (full 1x frames, JSON alongside),
+`RN2735_grass_crop_before_boosted.png`, `RN2735_grass_crop_after_boosted.png`
+(6x crops, display-boosted for visibility, same crop both arms),
+`RN2735_grass_amp200_diagnostic_only.png`,
+`RN2735_grass_amp200_crop_diagnostic_only.png` (illustrative, reproducible via
+`?firelight=200`, not shipped, not a code patch); none of the frames
+themselves needed retaking, since none of this pass's corrections touched a
+shipped pixel.
+
+**Open items, routed rather than resolved here.** (1) The grass
+ground-substitute terms (`ground`/`skyView`) still do not read `uEmitGround`,
+only the new additive line does (2.52's own opening section); a future lane
+should fold the emitter into those terms too, on `GrassMaterial.ts`'s own
+"cover and substrate cannot disagree" rule. (2) `WaterMaterial.ts` has no
+emissive splice at all and `pondside` is the pose that would exercise it
+(2.52.5/2.52.6 item 6). (3) "Day poses are bit-identical" is scoped to poses
+with no active emitter in reach, proved via a live `registered`/`selected`
+readback rather than a byte-identity claim; 2.52.3 and 2.52.4 are the record.
