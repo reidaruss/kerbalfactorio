@@ -24,6 +24,8 @@
     "check:pose": "node tools/smoke/posecheck.mjs",
     "check:probes": "node tools/smoke/check-invocations.mjs",
     "check:guard": "node tools/smoke/check-guard.mjs",
+    "check:firelightground": "node tools/smoke/firelightgroundarm.mjs",
+    "check:iblground": "node tools/smoke/iblgroundarm.mjs",
     "smoke": "node tools/smoke/run.mjs",
     "check": "node tools/check-all.mjs",
     "check:full": "node tools/check-all.mjs && node tools/smoke/check-guard.mjs",
