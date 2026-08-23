@@ -419,14 +419,62 @@ const F_MIN = 0.10;
 // wire, served entry chunk `f01db459b1d657f0` verified against `dist`, a fresh
 // process per arm, and reproduced to the digit on a second build with the arms
 // under different labels.
+// WG-304, 2026-08-22 (`lane/wg-reach-fix`). EVERY BOX CEILING IS LOWERED, in
+// the guard's TIGHTENING direction, which RN-2645 already established needs no
+// decision. What is new here is that each one is SPLIT, because this lane has a
+// four-pose control run and the previous re-pins did not: the pin-to-CONTROL
+// half is darkening that was already on main before this campaign, and the
+// CONTROL-to-SHIPPED half is this campaign's. The control arm is
+// `--canopytail=1 --capfair=0 --canopychunkkm2=0`, i.e. every WG-295 and
+// WG-301 term structurally off, taken on the same build in the same session.
+//
+//   pose            pin              CONTROL          SHIPPED (pinned below)
+//   forestairnoon   0.9817 / 0.9826  0.9808 / 0.9499  0.9512 / 0.9083
+//   forestairlow    0.9464 / 0.7732  0.9429 / 0.7669  0.9370 / 0.7488
+//   flyovernoon     0.9568 / 0.9243  0.9568 / 0.9243  0.9289 / 0.8671
+//   flyoverlow      0.9774 / 0.8884  0.9618 / 0.8347  0.9514 / 0.7899
+//
+// **`flyovernoon`'s control reproduces its pins to four decimals**, which is
+// what makes the whole table readable as a delta rather than as drift, and it
+// is also the proof that the pins are live on this base. `forestairnoon`'s
+// `boxSurf` and `flyoverlow`'s pair carry real pre-existing darkening that
+// nobody re-pinned; it is adopted here rather than left stale, and it is named
+// so a later lane reading a red guard can tell whose half is whose.
+//
+// **`rho` IS A DIFFERENT MATTER AND ONLY ONE OF THE FOUR IS TOUCHED.** `b.rho`
+// is read at exactly one place (the standing-violation deepening test) and all
+// four poses are `rhoOut: null`, so it is documentation today. The control run
+// says three of the four pinned values are STALE FROM N13/N15 AND NOT THIS
+// LANE'S -- control and shipped agree to the digit at `flyovernoon` (0.4762
+// against a pinned 0.2488) and at `flyoverlow` (0.4016 against 0.7021), and to
+// 0.0009 at `forestairlow` (0.2996 against 0.4363). Adopting another lane's
+// numbers into this table is not this lane's call, so **those three are left
+// exactly as they are and the measurements are recorded here for Admin.**
+// `forestairnoon`'s IS this lane's and is re-pinned below.
 const BASE = {
   // RN-2645: `rho` re-pinned to the measured 0.1890 and `rhoOut` CLEARED, under
   // the second logged decision above. The pose is judged on the band now, not
-  // on a depth, and it has 0.0090 of headroom against BAND_LOW.
-  forestairnoon: { boxShip: 0.9817, boxSurf: 0.9826, boxClearY: 0.189652,
-    crownClearY: 0.103580, rho: 0.1890, rhoOut: null },
+  // on a depth, and it had 0.0090 of headroom against BAND_LOW.
+  //
+  // WG-304: `rho` 0.1890 -> 0.1873, and the reason is the whole of this lane.
+  // WG-301's density-aware cap took it to **0.1596, OUT OF BAND by -0.0204**,
+  // and main was red. `?capfair=0` returns it to 0.1890 to four decimals and
+  // `?canopytail=1` leaves it at 0.1596, so the cap owned all of it and the
+  // reach owned none. The repair is `CANOPY_CHUNK_KM2`: the flat
+  // `MAX_PER_CHUNK` COUNT is a density ceiling that tightens fourfold at every
+  // LOD step outward, so redistributing a wrong budget honestly looked worse
+  // than concentrating it dishonestly. **0.1873 is the world's own uniform
+  // answer and not a sweep to green:** the ladder saturates (2,400 per km2
+  // gives 0.1830 at capScaleMin 0.8425, 4,800 gives 0.1873 at 0.9482), so the
+  // residual 0.0017 against the truncated arm is uniform-versus-concentrated
+  // and not budget. Headroom against BAND_LOW is now 0.0073.
+  forestairnoon: { boxShip: 0.9512, boxSurf: 0.9083, boxClearY: 0.189652,
+    crownClearY: 0.103580, rho: 0.1873, rhoOut: null },
   // RN-2605: both re-derived DOWNWARD, no decision needed.
-  forestairlow: { boxShip: 0.9464, boxSurf: 0.7732, boxClearY: 0.106526,
+  // WG-304: lowered again. Pre-existing -0.0035 / -0.0063, this lane
+  // -0.0059 / -0.0181. `rho` control 0.2996 against the pinned 0.4363: STALE,
+  // not this lane's (shipped 0.2987), left unchanged.
+  forestairlow: { boxShip: 0.9370, boxSurf: 0.7488, boxClearY: 0.106526,
     crownClearY: 0.058633, rho: 0.4363, rhoOut: null },
   // RN-2605: both RAISED under the logged decision above. Debt 0.0248 / 0.0251.
   // RN-2645: both LOWERED again, in the guard's TIGHTENING direction, which
@@ -434,9 +482,18 @@ const BASE = {
   // 0.0225 boxShip and 0.0223 boxSurf are still owed against RN-2605's
   // pre-raise 0.9343 / 0.9020. See the RN-2645 block below for why it is a
   // ceiling and not a shortfall of effort.
-  flyovernoon: { boxShip: 0.9568, boxSurf: 0.9243, boxClearY: 0.288112,
+  //
+  // WG-304: LOWERED AGAIN AND THE RN-2605 DEBT IS NOW OVERPAID. The control
+  // reproduces the pins to four decimals, so all of -0.0279 / -0.0572 is this
+  // campaign's, and 0.9289 / 0.8671 is BELOW RN-2605's pre-raise 0.9343 /
+  // 0.9020 by 0.0054 / 0.0349. `rho` control 0.4762 against the pinned 0.2488:
+  // STALE, not this lane's (shipped 0.4762, identical), left unchanged.
+  flyovernoon: { boxShip: 0.9289, boxSurf: 0.8671, boxClearY: 0.288112,
     crownClearY: 0.148116, rho: 0.2488, rhoOut: null },
-  flyoverlow: { boxShip: 0.9774, boxSurf: 0.8884, boxClearY: 0.147985,
+  // WG-304: lowered. Pre-existing -0.0156 / -0.0537, this lane -0.0104 /
+  // -0.0448. `rho` control 0.4016 against the pinned 0.7021: STALE, not this
+  // lane's (shipped 0.4016, identical), left unchanged.
+  flyoverlow: { boxShip: 0.9514, boxSurf: 0.7899, boxClearY: 0.147985,
     crownClearY: 0.078325, rho: 0.7021, rhoOut: null },
 };
 

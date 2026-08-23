@@ -261,6 +261,13 @@ export interface Config {
    */
   readonly canopyMaxCellM: number;
   /**
+   * WG-304. `?canopychunkkm2=` is the instances-per-km2 ceiling a CANOPY-ONLY
+   * chunk gets in place of the flat `MAX_PER_CHUNK`, and `0` restores the flat
+   * one at every depth, i.e. the ceiling that made WG-301's redistribution
+   * read as a 39 per cent coverage loss at `forestairnoon`.
+   */
+  readonly canopyChunkKm2: number;
+  /**
    * WG-67: `?rocks=0` places NO world rocks and is the one-binary control for
    * the whole rock pass, the same shape as `?canopy=0` one paragraph up.
    * `?rockdensity=` scales every biome's rock ask together and exists for the

@@ -581,6 +581,12 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   //   `canopymaxcell=` overrides RN-2230's coarsest admissible canopy cell,
   //     so the chunk-LOD ceiling on the reach is a ladder and not a claim.
   'canopytail', 'capfair', 'canopymaxcell',
+  // WG-304, standing rule 7. `canopychunkkm2=0` restores the flat
+  // `MAX_PER_CHUNK` ceiling at every chunk depth, which is the ceiling under
+  // which WG-301's redistribution turned `rn2550guard` red at
+  // `forestairnoon`. It sweeps, because the shipping value is the loosest
+  // ceiling the canopy pool and the frame hold.
+  'canopychunkkm2',
   // WG-67, standing rule 7. `rocks=0` places NO world rocks, which is the
   // one-binary control for the whole rock-node pass; `rockdensity=` scales
   // every biome's rock ask together for the cost ladder.

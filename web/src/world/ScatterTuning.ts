@@ -70,6 +70,101 @@ export const BUILDS_PER_UPDATE = 1;
  * invisible 16% shortfall on exactly the chunk the player is standing on.
  */
 export const MAX_PER_CHUNK = 14000;
+
+/**
+ * WG-304. THE CANOPY-ONLY CHUNK'S CEILING, in instances per SQUARE KILOMETRE
+ * of chunk, and the constant that repairs a regression WG-301 caused.
+ *
+ * WHAT WENT WRONG, and it is worth keeping because the fix looked free.
+ * WG-301 replaced `MAX_PER_CHUNK`'s raster-order first-N truncation with a
+ * density scale, which is strictly better as a SHAPE: the same budget covers
+ * the whole chunk instead of one strip. It shipped, and `rn2550guard` went red
+ * at `forestairnoon` with `crowns` rho **0.1890 to 0.1596** against a
+ * `BAND_LOW` of 0.18, and coverage `f` **0.6029 to 0.3695**. Separated on this
+ * build with the two shipped flags: `?capfair=0` restores BOTH numbers to the
+ * pinned values **to four decimals**, and `?canopytail=1` leaves rho at 0.1596
+ * unchanged, so the reach half is innocent and this half owns all of it.
+ *
+ * **THE TRUNCATION HAD BEEN PROPPING THE POSE UP, AND THE PROP WAS LOAD
+ * BEARING BY LUCK.** The scan runs `cy` from 0, so a capped chunk spends its
+ * whole budget on one edge of itself, and at this pose that edge is the NEAR
+ * edge, which is the ground the `crowns` rectangle looks at. Redistributing
+ * uniformly therefore took 39 per cent of the card coverage OUT of the one
+ * rectangle the guard measures and spread it over 3.7 km of chunk. That is
+ * NUMBERS.md's "a defect can be propping up the very number its fix is judged
+ * by" (RN-2590) with the accident running the other way for once: the defect
+ * was accidentally near-field-favouring, which is accidentally right for a
+ * downward-looking aerial pose. **And the frames agree it is a LOOK
+ * regression and not an instrument artefact**
+ * (`WG304_crowns_capoff_4x.png` against `WG304_crowns_ship_4x.png`): closed
+ * woodland with overlapping crowns becomes scattered individual trees on open
+ * ground. The guard was right and the number was not the whole of it.
+ *
+ * **THE REPAIR IS THE CEILING AND NOT THE REDISTRIBUTION.** `MAX_PER_CHUNK` is
+ * a per-CHUNK COUNT, and a chunk's area quadruples at every LOD step outward,
+ * so as a DENSITY ceiling it tightens fourfold every step: at depth 14 it
+ * allows four million instances per km2 and at depth 8 it allows 1,034. That
+ * is exactly backwards for a tier whose whole job is the far field, and it is
+ * why the honest redistribution of a wrong budget looks worse than the
+ * dishonest concentration of it. Expressed per unit AREA the ceiling stops
+ * being a function of LOD depth at all.
+ *
+ * **THE VALUE IS THE MEASURED KNEE OF A LADDER AND NOT A SWEEP TO GREEN**, and
+ * the ladder is what says the residual is the world rather than the cap. Run at
+ * `forestairnoon`, one build, one page param apart, with `canopyProps` read at
+ * `forestair`:
+ *
+ *   per km2   capScaleMin   canopyProps   f        rho      vs BAND_LOW 0.18
+ *   0 (flat)     0.4051       83,443     0.3695   0.1596    -0.0204  FAIL
+ *   1,200        0.4212       84,903       --       --        --
+ *   2,400        0.8425      117,142     0.5538   0.1830    +0.0030
+ *   4,800        0.9482      120,854     0.5843   0.1873    +0.0073
+ *   (`?capfair=0`, the truncation)  85,970     0.6029   0.1890    +0.0090
+ *
+ * Doubling 2,400 to 4,800 adds 3,712 instances (3.2 per cent) and buys
+ * +0.0043 of rho; `capScaleMin` 0.9482 says the cap is then barely binding at
+ * all, so **rho asymptotes at about 0.188 and the last 0.0017 is the
+ * difference between a uniform forest and a concentrated one, not a budget**.
+ * 4,800 rather than 2,400 because +0.0030 of headroom is not a state to hand a
+ * pose to: RN-2645 already argued about 0.0090 as thin, and the next lane to
+ * touch canopy shade would turn main red again.
+ *
+ * WHAT BINDS WHERE, so the constant is not read as doing more than it does. A
+ * depth-9 chunk is 3.39 km2 and gets `4800 * 3.39` = 16,272; a depth-8 chunk is
+ * 13.54 km2, asks 65,000 and is held at `CANOPY_CHUNK_MAX`. So the per-km2 rule
+ * is the depth-9 governor and the absolute backstop is the depth-8 one, and the
+ * `crowns` rectangle at 2.2 to 2.8 km straddles exactly that boundary, which is
+ * why both halves had to move together.
+ *
+ * `CANOPY_CHUNK_MAX` is the POOL and not the frame: the `OF_Canopy` batch holds
+ * 131,072 instances (`PropLibrary.CANOPY_MAX_CAPACITY`), and one chunk allowed
+ * more than a quarter of the batch could refuse every other chunk in the ring
+ * on its own. `poolRefused` is the counter that would say so and it must stay
+ * 0. **THE HEADROOM IS NOW THE THING TO WATCH AND IT IS ROUTED RATHER THAN
+ * SPENT:** `forestair` reads 120,854 live canopy instances, **92.2 per cent of
+ * the batch**, against 77,387 before this campaign. That is not slack this fix
+ * created, it is slack the truncation was hiding: the honest full-density
+ * Forest aerial needs about that many, and the flat ceiling was refusing them
+ * while reporting `canopyDelivered` 1.00. Raising `CANOPY_MAX_CAPACITY` is
+ * rendering's constant and an Admin decision, and it is asked for rather than
+ * taken.
+ */
+export const CANOPY_CHUNK_KM2 = 4800;
+export const CANOPY_CHUNK_MAX = 32768;
+
+/**
+ * WG-304. The instance ceiling for a chunk the ground tiers have refused.
+ *
+ * Floored at `MAX_PER_CHUNK` so this can only ever RAISE a coarse chunk's
+ * allowance, never lower one: a depth-9 chunk is 3.39 km2 and the area rule
+ * alone would give it 8,127, which is tighter than today and would be a second
+ * silent thinning introduced by a fix for the first.
+ */
+export function canopyChunkCap(areaKm2: number, perKm2 = CANOPY_CHUNK_KM2): number {
+  const byArea = Math.ceil(Math.max(0, areaKm2) * Math.max(0, perKm2));
+  return Math.min(CANOPY_CHUNK_MAX, Math.max(MAX_PER_CHUNK, byArea));
+}
+
 export const MAX_PER_CELL = 160;
 export const RADIUS_M = 170;
 /**
