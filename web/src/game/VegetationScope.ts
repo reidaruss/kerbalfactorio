@@ -42,6 +42,20 @@ export interface VegetationScopeStats {
   rocks: ReturnType<RockField['stats']>;
   trees: TreeStats;
   nodes: number;
+  /** WG-320. `NodeField.update`'s own mean cost in ms, and the two exemption
+   *  gates' own outcomes. The fly poses answer through this object and not
+   *  through `of.game()`, so anything published only on the walk path is
+   *  invisible at exactly the poses that pay for it. */
+  nodeMs: number;
+  nodeSkips: number;
+  /** Batches out of the shadow passes, of how many exist. */
+  nodeShadowOff: number;
+  nodeBatches: number;
+  nodeAllTier3: boolean;
+  nodeCascOk: boolean;
+  /** `?nodefast=check`: node-frames compared, and disagreements. */
+  nodeChecked: number;
+  nodeMismatch: number;
 }
 
 export class VegetationScope {
@@ -97,12 +111,16 @@ export class VegetationScope {
   }
 
   stats(): VegetationScopeStats {
+    const f = this.f.field.fastStats();
     return {
       streaming: this.streaming,
       altM: Math.round(this.altM),
       rocks: this.f.rocks.stats(),
       trees: this.f.trees.stats(),
       nodes: this.f.field.placed.length,
+      nodeMs: f.updateMs, nodeSkips: f.composeSkips, nodeShadowOff: f.shadowOff,
+      nodeBatches: f.batches, nodeAllTier3: f.allTier3, nodeCascOk: f.cascOk,
+      nodeChecked: f.checked, nodeMismatch: f.mismatch,
     };
   }
 }

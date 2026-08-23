@@ -79,6 +79,8 @@ const ROOT = 'assets/nodes/';
 const PUNCH_SECS = 0.26;
 /** Seconds the felled collapse takes to settle. It never plays backwards. */
 const FELL_SECS = 0.9;
+/** WG-320. Frames of `update()` cost kept for the mean. Two seconds at 60. */
+const MS_RING = 120;
 
 interface Placed {
   index: number;
@@ -133,7 +135,53 @@ export class NodeField {
   lodSwitches = 0;
   /** The same for the frame just composed, for a hitch hunt. */
   lodSwitchesLastFrame = 0;
+  /**
+   * WG-320. Milliseconds THIS loop cost on the last frame, and the mean over a
+   * short ring.
+   *
+   * It exists because the frame budget could only ever be split by inference
+   * before it: `StatsProbe` publishes `cpuMs` (everything before `render()`)
+   * and `passMs.near` (the near pass's submit), and this loop is one term
+   * inside the first of those. WG-310 routed a cost to this function without
+   * anyone timing it, and NUMBERS.md rule 6 says a named mechanism is a
+   * hypothesis until an instrument independent of the naming measures it.
+   * Two `performance.now()` calls a frame is the whole overhead.
+   */
+  updateMsLast = 0;
+  /** WG-320. Nodes this loop skipped on the last frame because their transform
+   *  provably could not have changed. The gate's own outcome readback: a fix
+   *  that reports zero here did not fire, whatever the frame time says. */
+  composeSkips = 0;
+  /** WG-320. The shadow gate's per-frame precondition on its own. The other
+   *  two are `NodeBatch.shadowArmed` and the per-batch impostor rung. */
+  allTier3 = false;
+  private readonly msRing = new Float64Array(MS_RING);
+  private msHead = 0;
+  private msCount = 0;
   private readonly lodOn: boolean;
+  /** WG-320. `?nodefast=0` puts BOTH exemptions back: the compose/move skip and
+   *  the shadow gate. One binary, so a before/after pair is one page param on
+   *  one build rather than two builds a lane hopes are otherwise identical. */
+  private readonly fast: boolean;
+  private readonly fastCheck: boolean;
+  private readonly shadowGate: boolean;
+  /**
+   * WG-320. `?nodefast=check`: node-frames on which the skipped `compose` +
+   * `move` would NOT have written back the matrix already in the batch.
+   *
+   * It must stay 0, and a 0 from it means something precisely because the
+   * measurement is of the WRITE and not of the picture: `fastChecked` counts
+   * the node-frames the comparison actually ran on, so a zero from a check
+   * that never fired is distinguishable from a zero from a check that did.
+   */
+  fastMismatch = 0;
+  fastChecked = 0;
+  private readonly chk = new THREE.Matrix4();
+  /** The origin the batch's matrices were last written against. NaN so the
+   *  first frame always composes. */
+  private ox = NaN;
+  private oy = NaN;
+  private oz = NaN;
   private readonly templates = new Map<string, { root: string; scene: THREE.Object3D }>();
   private readonly p = new THREE.Vector3();
   private readonly q = new THREE.Quaternion();
@@ -144,14 +192,25 @@ export class NodeField {
   private readonly tintC = new THREE.Color();
   private readonly engineUp = new THREE.Vector3();
   private readonly up = new THREE.Vector3(0, 1, 0);
+  /** WG-320. One reused `NodeState` for the per-frame read. See
+   *  `GameCore.nodeInto`: the loop asked for a fresh object per node per frame
+   *  and the object was thrown away on the next line. */
+  private readonly nodeScratch: NodeState = {
+    x: 0, y: 0, z: 0, remaining: 0, initial: 0, grade: 0, kind: 0, resource: 0,
+  };
   /** Nodes that have visibly collapsed, for the HUD counters and the probe. */
   felled = 0;
 
   /** `opts.lod` is `?nodelod` and `opts.cull` is `?nodecull` (WG-118): two
-   *  separate claims, so two separate one-binary controls. */
+   *  separate claims, so two separate one-binary controls. `opts.fast` is
+   *  WG-320's `?nodefast`, on the same rule. */
   constructor(private readonly core: GameCore, private readonly origin: FloatingOrigin,
-              opts: { lod?: boolean; cull?: boolean } = {}) {
+              opts: { lod?: boolean; cull?: boolean; fast?: boolean;
+                      check?: boolean; shadow?: boolean } = {}) {
     this.lodOn = opts.lod !== false;
+    this.fast = opts.fast !== false;
+    this.fastCheck = opts.check === true;
+    this.shadowGate = opts.shadow !== false;
     this.batch = new NodeBatch(opts.cull !== false);
     this.group.name = 'harvestNodes';
     this.group.add(this.batch.group);
@@ -474,24 +533,67 @@ export class NodeField {
    * the control.
    */
   update(dt: number, eye?: { x: number; y: number; z: number }): void {
+    const t0 = performance.now();
+    // WG-320. THE ORIGIN MOVED, OR IT DID NOT, AND IT IS ONE COMPARISON FOR THE
+    // WHOLE FIELD. `compose` derives a node's engine transform from `pl.pos`
+    // and `origin.origin` and nothing else, so between rebases a node that is
+    // not animating composes to the SAME matrix every frame and `batch.move`
+    // writes the same sixteen floats over the top of themselves. The test is
+    // the origin's own value rather than the `rebases` counter, because
+    // `reseat` resets that counter on a body switch (`FloatingOrigin.reseat`)
+    // and a counter that can go backwards is not an epoch.
+    const o = this.origin.origin;
+    const moved = o.x !== this.ox || o.y !== this.oy || o.z !== this.oz;
+    this.ox = o.x; this.oy = o.y; this.oz = o.z;
     this.lodSwitchesLastFrame = 0;
+    this.composeSkips = 0;
     const lodOn = this.lodOn && eye !== undefined;
+    // WG-320. Is every live node at the impostor rung? Seeded from `lodOn`,
+    // because with `?nodelod=0` no node ever leaves tier 0 and the claim is
+    // then false rather than vacuously true, and ANDed down from there (an
+    // empty field is excluded by the `placed.length` test at the bottom).
+    let allTier3 = lodOn;
     for (const pl of this.placed) {
-      const st = this.core.node(pl.index);
+      const st = this.core.nodeInto(pl.index, this.nodeScratch);
       if (st !== null) {
         const f = st.initial > 0 ? st.remaining / st.initial : 0;
+        // `setVariant` composes and writes the geometry itself when the variant
+        // actually changes, so the matrix is never stale after a depletion step
+        // even on a frame this loop otherwise skips.
         this.setVariant(pl, variantFor(f));
         pl.empty = st.remaining <= 0;
       }
+      // BEFORE the timers advance. A node mid-hit or mid-collapse composes a
+      // DIFFERENT matrix every frame, so it can never be skipped; `fell`
+      // saturates at `FELL_SECS` rather than counting down (see `collapse`), so
+      // the test is a half-open interval and the frame it saturates on is the
+      // last one that composes.
+      const animating = pl.punch > 0 || (pl.fell > 0 && pl.fell < FELL_SECS);
       if (pl.punch > 0) pl.punch = Math.max(0, pl.punch - dt);
       if (pl.fell > 0) pl.fell = Math.min(FELL_SECS, pl.fell + dt);
-      this.compose(pl, pl.punch / PUNCH_SECS);
       let lod = 0;
       if (lodOn && eye !== undefined) {
         const dx = pl.pos.x - eye.x, dy = pl.pos.y - eye.y, dz = pl.pos.z - eye.z;
         lod = this.lodFor(pl, dx * dx + dy * dy + dz * dz);
       }
-      if (lod !== pl.lod) {
+      const lodChanged = lod !== pl.lod;
+      // The shadow gate's per-frame half. The per-BATCH half (does this
+      // batch's art author an impostor rung at all) is static and lives in
+      // `NodeBatch`, so a boulder with no `_LOD3` costs its own batch and not
+      // every tree in the ring.
+      if (lod !== LODS - 1) allTier3 = false;
+      // THE EXEMPTION, and it is an identity rather than a visibility guess: on
+      // a frame where the origin has not moved, the node is not animating and
+      // its tier has not changed, `compose` would rebuild a matrix equal to the
+      // one already in the batch. Skipping it is bit-exact, at every pose, on
+      // the ground included, which is why it needs no distance and no frustum.
+      if (this.fast && !moved && !animating && !lodChanged) {
+        this.composeSkips++;
+        if (this.fastCheck) this.verifySkip(pl);
+        continue;
+      }
+      this.compose(pl, pl.punch / PUNCH_SECS);
+      if (lodChanged) {
         pl.lod = lod;
         this.lodSwitches++;
         this.lodSwitchesLastFrame++;
@@ -503,6 +605,50 @@ export class NodeField {
       for (let i = 0; i < pl.parts.length; ++i)
         this.batch.move(pl.parts[i].material, pl.slots[i], this.m);
     }
+    this.allTier3 = allTier3 && this.placed.length > 0;
+    this.batch.shadowsOff(this.fast && this.shadowGate && this.allTier3);
+    this.updateMsLast = performance.now() - t0;
+    this.msRing[this.msHead] = this.updateMsLast;
+    this.msHead = (this.msHead + 1) % MS_RING;
+    if (this.msCount < MS_RING) this.msCount++;
+  }
+
+  /**
+   * WG-320, `?nodefast=check` only. Compose the matrix the skip declined to
+   * write and compare it, element for element, with what the batch holds.
+   *
+   * The batch is the arbiter rather than a cached copy of our own last write,
+   * because a cached copy would only prove that this class is self-consistent,
+   * and the claim is about the sixteen floats the renderer will actually read.
+   * `pl.slots[0]` is enough: every part of a node is written from the same
+   * `this.m` in the same statement, so a disagreement cannot hide in part 1.
+   */
+  private verifySkip(pl: Placed): void {
+    if (pl.slots.length === 0 || pl.slots[0] < 0) return;
+    this.compose(pl, pl.punch / PUNCH_SECS);
+    if (!this.batch.matrixAt(pl.parts[0].material, pl.slots[0], this.chk)) return;
+    this.fastChecked++;
+    // `Math.fround`, AND THE FIRST DRAFT WITHOUT IT READ 100 PER CENT
+    // MISMATCH, which is worth the line it costs: a `BatchedMesh` stores its
+    // instance matrices in a Float32 data texture, so `setMatrixAt` NARROWS
+    // and `getMatrixAt` widens the narrowed value back. Comparing the f64
+    // `compose` result against that round trip fails on essentially every
+    // element and says nothing about whether the write was a no-op. The
+    // quantity that decides that is the f32 the texture would hold.
+    for (let i = 0; i < 16; ++i) {
+      if (this.chk.elements[i] !== Math.fround(this.m.elements[i])) {
+        this.fastMismatch++;
+        return;
+      }
+    }
+  }
+
+  /** WG-320. Mean `update()` cost over the last `MS_RING` frames, ms. */
+  get updateMsMean(): number {
+    if (this.msCount === 0) return 0;
+    let s = 0;
+    for (let i = 0; i < this.msCount; ++i) s += this.msRing[i];
+    return s / this.msCount;
   }
 
   /**
@@ -543,7 +689,10 @@ export class NodeField {
              capacity: number; slots: number; lod0: number; lod1: number;
              lod2: number; lod3: number; lodTiers: number;
              lodSwitches: number; lodSwitchesLastFrame: number;
-             ceiling: number; grows: number; refused: number } {
+             ceiling: number; grows: number; refused: number;
+             updateMs: number; updateMsLast: number;
+             composeSkips: number; shadowOff: number; allTier3: boolean;
+             cascOk: boolean; fastChecked: number; fastMismatch: number } {
     const b = this.batch.stats();
     let slots = 0;
     for (const p of this.placed) slots += p.slots.filter((s) => s >= 0).length;
@@ -575,6 +724,32 @@ export class NodeField {
       // and can be mined and are not on screen. A silent exhaustion here is
       // exactly the failure that hid 150-machine bases and 25% of the foliage.
       ceiling: b.ceiling, grows: b.grows, refused: b.refused,
+      // WG-320. What this loop actually costs, published beside the count that
+      // drives it so a reader never has to divide one number by another taken
+      // from a different frame.
+      updateMs: Math.round(this.updateMsMean * 1000) / 1000,
+      updateMsLast: Math.round(this.updateMsLast * 1000) / 1000,
+      // WG-320. The two gates' own outcomes, so a probe asserts that they FIRED
+      // rather than that they were compiled in.
+      // WG-320. `batches` above is already `NodeBatch.stats().batches`, i.e.
+      // the denominator for `shadowOff`, so it is not published a second time.
+      composeSkips: this.composeSkips, shadowOff: this.batch.shadowOffBatches,
+      allTier3: this.allTier3, cascOk: this.batch.shadowArmed,
+      fastChecked: this.fastChecked, fastMismatch: this.fastMismatch,
+    };
+  }
+
+  /** WG-320. The same two outcomes for the wild (fly) path, which reports
+   *  through `VegetationScope` and never builds the full histogram above. */
+  fastStats(): { updateMs: number; composeSkips: number; shadowOff: number;
+                 batches: number; allTier3: boolean; cascOk: boolean;
+                 checked: number; mismatch: number } {
+    return {
+      updateMs: Math.round(this.updateMsMean * 1000) / 1000,
+      composeSkips: this.composeSkips,
+      shadowOff: this.batch.shadowOffBatches, batches: this.batch.batchCount,
+      allTier3: this.allTier3, cascOk: this.batch.shadowArmed,
+      checked: this.fastChecked, mismatch: this.fastMismatch,
     };
   }
 }

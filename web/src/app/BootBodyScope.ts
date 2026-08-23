@@ -309,7 +309,8 @@ export async function phaseBodyScope(
         rocks: { enabled: cfg.rocks, density: cfg.rockDensity },
         trees: { radiusM: cfg.treeRadiusM, density: cfg.treeDensity,
           harvestX6: cfg.harvestX6 },
-        nodeArt: { lod: cfg.nodeLod, cull: cfg.nodeCull },
+        nodeArt: { lod: cfg.nodeLod, cull: cfg.nodeCull, fast: cfg.nodeFast,
+          check: cfg.nodeFastCheck, shadow: cfg.nodeShadow },
         // No voxels without a character (`phaseTools` is player-gated too), so
         // there is no dug ground for a node to seat into. A thunk anyway, so
         // the shape matches `composeGround`'s and cannot drift from it.

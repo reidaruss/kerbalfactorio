@@ -102,7 +102,8 @@ export async function phaseGameplay(s: GameplayIn): Promise<GameplayOut> {
       // rocks and reading the same body datum. `?trees=0` is the control.
       trees: { radiusM: cfg.treeRadiusM, density: cfg.treeDensity,
         harvestX6: cfg.harvestX6 },
-      nodeArt: { lod: cfg.nodeLod, cull: cfg.nodeCull },
+      nodeArt: { lod: cfg.nodeLod, cull: cfg.nodeCull, fast: cfg.nodeFast,
+        check: cfg.nodeFastCheck, shadow: cfg.nodeShadow },
       // RN-2225. THE VEGETATION ORIGIN. `player.body.feet` while the walker
       // holds the eye, which is the byte-identical object `GameplayFrame` read
       // directly before this existed, and `router.position` once anything else

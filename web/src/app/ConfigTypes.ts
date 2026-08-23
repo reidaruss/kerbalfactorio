@@ -316,6 +316,30 @@ export interface Config {
    *  culling back off. Two separate claims, so two separate controls. */
   readonly nodeLod: boolean;
   readonly nodeCull: boolean;
+  /**
+   * WG-320, THE MASTER CONTROL: `?nodefast=0` puts back BOTH per-frame
+   * exemptions `NodeField.update` gained, i.e. it is the pre-WG-320 build one
+   * page param away, on one binary, so the before/after ladder is one session.
+   *
+   * `?nodefast=check` is the third setting and it is the exemption's own PROOF
+   * rather than a control: the fast path stays on, and on every frame it
+   * SKIPS a node it composes the matrix anyway and compares all sixteen
+   * elements against what the batch already holds, counting any disagreement
+   * in `NodeField.fastMismatch`. The claim being made is an identity ("the
+   * write would have been a no-op"), and an identity is provable directly;
+   * proving it through pixels at a pose whose own same-build null runs to
+   * thousands of pixels is not the same statement.
+   */
+  readonly nodeFast: boolean;
+  readonly nodeFastCheck: boolean;
+  /**
+   * WG-320, the SHADOW half on its own: `?nodeshadow=0` keeps the compose skip
+   * and puts the node batches back into the shadow cascades. Two exemptions,
+   * two proofs, so two controls: the compose skip is an identity and the
+   * shadow gate is an argument about what a cascade can reach, and a single
+   * flag would make a pixel move impossible to attribute to one of them.
+   */
+  readonly nodeShadow: boolean;
   /** WG-94: `?spires=0` drops `rock_spire.glb` from `NodeArt.ART`, so Mountains
    *  rocks are all boulders again AND the file is not fetched. */
   readonly spires: boolean;

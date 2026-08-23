@@ -1,6 +1,6 @@
 # World Generation & Terrain — Master Controller Context
 
-> **Domain owner:** `world-gen-controller` · **Reports to:** Admin · **Phase:** web pivot, W5/W8 · **Last updated:** 2026-08-23 · **Status:** **WG-310: THE HARVEST TABLE ADOPTS A MEASURED FRACTION OF THE CANOPY TABLE, CORRECTED TO x3 AFTER A FRESH-CONTEXT VERIFIER PASS (2026-08-23, `lane/wg-harvest`, base `50daac5b`).** The ruling was to adopt the canopy table (x6) table-wide, gated on measuring the node cost at the densest pose first; measured at `forestair`, the full x6 broke the frame budget (StatsProbe ALERT=25/FAIL=40 ms on p99) on every sampling taken, so the shipped multiplier is `TreeTuning.HARVEST_TABLE_MULT = 3` of 6 (Plains 1,260, Forest 11,520, Hills 3,600, Mountains 1,440). A first pass shipped x2 and a verifier found mult 3 clearly held on a larger, rotated-order sample while the lane’s own outlier-count argument against it did not survive its own non-monotone maxima; ADMIN RULING adopted x3. A second, unanticipated defect found in proving the first: `MAX_PER_CELL` (6) was already silently truncating delivery just under a 2x multiplier (not the "about 1.6x" a since-corrected transcription error claimed), raised to 20 in the same commit and load-bearing for the shipped x3. The single biggest owed finding: `forestair` pays full CPU cost via `NodeField.update()` for harvest-ring geometry that is never drawn at that altitude (triangles unchanged 1 through 6x), while `forestaircanopy` tolerates the full x6 comfortably; fixing that visibility exemption would likely unblock the rest of the ruling. `?harvestx6=0` is the full kill switch. Full record in section 6.17; frames `docs/screenshots/WG310_*_1x.png`. `npx tsc --noEmit` 0, `npm run build` 0, `npm run check` 9 of 9; full four-pose `rn2550guard` run pending at banner-write time, see the NUMBERS WG-310 row for its exit code. Branch `lane/wg-harvest`, pushed, NOT merged. Prior banner (WG-304, 2026-08-22) preserved verbatim in section 6.16.13.
+> **Domain owner:** `world-gen-controller` · **Reports to:** Admin · **Phase:** web pivot, W5/W8 · **Last updated:** 2026-08-23 · **Status:** **WG-320: THE ROUTED MECHANISM IS 31 PER CENT OF THE COST AND THE SHADOW CASCADES ARE 42, SO THE FIX IS AN IDENTITY AND A CASCADE GATE RATHER THAN A VISIBILITY GUESS (2026-08-23, `lane/wg-nodefield`, base `dc34390e`).** WG-310 routed the whole `forestair` overhead to `NodeField.update()`'s `compose()` plus per-part `batch.move()`; timed, that pair is **0.287 of 0.92 us per node per frame, 31 per cent**. The split instrument is `cpuMs` against `passMs.near`, both already published and never before read together: the state read is 0.160, `compose` 0.137, LOD plus `move` 0.150, the loop 0.047, **the three shadow cascades 0.385 (42 per cent)** and the eye pass's own per-instance cull 0.105. The subject is proven absent first: `?trees=0` and the shipped ring both read **305,485 triangles** at `forestair`, identical at every multiplier, so the ring paints nothing there. **THE FIX IS TWO EXEMPTIONS, NEITHER A VISIBILITY HEURISTIC:** `compose`+`move` are skipped when the floating origin has not moved, the node is not animating and its LOD tier has not changed (an IDENTITY, exact on the ground too, **proven by 25,629,370 node-frame matrix comparisons with 0 mismatches** via `?nodefast=check`), and a node batch leaves the shadow passes when every live node is at the impostor rung, resting on `attachFarShadowSkip`'s own shipped rule with all three preconditions read rather than assumed. **THE `forestair` p99 LADDER FLATTENS BY 55 PER CENT** (slope 1.018 to 0.459 us/node; the update loop alone by 70 per cent), triangles unchanged in all 27 samples, walk poses unmoved within spread with `trees.js`/`harvest.js`/`noderegrow.js` exit 0 on both arms and an LOD histogram identical to the integer. **`HARVEST_TABLE_MULT` IS NOT RAISED and the table says x6 now fits**: mult 6 reads p99 median 16.90, worst 17.30, 0 of 3 over ALERT, better than the shipped mult 3 was before this lane (17.80) -- Admin's call, published and stopped. Owed and priced: the boulders author no `_LOD3` so only 1 of 4 batches leaves the cascades (worth another ~5.1 ms/frame at mult 6), the eye pass's cull is rendering's, and a `/core` epoch would remove the state read (~2.1 ms). `?nodefast=0` is the full kill switch, `?nodeshadow=0` the shadow half, `?nodefast=check` the proof arm. Full record in section 6.18. `npx tsc --noEmit` 0, `npm run build` 0, `npm run check` **9 of 9**, full four-pose `rn2550guard` **PASS exit 0** with every rho reproducing merged main to four decimals. Branch `lane/wg-nodefield`, pushed, NOT merged. Prior banner (WG-310, 2026-08-23) preserved verbatim in section 6.18.
 > Read alongside: [MASTER_PLAN](../MASTER_PLAN.md) · [AGENT_ARCHITECTURE](../AGENT_ARCHITECTURE.md) · [ADMIN](ADMIN.md) · **[Spike 1 world-gen design](../spikes/spike1-worldgen.md)** · [Spike 1 core-engine](../spikes/spike1-core-engine.md) (contract built against)
 
 ## 1. Mission
@@ -4288,6 +4288,341 @@ per standing rule 7 ("a merge runs the WHOLE guard").
    rather than assume a clean rail.
 
 
+### 6.18 WG-320 to WG-329: the routed mechanism is 31 per cent of the cost, the SHADOW CASCADES are 42, and the harvest ring's per-node bill falls by two thirds without a visibility guess (2026-08-23, `lane/wg-nodefield`)
+
+> **Numbers:** WG-320 used (WG-321 to WG-329 unused, abandoned per the standing
+> rule). **Base:** `origin/main` at `dc34390e`, branch `lane/wg-nodefield`,
+> pushed, **NOT merged**.
+
+**PRIOR BANNER, PRESERVED VERBATIM** (WG-310, 2026-08-23), per the
+replace-never-append rule:
+
+> **WG-310: THE HARVEST TABLE ADOPTS A MEASURED FRACTION OF THE CANOPY TABLE, CORRECTED TO x3 AFTER A FRESH-CONTEXT VERIFIER PASS (2026-08-23, `lane/wg-harvest`, base `50daac5b`).** The ruling was to adopt the canopy table (x6) table-wide, gated on measuring the node cost at the densest pose first; measured at `forestair`, the full x6 broke the frame budget (StatsProbe ALERT=25/FAIL=40 ms on p99) on every sampling taken, so the shipped multiplier is `TreeTuning.HARVEST_TABLE_MULT = 3` of 6 (Plains 1,260, Forest 11,520, Hills 3,600, Mountains 1,440). A first pass shipped x2 and a verifier found mult 3 clearly held on a larger, rotated-order sample while the lane's own outlier-count argument against it did not survive its own non-monotone maxima; ADMIN RULING adopted x3. A second, unanticipated defect found in proving the first: `MAX_PER_CELL` (6) was already silently truncating delivery just under a 2x multiplier (not the "about 1.6x" a since-corrected transcription error claimed), raised to 20 in the same commit and load-bearing for the shipped x3. The single biggest owed finding: `forestair` pays full CPU cost via `NodeField.update()` for harvest-ring geometry that is never drawn at that altitude (triangles unchanged 1 through 6x), while `forestaircanopy` tolerates the full x6 comfortably; fixing that visibility exemption would likely unblock the rest of the ruling. `?harvestx6=0` is the full kill switch. Full record in section 6.17; frames `docs/screenshots/WG310_*_1x.png`. `npx tsc --noEmit` 0, `npm run build` 0, `npm run check` 9 of 9; full four-pose `rn2550guard` run pending at banner-write time, see the NUMBERS WG-310 row for its exit code. Branch `lane/wg-harvest`, pushed, NOT merged. Prior banner (WG-304, 2026-08-22) preserved verbatim in section 6.16.13.
+
+#### 6.18.1 THE ONE-LINE ANSWER, and the routed mechanism is a THIRD of it
+
+WG-310 routed the whole `forestair` overhead to `NodeField.update()` and named
+the mechanism as "a `compose()` plus per-part `batch.move()` for every live
+node every frame, with no visibility exemption". **Nobody had timed it.** This
+lane's first job was to time it, and NUMBERS.md rule 6 applies to causes as
+well as to pixels: a routed mechanism is a hypothesis until an instrument
+independent of the naming measures it.
+
+**Measured, at `forestair`, per node per frame, total 0.92 us:**
+
+| term | us/node | share | which side of `frame.render()` |
+|---|---|---|---|
+| `_of_gp_node_state` WASM read | 0.160 | 17% | before (`cpuMs`) |
+| `compose()` | 0.137 | 15% | before (`cpuMs`) |
+| LOD pick + `batch.move()` | 0.150 | 16% | before (`cpuMs`) |
+| the loop skeleton itself | 0.047 | 5% | before (`cpuMs`) |
+| **per-instance cull, THREE SHADOW CASCADES** | **0.385** | **42%** | inside (`passMs.near`) |
+| per-instance cull, the eye pass | 0.105 | 11% | inside (`passMs.near`) |
+
+**The named mechanism (`compose` + `move`) is 0.287 us, i.e. 31 per cent.**
+The largest single term is not in `NodeField.ts` at all: it is the three
+shadow cascades walking every node instance, three times over per cascade,
+to produce a shadow that provably does not exist 1,200 m from the eye. The
+second-largest term inside the loop is the one the routed text never mentions,
+the `/core` state read.
+
+**THE INSTRUMENT THAT SPLITS IT, and it needed no new machinery.**
+`StatsProbe` already publishes `cpuMs` (the mean of everything before
+`frame.render()`, taken one line above the render call in `Loop.ts`) and
+`passMs.near`. A cost that grows with node count therefore has to declare
+itself on one side of that line or the other. Both were added to
+`artframe.js`'s `render` block, and `NodeField` gained a two-`performance.now()`
+timer publishing its own loop cost (`harvest.field.updateMs`), so the routed
+function is priced directly rather than inferred. `web/tools/smoke/wg320ladder.mjs`
+prints `nodeMs`, `cpuMs`, `near`, `tris`, `p50` and `p99` on one row for exactly
+this reason: this table cannot be read as "the mechanism I am named after".
+
+**AND THE SUBJECT IS PROVEN ABSENT BEFORE ANYTHING IS ATTRIBUTED TO IT**
+(rule 6, rule 8). At `forestair`, `?trees=0` reads **305,485 triangles** and the
+shipped ring reads **305,485 triangles** -- identical, at every multiplier 1
+through 6, in all 27 samples of the final ladder. The harvest ring paints
+nothing at that pose. The arithmetic says why: the ring is a 620 m disc under
+the eye at 1,200 m, spanning 62.7 to 90 degrees of depression, while the
+frustum's lower edge at pitch -14 with a 60-degree vertical field of view is
+44 degrees down. The ring is entirely outside the frustum, and `?nodecull=0`
+confirms it from the other side: with per-instance culling off, the same frame
+submits 734,693 triangles at mult 3 and 1,160,613 at mult 6, i.e. every one of
+those instances is being culled and none of them survives.
+
+#### 6.18.2 THE PHASE ABLATION, and why no single phase could have been the fix
+
+Five arms inside ONE page load (same node set, same origin, same JIT state),
+arm order rotated per repeat, n=3, reading `NodeField`'s own 120-frame
+`updateMs` ring rather than a frame percentile, at 6,677 nodes:
+
+| arm | ms, median (range) | saving vs base |
+|---|---|---|
+| base | 3.028 (2.833 to 3.310) | -- |
+| minus the `/core` state read | 2.022 (1.806 to 2.022) | 1.006 |
+| minus `compose()` | 2.050 (1.934 to 2.050) | 0.978 |
+| minus LOD + `batch.move()` | 2.007 (1.990 to 2.007) | 1.021 |
+| all three off (the loop skeleton) | 0.315 (0.304 to 0.337) | 2.713 |
+
+**Three roughly equal thirds and no dominant phase**, which is the finding that
+decided the fix: there is no surgical phase to delete, so the exemption had to
+skip the whole per-node body, and even that could only ever reach 46 per cent
+of the cost.
+
+**One arm was run to price an idea and it priced it DOWN.** Keeping the
+`_of_gp_node_state` call and dropping only the object allocation moved the base
+from 3.028 to **2.976 ms, 1.7 per cent**. The cost of reading a node's state is
+the WASM call, not the object around it. `GameCore.nodeInto` ships anyway
+because it is strictly less work for an identical result, and its docstring
+says the 1.7 per cent out loud rather than claiming a p99 tail the mean
+instrument cannot see.
+
+**The shadow half was separated with a page param that already existed.** With
+`?shadows=0` the near pass reads 6.90 / 7.20 / 8.30 ms at 0 / 6,677 / 13,332
+nodes (**0.105 us/node**); shipped it reads 7.30 / 10.40 / 13.90
+(**0.49 us/node**). The difference, **0.385 us/node, is the three cascades**,
+and reading `ShadowLod.ts` says why it is so large: each cascade walks every
+instance in `attachShadowLod`'s tier-swap loop, again in
+`attachFarShadowSkip`'s hide loop, again inside three's own
+`onBeforeShadow` -> `onBeforeRender` frustum test, and once more to restore.
+
+#### 6.18.3 THE FIX: two exemptions, one of them an IDENTITY and neither of them a visibility guess
+
+**Exemption 1, the compose skip (`NodeField.update`).** `compose` derives a
+node's engine transform from `pl.pos` and `origin.origin` and nothing else, so
+between floating-origin rebases a node that is not animating composes to the
+SAME matrix every frame and `batch.move` writes the same sixteen floats over
+the top of themselves. The loop now skips `compose` + `move` when the origin
+has not moved, the node is not mid-punch or mid-collapse, and its LOD tier has
+not changed. **This is an identity, not a visibility heuristic**: it needs no
+distance, no frustum and no altitude, and it is exact on the ground as well as
+in the air. The origin test is the origin's own value and not
+`FloatingOrigin.rebases`, because `reseat` resets that counter on a body switch
+and a counter that can go backwards is not an epoch. `fell` saturates rather
+than counting down, so the animation test is a half-open interval and the frame
+it saturates on is the last one that composes.
+
+**Exemption 2, the shadow gate (`NodeBatch.shadowsOff`).** When every live node
+is at the impostor rung, `attachFarShadowSkip` would hide every instance of a
+qualifying batch from every cascade, so those three cascade passes draw
+nothing; the batch's `castShadow` goes false and three skips it entirely.
+**It rests on the project's own shipped rule rather than a new one**, and on
+three preconditions all READ rather than assumed, each failing towards KEEPING
+the shadow: `SHADOW_LOD_ON` (`?shadowlod=0` disarms the hook the argument rests
+on), every published cascade's own `farM` being inside `NODE_LOD3_M`
+(`cascadesPublished()`; the shipped splits are 22/80/300 against 310), and the
+batch's art authoring an impostor rung at all.
+
+**THE GRANULARITY WAS A MEASUREMENT, NOT A PREFERENCE.** A first pass asked
+"can this node be hidden" per placed node and ANDed the answers across the
+whole field. At `forestair` that read false forever, and the readback said why:
+`allTier3` true, the rung test false. Only `tree_broadleaf.glb` and
+`tree_conifer.glb` author `_LOD3` (verified in the shipped bytes: 8 `_LOD3`
+meshes each; **zero** in all four boulders, `rock_spire`, `bush_scrub`,
+`oil_seep` and `water_pool`). Ten boulders in the ring were cancelling the
+saving for 6,667 trees. Moved to a per-BATCH static property, the leaf batch
+qualifies and the rest keep casting: **`shadowOff` reads 1 of 4 batches** at
+`forestair`, and that ratio is published rather than a bare boolean precisely
+so "the gate fired" and "the gate reached everything" are different readings.
+
+**`?nodefast=0` is the master control** (both exemptions off, i.e. the
+pre-WG-320 build one page param away on one binary), **`?nodeshadow=0`** puts
+back only the shadow half so a pixel move can be attributed to one of the two,
+and **`?nodefast=check`** is the proof arm described next. All three registered
+in `run.mjs`'s `PAGE_PARAMS` in the same commit, per standing rule 7.
+
+#### 6.18.4 THE IDENTITY IS PROVEN DIRECTLY, 25.6 MILLION TIMES, AND NOT THROUGH PIXELS
+
+`?nodefast=check` keeps the fast path on and, on every node it skips, composes
+the matrix anyway and compares all sixteen elements against what the batch
+actually holds. The claim is an identity, and an identity is provable directly;
+proving it through pixels at a pose whose own same-build null runs to thousands
+of pixels is a different and weaker statement.
+
+| arm | node-frames compared | MISMATCH |
+|---|---|---|
+| `forestair` (6,677 nodes) | 5,321,206 | **0** |
+| `forestair`, mult 6 (13,332 nodes) | 10,366,824 | **0** |
+| `forestaircanopy` (6,698) | 5,427,033 | **0** |
+| `forestfloor` (6,750) | 3,718,209 | **0** |
+| `meadowfield` (798) | 796,098 | **0** |
+| **total** | **25,629,370** | **0** |
+
+**THE FIRST DRAFT OF THIS CHECK READ 100 PER CENT MISMATCH AND IT WAS THE
+INSTRUMENT.** A `BatchedMesh` stores instance matrices in a **Float32** data
+texture, so `setMatrixAt` narrows and `getMatrixAt` widens the narrowed value
+back; comparing the f64 `compose` result against that round trip fails on
+essentially every element and says nothing about whether the write was a no-op.
+The quantity that decides it is `Math.fround` of the composed element. A
+control that goes red for the wrong reason is worth the line it costs to say
+so.
+
+#### 6.18.5 THE LADDER, before and after, and the slope this lane is judged on
+
+One build, one sentinel-verified server (content, not status code), fresh
+process per sample, arm order rotated across three passes, n=3 per arm,
+`?trees=0` carried as the floor. **`?harvestx6=0` is mult 1, `+treedensity=2`
+is mult 2, shipped is mult 3, `?treedensity=2` alone is mult 6.**
+
+**p99 median (range), ms** -- ALERT is 25:
+
+| mult | nodes | BEFORE (`?nodefast=0`) | AFTER (shipped) |
+|---|---|---|---|
+| ring off (`?trees=0`) | 10 | -- | 10.60 (10.60 to 11.00) |
+| 1 | 2,229 | 12.80 (12.80 to 13.10) | 11.80 (11.60 to 12.00) |
+| 2 | 4,449 | 15.90 (15.50 to 16.10) | 12.40 (12.30 to 12.50) |
+| 3 (**shipped table**) | 6,677 | 17.80 (17.80 to 18.10) | 13.60 (13.50 to 13.80) |
+| 6 (**the full ruling**) | 13,332 | 24.10 (23.50 to 25.40) | **16.90 (15.80 to 17.30)** |
+
+**p50 median, ms** (floor 7.70): 8.80 / 10.00 / 11.10 / 13.80 before, **8.10 /
+8.60 / 9.10 / 10.80** after.
+**`NodeField.update` mean, ms**: 0.986 / 1.946 / 3.083 / 5.646 before,
+**0.322 / 0.583 / 0.781 / 1.705** after.
+**near pass, ms** (floor 8.40): 10.00 / 11.40 / 11.00 / 14.00 before,
+**9.50 / 9.40 / 9.60 / 12.20** after.
+**Triangles: 305,485 in every one of the 27 samples**, both arms, all four
+multipliers.
+
+**THE SLOPE, mult 1 to mult 6, over 11,103 nodes:**
+
+| statistic | before | after | flatter by |
+|---|---|---|---|
+| p99 | 1.018 us/node | **0.459** | **55%** |
+| p50 | 0.450 | 0.243 | 46% |
+| `NodeField.update` | 0.420 | **0.125** | **70%** |
+| near pass | 0.360 | 0.243 | 33% |
+
+Against the `?trees=0` floor, the whole harvest ring's p99 cost at mult 6 falls
+from **+13.50 ms to +6.30 ms: 53 per cent of it removed.** The update loop is
+where the fix is nearly complete (70 per cent); the near pass is where it is
+not, and 6.18.8 prices exactly why.
+
+#### 6.18.6 `HARVEST_TABLE_MULT` IS NOT RAISED, AND THE TABLE SAYS x6 NOW FITS
+
+Per this lane's brief the multiplier is Admin's to re-decide and this lane only
+removes the overhead and publishes the ladder. **It is published, and the
+answer is that the full ruling now fits at the pose that refused it.** At mult
+6 the after-arm reads p99 median **16.90 with a worst single sample of 17.30**,
+**0 of 3 over the 25 ms ALERT, 7.7 ms of margin**, against a before-arm median
+of 24.10 with 1 of 3 over. WG-310 shipped 3 of 6 because `forestair` broke
+budget; on this build `forestair` at mult 6 sits further under ALERT than the
+SHIPPED mult 3 did before this lane (13.60 after versus 17.80 before). This
+lane changes no density constant and stops here.
+
+#### 6.18.7 THE WALK IS PROVEN UNHARMED THREE WAYS, and the pixel residual is the CLOCK
+
+**Frame time, same session, interleaved, n=3:**
+
+| pose | statistic | BEFORE | AFTER |
+|---|---|---|---|
+| `meadowfield` | p50 | 16.20 (14.80 to 16.40) | 15.90 (15.80 to 16.10) |
+| `meadowfield` | p99 | 22.10 (22.00 to 23.80) | 23.40 (22.00 to 26.40) |
+| `meadowfield` | `updateMs` | 0.487 | 0.123 |
+| `forestfloor` | p50 | 11.70 (11.60 to 11.70) | 10.10 (10.00 to 10.10) |
+| `forestfloor` | p99 | 24.30 (21.70 to 26.00) | 23.70 (22.60 to 24.10) |
+| `forestfloor` | `updateMs` | 2.311 | 0.702 |
+
+Both p99s move inside their own spread; both p50s are unchanged or better;
+triangles are identical at both poses (1,781,054 and 1,754,552). The shadow
+gate correctly does NOT fire on the ground (`shadowOff` 0 of 4, `allTier3`
+false at both).
+
+**Behaviour, by outcome readback and not by assumption.** The three shipped
+walk probes were run on BOTH arms: `trees.js` (a real KeyW tape, which streams
+the ring, retires cells, and requires the walk to move nodes between LOD
+tiers), `harvest.js` (a driven swing) and `noderegrow.js` (a harvested node
+must stay harvested when its cell streams back in). **All six runs exit 0 with
+zero fails, and `trees.js`'s LOD histogram is identical to the integer across
+the two arms: lod0 106, lod1 497, lod2 1,220, switched 346.**
+
+**Pixels, and the RN-2700 discipline applied twice.** At `forestair` the shadow
+half alone (`?nodeshadow=0`, an arm the same speed as shipped) gives across-arm
+counts of 0 / 0 / 30 / 46 / 93 / 93 / 129 / 143 / 143 against within-arm nulls
+of 24 to 46 (shipped) and 0 to 93 (control): indistinguishable, with three
+pairs at exactly zero. The master control `?nodefast=0` gives 126 to 285
+against a within-arm null of 0 to 113, which EXCEEDS the null -- and it is not
+the rendering path. **`?wind=0` does not remove it** (across 107 to 285, within
+0 to 152), so the animated foliage is not the cause either. What removes the
+question is a control that cannot possibly change a pixel: **`?nodefast=check`
+draws bit-identically to shipped by construction** (it only composes into a
+scratch matrix and reads back; it writes nothing) **and is as slow as the OFF
+arm**, and it reproduces the same counts -- 24 to 230 at `forestair` and 318 to
+1,066 at `forestfloor`, against the OFF arm's 126 to 285 and 1,058 to 1,402.
+**The residual is frame-rate-coupled capture noise, measured by an arm that is
+provably pixel-identical.** `meadowfield`'s across counts (0 to 1,501, one pair
+exactly 0) sit fully inside its own within-arm null (719 to 1,578) and needed
+no such argument.
+
+#### 6.18.8 WHAT IS LEFT ON THE TABLE, priced
+
+1. **THE BOULDERS HAVE NO IMPOSTOR RUNG, AND IT COSTS THE OTHER HALF OF THE
+   SHADOW SAVING.** `shadowOff` reads **1 of 4 batches**. Tree bark and boulder
+   rock share the `coarse:` material family, so ten boulders with no `_LOD3`
+   keep 6,667 tree-bark instances in all three cascades. Authoring `_LOD3` for
+   `boulder_coal`, `boulder_copper`, `boulder_iron`, `boulder_stone`,
+   `rock_spire`, `bush_scrub`, `oil_seep` and `water_pool` would let the
+   remaining batches qualify. Worth, from this lane's own split: up to
+   **0.385 us/node**, i.e. about **5.1 ms/frame at 13,332 nodes**, on top of
+   what shipped. It is an asset job (Blender) plus nothing in this file, and it
+   changes the eye pass not at all because `geomAt` already walks down to the
+   authored rung. **Do NOT fake it by aliasing the LOD2 id into the LOD3 slot:**
+   `attachFarShadowSkip` keys on geometry ids, so the alias would also hide a
+   boulder standing at 200 m, which is inside cascade 2's own 300 m reach and a
+   real shadow.
+2. **THE EYE PASS'S OWN PER-INSTANCE CULL, 0.105 us/node, is untouched and is
+   rendering's to price.** Three walks every instance of every node batch in
+   `onBeforeRender` because `perObjectFrustumCulled` is on, and at `forestair`
+   every one of those tests returns "culled". The only lever three offers is
+   `mesh.visible`, which would need a whole-field frustum test with a
+   shadow-reach margin; that is a rendering decision about `BatchedMesh`
+   lifecycle rather than a world-gen one, so it is routed rather than taken.
+3. **THE `/core` STATE READ, 0.160 us/node, could go but not safely from here.**
+   `NodeField.update` calls `_of_gp_node_state` once per node per frame purely
+   to drive `variantFor`. Every mutator of that state is an explicit JS call
+   (`_of_gp_node_harvest`, `_of_gp_node_drain`, `_of_gp_node_add`,
+   `_of_gp_node_add_outcrop`, `_of_gp_nodes_clear`, `_of_gp_nodes_layout`), so a
+   `GameCore`-side epoch counter would let the read be skipped entirely when
+   nothing has changed -- worth about **2.1 ms/frame at 13,332 nodes**. It is
+   NOT taken here because the correctness of the epoch depends on having
+   enumerated every mutator, and a missed one is a tree that visibly refuses to
+   deplete. It wants its own lane with a red-arm fixture that harvests through
+   the epoch. A bulk state read would be better still and needs a `/core` ABI
+   addition plus a wasm rebuild, which the standing rule forbids this lane.
+4. **`meadowfield`'s p99 is still marginal and it is still not this lane's.**
+   Both arms read 22.00 to 26.40 against ALERT 25. WG-310 named this (6.17.4
+   item 3) and it remains true after this lane, which moved it by less than its
+   own spread.
+
+#### 6.18.9 FILES, GATES AND RAILS
+
+**Files:** `web/src/game/NodeField.ts` (the two exemptions, the `updateMs`
+timer, `verifySkip`, the counters), `web/src/game/NodeBatch.ts` (`farWhole` per
+batch, `shadowsOff`, `matrixAt` for the check), `web/src/game/GameCore.ts`
+(`nodeInto`), `web/src/game/VegetationScope.ts` + `web/src/game/VegetationFields.ts`
++ `web/src/game/GameplayDeps.ts` (the wild path's readback and the opt),
+`web/src/app/Config.ts` + `web/src/app/ConfigTypes.ts` (`?nodefast`,
+`?nodeshadow`), `web/src/app/BootGameplay.ts` + `web/src/app/BootBodyScope.ts`
+(both call sites), `web/tools/smoke/run.mjs` (`PAGE_PARAMS`),
+`web/tools/smoke/probes/artframe.js` (`cpuMs`, the full `passMs`, and the
+harvest gate readback), **new** `web/tools/smoke/wg320ladder.mjs`.
+
+**MUST-NOT-TOUCH, HONOURED:** `TreeTuning.HARVEST_TABLE_MULT` (still 3, see
+6.18.6), `VEG_ORIGIN_MAX_ALT_M` (12,000, untouched -- the fix needed no
+altitude proxy), `ShadowLod.ts` and `ShadowRig.ts` (read only), every density
+constant, the wasm binary.
+
+**Gates, one session, final production build (`dist`, `vite preview` on 5932,
+sentinel verified on CONTENT and killed by PID):** `npx tsc --noEmit` **0**.
+`npm run build` **0**. `npm run check` **9 of 9** (check:roles, check:probes,
+check:proxies, check:proplods, check:fieldstamp, typecheck, check:pose,
+check:limits, check:boot). Full four-pose `rn2550guard` **PASS, exit 0** (4 of
+4 judged, `forestairnoon` IN BAND at -0.0627 from CORE, the other three IN
+CORE), and **every rho/f/G reproduces the merged-main table to four decimals**
+(0.9359/0.8844, 0.9177/0.6778, 0.9190/0.8406, 0.9334/0.7050 with rho
+0.1873/0.2987/0.4762/0.4016), which is the expected null for a lane that
+touches no albedo, palette or shading term and is run anyway per standing
+rule 7.
+
+
 ## 7. Open questions & risks
 - **R21 (new, WG-217, 2026-08-03, MINE by domain, routed to its own pass): a handful of surface-nets vertex normals disagree with their own triangle winding at a levelled pad's cut rim.** Measured at four sites: 0 of 2,362 and 1 of 2,288 at the WG-214 spawn, 0 of 2,778 at the old spawn's pad, and **10 of 2,156 with 1 triangle facing INTO the rock** at a Mountains hillside 3 km off the old pad on HEAD's own terrain. **Pre-existing, and it reproduces at HEAD with no change of mine.** A disagreeing normal means that triangle is lit as one surface and drawn as its opposite. `test_voxel_field.cpp` now carries a ceiling of 4 on both scenes so it cannot get worse silently, and `inward == 0` is strict. The hunt belongs in `surface_nets.h` and wants its own pass: the likely shape is an ill-conditioned gradient on a near-degenerate sliver, which is a numerical-robustness question rather than a winding one. **WG-245 UPDATE (2026-08-21): R21 NOW HAS A RATE INSTEAD OF AN ANECDOTE, AND IT IS WHY THE PLANET HEIGHT FIELD CANNOT BE CHANGED.** Sweeping a height-field amplitude over nine values (a lowland swell coefficient from 0.000 to 0.060, i.e. nine unbiased samples of the ground the fixture sits on) the inward-facing triangle count reads **0, 1, 0, 0, 0, 1, 0, 1, 1 with no trend in amplitude whatsoever**. The fixture passes at HEAD because HEAD's ground under it happens to be one of the lucky ones; the failure rate over an unbiased sample is about **44 per cent**. So `inward == 0` is not a property of the mesher on this world, it is a property of one patch, and **any change to the planet height field turns this suite red for a reason unrelated to the change**. The same sweep shows `test_surface_field.cpp`'s two dig brackets failing at EVERY nonzero amplitude for the same reason one layer down (the voxel lattice phase against one ground). Until all four assertions (`inward`, `totalDisagree`, and both surface dig brackets) assert over N grounds with stated ceilings (a ceiling over one ground is pinned exactly as hard as a strict check over one ground, see 6.11.9 item 2), R21 is not merely an open defect: it is a freeze on the field. Full record in section 6.11.7. **WG-250 UPDATE (2026-08-21, `lane/wg-fixtures`): THE FIXTURE HALF OF THE FREEZE IS LIFTED, AND R21 IS SMALLER THAN IT LOOKED. Fix in section 6.12.** All four assertions plus two more the sweep found are rewritten over 48 body-wide grounds with derived ceilings, and both suites are now green at every amplitude of the WG-240 grid (0.000 to 0.060 in 0.0075 steps plus 0.050), against a BEFORE arm that is red in the voxel suite at 4 of 10 amplitudes and in the surface suite at 9 of 10. **The `inward` coin flip was mostly an instrument artefact and the unit was wrong:** surface nets emits QUADS, one per crossed lattice edge, as two triangles sharing a diagonal, and a non-planar quad's two triangles straddle its own normal, so a warped quad tips one half past the surface while the quad is correctly wound. **CORRECTION, and the wrong claim is named: a first draft of this update said every triangle-level inward verdict over 640 grounds came from a facet narrower than the 0.35 m probe. That universal is false at the design amplitude** -- a fresh-context verifier found inward facets at 0.3692 m (coef 0.020) and 0.4050 m (coef 0.050), both wider. The sliver is the common case and the explanation for the old coin flip; it is not the whole population, and the bound that actually holds is the area one. **What survives as R21 is real but small and now BOUNDED rather than strict:** a few quads per hundred thousand are wound into the rock or shaded against their own geometry at a cut rim, bounded by area against one voxel's worth of drawn surface (1.4142 m2, worst reading 0.6694 on the verifier's grid) and against the smallest feature a 1 m lattice can carry (4 m2, worst reading 1.3327), with the worst reading printed every run so it cannot grow silently, and with a derived FLOOR under those ceilings so the fixture cannot pass by seeing less surface. The hunt still belongs in `surface_nets.h`. **R21 is no longer a freeze on the height field up to the 0.050 design amplitude; what remains of the freeze is the committed wasm binary (6.11.7 item 3) and, above about 0.055, a SEVENTH ground-pinned assertion the verifier found and this lane did not fix: `test_surface_field.cpp:780`'s `worstUp <= 0.25 * kVoxelSizeM`, which reads 0.155941 m at 0.050 and 0.272946 m at 0.0625 (6.12.8 item 3).** **WG-275 UPDATE (2026-08-21, `lane/wg-ship`): THE WASM HALF OF THE FREEZE IS LIFTED, AND WHAT IS LEFT OF R21 IS ONE ASSERTION AND ONE CEILING. Record in section 6.14.** The lowland swell is in `sampleHeightFieldPlanet` at 0.050 and `web/wasm/dist/of-core.wasm` (`9d2764f1cddc13c7f92b9d91962b21d3` to `e2f0fa50b7697a226d2513a4ec6e8831`), `of-core.mjs` and `web/wasm/test/expected.json` are rebuilt and COMMITTED under Release-lane authority granted for that batch alone, so 6.11.7 item 3 is discharged and the standing "no lane commits the binary" rule resumes with the next lane. **Both unfrozen suites are green on the shipped term** and, more usefully, the amplitude sweep this lane re-ran on its OWN term BRACKETS the seventh pin rather than merely clearing it: green at 0.0000 / 0.0275 / 0.0425 / **0.0500** / 0.0550 and the surface suite RED at 0.0625, with `worstUp` **0.175318 / 0.242857 / 0.215117 / 0.155941 / 0.204919 / 0.272946**, so 6.12.8 item 3's location is confirmed to the digit on an independent build and 0.175318 reproduces the test's own "MEASURED 0.175320 m" comment at amplitude 0. **The thinnest rail was re-run on the term that actually ships and it is the swept term numerically:** the pit bracket's guaranteed-air margin reads **+0.0812 m** against a 0.25 m tolerance, which is the WG-250 verifier's +0.08 exactly, the dig column **+0.1634 m** and the dig/fill dig **+0.1229 m**, informative at 16, 16 and 18 of 48 grounds. `ctest` **42 of 42** on the shipped tree; parity **Tier 0 125 of 125, Tier A 103 of 103**, both gating. **WHAT REMAINS OF R21:** the bounded quad population itself (a few per hundred thousand, worst `inward` 0.3596 m2 against the 1.4142 m2 ceiling at the shipped amplitude, printed every run), and the `worstUp` assertion, which still freezes the field above about 0.055 and is still owed. The hunt still belongs in `surface_nets.h`.
 - **R19 UPDATE (WG-214, 2026-08-03): CLOSED by moving the spawn.** Reid ruled it. The spawn is now a Hills valley floor at 797.6 m with ~1,296 trees in the shipped ring, and `core/tests/test_spawn.cpp` is the gate that would have caught the original drift. What remains open from it is the CLIENT-SIDE re-baseline, which needs a browser and is deliberately not done: see the owed list in the status line.
@@ -4316,6 +4651,7 @@ per standing rule 7 ("a merge runs the WHOLE guard").
 ## 8. Subagent delegation log
 | Date | Subagent task | Status | Outcome |
 |------|---------------|--------|---------|
+| 2026-08-23 | **WG-320, an operational cheat-sheet for the frame-time half of the smoke harness: run.mjs's CLI and `PAGE_PARAMS`, the four pose objects, `StatsProbe`'s exact key paths for p50/p99, the harvest readback in `artframe.js`, which existing tool implements WG-189 interleaving, the sentinel-on-content server idiom, `pngdiff`'s same-build null, the guard invocation and the nine checks** (`Explore`, read-only) | Superseded by direct reading | The one subagent this lane spawned, and it is logged with an honest outcome rather than a claimed one: the lane needed the split instrument (`cpuMs` against `passMs.near`) within the first ten minutes and found it by reading `Loop.ts:503-509`, `Frame.ts:109-188` and `StatsProbe.ts` directly, then built `wg320ladder.mjs` from `wg295reach.mjs` as the template. The brief was sound and the answer would have been useful to a lane that started colder; this one had already read past it. Recorded so the next lane knows the cheat-sheet exists as a brief shape and that `wg295reach.mjs` is the arm-table template worth copying (fresh process per sample via `execFileSync`, `--arms` as `+`-joined flag sets, the empty entry meaning "shipped"). |
 | 2026-08-22 | **WG-295, an operational cheat-sheet for the screenshot and stat harness in THIS worktree: every tool in `web/tools/smoke`, the exact server bind and ownership proof, the verbatim pose objects for the three aerial shots, the JSON key path of every scatter and treeline readback, how page params reach a pose, the nine `check` links, what `check-guard --shots=flyovernoon` pins, and which tool implements WG-189 interleaving** (`Explore`, read-only) | Done | The only subagent this lane spawned, and it paid for itself in the first ten minutes: the exact `run.mjs` invocation, the fact that `--url` with a query string is a hard exit 2 so every page param must be a whitelisted flag, the verbatim `flyover` / `forestair` / `forestaircanopy` pose objects (where this lane got the altitudes and pitches its range inversions run on), the committed `BASE` pin table living INSIDE `rn2550guard.mjs` rather than in a separate JSON, and `wg260sweep.mjs` as the WG-189 driver that pairs two FLAG SETS against one build. Folded into 6.16 as method rather than kept as a document. |
 | 2026-08-03 | **WG-210, map the client's static-prop and streaming paths so the ruin reuses one rather than adding a second** (`Explore`, read-only, scoped to `web/src` with the stale `web/dist-*` copies excluded) | Done | **Answer: reuse the space station's path, not the harvest node's, and it is already the "render it when you get close" behaviour Reid asked for.** `StationView.build/place/sync` gates `group.visible` on `eyeDistM <= farPlaneM + boundM` and acquires its batch slot lazily on first approach; collision is ONE `Solid` built by `proxiesOf` from `col_*` meshes and added once to the shared `StructureBodies`, so it is never streamed and costs one sphere reject per walker sample. `RockField`/`TreeField` are the WRONG model: their handoff is `/core` node-index shaped (`addOutcrop` needs an `of_gp_node_add`ed sim node with a `remaining`, and `NodeBatch` only admits `_Full`/`_Half`/`_Low` meshes), so reusing them means inventing a fake node kind and fake depletion variants. Also returned three traps folded into WG-203 and WG-209: `col_Ruin_1` silently deletes `col_Ruin_2` onward because every proxy reader does `replace(/_\d+$/, '')`; `Solid.id` space is partitioned and a non-pickable prop should use `Number.NaN` as the station does; and the tree field's clearing keep-out shipped comparing a surface `pos` against `dir * radius`, which differ by 27 m at Forest, so it read `refusedClearing: 0` while arithmetic said it must fire. |
 | 2026-08-02 | **WG-150, map the runtime body-switch seam and, for every file it touches, find the controller doc that CLAIMS it (Explore)** | Done | The brief that produced a completed answer rather than a build. It was told to return a map and ownership evidence, not a plan, and it held that line. Ownership was established from doc citations and a per-file decision-tag census rather than from directory, which is what surfaced the genuinely contested files (`ChunkGeometryPool`/`ChunkBatch` live in `render/` and are cited only by world-gen; `Scatter.ts` has been edited by three lanes) and, more usefully, **a twelve-item list of files that NO controller doc claims**, including `FloatingOrigin.ts` and `Services.ts`, which are the two the whole switch turns on. Findings I did not ask for and would have hit: `chunkKey` has no body in it so the two bodies collide on the same map key; `TerrainStream.dispose()` has never had a caller; `terrain.worker.ts` destroys none of its three WASM handles so a second init leaks all three; a second `inited` reply would be **silently dropped** because `bootTerrain` removes its listener; `Events` has no unsubscribe for seven `OriginRebased` handlers; and `SaveSlot` has no body field while `VoxelEdits` is one global set. It also **corrected my own context file**: the `fieldWorldSig` memo landmine I still carry as a risk is closed on the `/core` side and has a ctest asserting the two bodies differ, so only the JS-side memos remain. |

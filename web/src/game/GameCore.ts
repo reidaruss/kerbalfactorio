@@ -167,6 +167,33 @@ export class GameCore {
   clearNodes(): void { this.M._of_gp_nodes_clear(); }
   get nodeCount(): number { return this.M._of_gp_nodes_count(); }
 
+  /**
+   * WG-320. `node()` WITHOUT THE ALLOCATION: the same eight words, written into
+   * a caller-owned object.
+   *
+   * `node()` allocates a fresh `NodeState` (and a fresh `subarray` view inside
+   * `scratchF64`) on every call. That is free at the call sites that ask once,
+   * and `NodeField.update` asks once per placed node per frame: at the
+   * `forestair` node count, two allocations x 13,332 x 60 a second.
+   *
+   * WHAT IT IS WORTH, MEASURED, AND IT IS SMALL: an ablation arm that kept the
+   * `_of_gp_node_state` call and dropped only the allocation moved the loop's
+   * mean from 3.028 ms to 2.976 ms at 6,677 nodes, i.e. 1.7 per cent. The cost
+   * of reading a node's state is the WASM call itself (0.15 us), not the object
+   * around it, and this method does not touch that. It is kept because it is
+   * strictly less work for an identical result, not because the 1.7 per cent
+   * was the finding -- and the mean is the only statistic that measurement has,
+   * so no claim is made here about a collection pause in a p99 tail.
+   */
+  nodeInto(i: number, out: NodeState): NodeState | null {
+    if (this.M._of_gp_node_state(i) !== 8) return null;
+    const p = scratchF64(this.M, 8);
+    out.x = p[0]; out.y = p[1]; out.z = p[2];
+    out.remaining = p[3]; out.initial = p[4];
+    out.grade = p[5]; out.kind = p[6]; out.resource = p[7];
+    return out;
+  }
+
   node(i: number): NodeState | null {
     if (this.M._of_gp_node_state(i) !== 8) return null;
     const p = scratchF64(this.M, 8);

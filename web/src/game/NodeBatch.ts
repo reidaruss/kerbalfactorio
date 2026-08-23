@@ -34,6 +34,8 @@ import { ROCK_CHANNEL, concat, mineralFamily, normalize, scanTemplates }
   from './NodeGeometry.js';
 import { makeBatch } from './NodeMaterial.js';
 import { ladder } from './NodeLadder.js';
+import { NODE_LOD3_M } from './NodeBatchTypes.js';
+import { cascadesPublished, SHADOW_LOD_ON } from '../render/ShadowLod.js';
 
 // The barrel keeps every symbol this file used to publish, so no import site
 // outside it changes (BT-276 rule 1). NodeField.ts takes the three distances and
@@ -137,9 +139,105 @@ export class NodeBatch {
       part.geom[Number(vs)][Number(ls)] = b.mesh.addGeometry(g);
     }
     ladder(this.batches, this.parts, geo);
+    // WG-320. Computed ONCE, here, because it is a property of the authored
+    // assets and cannot change at runtime. See `farWhole` and `shadowsOff`.
+    for (const name of this.batches.keys()) this.far.set(name, this.farWhole(name));
   }
 
   partsOf(file: string): readonly NodePart[] | null { return this.parts.get(file) ?? null; }
+
+  /**
+   * WG-320. PER BATCH: can EVERY instance in this batch be hidden from a
+   * cascade once it reaches the impostor rung?
+   *
+   * This is the same predicate `attachFarShadowSkip` acts on rather than a
+   * paraphrase of it: that hook hides an instance iff the instance's CURRENT
+   * geometry id is in this batch's impostor-rung set, and `geomAt` walks DOWN
+   * towards LOD0 when a rung is absent (`bush_scrub`, `oil_seep` and
+   * `water_pool` author LOD0 and LOD1 only). So one part with no `_LOD3` keeps
+   * ITS batch casting, and only its batch.
+   *
+   * A (part, variant) whose WHOLE row is -1 passes: that variant does not use
+   * this material at all (a Low tree has no leaves), `set` has made the slot
+   * invisible, and an invisible instance is drawn into nothing.
+   *
+   * PER BATCH AND NOT PER FIELD, and that is a measurement rather than a
+   * preference: a first pass asked the question per placed node and ANDed the
+   * answers across the whole field, and at `forestair` it read false forever
+   * because the ring carries boulder art alongside the trees. One asset with
+   * no impostor rung was cancelling the saving for every tree in the ring.
+   */
+  private farWhole(family: string): boolean {
+    let seen = false;
+    for (const parts of this.parts.values()) {
+      for (const p of parts) {
+        if (p.material !== family) continue;
+        seen = true;
+        for (let v = 0; v < VARIANTS.length; ++v) {
+          const row = p.geom[v];
+          if (row === undefined) continue;
+          if (row[LODS - 1] >= 0) continue;
+          // Absent rung. Only forgivable when the variant draws nothing here.
+          if (row.some((id) => id >= 0)) return false;
+        }
+      }
+    }
+    return seen;
+  }
+
+  /**
+   * WG-320. TAKE THE NODE BATCHES OUT OF THE SHADOW PASSES, or put them back.
+   *
+   * `allTier3` is the caller's claim that every live node is at the impostor
+   * rung. Combined with `farWhole` for a batch, `attachFarShadowSkip` would
+   * hide every one of that batch's instances from every cascade, so the three
+   * cascade passes over it draw NOTHING -- and they are not cheap: each one
+   * walks every instance three times over (the tier ladder's swap loop, this
+   * skip's own hide loop, and three's per-instance frustum test inside
+   * `onBeforeShadow`), then walks them again to restore. WG-320 measured that
+   * at 0.385 us per node per frame at `forestair`, 42 per cent of the whole
+   * per-node cost, for a shadow that provably does not exist.
+   *
+   * TWO MORE GATES, BOTH READ RATHER THAN ASSUMED, and both fail towards
+   * KEEPING the shadow: `SHADOW_LOD_ON` (`?shadowlod=0` disarms the hook this
+   * argument rests on) and every published cascade's own far distance being
+   * inside `NODE_LOD3_M` (a longer last cascade WOULD reach a node at the
+   * impostor rung, which is the exact gate `attachFarShadowSkip` applies per
+   * cascade). A quality tier that changes either one silently turns this off
+   * instead of silently eating a shadow, which is that function's own stated
+   * discipline.
+   */
+  shadowsOff(allTier3: boolean): void {
+    this.shadowArmed = SHADOW_LOD_ON && this.cascadesInside();
+    const on = allTier3 && this.shadowArmed;
+    if (on === this.shadowOffAsked) return;
+    this.shadowOffAsked = on;
+    this.shadowOffBatches = 0;
+    for (const [name, b] of this.batches) {
+      const off = on && (this.far.get(name) ?? false);
+      b.mesh.castShadow = !off;
+      if (off) this.shadowOffBatches++;
+    }
+  }
+
+  /** Batches currently out of the shadow passes, and how many there are in
+   *  total. Published as a PAIR so "the gate fired" and "the gate reached
+   *  everything" are different readings: one asset with no impostor rung keeps
+   *  its own batch casting and that shows up here as 3 of 5, not as a false. */
+  shadowOffBatches = 0;
+  get batchCount(): number { return this.batches.size; }
+  /** The gate's other precondition on its own: the hook is armed and every
+   *  published cascade stops inside the impostor threshold. */
+  shadowArmed = false;
+  private shadowOffAsked = false;
+  private readonly far = new Map<string, boolean>();
+
+  private cascadesInside(): boolean {
+    const cs = cascadesPublished();
+    if (cs.length === 0) return false;
+    for (const c of cs) if (!(c.farM > 0) || c.farM > NODE_LOD3_M) return false;
+    return true;
+  }
 
   /**
    * The geometry id for one part at (variant, lod), FALLING BACK TOWARDS LOD0.
@@ -236,6 +334,16 @@ export class NodeBatch {
     const b = this.batches.get(material);
     if (b === undefined || slot < 0) return;
     b.mesh.setColorAt(slot, c);
+  }
+
+  /** WG-320, `?nodefast=check` only. Read back the matrix a slot currently
+   *  holds, so the skip's identity claim is checked against what the renderer
+   *  will read rather than against this class's own memory of it. */
+  matrixAt(material: string, slot: number, out: THREE.Matrix4): boolean {
+    const b = this.batches.get(material);
+    if (b === undefined || slot < 0) return false;
+    b.mesh.getMatrixAt(slot, out);
+    return true;
   }
 
   /** Move a slot without touching which geometry it draws. The per-frame path. */

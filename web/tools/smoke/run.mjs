@@ -648,6 +648,19 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // all ranges (the state before the batch loaded its own `_LOD1`/`_LOD2`);
   // `nodecull=0` turns per-instance frustum culling off. Two claims, two flags.
   'nodelod', 'nodecull',
+  // WG-320, standing rule 7. `nodefast=0` puts back BOTH per-frame exemptions
+  // `NodeField.update` gained: the compose/`batch.move` skip on a node whose
+  // transform provably did not change, and the whole-batch withdrawal from the
+  // shadow cascades when every live node is at the impostor rung. It is the
+  // before-arm of this lane's own ladder, so a p99-vs-density table is one
+  // session on one binary rather than two builds. `nodefast=check` keeps the
+  // fast path ON and verifies it: every skipped node composes anyway and its
+  // matrix is compared with what the batch holds (`harvest.field.fastChecked`
+  // / `fastMismatch`), which is a direct proof of the identity the skip
+  // claims and does not go through a pose's pixel noise floor.
+  // `nodeshadow=0` puts back only the SHADOW half, so a pixel move can be
+  // attributed to one exemption rather than to the pair.
+  'nodefast', 'nodeshadow',
   // WG-91 / WG-94, standing rule 7. `spires=0` drops rock_spire.glb from the
   // node art AND from the download set, so Mountains rocks are all boulders
   // exactly as before; `forestdetail=0` puts Forest's understorey back on the
