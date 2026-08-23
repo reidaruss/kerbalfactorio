@@ -620,8 +620,22 @@ export class NodeField {
    * The batch is the arbiter rather than a cached copy of our own last write,
    * because a cached copy would only prove that this class is self-consistent,
    * and the claim is about the sixteen floats the renderer will actually read.
-   * `pl.slots[0]` is enough: every part of a node is written from the same
-   * `this.m` in the same statement, so a disagreement cannot hide in part 1.
+   *
+   * WHY `pl.slots[0]` IS ENOUGH, AND THE FIRST DRAFT GAVE THE WRONG REASON.
+   * It said "every part of a node is written from the same `this.m` in the same
+   * statement, so a disagreement cannot hide in part 1". That is false as
+   * stated: `NodeBatch.set` returns WITHOUT writing the matrix when the
+   * geometry id is negative (`NodeBatch.ts`, the `geom < 0` branch), so a part
+   * whose whole (variant, lod) row is -1 keeps whatever matrix the slot's
+   * previous occupant left in it, and part 1 CAN hold a stale matrix while part
+   * 0 is correct.
+   *
+   * It is still enough, for a different and weaker reason: such a slot has been
+   * made invisible by that same branch, both the eye pass and every cascade skip
+   * an invisible instance, and its matrix is therefore read by nothing. The
+   * failure direction also runs the safe way -- widening this check to every
+   * part could only ever produce a FALSE MISMATCH on a slot nobody draws, never
+   * a false green on one that is drawn.
    */
   private verifySkip(pl: Placed): void {
     if (pl.slots.length === 0 || pl.slots[0] < 0) return;

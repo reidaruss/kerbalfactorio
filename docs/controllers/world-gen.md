@@ -1,6 +1,6 @@
 # World Generation & Terrain — Master Controller Context
 
-> **Domain owner:** `world-gen-controller` · **Reports to:** Admin · **Phase:** web pivot, W5/W8 · **Last updated:** 2026-08-23 · **Status:** **WG-320: THE ROUTED MECHANISM IS 31 PER CENT OF THE COST AND THE SHADOW CASCADES ARE 42, SO THE FIX IS AN IDENTITY AND A CASCADE GATE RATHER THAN A VISIBILITY GUESS (2026-08-23, `lane/wg-nodefield`, base `dc34390e`).** WG-310 routed the whole `forestair` overhead to `NodeField.update()`'s `compose()` plus per-part `batch.move()`; timed, that pair is **0.287 of 0.92 us per node per frame, 31 per cent**. The split instrument is `cpuMs` against `passMs.near`, both already published and never before read together: the state read is 0.160, `compose` 0.137, LOD plus `move` 0.150, the loop 0.047, **the three shadow cascades 0.385 (42 per cent)** and the eye pass's own per-instance cull 0.105. The subject is proven absent first: `?trees=0` and the shipped ring both read **305,485 triangles** at `forestair`, identical at every multiplier, so the ring paints nothing there. **THE FIX IS TWO EXEMPTIONS, NEITHER A VISIBILITY HEURISTIC:** `compose`+`move` are skipped when the floating origin has not moved, the node is not animating and its LOD tier has not changed (an IDENTITY, exact on the ground too, **proven by 25,629,370 node-frame matrix comparisons with 0 mismatches** via `?nodefast=check`), and a node batch leaves the shadow passes when every live node is at the impostor rung, resting on `attachFarShadowSkip`'s own shipped rule with all three preconditions read rather than assumed. **THE `forestair` p99 LADDER FLATTENS BY 55 PER CENT** (slope 1.018 to 0.459 us/node; the update loop alone by 70 per cent), triangles unchanged in all 27 samples, walk poses unmoved within spread with `trees.js`/`harvest.js`/`noderegrow.js` exit 0 on both arms and an LOD histogram identical to the integer. **`HARVEST_TABLE_MULT` IS NOT RAISED and the table says x6 now fits**: mult 6 reads p99 median 16.90, worst 17.30, 0 of 3 over ALERT, better than the shipped mult 3 was before this lane (17.80) -- Admin's call, published and stopped. Owed and priced: the boulders author no `_LOD3` so only 1 of 4 batches leaves the cascades (worth another ~5.1 ms/frame at mult 6), the eye pass's cull is rendering's, and a `/core` epoch would remove the state read (~2.1 ms). `?nodefast=0` is the full kill switch, `?nodeshadow=0` the shadow half, `?nodefast=check` the proof arm. Full record in section 6.18. `npx tsc --noEmit` 0, `npm run build` 0, `npm run check` **9 of 9**, full four-pose `rn2550guard` **PASS exit 0** with every rho reproducing merged main to four decimals. Branch `lane/wg-nodefield`, pushed, NOT merged. Prior banner (WG-310, 2026-08-23) preserved verbatim in section 6.18.
+> **Domain owner:** `world-gen-controller` · **Reports to:** Admin · **Phase:** web pivot, W5/W8 · **Last updated:** 2026-08-23 · **Status:** **WG-320: THE ROUTED MECHANISM IS 31 PER CENT OF THE COST AND THE SHADOW CASCADES ARE 42, SO THE FIX IS AN IDENTITY AND A CASCADE GATE RATHER THAN A VISIBILITY GUESS (2026-08-23, `lane/wg-nodefield`, base `dc34390e`).** WG-310 routed the whole `forestair` overhead to `NodeField.update()`'s `compose()` plus per-part `batch.move()`; timed, that pair is **0.287 of 0.92 us per node per frame, 31 per cent**. The split instrument is `cpuMs` against `passMs.near`, both already published and never before read together: the state read is 0.160, `compose` 0.137, LOD plus `move` 0.150, the loop 0.047, **the three shadow cascades 0.385 (42 per cent)** and the eye pass's own per-instance cull 0.105. The subject is proven absent first: `?trees=0` and the shipped ring both read **305,485 triangles** at `forestair`, identical at every multiplier, so the ring paints nothing there. **THE FIX IS TWO EXEMPTIONS, NEITHER A VISIBILITY HEURISTIC:** `compose`+`move` are skipped when the floating origin has not moved, the node is not animating and its LOD tier has not changed (an IDENTITY, exact on the ground too, **proven by 25,629,370 node-frame matrix comparisons with 0 mismatches** via `?nodefast=check`), and a node batch leaves the shadow passes when every live node is at the impostor rung, resting on `attachFarShadowSkip`'s own shipped rule with all three preconditions read rather than assumed. **THE `forestair` p99 LADDER FLATTENS BY 55 PER CENT** (slope 1.018 to 0.459 us/node; the update loop alone by 70 per cent), triangles unchanged in all 27 samples, walk poses unmoved within spread with `trees.js`/`harvest.js`/`noderegrow.js` exit 0 on both arms and an LOD histogram identical to the integer. **`HARVEST_TABLE_MULT` IS NOT RAISED, and the x6 claim is NARROWER THAN A FIRST DRAFT SAID (corrected by this lane's fresh-context verifier):** `forestair` no longer refuses x6 (p99 median 16.90, worst 17.30, 0 of 3 over ALERT, better than the shipped mult 3 was before this lane at 17.80), but **`forestfloor` at x6 holds 13,425 nodes, MORE than `forestair`'s 13,332, so it and not `forestair` is the rule-7 pose**, and it reads p99 **27.20 with 3 of 3 over ALERT** at 2,437,345 triangles, **90.3 per cent of the triangle ALERT** (`meadowfield` 24.20, clearing by 0.1 ms). **x6 is still refused at the densest walk pose and the largest fraction that fits is not established above 3.** Admin's call, published and stopped. Owed and priced: the boulders author no `_LOD3` so only 1 of 4 batches leaves the cascades (worth another ~5.1 ms/frame at mult 6), the eye pass's cull is rendering's, and a `/core` epoch would remove the state read (~2.1 ms). `?nodefast=0` is the full kill switch, `?nodeshadow=0` the shadow half, `?nodefast=check` the proof arm. Full record in section 6.18. `npx tsc --noEmit` 0, `npm run build` 0, `npm run check` **9 of 9**, full four-pose `rn2550guard` **PASS exit 0** with every rho reproducing merged main to four decimals. Branch `lane/wg-nodefield`, pushed, NOT merged. Prior banner (WG-310, 2026-08-23) preserved verbatim in section 6.18.
 > Read alongside: [MASTER_PLAN](../MASTER_PLAN.md) · [AGENT_ARCHITECTURE](../AGENT_ARCHITECTURE.md) · [ADMIN](ADMIN.md) · **[Spike 1 world-gen design](../spikes/spike1-worldgen.md)** · [Spike 1 core-engine](../spikes/spike1-core-engine.md) (contract built against)
 
 ## 1. Mission
@@ -4308,23 +4308,39 @@ lane's first job was to time it, and NUMBERS.md rule 6 applies to causes as
 well as to pixels: a routed mechanism is a hypothesis until an instrument
 independent of the naming measures it.
 
-**Measured, at `forestair`, per node per frame, total 0.92 us:**
+**Measured, at `forestair`, per node per frame. The terms below SUM to 0.984
+us; read the ranking, not the third decimal:**
 
-| term | us/node | share | which side of `frame.render()` |
+| term | us/node | share of 0.984 | which side of `frame.render()` |
 |---|---|---|---|
-| `_of_gp_node_state` WASM read | 0.160 | 17% | before (`cpuMs`) |
-| `compose()` | 0.137 | 15% | before (`cpuMs`) |
-| LOD pick + `batch.move()` | 0.150 | 16% | before (`cpuMs`) |
+| `_of_gp_node_state` WASM read | 0.160 | 16% | before (`cpuMs`) |
+| `compose()` | 0.137 | 14% | before (`cpuMs`) |
+| LOD pick + `batch.move()` | 0.150 | 15% | before (`cpuMs`) |
 | the loop skeleton itself | 0.047 | 5% | before (`cpuMs`) |
-| **per-instance cull, THREE SHADOW CASCADES** | **0.385** | **42%** | inside (`passMs.near`) |
+| **per-instance cull, THREE SHADOW CASCADES** | **0.385** | **39%** | inside (`passMs.near`) |
 | per-instance cull, the eye pass | 0.105 | 11% | inside (`passMs.near`) |
 
-**The named mechanism (`compose` + `move`) is 0.287 us, i.e. 31 per cent.**
-The largest single term is not in `NodeField.ts` at all: it is the three
-shadow cascades walking every node instance, three times over per cascade,
-to produce a shadow that provably does not exist 1,200 m from the eye. The
-second-largest term inside the loop is the one the routed text never mentions,
-the `/core` state read.
+**THE PRECISION OF THESE ABSOLUTES IS ABOUT PLUS OR MINUS 20 PER CENT, AND A
+FIRST DRAFT OF THIS TABLE HID THAT BY QUOTING SHARES OF A DIFFERENT NUMBER.**
+That draft stated a total of 0.92 us and computed the shares against it while
+the terms themselves summed to 0.984, a 7 per cent over-sum it never
+acknowledged. The 0.92 is not wrong, it is a DIFFERENT measurement: an
+independent end-to-end reading of the same quantity, and this lane's own
+end-to-end ladder slope later read 0.814 while a fresh-context verifier's split
+of the render side read 0.443 for the cascades and 0.075 for the eye pass
+against this table's 0.385 and 0.105. Two ablations of an overlapping cost do
+not add to the whole, and a box's frame timing carries real session-to-session
+variance (6.17.4 item 3 measured that on this same pose). **What reproduces
+across every one of those readings is the RANKING and the rough thirds; the
+absolutes should be quoted with a band and never to three digits.**
+
+**The named mechanism (`compose` + `move`) is 0.287 us, i.e. 29 per cent, and
+under no reading does it reach a half.** The largest single term is not in
+`NodeField.ts` at all: it is the three shadow cascades walking every node
+instance, three times over per cascade, to produce a shadow that provably does
+not exist 1,200 m from the eye. That term is the largest on both this lane's
+split (0.385) and the verifier's (0.443). The second-largest term inside the
+loop is the one the routed text never mentions, the `/core` state read.
 
 **THE INSTRUMENT THAT SPLITS IT, and it needed no new machinery.**
 `StatsProbe` already publishes `cpuMs` (the mean of everything before
@@ -4347,7 +4363,13 @@ frustum's lower edge at pitch -14 with a 60-degree vertical field of view is
 44 degrees down. The ring is entirely outside the frustum, and `?nodecull=0`
 confirms it from the other side: with per-instance culling off, the same frame
 submits 734,693 triangles at mult 3 and 1,160,613 at mult 6, i.e. every one of
-those instances is being culled and none of them survives.
+those instances is being culled and none of them survives. **That submitted
+count is BOX-DEPENDENT and only the qualitative half travels:** a
+fresh-context verifier reading the same arm on its own machine got **654,689
+triangles at 36 calls** against this lane's 734,693. The finding both boxes
+agree on is that the count jumps by hundreds of thousands the instant culling
+is turned off, which is what proves the instances are there and are all being
+rejected; the particular number is not a pin.
 
 #### 6.18.2 THE PHASE ABLATION, and why no single phase could have been the fix
 
@@ -4496,17 +4518,61 @@ from **+13.50 ms to +6.30 ms: 53 per cent of it removed.** The update loop is
 where the fix is nearly complete (70 per cent); the near pass is where it is
 not, and 6.18.8 prices exactly why.
 
-#### 6.18.6 `HARVEST_TABLE_MULT` IS NOT RAISED, AND THE TABLE SAYS x6 NOW FITS
+**THE NEAR-PASS ROW IS THE WEAKEST IN THIS TABLE AND ITS "33 PER CENT" SHOULD
+BE READ AS A WIDE BAND.** It is a two-point slope taken in a column whose
+sample-to-sample noise is comparable to the effect: this lane's own after-arm
+`near` readings at mult 6 span 10.80 to 14.60 against a 9.40 to 9.60 reading at
+mult 2, i.e. the column is not monotone in its own independent variable, and a
+fresh-context verifier's box was worse still (its mult-1 after-arm `near` read
+BELOW the `?trees=0` floor, which is impossible as a cost and is the column
+declaring its own noise floor). The p99, p50 and `updateMs` rows reproduce
+across boxes; `near` does not, and nothing in this lane's conclusion rests on
+it. The direction it points is corroborated independently by the `?shadows=0`
+ablation in 6.18.2 and by `shadowOff` reading 1 of 4 batches, both of which are
+outcome readbacks rather than differences of two noisy timings.
+
+#### 6.18.6 `HARVEST_TABLE_MULT` IS NOT RAISED, `forestair` NO LONGER REFUSES x6, AND x6 IS STILL REFUSED AT THE DENSEST WALK POSE
+
+**CORRECTED BY THIS LANE'S FRESH-CONTEXT VERIFIER, 2026-08-23, AND THE FIRST
+DRAFT'S HEADLINE IS WITHDRAWN.** That draft said "THE TABLE SAYS x6 NOW FITS"
+on the strength of `forestair` alone. That is a one-pose claim wearing a
+table-wide sentence, and it is exactly the error standing rule 7 exists to
+prevent: **`forestair` is not the densest pose at mult 6.** `forestfloor` at
+mult 6 holds **13,425 nodes against `forestair`'s 13,332**, so it, not
+`forestair`, is the rule-7 pose for this decision, and this lane never measured
+it at mult 6.
 
 Per this lane's brief the multiplier is Admin's to re-decide and this lane only
-removes the overhead and publishes the ladder. **It is published, and the
-answer is that the full ruling now fits at the pose that refused it.** At mult
-6 the after-arm reads p99 median **16.90 with a worst single sample of 17.30**,
-**0 of 3 over the 25 ms ALERT, 7.7 ms of margin**, against a before-arm median
-of 24.10 with 1 of 3 over. WG-310 shipped 3 of 6 because `forestair` broke
-budget; on this build `forestair` at mult 6 sits further under ALERT than the
-SHIPPED mult 3 did before this lane (13.60 after versus 17.80 before). This
-lane changes no density constant and stops here.
+removes the overhead and publishes the ladder. **What the ladder actually
+supports:**
+
+**`forestair` no longer refuses x6.** At mult 6 the after-arm reads p99 median
+**16.90, worst single sample 17.30, 0 of 3 over the 25 ms ALERT**, against a
+before-arm median of 24.10 with 1 of 3 over; it sits further under ALERT than
+the SHIPPED mult 3 did before this lane (13.60 after versus 17.80 before).
+WG-310 shipped 3 of 6 because `forestair` broke budget, and that specific
+obstacle is gone.
+
+**The walk poses at mult 6, both arms, n=3, measured by the verifier:**
+
+| pose | nodes at x6 | p99 after | over ALERT | triangles | of the 2.7e6 triangle ALERT |
+|---|---|---|---|---|---|
+| `forestair` | 13,332 | 16.90 (15.80 to 17.30) | 0 of 3 | 305,485 | 11.3% |
+| `meadowfield` | -- | 24.20 | 0 of 3 | -- | -- |
+| **`forestfloor`** | **13,425** | **27.20** | **3 OF 3** | **2,437,345** | **90.3%** |
+
+**So x6 is still refused, and the refusing pose has moved rather than gone
+away.** `forestfloor` at mult 6 is over ALERT on every sample and is also
+within ten per cent of the TRIANGLE ceiling, which is a second and independent
+budget this lane's `forestair` measurements could never have seen (that pose
+draws 305,485 triangles because the ring is out of frame). `meadowfield` clears
+ALERT by 0.1 ms, which is not a margin.
+
+**THE LARGEST FRACTION THAT FITS IS NOT ESTABLISHED ABOVE 3 BY THIS LANE.**
+Nothing here licenses raising `HARVEST_TABLE_MULT`; what it licenses is
+re-opening the question with `forestfloor` as the gating pose and with the
+triangle budget in the frame, not just p99. This lane changes no density
+constant and stops here.
 
 #### 6.18.7 THE WALK IS PROVEN UNHARMED THREE WAYS, and the pixel residual is the CLOCK
 
@@ -4522,7 +4588,10 @@ lane changes no density constant and stops here.
 | `forestfloor` | `updateMs` | 2.311 | 0.702 |
 
 Both p99s move inside their own spread; both p50s are unchanged or better;
-triangles are identical at both poses (1,781,054 and 1,754,552). The shadow
+triangles are identical at both poses **within a within-arm spread of about
+twenty** (1,781,054 and 1,754,552 here, and a verifier read 1,781,036 / 054 /
+055 inside a single `meadowfield` arm, so "identical" here means "agrees to
+within the pose's own capture-to-capture wobble", not bit-equal). The shadow
 gate correctly does NOT fire on the ground (`shadowOff` 0 of 4, `allTier3`
 false at both).
 
@@ -4568,6 +4637,20 @@ no such argument.
    `attachFarShadowSkip` keys on geometry ids, so the alias would also hide a
    boulder standing at 200 m, which is inside cascade 2's own 300 m reach and a
    real shadow.
+   **AND WHEN THE JOB LANDS, DERIVE THE PREDICATE ONCE.** There are currently
+   TWO independent derivations of "this batch's instances can be hidden at the
+   impostor rung", and a fresh-context verifier found they are not the same
+   function: `NodeBatch.farWhole` passes a (part, variant) on
+   `row[LODS - 1] >= 0` alone, while `NodeLadder`'s `far` set is only populated
+   for a (file, variant, material) that also produced a LOD0 entry (`ladder`
+   skips the row when `geo.get(...|0|...)` is undefined). They agree on every
+   shipped asset, which is why this ships, and they diverge on an asset that
+   authors an `_LOD3` but no `_LOD0` in some material: `farWhole` would say yes,
+   `far` would not contain the id, `attachFarShadowSkip` would not hide the
+   instance, and the batch would leave the cascades having emptied nothing --
+   a lost shadow, which is the exact failure direction every other gate here is
+   built to avoid. The asset job is the moment to collapse the two into one
+   derivation, because it is the moment new rungs enter.
 2. **THE EYE PASS'S OWN PER-INSTANCE CULL, 0.105 us/node, is untouched and is
    rendering's to price.** Three walks every instance of every node batch in
    `onBeforeRender` because `perObjectFrustumCulled` is on, and at `forestair`
