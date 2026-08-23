@@ -34,8 +34,13 @@ WHAT REPLACES THEM.
                      which is what frost shattering actually leaves and what
                      neither of the other two produces.
 
-Materials (3): OF_Rock, OF_RockDark, OF_Ice. Above the tree line there is
+Materials (3): OF_Rock, OF_RockDark, OF_Snow. Above the tree line there is
 nothing but stone and snow, and the renderer batches by material.
+
+RN-2700 replaced OF_Ice with OF_Snow here, and the count is unchanged because
+it is a SPLIT rather than an addition: nothing in this atlas was ever ice. See
+of_lib.PALETTE's `Snow` row for why one palette row was doing two substances'
+work and why `Ice` keeps the polar assets it describes correctly.
 
 Collision: NONE. Every rock in this atlas is now ankle-height debris, and a
 collider on ankle gravel is a player snagging on gravel. The two proxies this
@@ -162,7 +167,7 @@ def snow_patch():
         v, f, _, roles = hc.lobe(
             r[0], r[1], r[2], loc=loc, seg=seg, seed=seed, jit=0.06,
             lean=(SNOW_LEAN * r[0], SNOW_LEAN * r[1] * 0.35),
-            rings=SNOW_RINGS, role="Ice")
+            rings=SNOW_RINGS, role="Snow")
         # faces[0] is the flat base n-gon; `lobe` always emits it first.
         p.add(v, f[1:], [True] * (len(f) - 1), role=roles[1:])
     return p
@@ -175,7 +180,7 @@ PROPS = [
             lod2=0.22),
     pc.Prop("Mtn_FrostShards", SHARDS, frost_shards, ["RockDark", "Rock"],
             lod2=0.22),
-    pc.Prop("Mtn_SnowPatch", SNOW, snow_patch, ["Ice"], lod2=0.18),
+    pc.Prop("Mtn_SnowPatch", SNOW, snow_patch, ["Snow"], lod2=0.18),
 ]
 
 

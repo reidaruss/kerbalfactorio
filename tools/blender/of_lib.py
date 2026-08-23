@@ -433,6 +433,65 @@ PALETTE = {
     "Canopy":       ("4C7A38", 0.00, 0.80, 1.0, None),
     "Grass":        ("6F8F42", 0.00, 0.88, 1.0, None),
     "Ice":          ("CFE6F0", 0.00, 0.25, 1.0, None),
+    # RN-2700. SNOW IS NOT ICE, AND THE WHOLE R6 RANK-1 FINDING IS THAT ONE
+    # ROW WAS DOING BOTH JOBS. `Ice` above is a near-specular blue dielectric
+    # and that is CORRECT for what wears it: a polar pressure ridge, a glacial
+    # erratic's glaze, the frost on a boulder's apex fan. It is wrong for a
+    # 22 cm drift lying in a hollow, and at `mtnslope` the audit measured what
+    # wrong looks like: a shaded facet reading **-11.40** warm (r minus b)
+    # against the substrate beside it on the same row at **+34.81**, a 46.21
+    # count inversion between two surfaces sharing one hemisphere.
+    #
+    # A NEW ROLE AND NOT A REPOINT OF `Ice`, for the reason RN-1780 minted
+    # `Masonry` off `Rock` rather than moving it: `Ice` is worn by
+    # `Polar_IceShard`, `Polar_IceBoulder`'s glaze and `Polar_SnowDrift`, this
+    # table is baked into the .glb by Blender, and repointing it would rewrite
+    # `props_polar.glb`'s bytes from a lane whose subject is one prop in
+    # `props_mountains.glb`. Two of those three are genuinely ice and should
+    # not move at all. The third IS snow and is recorded as owed in
+    # rendering.md 2.47 rather than swept in here.
+    #
+    # THE HEX. Snow's spectral reflectance is FLAT across the visible to within
+    # a few per cent; the blue everyone has seen in snow needs metres of path
+    # length through solid ice to accumulate, which a 22 cm drift does not
+    # have. So the cold cast was never a fact about the substance. What IS a
+    # fact about THIS snow is that it is wind-packed and lying on a scree slope
+    # under blowing mineral debris, and light-absorbing impurities are the
+    # reason an aged snowpack falls from 0.85 to 0.65 albedo: dust and soot
+    # absorb hardest at short wavelengths and least in the red, so dusty snow
+    # is warm-shifted rather than neutral. E6E2DA is 12 counts of chroma, which
+    # is quieter than `SuitGrime`'s 15, the row this table already calls one of
+    # its least saturated.
+    #
+    # THE VALUE IS `Ice`'s OWN AND THAT IS THE SAFETY ARGUMENT, not an
+    # accident. In linear Rec.709 luma E6E2DA reads 0.76278 against CFE6F0's
+    # 0.76150, a difference of 0.17 per cent, so the entire measurable change
+    # in this row is CHROMA and ROUGHNESS. Every luma-based pin in the guard is
+    # therefore protected by arithmetic before any frame is taken, on exactly
+    # the argument FoliageTone.ts records for RN-2495's saturation move. 0.763
+    # broadband is also the right number on its own: aged, packed, slightly
+    # dusty snow sits at 0.65 to 0.80 and fresh snowfall, which this is not,
+    # sits at 0.85 to 0.90.
+    #
+    # THE ROUGHNESS DOES THE OTHER HALF. At 0.25 the shipped material carries a
+    # tight specular lobe, and a tight lobe on an upward-facing surface returns
+    # the SKY, which is the second cold term and the one that made the shaded
+    # facets read blue while the lit ones read warm. Snow is a dense random
+    # medium of ice grains with no coherent facet to reflect anything in, so it
+    # is near-Lambertian at this scale. 0.90 and not 0.95 because a wind crust
+    # does develop a skin that catches a low sun as a sheen, which is why a
+    # snowfield glares at sunset; that read is worth keeping and `vistadawn` is
+    # the pose that would lose it. It sits where it should among the natural
+    # rows: rougher than `RockDark` 0.80, smoother than `Rock` 0.94 and `Sand`
+    # 0.95, and nowhere near the ice it stopped being.
+    #
+    # The forward scatter snow actually has is NOT modelled here and the
+    # omission is deliberate rather than forgotten: the honest mechanism is
+    # transmission through the drift, `emission` is the only slot in this tuple
+    # that could fake it, and an emissive drift would glow at `meadownight`.
+    # The two terms above are what a metallic-roughness dielectric can say
+    # truthfully. See rendering.md 2.47 for what a real snow BSDF would owe.
+    "Snow":         ("E6E2DA", 0.00, 0.90, 1.0, None),
     # --- character ---
     "Suit":         ("D8D3C6", 0.00, 0.65, 1.0, None),
     "SuitDark":     ("6E6A60", 0.00, 0.70, 1.0, None),
