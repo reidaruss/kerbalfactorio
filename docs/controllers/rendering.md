@@ -1,7 +1,10 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2675 to RN-2680, `lane/n17-poolroom`, **THE CANOPY POOL GETS HEADROOM AND ITS LAST CEILING GETS A SWITCH, AND THE BRIEF'S OWN RN-2166 CLAIM WAS BACKWARDS.** Two capacity/instrumentation deliverables, zero pixel changes. **THE BRIEF ASSIGNING THIS LANE ASSERTED "buffers counted" per RN-2166; the actual record (section 2.11 and NUMBERS.md, quoted verbatim) says the opposite** -- `render.vramMB` is an instrument gap that does not count instance-pool textures, found on this identical field for this identical pool once already at 2.16.4 -- and is corrected before being used rather than carried forward. **DELIVERABLE 1: `PropLibrary.CANOPY_MAX_CAPACITY` 131,072 -> 262,144**, the standard next-power-of-two double, argued on THIN HEADROOM (10,218 slots, 2.75 measured density-steps of 3,712 each, between the shipped 120,854 live and the old ceiling) rather than on a specific mechanism, because **a pre-measurement estimate of the obvious next step was wrong by 30x and the correction is recorded rather than silently redrafted**: fully relieving `CANOPY_CHUNK_MAX` was estimated at +32,000 instances from the area-rule arithmetic and MEASURES at **+1,071** (120,854 -> 121,925) once deliverable 2 made it sweepable. Costs NOTHING at the shipped default (same doubling ladder, same live count); the priced cost IF the batch ever grows into the new headroom is +10.5 MB texture / +13.1 MB CPU-side typed array, doubled from the original ceiling's own arithmetic. **DELIVERABLE 2: `?canopychunkmax=`** overrides `CANOPY_CHUNK_MAX` (32,768, the one ceiling in the canopy chain the WG-304 post-merge verifier named unsweepable), threaded through `Config`/`ConfigTypes`/`BootBodyScope`/`Scatter`/`ScatterTuning.canopyChunkCap`'s new third argument, registered in `run.mjs`, default unchanged. **NON-VACUITY PROVEN BY OUTCOME READBACK, NOT RN-2590's TRAP**: read off `scatter.canopyProps` on the photographed frame, `?canopychunkmax=0` collapses `forestair` from 120,854 to **36,267** and the value rises to an asymptote of **121,925** from 40,000 upward, `capScaleMin` reaching 1.0000 and bit-identical through 200,000. **BIT-IDENTICAL PROOF AT SHIPPED DEFAULTS**, two owned sentinel-verified servers (`origin/main` @ `d45c712a` vs this branch), WG-304's own 5-pose blast-radius set, 3 fresh processes each, run twice: `canopyProps`/`capScaleMin`/`chunksCapped`/`poolRefused`/`calls`/`vramMB` bit-identical in every row on both runs; only `poolCeiling` moves, by the constant it is supposed to move by (+655,360, the raised `maxCap` summed across 5 canopy-suffixed batches); triangles wobbled under 0.03% in 2 of 15 rows on the first run and reproduced bit-identical on the second, the documented per-process settle-tick variance (2.11), not a regression. Gates: `tsc`/`build` clean, `npm run check` **9 of 9**, full four-pose `rn2550guard` **exit 0** (unsurprising: no shading, density or geometry code path touched). Full record in section 2.45; new `tools/smoke/rn2675sweep.mjs`. THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2710 to RN-2714, `lane/n19-emitground`, **`uEmitGround` NEVER DELIVERED ZERO: THE PREMISE WAS AN INSTRUMENT GAP, NOT A CODE DEFECT, AND A FRESH-CONTEXT VERIFIER REPRODUCED IT EXACTLY (28 of 28 cells, 0 differing pixels of 540,000 in `box`).** The RN-2710 allocation and rendering.md 2.46.5 both asserted "a live, registered, 40 m-reach emitter delivers exactly zero through `uEmitGround`," measured by `?firelightground=0` reading bit-identical to shipped at every one of `smelternight`'s twelve committed rectangles. **ALL TWELVE ARE MACHINE SURFACE** (`box`, `sunface`, `firebox`, `band`, `plate`, `hearthL`, `hearthR`, `peep`, `strip`, `placard`, `bandLit`, `bandShade`), verified by the shot's own manifest comments and by a 6x crop of `hearthL`'s lowest 120 rows showing pure brick, zero grass. A switch that gates only the TERRAIN material cannot move a rectangle containing no terrain pixel; "bit-identical" was guaranteed regardless of whether the term worked. **THE VERIFIER ALSO FOUND THE RECORD HAD ALREADY REFUTED ITSELF TWICE**: `docs/web/WORLD-AUDIT-R4-2026-08-22.md:547` published this same machine-rectangle coverage gap one full audit before R6 repeated it, and RN-2422's own landing row already published this term's +7.4% night-ground effect. **TWO RECTANGLES ADDED, `groundL`/`groundR`, CLEAR OF BOTH HEARTH COLUMNS**, and they move under `?firelightground=0`: raw box `groundL` R 5.01 -> 4.67 (-6.7%), `groundR` R 3.97 -> 3.55 (-10.6%), R-channel-specific (the fire's own colour). **`groundL` IS 91% GRASS, NOT PURE**: the remaining 9.1% is the machine's own outer pilaster, independently measured INERT under the flag (-0.01%), so contamination can only DILUTE the reading toward zero -- the conservative, grass-only figures are LARGER: **`groundL` -8.43%, `groundR` -10.95%**. All twelve machine rectangles stay bit-identical to the digit across the same pair, attributing the move to the ground term alone. **A 200x-GAIN DIAGNOSTIC (local patch, not shipped) PROVES THE SHAPE**, independently confirmed by the verifier from the SHIPPED build alone via a row-band falloff profile: a correctly centred, correctly falling-off warm pool at the machine's base, visible through grass-blade gaps, exactly black past the emitter's own 40 m reach -- ruling out a coordinate bug, a windowed-to-zero bug and an unreached branch, all three of the brief's own hypotheses. Also tested and found to make NO measurable difference (kept OUT of the diff per this lane's "no other terrain terms" boundary): replacing the seam's `pM + uBodyCenter` round-trip with the already-available `vWorld` varying directly, bit-identical at 8-bit output. **`web/src/render/materials/TerrainProgram.ts`, `TerrainAmpQuery.ts` and `TerrainFragLight.glsl.ts` are UNCHANGED from `origin/main`.** **THE ACTUAL NEAR-INVISIBLE THING IS A DIFFERENT MATERIAL'S SEAM**: most of `smelternight`'s visible "ground" is the instanced grass mesh (`GrassGlsl.ts`/`GrassMaterial.ts`), which has no `ofEmitIrradiance` splice at all; the verifier's own falloff profile gives the routed lane its acceptance target (blades move `dR` 0.010 vs the soil between them at `dR` 0.71-0.77). **`EmissiveLight.ts:92`'s header ("It does NOT reach the terrain") is STALE since RN-2422 and is a small owed `main` fix**, out of this lane's owned path. **COORDINATION: BT-345 item 3 carries the same refuted premise against the same twelve rectangles**; `lane/n19-emitground` must merge before BT-345, and BT-345's arming must re-key on `groundL`/`groundR`, never the twelve machine rects (Admin messaged the BT lane directly; matching record here). **MAIN-CORRECTION OBLIGATION FOR ADMIN AT MERGE**: the "exactly zero" claim still stands, uncorrected by this lane because outside its owned path, at rendering.md 2.46.5, the RN-2685 and RN-2710 NUMBERS.md ledger rows, and WORLD-AUDIT-R6 lines 595/611/632/869/960/982 -- state plainly that this rank was rewritten TWICE (once on its conclusion at 2.46.5, once now on its evidence base) and that R4:547 had the gap first. Gates: `tsc`/`build` clean, `npm run check` **9 of 9**, full four-pose `rn2550guard` **exit 0**. One file changed under `web/`: `web/tools/smoke/probes/artframe.js`. Full record in section 2.47; frames `docs/screenshots/RN2710_*`. THIS LINE IS A POINTER: replace it, never append to it.
+
+>
+> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2675 to RN-2680, `lane/n17-poolroom`, **THE CANOPY POOL GETS HEADROOM AND ITS LAST CEILING GETS A SWITCH, AND THE BRIEF'S OWN RN-2166 CLAIM WAS BACKWARDS.** Two capacity/instrumentation deliverables, zero pixel changes. **THE BRIEF ASSIGNING THIS LANE ASSERTED "buffers counted" per RN-2166; the actual record (section 2.11 and NUMBERS.md, quoted verbatim) says the opposite** -- `render.vramMB` is an instrument gap that does not count instance-pool textures, found on this identical field for this identical pool once already at 2.16.4 -- and is corrected before being used rather than carried forward. **DELIVERABLE 1: `PropLibrary.CANOPY_MAX_CAPACITY` 131,072 -> 262,144**, the standard next-power-of-two double, argued on THIN HEADROOM (10,218 slots, 2.75 measured density-steps of 3,712 each, between the shipped 120,854 live and the old ceiling) rather than on a specific mechanism, because **a pre-measurement estimate of the obvious next step was wrong by 30x and the correction is recorded rather than silently redrafted**: fully relieving `CANOPY_CHUNK_MAX` was estimated at +32,000 instances from the area-rule arithmetic and MEASURES at **+1,071** (120,854 -> 121,925) once deliverable 2 made it sweepable. Costs NOTHING at the shipped default (same doubling ladder, same live count); the priced cost IF the batch ever grows into the new headroom is +10.5 MB texture / +13.1 MB CPU-side typed array, doubled from the original ceiling's own arithmetic. **DELIVERABLE 2: `?canopychunkmax=`** overrides `CANOPY_CHUNK_MAX` (32,768, the one ceiling in the canopy chain the WG-304 post-merge verifier named unsweepable), threaded through `Config`/`ConfigTypes`/`BootBodyScope`/`Scatter`/`ScatterTuning.canopyChunkCap`'s new third argument, registered in `run.mjs`, default unchanged. **NON-VACUITY PROVEN BY OUTCOME READBACK, NOT RN-2590's TRAP**: read off `scatter.canopyProps` on the photographed frame, `?canopychunkmax=0` collapses `forestair` from 120,854 to **36,267** and the value rises to an asymptote of **121,925** from 40,000 upward, `capScaleMin` reaching 1.0000 and bit-identical through 200,000. **BIT-IDENTICAL PROOF AT SHIPPED DEFAULTS**, two owned sentinel-verified servers (`origin/main` @ `d45c712a` vs this branch), WG-304's own 5-pose blast-radius set, 3 fresh processes each, run twice: `canopyProps`/`capScaleMin`/`chunksCapped`/`poolRefused`/`calls`/`vramMB` bit-identical in every row on both runs; only `poolCeiling` moves, by the constant it is supposed to move by (+655,360, the raised `maxCap` summed across 5 canopy-suffixed batches); triangles wobbled under 0.03% in 2 of 15 rows on the first run and reproduced bit-identical on the second, the documented per-process settle-tick variance (2.11), not a regression. Gates: `tsc`/`build` clean, `npm run check` **9 of 9**, full four-pose `rn2550guard` **exit 0** (unsurprising: no shading, density or geometry code path touched). Full record in section 2.45; new `tools/smoke/rn2675sweep.mjs`. THIS LINE IS A POINTER: replace it, never append to it.
 
 
 
@@ -10,15 +13,7 @@
 
 
 >
-> *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-22 (RN-2660 to RN-2666, `lane/n16-paintstructure`, **THE FAR PAINT LIT A WOOD'S FLOOR LIKE A CLEARING, THE 34-METRE MOTTLE WAS DEAD ACROSS EVERY ROW RANK 1 SAMPLED, AND THE STATISTIC RANK 1 WAS SCORED ON CANNOT SEE A COARSE FIELD.** World Audit R5 rank 1's paint half merged with RN-2645's routed residue, the debt measured FIRST and landed as its own commit before any structure work. **REBASED ONTO main AT `96cab596`: `lane/wg-reach` MERGED FIRST, so this lane is the SECOND MERGER and 2.44.11 discharges the three join obligations.** **ONE: THE RESIDUE IS PAID OUT OF COVERAGE, NOT A FLOOR.** Over the ground the far canopy does NOT hide (43 per cent of the fragment at 3.4 km over Hills) the term left the bare biome albedo at full sun. It now takes the same `ofCrownSelfShade` the crowns take, on the same missing density `vCanopy * (1 - w)`, so it is identically 1 at the 690 m harvest ring and adds NO constant: rendering.md 2.43.7 says the shipped law computes the transmittance at the BASE of the canopy layer and calls that a defect FOR THE CROWN, and the surface at the base of the layer is the GROUND. **On the merged tree `flyovernoon` goes 0.9289 / 0.8671 to 0.9190 / 0.8406, which is 0.0153 and 0.0614 BELOW RN-2605's pre-raise target: DISCHARGED on both quantities.** On this lane's own pre-merge tree it paid 53 and 146 per cent with a named 0.0105 `boxShip` shortfall, and the join closes it; the two trees are kept apart rather than blended. **The identity control is the THREE-flag arm and it reproduces `lane/wg-reach`'s own published merged-main figure to four decimals.** **THE LANE'S ONE REAL DECISION IS THE OPTICAL DEPTH AND IT COSTS 0.0214 OF `boxShip` FORGONE**: `ofTreeCoverMu`, the view-side half of the same expression, is a Boolean crown-overlap law on the crown PLAN index, so running the sun ray on the leaf-area depth `K * mu` two lines away would be two different woods. The other law is BUILT, MEASURED AND REFUSED (`?treelinefloorlaw=1`, 0.8976 / 0.7873, 139 and 358 per cent of the residue). **TWO: THE MOTTLE WAS DEAD, NOT WEAK.** `TREE_MOTTLE` retires at an 11.3 m ground footprint and rank 1's own rows run 12.0 to 288 m, so the field is identically ZERO at every row that audit sampled and `TREELINE_AMP` could never have been the lever. The vertex route cannot carry it either (depth 8 is resident to 2,630 m; a 165 m stand needs cells under 82 m), which makes a shader field a FIRST copy. `TerrainStandMottle.ts` (NEW) evaluates world-gen's OWN `dense` and `groveWeight` laws with world-gen's OWN four constants IMPORTED, at `STAND_M` 165 m and `GROVE_M` 760 m, each divided by its own 9,000,000-sample mean so the modulation is mean-preserving, each retired at its own Nyquist point, MODULATING THE DENSITY rather than the albedo. **There are two octaves because the smooth-datum Nyquist is a LOWER bound**: the stand octave measured 4.3 km against the 7.0 km its own arithmetic predicts, because relief stretches `footM` past the sphere's own value. **THREE: `iqr` CANNOT SCORE A COARSE FIELD AND R5 RANK 1 WAS SCORED ON IT.** The five-row strip `iqr` FELL by up to 3.70 counts in the middle of the band while the same crops at 2x plainly gained landscape mosaic. `rn2664scale.mjs` (NEW) box-filters at a ladder of scales and reports `sd(s)`, the structure at or coarser than `s`, with the per-row mean removed. On the merged tree the two terms add **+6.1 per cent at 16 px and +13.9 per cent at 64 px, the gain monotone in scale, with the MOTTLE supplying 9.1 of those 13.9 points** while the floor shade alone is negative at 1 px. **FOUR, AND THIS IS THE ONE THE VERIFIER RESCUED: THE UPPER BAND IS SUPPRESSED, NOT INERT, AND THIS FILE'S FIRST ANSWER WAS WRONG.** It said "refused with a number" on a `?treeline=0` counter-reading that does not reproduce (0.86 / 0.32 / 0.00 wide, up to 1.68 centre, on bit-exact deterministic frames), priced on the strip-`iqr` statistic this same section condemns two pages earlier, over a range mislabelled 3.8-to-15.5 km when the rows are 7.5-to-15.5, citing an `RN-2543` that does not exist. **Re-measured scale-resolved: the paint's structural increment is +0.72 counts at 1 px on the SHIPPED frame (+35.5 per cent over `?treeline=0`), it arrives at 12.8 per cent (1 px) and 6.6 per cent (16 px) of its surface size, and the rest of the frame's structure over the same rows arrives at 51 and 66 per cent, so the increment is suppressed 4 to 10 times HARDER than the frame is** by extinction plus the ACES shoulder at the airlight-raised operating point. **Verdict downgraded from REFUSED to UNRESOLVED, INSTRUMENT FIRST**, and routed to a real aerial-perspective lane with the two switchable constants named (`aerosolSigma` 1.4e-4 and `aerosolScaleM` 400 at `Atmosphere.glsl.ts:154-155`, `aerosolScaleM` the surgical one, both outside M1's lock), briefed to diagnose before tuning and warned it may end as a Reid look call since a 28 km Koschmieder is already physical. **THE JOIN.** Obligation C: the four normaliser means are UNCHANGED on the merged `ScatterTuning` and `check:boot` passes. Obligation B: `?canopytail=1` reproduces this lane's pre-merge frames to the digit, and over the 3.4-to-5.1 km annulus the tail owns the FINE end (+54.0 per cent at 1 px against the mottle's +5.1) while **the mottle's coarse increment survives the tail 97 per cent intact at 32 px**; the two occupy different scales, the mean is unmoved to a count, **VERDICT KEEP BOTH, no follow-up flagged.** Obligation A: **`rn2550guard` is EXIT 0 at all four poses on the current base `c896dff2`, after a real regression that this lane diagnosed on `96cab596` and a world-gen cap fix has since discharged.** On `96cab596` the guard was exit 1 with ONE problem, all eight `box` ratchets under their pins and the single failure `forestairnoon` `rho` 0.1596 against `BAND_LOW` 0.18 -- **proved FOREIGN by an arm rather than argued**, since it read identically to four decimals with all three of this lane's terms held off (`f` 0.6029 pre-merge to 0.3695, a 39 per cent drop in card mass in that rectangle). On `c896dff2` the same pose reads `rho` **0.1873** with `f` back to **0.5843**, and this lane's terms take it 0.9512 to 0.9359 boxShip and 0.9083 to 0.8844 boxSurf while leaving `rho` alone. **Owed item 8 is CLOSED**; the finding is kept because the attribution arm is the reusable part, a terrain-side lane convicting a card-side regression in six browser runs. **A PROBE THIS LANE SHIPPED WAS RED THREE RUNS OF THREE ON THE BUILD IT CERTIFIED WHILE THE RECORD SAID CLEAN, and that is the worst error here**: both of `rn2662untouched`'s criteria were bounds built from ONE DRAW of a noise arm whose own scatter spans 35-fold. Rebuilt on quantities that hold still (RN-1766's published 3.78 per cent plus a direction test; the acceptance rectangle's own linear mean for the arming) it is green 3 of 3 with the armed reading bit-identical across runs. **Registered: `?crownshade=0` now silently disables the wood-floor shade too**, at the flag's own site. **Routed: the floor term contradicts `CanopySelfShadow`'s published property 1** by taking the instance tier's PLACEMENT weight where the sun ray should take the full local index, bought to keep the 690 m ring exact, with the cleaner fix named (gate on the CASCADE's own coverage). SIX new NUMBERS traps. Gates 0, 0, **9 of 9**; guard **exit 0 on `c896dff2`**. **ON THE `BASE` MERGE CONFLICT THIS LANE CREATES, MAIN'S VALUES WIN**: `lane/wg-reach` re-pinned `flyovernoon` to 0.9289 / 0.8671, so this lane's 0.9448 / 0.8918 is a RAISE against main and must not survive the conflict; the ruling is written into `rn2550guard.mjs`'s own `BASE` comment as well as owed item 6. Full record in section 2.44; frames `docs/screenshots/RN2660_*`. THIS LINE IS A POINTER: replace it, never append to it.
-
-
-
-
-
-
-
-> *(the pointer before that, `lane/n15-crownfinish` section 2.43, is no longer kept inline per the one-deep rule; see git history or section 2.43 itself.)*
+> *(the pointer before that, `lane/n16-paintstructure` section 2.44, is no longer kept inline per the one-deep rule; see git history or section 2.44 itself.)*
 
 
 ## 1. Mission
@@ -16838,3 +16833,212 @@ consolidation wave (SE reference board scaffolding, a one-page Reid decision she
 and a guard-instruments hygiene lane) is also adopted and needs no Reid to start.
 
 No source file under `web/src/` was touched by this pass. No frame was retaken.
+
+## 2.47 `uEmitGround` NEVER DELIVERED ZERO: 2.46.5's CLAIM SAT ON TWELVE RECTANGLES THAT ARE ALL MACHINE, A REAL GROUND RECTANGLE MOVES THE MOMENT ONE EXISTS, AND WHAT IS ACTUALLY INVISIBLE IS THE GRASS MESH'S OWN MISSING SPLICE (RN-2710 to RN-2714, 2026-08-23, `lane/n19-emitground`)
+
+**NOTE ON NUMBERING.** Written on `lane/n19-emitground`, forked from `origin/main`
+at `50daac5b`, in an isolated worktree. Section 2.46 is the file's last section at
+fork time; this lane's brief warned that `lane/n18` may land its own section 2.47
+concurrently. If it did, renumber this section to the next free integer at merge
+and update the banner below to match; nothing in this section's content depends on
+its own number.
+
+**VERDICT, FIRST: THE PREMISE IN 2.46.5 AND IN THE RN-2710 ALLOCATION ROW IS
+FALSE.** `uEmitGround` does not deliver zero. It was never provably zero at all,
+only unmeasured: `smelternight`'s twelve committed rectangles (`box`, `sunface`,
+`firebox`, `band`, `plate`, `hearthL`, `hearthR`, `peep`, `strip`, `placard`,
+`bandLit`, `bandShade`) are, by the shot's own header and by inspection of the
+shipped frame, **entirely machine surface** -- shell, brick, paint, the fire
+itself -- and `?firelightground=0` gates ONLY the terrain material's take. A
+switch that cannot reach a rectangle's pixels cannot move that rectangle, whether
+or not the term it guards works. "Bit-identical at every committed rectangle" was
+true and told the audit nothing, which is NUMBERS.md's own "a registered
+parameter that does not move the picture" pattern running in the direction where
+the PICTURE could not have moved the READING, not the other way round. No line
+in `TerrainProgram.ts`, `TerrainAmpQuery.ts` or `TerrainFragLight.glsl.ts` was
+wrong, and none was changed.
+
+**(a) THE INSTRUMENT GAP, SHOWN RATHER THAN ARGUED.** `hearthL`'s own bottom 120
+rows (`y` 700 to 820, the strip closest to grass height) were cropped at 6x from
+the shipped `smelternight` capture: riveted brick and shadow, zero grass pixels,
+end to end. All eleven named rectangles sit on the machine because the shot's own
+comment says so (`plate`/`sunface`/columns are "clean shell and brick",
+`firebox`/`peep`/`strip` are "the emissive surfaces", `band`/`bandLit`/`bandShade`
+are "the painted keep-out ring", `placard` is "the painted sign"). None of the
+twelve was ever a claim about the ground.
+
+**(b) A REAL GROUND RECTANGLE, ADDED, MOVES.** Two rectangles were added to
+`smelterhero`'s (and by spread, `smelternight`'s) manifest in
+`web/tools/smoke/probes/artframe.js`: `groundL` (px 40,600 to 270,820, clear of
+`hearthL`'s 275-350) and `groundR` (px 1360,600 to 1560,820, clear of `hearthR`'s
+1295-1350), at the same standoff as every other rectangle in the shot. Measured on
+one build, shipped vs `?firelightground=0`, through the manifest's own instrument
+(not a second tool):
+
+| rectangle | shipped rgb | `?firelightground=0` rgb | delta (R, raw box) |
+|---|---|---|---|
+| `groundL` | 5.01, 6.68, 5.74 | 4.67, 6.63, 5.72 | -6.7% |
+| `groundR` | 3.97, 5.38, 4.24 | 3.55, 5.33, 4.22 | -10.6% |
+
+**`groundL` IS 91 PER CENT GRASS, NOT PLAIN GRASS, AND THE 9.1 PER CENT
+CONTAMINATION ONLY DILUTES THE READING.** The verifier found the remaining slice
+of `groundL`'s box is the machine's outer pilaster, measured INERT under the same
+flag (-0.01%, i.e. the pilaster itself does not move). A dead pixel mixed into a
+moving box can only pull the box's own mean TOWARD zero, never past it, so the
+conservative, grass-only reading is LARGER in magnitude than the raw box figures
+above, not smaller: **`groundL` -8.43%, `groundR` -10.95%**, stated in the
+direction that cannot overclaim. The raw box figures are kept in the table because
+they are what the shipped instrument reads today; the corrected pair is the one
+to cite for "how much does the ground move."
+
+Every one of the twelve original (machine) rectangles is **bit-identical to the
+digit** across the same pair (`hearthL` 12.31,4.95,6.17 both arms; `firebox`
+230.86,126.17,53.32 both arms; all twelve checked programmatically, not sampled).
+The move is confined to `R`, the fire's own channel (`G`/`B` move under 1% on
+both boxes), which is the warm signature `?firelight=0`'s machine-side table
+already established for this same emitter, not a global exposure shift. **This is
+the DONE WHEN criterion discharged**: `?firelightground=0` now diverges from
+shipped by a stated, non-zero amount on the rectangles closest to the machine,
+through the project's own instrument, with the machine held bit-identical as the
+attribution control.
+
+**VERIFIER (fresh-context, no access to this lane's work): FIX, doc-only,
+reproduced exactly.** 28 of 28 cells reproduced; the `box` region is 0 differing
+pixels of 540,000; all three hypothesis exclusions in (d) below were confirmed
+independently from the SHIPPED build alone, via a row-band falloff profile (no
+need for the local diagnostic patch to reach the same conclusion). The verifier's
+own profile is the sharper number for the routed grass lane's acceptance target
+(2.47(e)/open item, below): individual grass **blades** move about 1% at `dR`
+0.010 under the flag, while the bare **soil visible between blades** moves 28 to
+32% at `dR` 0.71 to 0.77 -- i.e. the terrain under the grass is already carrying
+most of the intended contribution, and a grass splice's job is to bring blade
+pixels up toward that same `dR`, not to invent a new effect from nothing. The
+verifier also found that **World Audit R4 (line 547) had already published the
+machine-rectangle coverage gap one audit before R6 repeated it**, and that
+**RN-2422's own landing row already published this term's +7.4% night-ground
+effect** -- so the "exactly 0.000" claim contradicted the project's own record
+twice over, not only the rectangle geometry argued in (a).
+
+**(c) THE DAYLIT CONTROL, READ HONESTLY RATHER THAN FORCED TO MATCH THE BRIEF'S
+OWN GUESS.** The brief's boundary text expected `smelterhero` (daylit, `sunDot`
+0.45) to be bit-identical under the same flag ("emissive drowned"). Measured:
+`groundL` rgb 20.60,25.89,20.43 -> 20.34,25.86,20.41, a **0.26-count (1.3%)** move
+on `R`, not zero. That is the same mechanism at the same distance under a sun
+roughly forty times brighter than the night floor, so a small residual is the
+expected shape of "drowned," not "absent" -- consistent with `?firelight=0`'s own
+20 m grass reading of 0.05 to 0.12 counts in the R6 audit. Recorded here rather
+than rounded to the brief's assumption, per this file's own rule about a control
+that does not go exactly as predicted.
+
+**(d) THE STRUCTURAL PROOF, INSTRUMENTED AND NOT SHIPPED.** To separate "wired but
+weak" from "wired to the wrong place," `TerrainFragLight.glsl.ts:159` was
+temporarily patched locally to `lit = ofEmitIrradiance(vWorld, n) * 200.0;` under
+a throwaway `uEmitGround > 1.5` trigger (reachable only via a matching one-line
+patch to `emitGroundFromQuery()`; NEITHER PATCH IS IN THIS COMMIT). At 200x gain
+the terrain alone -- no sun, no ambient, no sky -- shows a single, correctly
+centred, correctly falling-off warm pool at the machine's base, visible only
+through the gaps between grass blades, and **exactly black past the emitter's own
+40 m reach** everywhere else in frame (`docs/screenshots/RN2710_debugpool_200x_diagnostic_only.png`,
+labelled as a diagnostic capture, reproducible from the patch described above,
+never shipped). This rules out a coordinate bug (hypothesis 1/2 from the brief:
+the position, the branch and the emitter list all reach the fragment correctly)
+and a windowed-to-zero bug (hypothesis 3: the window is UE4's own `(1-d^2/r^2)^2`,
+matches `EmissiveLight.ts`'s own header, and is not the fault). Also tested and
+found to make **no measurable difference** (bit-identical to the digit on both
+`groundL`/`groundR` and on `hearthL`): replacing the seam's `pM + uBodyCenter`
+round-trip with the already-available `vWorld` varying directly. The round-trip is
+mathematically exact (`pM = (vWorld - uBodyCenter) * uMetresPerUnit`, so
+`pM + uBodyCenter = vWorld` when `uMetresPerUnit` is 1, the near scene) and the
+float32 cancellation at this planet's ~600e3 m radius is below the instrument's
+own noise floor at these ranges. **Per this lane's boundary ("no other terrain
+terms" unless the defect is IN the model), this simplification was NOT kept**:
+there is no measured delta to justify it, and `web/src/render/materials/TerrainFragLight.glsl.ts`
+and `web/src/render/materials/TerrainAmpQuery.ts` are unchanged from `origin/main`
+in this commit (verified: `git diff` against both is empty).
+
+**(e) WHAT IS ACTUALLY NEAR-INVISIBLE, AND IT IS A DIFFERENT MATERIAL'S SEAM.**
+Most of the "ground" visible in `smelternight` at 4.6 m standoff is not terrain at
+all -- it is the instanced grass mesh (`web/src/render/grass/GrassGlsl.ts` /
+`GrassMaterial.ts`), which imports `uBodyCenter` and nothing else from the
+emissive system: no `EMIT_UNIFORMS`, no `ofEmitIrradiance` splice. The 200x debug
+frame shows this directly: individual grass blades stay black while the warm pool
+shows only in the gaps between them. So the small, real, R-only ground-rectangle
+move in (b) is the TERRAIN's genuine (if physically modest, per `EmissiveLight.ts`'s
+own `EMIT_CUT_IRRADIANCE` calibration) contribution leaking through blade gaps;
+the visually flat "unlit lawn" the R6 audit's eye correctly reported is mostly
+grass geometry that was never wired to receive this light at all, a SEPARATE
+material's seam, out of this lane's one-file scope. `EmissiveLight.ts:92`'s own
+header says "The machine programs and the prop / node programs. It does NOT
+reach the terrain" -- **that line is STALE, not current authority**: RN-2422
+added exactly the `TerrainFragLight.glsl.ts:159` consumption this section
+measures, so the header has not described the shipped file since that landing.
+It happens to still be true of grass by coincidence, not because it was written
+about grass. **This is a small bug in `main` on its own** (a header contradicted
+by its own file) and is routed below rather than fixed in this commit, since
+`EmissiveLight.ts` is outside this lane's owned path (TerrainProgram.ts's seam
+and TerrainAmpQuery.ts only, per the RN-2710 allocation).
+Flagged as a follow-up rather than fixed here: it needs its own splice, its own
+uniform declaration and its own program-cost measurement in a two-file change
+that does not fit this rank's "one file, class (a)" sizing.
+
+**(f) COORDINATION: BT-345 ITEM 3 IS REFUTED THE SAME WAY R6 WAS, AND ITS ARMING
+MUST KEY ON `groundL`/`groundR`.** If BT-345's item 3 carries the same "`?firelight
+ground=0` reads bit-identical, therefore the term is dead" premise against
+`smelternight`'s twelve machine rectangles, it inherits this section's refutation
+exactly: none of those twelve can see the terrain material regardless of whether
+`uEmitGround` works, so an arming check built on them proves nothing about the
+term either way. **`lane/n19-emitground` must merge before BT-345 lands**, and
+BT-345's own arming check must be re-keyed on `groundL`/`groundR` (or an
+equivalent verified-to-contain-terrain-pixels rectangle), never on the twelve
+machine rectangles. Admin has messaged the BT lane directly; this is the matching
+record on the rendering side so the dependency is legible from either file.
+
+**Gates.** `npx tsc --noEmit` clean. `npm run build` clean. `npm run check`
+9 of 9. `rn2550guard` exit 0 at all four poses (unsurprising: zero terrain shader
+bytes changed; the only diff is two new rectangles in a smoke probe). Per-frame
+cost unchanged (no uniform, no branch, no draw call added or removed).
+
+**Files touched:** `web/tools/smoke/probes/artframe.js` (two rectangles,
+`groundL`/`groundR`, plus the comment recording this finding). Nothing under
+`web/src/` changed. `docs/controllers/rendering.md` (this section).
+`docs/web/NUMBERS.md` (a new catalogue entry, dated 2026-08-23, cross-referencing
+"a registered parameter that does not move the picture"). Frames:
+`docs/screenshots/RN2710_smelternight_shipped.png`,
+`RN2710_smelternight_firelightground0.png` (full frames, both arms, JSON reports
+alongside), `RN2710_ground_crop_shipped.png`, `RN2710_ground_crop_firelightground0.png`
+(4x crops of `groundL`'s region, natural exposure -- **these two read as
+visually identical to the eye**, which is the honest state of (b)'s raw-box
+6.7-10.6% (grass-only, conservative: 8.43-10.95%) mean move on raw near-black
+grass; stated plainly rather than dressed up), and
+`RN2710_debugpool_200x_diagnostic_only.png` ((d)'s non-shipped structural proof).
+
+**Open item, routed rather than fixed:** grass blades do not receive
+`ofEmitIrradiance`. A future lane should splice `EMIT_UNIFORMS` /
+`ofEmitIrradiance` into `GrassGlsl.ts`'s fragment stage on `PropSkyAmbient`'s
+precedent, measure the program-cache cost the same way `Headlamp.ts` measured
+the rejected point-light pool, and re-take `smelternight`'s `groundL`/`groundR`
+to see whether a lit blade actually reads as a visible fire pool once the mesh
+that dominates the screen coverage participates at all. **Acceptance target,
+from the verifier's own row-band falloff profile (b, VERIFIER note):** the bare
+soil visible between blades already moves `dR` 0.71 to 0.77 under the flag while
+blades themselves move only `dR` 0.010; the splice's job is to bring blade pixels
+toward the soil's own `dR`, not to invent a new number. Also owed to `main`
+independent of that lane: `EmissiveLight.ts:92`'s header ("It does NOT reach the
+terrain") is stale since RN-2422 and should be corrected to state what it now
+reaches (terrain: yes, since RN-2422; grass: no, still).
+
+**MAIN-CORRECTION OBLIGATION FOR ADMIN, TO EXECUTE AT MERGE.** The "exactly
+0.000" / "delivers exactly zero" claim this section refutes still stands, as
+committed text, in six places this lane did not touch because they are outside
+its owned path: `rendering.md` 2.46.5 (this file, above -- superseded by this
+section, not yet marked so in place); the RN-2685 and RN-2710 rows in
+`NUMBERS.md`'s allocation ledger; and `docs/web/WORLD-AUDIT-R6-2026-08-23.md`
+lines 595, 611, 632, 869, 960 and 982. **State plainly when correcting: this
+rank was rewritten TWICE, not once** -- once on its CONCLUSION (2.46.5 itself
+reclassing an opus diagnosis to a sonnet fix on the strength of the "exactly
+zero" reading) and a second time now on its EVIDENCE BASE (the reading itself
+was never valid, because none of its twelve rectangles could see the material
+under test). **And state that `docs/web/WORLD-AUDIT-R4-2026-08-22.md` line 547
+had already published the machine-rectangle coverage gap one full audit before
+R6 repeated the mistake** -- R6's own rank-3 finding was avoidable from the
+project's own prior record, not only from a fresh measurement.
