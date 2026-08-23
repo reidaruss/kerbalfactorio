@@ -333,6 +333,12 @@ export function parseConfig(search: string): Config {
     harvestX6: p.get('harvestx6') !== '0',
     nodeLod: p.get('nodelod') !== '0',
     nodeCull: p.get('nodecull') !== '0',
+    // WG-320. Defaults ON, so a missing param is the fast path and `=0` is the
+    // control. `p.get(...) !== '0'` and not `Number(...)`, for the reason
+    // NUMBERS.md's "Boot defaults: `Number(null)` is 0" entry gives.
+    nodeFast: p.get('nodefast') !== '0',
+    nodeFastCheck: p.get('nodefast') === 'check',
+    nodeShadow: p.get('nodeshadow') !== '0',
     spires: p.get('spires') !== '0',
     forestDetail: p.get('forestdetail') !== '0',
     beachCanopy: p.get('beachcanopy') !== '0',

@@ -47,8 +47,10 @@ export interface VegetationDeps {
    *  HERE and not by each caller, on this module's own DW-18 rule (a fact
    *  read from the thing that owns it, never transcribed twice). */
   trees?: { radiusM: number; density: number; harvestX6?: boolean };
-  /** WG-118: `?nodelod=0` / `?nodecull=0`. */
-  nodeArt?: { lod?: boolean; cull?: boolean };
+  /** WG-118: `?nodelod=0` / `?nodecull=0`.
+   *  WG-320: `?nodefast=0` / `?nodefast=check` / `?nodeshadow=0`. */
+  nodeArt?: { lod?: boolean; cull?: boolean; fast?: boolean; check?: boolean;
+    shadow?: boolean };
   /** Live edits handle, a THUNK: voxels are created after this and a tree
    *  streaming in over a dug pit must seat on the edited surface. */
   editsHandle: () => number;

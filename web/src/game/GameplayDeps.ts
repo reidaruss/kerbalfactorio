@@ -47,8 +47,10 @@ export interface GameplayDeps {
    *  `?harvestx6=0`'s kill switch, forwarded to `VegetationFields` verbatim. */
   trees?: { radiusM: number; density: number; harvestX6?: boolean };
   /** WG-118: `?nodelod=0` draws every node at LOD0 as before, `?nodecull=0`
-   *  turns per-instance frustum culling off. Two claims, two controls. */
-  nodeArt?: { lod?: boolean; cull?: boolean };
+   *  turns per-instance frustum culling off. Two claims, two controls.
+   *  WG-320: `?nodefast=0` / `?nodefast=check` / `?nodeshadow=0`. */
+  nodeArt?: { lod?: boolean; cull?: boolean; fast?: boolean; check?: boolean;
+    shadow?: boolean };
   /**
    * RN-2225. THE POINT THE WILD VEGETATION STREAMS AROUND, per frame.
    *

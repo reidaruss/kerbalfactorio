@@ -4365,8 +4365,16 @@
           return { field: g.nodes ?? null, tree: g.trees ?? null, source: 'game' };
         }
         if (s.wild !== null && s.wild !== undefined) {
-          return { field: { nodes: s.wild.nodes }, tree: s.wild.trees ?? null,
-            source: 'wild' };
+          // WG-320. `nodeMs` is `NodeField.update`'s OWN mean cost in ms,
+          // carried through the wild path because the fly poses answer here
+          // and a cost published only on the walk path would be invisible at
+          // exactly the poses that pay it.
+          return { field: { nodes: s.wild.nodes, updateMs: s.wild.nodeMs,
+            composeSkips: s.wild.nodeSkips, shadowOff: s.wild.nodeShadowOff,
+            batches: s.wild.nodeBatches, allTier3: s.wild.nodeAllTier3,
+            cascOk: s.wild.nodeCascOk, fastChecked: s.wild.nodeChecked,
+            fastMismatch: s.wild.nodeMismatch },
+          tree: s.wild.trees ?? null, source: 'wild' };
         }
         return null;
       } catch (e) { return null; }
@@ -4533,9 +4541,21 @@
     render: { triangles: s.draw.triangles, calls: s.draw.calls,
       programs: s.draw.programs, vramMB: s.vramEstimateMB,
       frameMs: { p50: r2(s.frameMs.p50), p95: r2(s.frameMs.p95),
-        p99: r2(s.frameMs.p99) },
-      passMs: { near: r2(s.passMs.near), post: r2(s.passMs.post),
-        total: r2(s.passMs.total) } },
+        p99: r2(s.frameMs.p99), worst: r2(s.frameMs.worst) },
+      // WG-320. THE SPLIT, and it is the whole diagnosis instrument for a
+      // frame-time lane. `cpuMs` is the mean of everything BEFORE
+      // `frame.render()` (`Loop.ts`: `const cpuMs = performance.now() - t0`
+      // taken one line above the render call), so the sim, the streaming and
+      // `NodeField.update()` are inside it and NOTHING the renderer submits
+      // is. `passMs.*` is inside the render. A cost that grows with node count
+      // therefore has to declare itself on one side of this line or the other,
+      // instead of being attributed to whichever mechanism a lane happens to
+      // be named after (NUMBERS.md rule 6, and its "a lane named after a
+      // mechanism will look for that mechanism" entry).
+      cpuMs: r2(s.cpuMs), frames: s.frames,
+      passMs: { sky: r2(s.passMs.sky), far: r2(s.passMs.far),
+        near: r2(s.passMs.near), viewModel: r2(s.passMs.viewModel),
+        post: r2(s.passMs.post), total: r2(s.passMs.total) } },
     setup, log, png, cropPng,
   };
 })(typeof OF_ARGS === 'undefined' ? {} : OF_ARGS)
