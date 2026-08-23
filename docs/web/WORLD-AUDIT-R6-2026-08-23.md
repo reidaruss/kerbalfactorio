@@ -336,10 +336,9 @@ Re-read from `meadowfield`'s own capture, `?grass=0` one flag apart, same build:
 
 **Every row reproduces R5 to two decimals**, which is the honest way to say that not
 one of the eleven merged lanes went anywhere near this. What the ladder adds is that
-the statistic was never the defect. At `meadowfield`, bands of 60 rows, rect
-`x560 w900` (the ladder's own default and not separately recorded when this table
-was built; stated here rather than left silent, on the correction pass's own finding
-below), shipped against `?grass=0`:
+the statistic was never the defect. At `meadowfield`, bands of 60 rows (the rect this
+table was built on was NOT recorded and was not recoverable; see the correction
+pass note below), shipped against `?grass=0`:
 
 | rows | range | s=1 shipped / bare | s=16 shipped / bare |
 |---|---|---|---|
@@ -348,17 +347,7 @@ below), shipped against `?grass=0`:
 | 360 to 420 | 17 m to 9 m | 32.61 / 34.38 | 12.28 / 12.26 |
 | 660 to 720 | 3 m | 40.81 / 38.29 | 23.90 / 28.40 |
 
-**Correction pass note, on the rect this table never stated.** This is the one table
-in the document with no rect printed beside it, and rank 5 in section 4.5 rests on it.
-The audit tooling's own default (`rn2686bands.mjs`, `--rect` unset) is `x560 w900`,
-which is stated above as the closest reproducible choice rather than left implicit. A
-fresh-context reproduction on that default rect reads **34.364 / 35.125** at s=1 and
-**20.546 / 20.546** at s=16 over rows 240 to 300, close to but not identical with the
-33.99/34.73 and 20.78/20.78 printed above. The two readings agree on both conclusions
-that matter (shipped and bare are within a point of each other at s=1, and identical
-to three figures at s=16), so this is recorded as **rect-sensitivity evidence**, not
-as a correction to the row values themselves: the finding does not depend on which
-reasonable rect was used, and the exact rect the first draft used remains unrecorded.
+**Correction pass note, on the rect this table never stated (re-corrected at merge per the verifier's five-rect sweep).** This is the one table in the document with no rect printed beside it, and rank 5 in section 4.5 rests on it. The first draft's rect is unrecorded and was not recoverable. A fresh-context sweep of five plausible rects (`x560 w900`, `x400 w800`, `x320 w960`, `x300 w1000`, `x210 w1390`) over rows 240 to 300 reads the s=16 delta as **exactly 0.000 in every one**, with absolute s=16 values ranging 17.52 to 25.60; the closest to the printed row is `x400 w800` at 20.546/20.546 (s=1 34.364/35.125), and the tooling default `x560 w900` is the FARTHEST at 17.52/17.52. (An earlier merge-time note wrongly named the default as the closest reproducible choice and attached the x400 numbers to it.) The row values therefore stand as rect-sensitivity evidence with the rect itself recorded as lost: the finding that matters, shipped and bare identical at s=16, is rect-independent across all five
 
 Two readings, both real and not in conflict. Through 17 to 84 m the carpet **adds 55
 per cent of coarse structure** (14.96 against 9.67) while **removing 4.34 counts of
