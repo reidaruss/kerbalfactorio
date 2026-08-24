@@ -27,9 +27,12 @@ import type * as THREE from 'three';
 // scale split off `stone`) and `ember` (look audit R6, the firebox peep and
 // sight strip's emissive map) join the union for the same reason paintchip
 // and rust did above.
+// RN-2740: `snow` joins for the same reason, and unlike paintchip and rust it
+// arrives WITH its consumer -- `Snow` points at it in the same commit, so this
+// union entry is load-bearing from the first build rather than reserved.
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
   | 'paintchip' | 'rust' | 'masonry' | 'concrete' | 'ember' | 'timber'
-  | 'leaf' | 'grass' | 'canopy' | 'suitfab' | 'suitplate' | 'flat';
+  | 'snow' | 'leaf' | 'grass' | 'canopy' | 'suitfab' | 'suitplate' | 'flat';
 
 /**
  * Role -> family. This is a COPY of `surfaces.json`'s two tables and it is
@@ -195,23 +198,33 @@ export const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   Fang: 'fur',
   EmissiveState: 'flat', EyeDark: 'flat', EyeGlow: 'flat', Glass: 'flat',
   Ice: 'flat', Oil: 'flat', Skin: 'flat', Water: 'flat',
-  // RN-2700 (World Audit R6 rank 1). `Snow` is a SPLIT off `Ice`, on the same
-  // shape as RN-1780's `Masonry` off `Rock` and RN-1880's `Haft` off `Bark`:
-  // one row was carrying two substances, and the one it described correctly
-  // was the polar pressure ridge rather than the 22 cm mountain drift. It
-  // stays on `flat` and the audit's own framing of this seam is refuted rather
-  // than followed: R6 named the FAMILY as the defect ("the same surface family
-  // as glass, oil, skin, water and every status chip"), and measured, the
-  // 46.21-count warm inversion at `mtnslope` row 191 lives entirely in the
-  // MATERIAL that `Ice` was handing the drift, a 33-count-of-chroma blue at
-  // roughness 0.25. `flat` was never binding a map to snow and could not have
-  // caused it. See texgen's FLAT_ROLES entry for why no family here is a
-  // picture of snow and rendering.md 2.48 for the owed one.
+  // RN-2700 (World Audit R6 rank 1) split `Snow` off `Ice` and left it on
+  // `flat`. RN-2740 moves it to its own family, and the reversal is worth
+  // stating rather than just editing, because BOTH decisions are correct and
+  // only one fact separates them.
+  //
+  // R6 named the FAMILY as the defect ("the same surface family as glass, oil,
+  // skin, water and every status chip"). That framing was REFUTED and stays
+  // refuted: `flat` binds no map, so it could not have caused the 46.21-count
+  // warm inversion at `mtnslope` row 191, and RN-2700 proved by isolation that
+  // the inversion lived in the MATERIAL -- a 33-count-of-chroma blue at
+  // roughness 0.25 -- of which the palette hex carried 88 per cent of the
+  // recovery. Nothing here revisits that.
+  //
+  // What RN-2700 could not answer was the MICRO-RELIEF half, and its stated
+  // reason for staying on `flat` was that no texgen family was a picture of
+  // snow: borrowing `coarse` would have divided a soil map's spread about a
+  // 0.1806 mean back through `material.color` and swung a 0.76-albedo drift by
+  // half its value every 0.75 m. RN-2740 authored the family instead of
+  // borrowing one, and re-measured that exact trap against it before moving:
+  // mean 0.5574, per-texel ratio 0.9053..1.0952, so the drift renders
+  // 0.691..0.836 and the tile-mean luma moves +0.0166 per cent. See texgen's
+  // ROLE_FAMILY entry and rendering.md 2.53.
   //
   // Moves in the same commit as texgen's table (RN-100's rule:
   // verifyAgainstManifest makes a one-sided move a failed smoke run, and
   // check-roles.mjs makes it a failed build).
-  Snow: 'flat',
+  Snow: 'snow',
   // RN-1780 (look audit R6): the firebox peep and sight strip. A role of its
   // own rather than a re-point of `EmissiveState` (which stays `flat` for
   // every status chip in the game, 23 other build scripts' worth), because

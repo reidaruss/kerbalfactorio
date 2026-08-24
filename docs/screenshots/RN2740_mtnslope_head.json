@@ -1,0 +1,942 @@
+{
+ "valid": true,
+ "shot": "mtnslope",
+ "why": "the eye on a MOUNTAIN SLOPE facing uphill: the steep-substrate frame, where the terrain material has to carry the whole picture",
+ "poolRefused": 0,
+ "peaceful": {
+  "armed": false,
+  "page": "",
+  "infiniteFuel": false,
+  "fullKg": 0,
+  "slotKey": "auto",
+  "propellantKg": 0,
+  "orbitAltM": 100000,
+  "assisted": true,
+  "used": [
+   "peaceful"
+  ],
+  "firstAtMs": 1787528410851,
+  "log": [
+   {
+    "id": "peaceful",
+    "done": true,
+    "message": "peaceful: nothing more will be dispatched, 3 cleared",
+    "detail": {
+     "peaceful": true,
+     "cleared": 3
+    }
+   }
+  ]
+ },
+ "vitals": {
+  "hp": 150,
+  "maxHp": 150,
+  "deaths": 0,
+  "hurtEvents": 0
+ },
+ "harvest": {
+  "field": {
+   "nodes": 111,
+   "empty": 0,
+   "felled": 0,
+   "collapsing": 0,
+   "batches": 4,
+   "instances": 152,
+   "free": 4194,
+   "capacity": 128,
+   "slots": 152,
+   "lod0": 9,
+   "lod1": 49,
+   "lod2": 1,
+   "lod3": 52,
+   "lodTiers": 4,
+   "lodSwitches": 2107,
+   "lodSwitchesLastFrame": 0,
+   "ceiling": 16384,
+   "grows": 10,
+   "refused": 0,
+   "updateMs": 0.018,
+   "updateMsLast": 0,
+   "composeSkips": 111,
+   "shadowOff": 0,
+   "allTier3": false,
+   "cascOk": true,
+   "fastChecked": 0,
+   "fastMismatch": 0
+  },
+  "tree": {
+   "enabled": true,
+   "radiusM": 620,
+   "live": 0,
+   "cells": 1476,
+   "known": 0,
+   "pending": 0,
+   "wanted": 0,
+   "delivered": 0,
+   "deliveredFraction": 0,
+   "offeredCells": 3017,
+   "biomeZeroCells": 0,
+   "treelineCells": 1476,
+   "refusedSlope": 0,
+   "wetCells": 1,
+   "refusedWater": 0,
+   "refusedClearing": 6,
+   "cellsCapped": 0,
+   "drainedOnRestore": 0,
+   "regrowsPrevented": 0,
+   "forgotten": 2097,
+   "scans": 2,
+   "lastScanMs": 0,
+   "backlog": 0
+  },
+  "source": "game"
+ },
+ "frame": {
+  "w": 1600,
+  "h": 900
+ },
+ "boxPx": [
+  400,
+  414,
+  1200,
+  540
+ ],
+ "box": {
+  "px": 100800,
+  "luma": 127.06,
+  "rgb": [
+   131.12,
+   128,
+   105.7
+  ],
+  "warm": 25.41,
+  "sat": 0.217,
+  "p05": 12.8,
+  "p50": 143.82,
+  "p95": 196.32,
+  "iqr": 88.55,
+  "loFrac": 0.101,
+  "hiFrac": 0.011,
+  "lin": {
+   "Y": 0.271773,
+   "rgb": [
+    0.292186,
+    0.275096,
+    0.17874
+   ]
+  },
+  "blackFrac": 0,
+  "col": {
+   "std": 34.35,
+   "minLag": 4,
+   "maxLag": 266,
+   "firstMin": 159,
+   "lag": 257,
+   "peak": -0.05
+  }
+ },
+ "extraPx": {
+  "upL": [
+   80,
+   90,
+   320,
+   180
+  ],
+  "upR": [
+   1280,
+   90,
+   1520,
+   180
+  ],
+  "upC": [
+   640,
+   297,
+   960,
+   342
+  ],
+  "hzBand": [
+   80,
+   414,
+   400,
+   504
+  ],
+  "mid": [
+   640,
+   486,
+   1120,
+   540
+  ],
+  "nearG": [
+   320,
+   639,
+   1280,
+   684
+  ]
+ },
+ "extra": {
+  "upL": {
+   "px": 21600,
+   "luma": 80.76,
+   "rgb": [
+    82.41,
+    81.29,
+    70.58
+   ],
+   "warm": 11.83,
+   "sat": 0.185,
+   "p05": 12.72,
+   "p50": 81.49,
+   "p95": 159.4,
+   "iqr": 76.19,
+   "loFrac": 0.164,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.115333,
+    "rgb": [
+     0.121948,
+     0.116748,
+     0.081835
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 24.8,
+    "minLag": 4,
+    "maxLag": 80,
+    "firstMin": 80,
+    "lag": null,
+    "peak": null
+   }
+  },
+  "upR": {
+   "px": 21600,
+   "luma": 74.65,
+   "rgb": [
+    75.72,
+    75.47,
+    63.33
+   ],
+   "warm": 12.39,
+   "sat": 0.198,
+   "p05": 17.78,
+   "p50": 70.28,
+   "p95": 147.33,
+   "iqr": 63.84,
+   "loFrac": 0.119,
+   "hiFrac": 0,
+   "lin": {
+    "Y": 0.094836,
+    "rgb": [
+     0.100015,
+     0.096233,
+     0.065743
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 8.04,
+    "minLag": 4,
+    "maxLag": 80,
+    "firstMin": 28,
+    "lag": 47,
+    "peak": 0.274
+   }
+  },
+  "upC": {
+   "px": 14400,
+   "luma": 69.32,
+   "rgb": [
+    69.08,
+    69.97,
+    63.59
+   ],
+   "warm": 5.49,
+   "sat": 0.159,
+   "p05": 12.94,
+   "p50": 57.78,
+   "p95": 171.14,
+   "iqr": 64.77,
+   "loFrac": 0.194,
+   "hiFrac": 0.017,
+   "lin": {
+    "Y": 0.096391,
+    "rgb": [
+     0.098484,
+     0.098066,
+     0.073638
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 22,
+    "minLag": 4,
+    "maxLag": 106,
+    "firstMin": 10,
+    "lag": 12,
+    "peak": 0.219
+   }
+  },
+  "hzBand": {
+   "px": 28800,
+   "luma": 122.6,
+   "rgb": [
+    126.73,
+    123.56,
+    100.97
+   ],
+   "warm": 25.76,
+   "sat": 0.23,
+   "p05": 16.58,
+   "p50": 138.25,
+   "p95": 187.97,
+   "iqr": 75.78,
+   "loFrac": 0.098,
+   "hiFrac": 0.006,
+   "lin": {
+    "Y": 0.245524,
+    "rgb": [
+     0.265033,
+     0.248562,
+     0.15798
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 22.48,
+    "minLag": 4,
+    "maxLag": 106,
+    "firstMin": 106,
+    "lag": null,
+    "peak": null
+   }
+  },
+  "mid": {
+   "px": 25920,
+   "luma": 143.02,
+   "rgb": [
+    149.09,
+    143.72,
+    118.23
+   ],
+   "warm": 30.85,
+   "sat": 0.227,
+   "p05": 11.86,
+   "p50": 170.74,
+   "p95": 200.32,
+   "iqr": 62.79,
+   "loFrac": 0.129,
+   "hiFrac": 0.016,
+   "lin": {
+    "Y": 0.345605,
+    "rgb": [
+     0.378511,
+     0.348032,
+     0.224661
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 55.22,
+    "minLag": 4,
+    "maxLag": 160,
+    "firstMin": 119,
+    "lag": 126,
+    "peak": -0.006
+   }
+  },
+  "nearG": {
+   "px": 43200,
+   "luma": 160.79,
+   "rgb": [
+    167.21,
+    161.82,
+    131.7
+   ],
+   "warm": 35.51,
+   "sat": 0.216,
+   "p05": 76.88,
+   "p50": 172.25,
+   "p95": 197.39,
+   "iqr": 32.76,
+   "loFrac": 0.01,
+   "hiFrac": 0.005,
+   "lin": {
+    "Y": 0.38256,
+    "rgb": [
+     0.416388,
+     0.38617,
+     0.247194
+    ]
+   },
+   "blackFrac": 0,
+   "col": {
+    "std": 27.18,
+    "minLag": 4,
+    "maxLag": 320,
+    "firstMin": 63,
+    "lag": 105,
+    "peak": 0.163
+   }
+  }
+ },
+ "world": {
+  "px": 1440000,
+  "luma": 114.78,
+  "rgb": [
+   118.91,
+   115.45,
+   96.01
+  ],
+  "warm": 22.9,
+  "sat": 0.212,
+  "p05": 15.87,
+  "p50": 125.04,
+  "p95": 189.39,
+  "iqr": 88.98,
+  "loFrac": 0.09,
+  "hiFrac": 0.007,
+  "lin": {
+   "Y": 0.222623,
+   "rgb": [
+    0.24139,
+    0.224489,
+    0.148879
+   ]
+  },
+  "blackFrac": 0,
+  "col": {
+   "std": 11.2,
+   "minLag": 4,
+   "maxLag": 533,
+   "firstMin": 159,
+   "lag": 176,
+   "peak": 0.22
+  }
+ },
+ "sun": {
+  "mode": "elev",
+  "wantDot": 0.7,
+  "sunT": 0.517,
+  "elevDot": 0.699,
+  "err": 0.001,
+  "tol": 0.06,
+  "solve": {
+   "wantDot": 0.7,
+   "gotDot": 0.6991,
+   "err": 0.0009,
+   "t": 0.5166666666666667
+  }
+ },
+ "stationClock": null,
+ "captureDiag": null,
+ "iblSettleIters": 0,
+ "atCapture": {
+  "cam": {
+   "posE": [
+    -5.820766091346741e-11,
+    1.0913936421275139e-11,
+    0
+   ],
+   "quat": [
+    0.32688336820920694,
+    -0.0034223451262073317,
+    0.5837680324747668,
+    0.7432028225205961
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": [
+   0.3659476866048432,
+   0.006252021588102982,
+   0.6291694311840663,
+   0.6857033103012874
+  ],
+  "drawPosB": [
+   -858271.2977330453,
+   -59543.7649358362,
+   509730.24193675286
+  ],
+  "drawPosE": [
+   -368956.4531944969,
+   -81030.01668899838,
+   154952.37849077082
+  ],
+  "drawEyeDistM": 408295.197,
+  "drawVisible": false,
+  "drawnParts": 0,
+  "staleMaxM": 0,
+  "drawBoundM": 36.003,
+  "eyeLocal": [
+   77084.14275758364,
+   -400473.4795334748,
+   19595.78230409231
+  ],
+  "eyeLocalOverBound": 11340.58818959404,
+  "clock": {
+   "clockS": 0,
+   "stampedTick": 0,
+   "tick": 549,
+   "pos": [
+    -858263.2696702366,
+    -59543.74884326401,
+    509743.7610296427
+   ],
+   "vel": [
+    959.5420992689099,
+    1.924294694863456,
+    1615.8203046194653
+   ],
+   "speedMps": 1879.2551716038993,
+   "alpha": 0.49799999999996014,
+   "renderTick": 548.4979999999999,
+   "renderPos": [
+    -858271.2977330453,
+    -59543.7649358362,
+    509730.24193675286
+   ],
+   "renderPosVsIntegerM": 15.723101602272388
+  },
+  "frames": 1375,
+  "tick": 549,
+  "rebases": 2,
+  "eyeRel": [
+   -5.820766091346741e-11,
+   1.0913936421275139e-11,
+   0
+  ]
+ },
+ "preCapture": {
+  "cam": {
+   "posE": [
+    -5.820766091346741e-11,
+    1.0913936421275139e-11,
+    0
+   ],
+   "quat": [
+    0.32688336820920694,
+    -0.0034223451262073317,
+    0.5837680324747668,
+    0.7432028225205961
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": [
+   0.3647190631249776,
+   0.0047434820393692815,
+   0.6298839194927051,
+   0.6857140456020194
+  ],
+  "drawPosB": [
+   -860380.4247393012,
+   -59547.49408450756,
+   506161.6546852158
+  ],
+  "drawPosE": [
+   -371065.5802007528,
+   -81033.74583766975,
+   151383.79123923375
+  ],
+  "drawEyeDistM": 408868.176,
+  "drawVisible": false,
+  "drawnParts": 0,
+  "staleMaxM": 0,
+  "drawBoundM": 36.003,
+  "eyeLocal": [
+   78315.97723498906,
+   -400707.58826634486,
+   21753.653478609544
+  ],
+  "eyeLocalOverBound": 11356.502947170142,
+  "clock": {
+   "clockS": 0,
+   "stampedTick": 0,
+   "tick": 417,
+   "pos": [
+    -860366.9211622323,
+    -59547.473391274965,
+    506184.6099819087
+   ],
+   "vel": [
+    952.8656239387171,
+    1.4616532193833518,
+    1619.7669481396842
+   ],
+   "speedMps": 1879.2551716038995,
+   "alpha": 0.14968814968813368,
+   "renderTick": 416.14968814968813,
+   "renderPos": [
+    -860380.4247393012,
+    -59547.49408450756,
+    506161.6546852158
+   ],
+   "renderPosVsIntegerM": 26.632549035441972
+  },
+  "frames": 911,
+  "tick": 417,
+  "rebases": 2,
+  "eyeRel": [
+   -5.820766091346741e-11,
+   1.0913936421275139e-11,
+   0
+  ]
+ },
+ "photoCapture": {
+  "cam": {
+   "posE": [
+    -5.820766091346741e-11,
+    1.0913936421275139e-11,
+    0
+   ],
+   "quat": [
+    0.32688336820920694,
+    -0.0034223451262073317,
+    0.5837680324747668,
+    0.7432028225205961
+   ],
+   "fovDeg": 60,
+   "near": 0.1,
+   "far": 100000
+  },
+  "drawQuat": [
+   0.3647177841136535,
+   0.0047419126232634305,
+   0.6298846613999156,
+   0.685714055236593
+  ],
+  "drawPosB": [
+   -860382.6112708949,
+   -59547.49743132006,
+   506157.93757713976
+  ],
+  "drawPosE": [
+   -371067.7667323465,
+   -81033.74918448224,
+   151380.07413115771
+  ],
+  "drawEyeDistM": 408868.784,
+  "drawVisible": false,
+  "drawnParts": 0,
+  "staleMaxM": 0,
+  "drawBoundM": 36.003,
+  "eyeLocal": [
+   78317.25851774833,
+   -400707.8371835498,
+   21755.8979710172
+  ],
+  "eyeLocalOverBound": 11356.519856741304,
+  "clock": {
+   "clockS": 0,
+   "stampedTick": 0,
+   "tick": 417,
+   "pos": [
+    -860366.9211622323,
+    -59547.473391274965,
+    506184.6099819087
+   ],
+   "vel": [
+    952.8656239387171,
+    1.4616532193833518,
+    1619.7669481396842
+   ],
+   "speedMps": 1879.2551716038995,
+   "alpha": 0.01199999999982694,
+   "renderTick": 416.01199999999983,
+   "renderPos": [
+    -860382.6112708949,
+    -59547.49743132006,
+    506157.93757713976
+   ],
+   "renderPosVsIntegerM": 30.945068491206765
+  },
+  "frames": 912,
+  "tick": 417,
+  "rebases": 2,
+  "eyeRel": [
+   -5.820766091346741e-11,
+   1.0913936421275139e-11,
+   0
+  ]
+ },
+ "repeats": null,
+ "vmHidden": false,
+ "vmRatio": null,
+ "vmArms": null,
+ "pose": {
+  "yawDeg": 300,
+  "pitchDeg": -8,
+  "latDeg": 2.036,
+  "lonDeg": 144.056,
+  "altM": 1.62
+ },
+ "postState": {
+  "post": true,
+  "ao": true,
+  "contact": true,
+  "underwater": true,
+  "bloom": true,
+  "grade": true,
+  "aa": true,
+  "contactRan": true,
+  "underwaterRan": false,
+  "headUnderM": -1e+30,
+  "sun": [
+   -0.1474340683877911,
+   0.3872324843550918,
+   0.9101176838952245
+  ],
+  "csLengthM": 0.45,
+  "csSteps": 8,
+  "csStrength": 0.72
+ },
+ "shade": null,
+ "shadow": {
+  "cascades": 3,
+  "mapSize": 2048,
+  "vramMB": 48,
+  "splits": [
+   22,
+   80,
+   300
+  ],
+  "active": true,
+  "soft": false,
+  "texel0M": 0.01547,
+  "biasM": 0.02,
+  "biasSign": 1,
+  "biasUnits": 0.0000025003125390673835,
+  "reversedDepth": true,
+  "biasLegacy": false,
+  "biasRaw": null,
+  "castOff": false,
+  "castRaw": null
+ },
+ "ibl": {
+  "builds": 7,
+  "lastMs": 0.4,
+  "ready": true,
+  "size": 256,
+  "groundBuilds": 7,
+  "ground": true,
+  "biome": 5
+ },
+ "scatter": {
+  "canopyProps": 0,
+  "canopyCells": 0,
+  "canopyM2": 0,
+  "canopyPerM2": 0,
+  "canopyDelivered": 0,
+  "canopyRadiusM": 3500,
+  "canopyShade": false,
+  "canopyBareCells": 128906,
+  "canopyShadeMean": 0.0048,
+  "canopyShadeSd": 0.0119,
+  "canopyShadeMax": 0.1369,
+  "canopyShadeCells": 22016,
+  "canopyPlanetMean": 0.0582,
+  "canopyPlanetSd": 0.1155,
+  "canopyOfferedCells": 156466,
+  "canopySlopeCells": 0,
+  "mid": true,
+  "midEdge": true,
+  "midProps": 0,
+  "midCards": 0,
+  "midCells": 0,
+  "midM2": 0,
+  "midPerM2": 0,
+  "midDelivered": 0,
+  "propsPlaced": 10930,
+  "cellsScattered": 26461,
+  "wantedPerM2": 0.09445,
+  "placedPerM2": 0.0948,
+  "deliveredFraction": 1.0037,
+  "cellsCapped": 0,
+  "chunksCapped": 0,
+  "canopyTailM": 0,
+  "capCells": 0,
+  "capOfferCells": 92160,
+  "capCellFrac": 0,
+  "capScaleMin": 1,
+  "capFair": true,
+  "chunksRefused": 0,
+  "scatterBacklog": 0,
+  "chunks": 90,
+  "poolRefused": 0,
+  "poolCeiling": 2490368
+ },
+ "atmos": {
+  "sigma": 0.00014,
+  "scaleM": 400,
+  "ms": 0.55,
+  "baseM": 4777.6856078224955,
+  "datumOn": 1,
+  "atmosOn": 1
+ },
+ "treeline": {
+  "amp": 1,
+  "mottle": 0.22,
+  "reachM": 1400,
+  "paint": 0,
+  "far": 0,
+  "floorShade": 1,
+  "stand": 1,
+  "floorLaw": 0,
+  "grove": 1,
+  "tone": {
+   "r": 0.05629622696693897,
+   "g": 0.16993117688950063,
+   "b": 0.025900673628411284,
+   "live": true
+  },
+  "self": {
+   "amp": 1,
+   "k": 3.2,
+   "floor": 0.137,
+   "cardMu": 0.43777598732438705,
+   "sinSun": 0.6964175838091001,
+   "cardShade": 0.2524524108682672,
+   "live": true,
+   "cardShadeRGB": [
+    0.06401034966567153,
+    0.33164262176237874,
+    0.02289483995695407
+   ],
+   "spectral": true,
+   "roughOverride": null,
+   "floorDerived": 0.45579482570846336,
+   "envOverride": null,
+   "uniform": [
+    1,
+    3.2,
+    0.08
+   ]
+  },
+  "crownNormal": {
+   "parts": 3,
+   "verts": 24,
+   "meanUp": 0.9471549441417059,
+   "minAbsOutOfPlane": 0.057096365839242935,
+   "minAzimuthOut": 1,
+   "downVerts": 0,
+   "path": "crown",
+   "ask": {
+    "on": true,
+    "flankDeg": 25,
+    "cardMix": 1
+   }
+  },
+  "crownFace": {
+   "raw": null,
+   "mode": 1,
+   "installed": true,
+   "compiles": 2,
+   "misses": [],
+   "materials": [
+    "props:OF_Canopy:canopy"
+   ],
+   "hazards": {
+    "normalMap": 0,
+    "bumpMap": 0,
+    "clearcoatNormalMap": 0,
+    "anisotropy": 0,
+    "notDoubleSided": 0,
+    "flatShaded": 0
+   }
+  },
+  "crownEnv": {
+   "raw": null,
+   "installed": true,
+   "forced": null,
+   "tau": 1.4008831594380386,
+   "skyView": 0.4016440328220623,
+   "sceneIntensity": 1,
+   "applied": 0.4016440328220623,
+   "appliedLive": 0.4016440328220623,
+   "ownEnvMap": true,
+   "sameTexture": true,
+   "writes": 1386,
+   "materials": [
+    "props:OF_Canopy:canopy"
+   ]
+  }
+ },
+ "phase": {
+  "present": false,
+  "amp": 0,
+  "shipped": 0,
+  "periodM": 256,
+  "probeRepeats": 128,
+  "wantPeriodM": 2,
+  "divides": true,
+  "repeats": 128,
+  "quantumM": 0.000030517578125,
+  "pmQuantumM": 0.03125,
+  "ratio": 1024
+ },
+ "emit": {
+  "installed": true,
+  "flagPresent": false,
+  "amp": 1,
+  "glow": 1,
+  "glowFlagPresent": false,
+  "spliced": 60,
+  "misses": [],
+  "max": 6,
+  "registered": 0,
+  "selected": 0,
+  "dropped": 0,
+  "sceneLights": 2,
+  "fireHot": 40,
+  "fireEmber": 10.4,
+  "wrap": 0.35,
+  "emitters": []
+ },
+ "render": {
+  "triangles": 692518,
+  "calls": 49,
+  "programs": 47,
+  "vramMB": 114.8,
+  "frameMs": {
+   "p50": 4.4,
+   "p95": 5.6,
+   "p99": 6.1,
+   "worst": 7.8
+  },
+  "cpuMs": 0.4,
+  "frames": 1386,
+  "passMs": {
+   "sky": 0,
+   "far": 0.2,
+   "near": 3.9,
+   "viewModel": 0.3,
+   "post": 0.1,
+   "total": 4.5
+  }
+ },
+ "setup": {
+  "teleported": true,
+  "converged": true,
+  "spins": 0,
+  "biome": 5,
+  "eyeAltM": 1.62,
+  "sunYawOffDeg": 0.45,
+  "sunElevDeg": 44.31,
+  "upCheck": 0,
+  "regime": "SURFACE",
+  "chunks": {
+   "resident": 327,
+   "near": 184,
+   "far": 143,
+   "pending": 0,
+   "hidden": 0,
+   "fading": 0,
+   "converged": true
+  },
+  "tickAdvanced": true
+ },
+ "log": [],
+ "cropPng": null
+}

@@ -236,6 +236,27 @@
       "texels_per_m": 341.3333333333333,
       "albedo_mean_linear": 0.1986
     },
+    "snow": {
+      "normal": {
+        "file": "of_snow_n.png",
+        "bytes": 204156,
+        "sha256": "5dfa2a14111972da6c53380c6627365d82315142469d3dbcf947d1abf8514561"
+      },
+      "orm": {
+        "file": "of_snow_orm.png",
+        "bytes": 78809,
+        "sha256": "fa746be21a8e1d5a14bfa434b23c0a618854b1ea02cffef0f0eb223c616af6c7"
+      },
+      "albedo": {
+        "file": "of_snow_a.png",
+        "bytes": 80672,
+        "sha256": "5767297bad1218d27afe352d208dc61f530aaa22d08268d731cc8c9cd6348d6a"
+      },
+      "tile_m": 1.5,
+      "size_px": 512,
+      "texels_per_m": 341.3333333333333,
+      "albedo_mean_linear": 0.5574
+    },
     "stone": {
       "normal": {
         "file": "of_stone_n.png",
@@ -403,6 +424,7 @@
     "RockDark": "stone",
     "Rubber": "coarse",
     "Sand": "coarse",
+    "Snow": "snow",
     "Soil": "coarse",
     "Soot": "rust",
     "Steel": "panel",
@@ -423,7 +445,6 @@
     "Ice": "near-specular; relief belongs in the mesh at this poly count",
     "Oil": "a pool surface, deliberately mirror-flat",
     "Skin": "1.5 cm of visible wrist; a pore map is 5.6 MB for nothing",
-    "Snow": "no family in this file is a picture of snow; borrowing coarse would put a soil map's own spread about a 0.1806 mean on the most uniform surface in the world. A snow family is owed (RN-2700)",
     "Water": "transparent and animated by the shader, not by a map"
   }
 }
