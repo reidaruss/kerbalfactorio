@@ -654,6 +654,49 @@
     //       cannot see it and three can: the claim is about `iqr` and `sat`
     //       FALLING monotonically from `nearG` to `hzBand`, not about any one
     //       of their values.
+    //
+    //   RN-2750, RE-PLACED, NOT RETIRED. The rect that sat here from RN-2065
+    //   to RN-2740 (`x0.0500 y0.4600 x0.2500 y0.5600`, pixels 80,414,400,504)
+    //   held the debug HUD's own key legend across the top 51 of its 90 rows
+    //   (RN-2730's finding, rendering.md 2.51.5: max 225.25 in every arm
+    //   including `?atmos=0`, 11.5 counts above anything terrain can produce)
+    //   AND straddled the horizon (`Atmosphere.glsl.ts:480-486`'s own second
+    //   reason `box` is unreliable for structure), so it held sky, HUD and
+    //   ground all at once and no number was ever safe to take on it. The
+    //   instrument set still needs a "furthest ridge" reading -- `mid`/
+    //   `nearG`'s monotone claim has nowhere to fall FROM without one -- so
+    //   this is a RE-PLACEMENT, not a retirement: same key, same intent,
+    //   moved to `x460 y452 x780 y515`, RN-2730's own `vistaSil` window
+    //   (`rn2730sky.mjs` located the skyline at rows 442-450 on the
+    //   `?aerosol=0` control; this sits in its "far" zone, 452-515, PURE
+    //   GROUND below the skyline rather than straddling it) shifted onto
+    //   the HUD-free span that same lane already proved out (x460 clears the
+    //   legend, which ends near x415; x780 clears the crosshair, which
+    //   starts near x790). Proved clean per NUMBERS rule 6 with an
+    //   independent instrument, not assumed from geometry: `rn2750hudsweep.
+    //   mjs` (this repo's own hide-every-DOM-overlay-node control) reads
+    //   0 of 20,160 pixels moved at `vista`, `vistadawn` and `vistanoon` and
+    //   a 17-to-19-of-20,160 residual at `mtnslope` that its OWN null
+    //   (nothing hidden, same settle gap) reproduces at 19, i.e. settle
+    //   jitter, not HUD. Subject: the same far ridge this file has cited
+    //   throughout as "vista, a 4.7 km ridge" (rendering.md, e.g. the
+    //   `vista.hzBand` entries at R3/R4/R5); this repair moves the WINDOW
+    //   onto a HUD-clean and horizon-clean span of that same ridge rather
+    //   than re-deriving its range, which a flat-plane inversion cannot do
+    //   this close to the geometric horizon (the exact row the naive
+    //   `rangeAtRow` formula this file uses elsewhere for `flyover`/
+    //   `midfield` diverges to infinity is inside this rectangle's own
+    //   span). Every reading against the RETIRED coordinates that predates
+    //   RN-2750 stays in the record un-rewritten (NUMBERS.md rule 4);
+    //   rendering.md 2.54 carries the pointer note. This lane's own sweep
+    //   (2.54) found the SAME broken coordinates, or a different broken
+    //   rectangle under the same `hzBand` key, at `meadow`/`meadownight`
+    //   (`x80 y270 x640 y306`, its own PRE-EXISTING "this rect is sky, not
+    //   terrain" finding at section 2.30.2, now ALSO proved to carry HUD
+    //   pixels) and at `flyover`/`forestair` (`x320 y315 x1280 y338`); both
+    //   are OUT OF SCOPE for this repair (a different rectangle, on a
+    //   different pose, not the one this lane's brief named) and are routed
+    //   in 2.54 rather than silently left unswept.
     //   `nearG` DELIBERATELY STOPS ABOVE y = 0.76 so it cannot clip the
     //       first-person view model, which occupies the bottom 12 per cent of
     //       every ground frame in this file (section 2.8 R4).
@@ -668,7 +711,7 @@
         skyL: [0.0500, 0.1000, 0.2000, 0.2000],
         skyR: [0.8000, 0.1000, 0.9500, 0.2000],
         skyHz: [0.4000, 0.3300, 0.6000, 0.3800],
-        hzBand: [0.0500, 0.4600, 0.2500, 0.5600],
+        hzBand: [0.2875, 0.5022, 0.4875, 0.5722],
         mid: [0.4000, 0.5400, 0.7000, 0.6000],
         nearG: [0.2000, 0.7100, 0.8000, 0.7600],
       },
@@ -689,7 +732,7 @@
         skyL: [0.0500, 0.1000, 0.2000, 0.2000],
         skyR: [0.8000, 0.1000, 0.9500, 0.2000],
         skyHz: [0.4000, 0.3300, 0.6000, 0.3800],
-        hzBand: [0.0500, 0.4600, 0.2500, 0.5600],
+        hzBand: [0.2875, 0.5022, 0.4875, 0.5722],
         mid: [0.4000, 0.5400, 0.7000, 0.6000],
         nearG: [0.2000, 0.7100, 0.8000, 0.7600],
       },
@@ -747,7 +790,7 @@
         skyL: [0.0500, 0.1000, 0.2000, 0.2000],
         skyR: [0.8000, 0.1000, 0.9500, 0.2000],
         skyHz: [0.4000, 0.3300, 0.6000, 0.3800],
-        hzBand: [0.0500, 0.4600, 0.2500, 0.5600],
+        hzBand: [0.2875, 0.5022, 0.4875, 0.5722],
         mid: [0.4000, 0.5400, 0.7000, 0.6000],
         nearG: [0.2000, 0.7100, 0.8000, 0.7600],
       },
@@ -830,6 +873,13 @@
     // at this pose they still mean what they say: `hzBand` is the far ridge
     // over the shoulder of the slope, `mid` the middle distance, `nearG` the
     // ground at the feet, and it is `nearG` that RN-2163's pair is quoted on.
+    //
+    // RN-2750. `hzBand` moved with `vista`'s (the `vista` block above carries
+    // the full rationale and the proof); the pre-RN-2750 coordinates read HUD
+    // here too (17.4 per cent of the rectangle, rendering.md 2.54) and are
+    // never used again. `upL` is UNCHANGED and is a SEPARATE, still-open
+    // finding from the same sweep (42.1 per cent, 2.54): out of this repair's
+    // scope because the brief named `hzBand`, not the sky triple.
     mtnslope: {
       scenario: 'walk', needsSandbox: false,
       lat: 2.036, lon: 144.056, yaw: 300, pitch: -8,
@@ -839,7 +889,7 @@
         upL: [0.0500, 0.1000, 0.2000, 0.2000],
         upR: [0.8000, 0.1000, 0.9500, 0.2000],
         upC: [0.4000, 0.3300, 0.6000, 0.3800],
-        hzBand: [0.0500, 0.4600, 0.2500, 0.5600],
+        hzBand: [0.2875, 0.5022, 0.4875, 0.5722],
         mid: [0.4000, 0.5400, 0.7000, 0.6000],
         nearG: [0.2000, 0.7100, 0.8000, 0.7600],
       },
@@ -3995,6 +4045,60 @@
     }
   }
 
+  // RN-2750. `{"hideHud": true}` -- THE CONTROL HALF OF THE HUD-OVERLAP SWEEP,
+  // and it is the reason `vista`'s `hzBand` could be proven broken rather than
+  // argued about (rendering.md 2.51.5). `grab()`/`stat()` above read `of.
+  // screenshot()`, a CANVAS-ONLY capture that is HUD-free by construction (this
+  // file's own header, "THE CAPTURE"), so this flag changes nothing this probe
+  // reports about ITSELF. What it changes is the SAVED PNG `run.mjs --out`
+  // writes via `page.screenshot()` AFTER this function returns: that capture
+  // DOES composite the HTML/CSS overlay, and `boxstat.mjs`/`pngdiff.mjs`/
+  // `pngmask.mjs` read committed rectangles off exactly that file. A rectangle
+  // proven clean against a `hideHud` PNG at the SAME pose has had every DOM
+  // overlay node this project draws removed from underneath it, not assumed
+  // absent.
+  //
+  // EVERY NODE THIS PROJECT EVER MOUNTS OVER THE CANVAS, BY ID, so a sweep does
+  // not have to trust that today's overlay set matches the list it was
+  // written against: `of-hud` (the debug stats/keys panel that broke `vista`),
+  // `of-cross` (crosshair), `of-carry`/`of-toast`/`of-gain`/`of-banner`/
+  // `of-prompt`/`of-health`/`of-mode`/`of-goals`/`of-hotbar` (`GameHud`,
+  // `HotbarBar`, `ObjectivePanel`, all `.of-ui`), `of-compass` (GP-700's
+  // bearing strip -- its own CSS reads `display: none` but a live capture at
+  // `forestfloor` measured it `display: block`, 460x34 at frame-top-centre,
+  // text "NWNW", so whatever inline override makes that true is live in an
+  // ordinary walk pose and this list does not trust the stylesheet alone
+  // about it again) and `of-navball` (the flight HUD, bottom of frame, live
+  // whenever a shot boards a vessel rather than walking).
+  //
+  // `!important` beats every rule in `game.css`/`app.css`/`navball.css`/
+  // `hotbar.css` today (none of them carries `!important` of its own), and
+  // READ BACK, not assumed: an id that exists but is still computed-visible
+  // after this refuses the frame, the same defence `hideVm` (RN-1876) uses,
+  // because a sweep that silently ships the treatment frame as its own
+  // control would be worse than not running at all. An id simply absent from
+  // this scenario's DOM (e.g. `of-navball` while walking) is not an error.
+  const HUD_IDS = ['of-hud', 'of-cross', 'of-carry', 'of-toast', 'of-gain',
+    'of-banner', 'of-prompt', 'of-health', 'of-mode', 'of-goals', 'of-hotbar',
+    'of-compass', 'of-navball'];
+  let hudHidden = false;
+  if (A.hideHud === true) {
+    const found = [];
+    for (const id of HUD_IDS) {
+      const el = document.getElementById(id);
+      if (el === null) continue;
+      el.style.setProperty('display', 'none', 'important');
+      found.push(id);
+    }
+    const stillVisible = found.filter((id) => (
+      getComputedStyle(document.getElementById(id)).display !== 'none'));
+    if (stillVisible.length > 0) {
+      return { valid: false, shot: name,
+        why: `hideHud did not take for: ${stillVisible.join(', ')}` };
+    }
+    hudHidden = found;
+  }
+
   const g0 = await grab();
   const { W, H, cx } = g0;
   const blob = g0.blob;
@@ -4321,6 +4425,10 @@
   return {
     valid: poolRefused === 0, shot: name, why: S.why,
     poolRefused,
+    // RN-2750. Which DOM overlay ids this capture actually found and hid, so a
+    // `hideHud` PNG's own report says what it removed instead of a reader
+    // having to trust the flag took by name alone.
+    hudHidden,
     // RN-2018. The enemy-suppression receipt, published rather than assumed,
     // so a frame taken without it is distinguishable from one taken with it in
     // the JSON alone. See the `peaceful` block above for the pair it cost.
