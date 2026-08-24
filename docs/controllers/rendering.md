@@ -1,7 +1,7 @@
 # Rendering & Graphics: Master Controller Context
 
 
-> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2750, `lane/hzband-repair`, **`vista`'S `hzBand` IS RE-PLACED, NOT RETIRED, AND THE SWEEP IT LICENSED FOUND SIXTY MORE COMMITTED RECTANGLES READING THE SAME OVERLAY.** RN-2730's own verifier proved `vista`'s committed `hzBand` (`x80,414,400,504`) contained the debug HUD's key legend (max 225.25 counts in every arm including `?atmos=0`) AND straddled the horizon; this lane re-placed it at `x460,452,780,515` (RN-2730's own `vistaSil` "far" zone, pure ground below the measured skyline at rows 442-450, clear of the HUD legend on the left and the crosshair on the right), proved BIT-IDENTICAL clean at `vista`/`vistadawn`/`vistanoon` and settle-jitter-only at `mtnslope` (its residual reproduced by its own null) with a NEW instrument built for exactly this question: `rn2750hudsweep.mjs` poses a shot ONCE, hides every DOM overlay node this project mounts (`of-hud`, `of-cross`, the whole `GameHud`/`HotbarBar`/`ObjectivePanel` family, `of-compass`, `of-navball`) with a read-back assertion, and diffs against a shipped capture -- with a `--nullcheck=1` companion (same pose, same settle gap, nothing hidden) that is REQUIRED before any verdict, because the first full sweep published a false positive: `pondside.box` read 83.66 per cent moved with the hide and 83.56 per cent moved with nothing hidden at all (water ripple). **THE SWEEP, RUN OVER ALL 145 COMMITTED RECTANGLES IN ALL 26 NAMED SHOTS**: 29 clean outright, 116 moved, and of those, **60 are real overlay contamination** (corroborated by a near-zero null) and **56 are scene animation** (corroborated by a null that already explains the reading, not HUD). The sixty resolve to four causes: the debug HUD itself (dominant; the pre-existing `skyL`/`upL` "sky triple" at `vista`/`vistadawn`/`vistanoon`/`mtnslope` reads 42 to 62 per cent, WORSE than `hzBand` ever was), the context-dependent interaction prompt (`forestfloor.box` 13.5 per cent, a live "Harvest Wood" tooltip over that pose's own calibration subject; `smelterhero`/`smelternight.strip` 100 per cent), the crosshair itself (`dawnsun`'s sun-disc rectangles, centred on the frame by the same construction that centres the crosshair), and the compass strip (`basedusk.skyHigh`, a node this lane also found is live despite its own CSS reading `display:none` with no override this lane could locate). Two OTHER poses share the `hzBand` key with a DIFFERENT broken rectangle -- `meadow`/`meadownight` (`x80,270,640,306`, ALREADY known to be pure sky per section 2.30.2, now also proved to carry HUD) and `flyover`/`forestair` (`x320,315,1280,338`) -- and are explicitly OUT OF SCOPE for this repair (a different rectangle than the one this lane's brief named) and routed in section 2.54 rather than silently left unswept. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, full four-pose **`rn2550guard` PASS 4 of 4, exit 0**. Scope proof: `git diff` on `artframe.js` is four one-line `hzBand` array changes (`vista`, `vistadawn`, `vistanoon`, `mtnslope`) plus the additive, default-off `hideHud`/`hudHidden` instrument plus comments -- no pose field outside `hzBand` moved, and none of the four `rn2550guard` poses (`forestairnoon`/`forestairlow`/`flyovernoon`/`flyoverlow`) is among the four touched shots. Historical readings against the retired `hzBand` coordinates stay in the record un-rewritten (NUMBERS rule 4); this banner and section 2.54 are the pointer note. Full record in section 2.54; frames `docs/screenshots/RN2750_vista_pair_*`. THIS LINE IS A POINTER: replace it, never append to it.
+> **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2750, `lane/hzband-repair`, corrected same day per a fresh-context verifier's FIX verdict, **`vista`'S `hzBand` IS RE-PLACED, NOT RETIRED, THE SWEEP IT LICENSED FOUND SIXTY-FOUR MORE COMMITTED RECTANGLES READING THE SAME OVERLAY, AND THIS LANE'S OWN SWEEP INSTRUMENT HAD A BUG THAT UNDERSTATED FOUR OF THEM.** RN-2730's own verifier proved `vista`'s committed `hzBand` (`x80,414,400,504`) contained the debug HUD's key legend AND straddled the horizon; this lane re-placed it at `x460,452,780,515` (RN-2730's own `vistaSil` "far" zone, pure ground below the measured skyline), proved BIT-IDENTICAL clean at `vista`/`vistadawn`/`vistanoon` and settle-jitter-only at `mtnslope`, and MEASURED the monotone claim the re-placement rests on (`iqr`/`sat` falling `nearG` 24.14/0.215 to `mid` 13.96/0.169 to the new `hzBand` 1.93/0.052). **THIS IS A RE-KEYING, NOT A CONTINUATION**: `hzBand` at these four poses is a different rectangle under the same name, breaking two standing baselines (rendering.md:13889's R5 figure `3.28/-2.07`, now `1.93/-3.31` at the same pose; :19575's RN-2740 `mtnslope` table, whose "bit-identical" claim is a delta between that lane's own two builds and stands, but a fresh read today gets `luma 100.54` not `0.00`) -- both named rather than left for a reader to discover by a mismatched number, and RN-34's own "add, don't move" precedent (rendering.md:3215) is departed from because the old rectangle was not merely off-topic like RN-34's, it was CONTAMINATED, so there was no clean continuity to protect. **THE SWEEP, ALL 145 COMMITTED RECTANGLES IN ALL 26 NAMED SHOTS, PUBLISHED IN FULL** (table in section 2.54.3, dataset at `docs/screenshots/RN2750_sweep_data.json`, not merely summarised): 26 clean, 64 REAL (an overlay node, corroborated by a near-zero null), 55 MOTION (a null that already explains the reading). The sixty-four resolve to FIVE causes, not four: the debug HUD (dominant; the `skyL`/`upL` sky-triple pair reads 42 to 62 per cent), the interaction prompt (`forestfloor.box` 13.5 per cent, `smelterhero`/`smelternight.strip` 100 per cent), the crosshair (`dawnsun`'s sun-disc rectangles), the compass strip (`basedusk.skyHigh`, `CompassHud.ts:120` setting `style.display='block'` INLINE over `game.css`'s stylesheet rule -- the mechanism this lane's first draft could not locate, now named), and a FIFTH found only through this lane's own instrument bug: `of-goals` (`ObjectivePanel.ts:70`, reasserted on EVERY DRAINED FRAME with no diff gate), which the sweep's first-draft, display-based hide lost a race against, producing four false negatives (`vista`/`vistadawn`/`vistanoon.skyR` read clean instead of 32.4 per cent; `mtnslope.upR` read 0.2 instead of 29.5 per cent) that a fresh-context verifier's review caught and this lane closed by switching the hide mechanism to `Node.remove()` (a detached node cannot be repainted by any later `.style` write, so there is no race left to lose) and re-capturing all six affected rectangles. **THE HISTORIC `skyL`/`upL` CONCLUSIONS ARE UNAFFECTED AND SO STATED WITH THE PROOF**: `of.screenshot()` calls `Renderer.ts:237`'s `capture()`, `this.r.domElement.toBlob(...)`, and a canvas's own `toBlob` cannot contain any other DOM element by the API's own definition -- every historical `skyL`/`upL` reading in this file came from that canvas-only path and this sweep indicts `page.screenshot()` readings only. Two OTHER poses share the `hzBand` key with a DIFFERENT broken rectangle -- `meadow`/`meadownight` and `flyover`/`forestair` -- and are out of scope for this repair, routed in section 2.54 rather than silently left unswept. The clean/MOTION split is stated as noise-limited (a fresh-context re-capture of `vista` read 3/1/3 against this lane's 3/2/2 on one pixel at the `thresh=6` boundary); only the 64-REAL count is claimed stable. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, full four-pose **`rn2550guard` PASS 4 of 4, exit 0**, re-confirmed after every correction. Scope proof unchanged: four one-line `hzBand` array changes plus the additive, default-off `hideHud`/`hudHidden` instrument (now removal-based) plus comments -- no pose field outside `hzBand` moved, and none of the four `rn2550guard` poses is among the four touched shots. Historical readings against the retired `hzBand` coordinates stay in the record un-rewritten, per the RN-2750 brief's own instruction (NUMBERS.md rule 4 is about an abandoned ALLOCATION NUMBER and does not apply to a historical reading -- corrected at its three mis-citations, here, in `artframe.js`'s comment and in section 2.54.1). Full record in section 2.54 (2.54.7 is the correction pass itself); frames `docs/screenshots/RN2750_vista_pair_*`. THIS LINE IS A POINTER: replace it, never append to it.
 
 >
 > *(previous pointer, kept one deep)* **Domain owner:** `rendering-controller` | **Reports to:** Admin | **Phase:** WEB (three.js, DW-1 pivot) | **Last updated:** 2026-08-23 (RN-2740, `lane/snow-family`, **THE `snow` TEXTURE FAMILY IS AUTHORED AND `Snow` REPOINTS OFF `flat`, BECAUSE THE ONE REASON IT WAS ON `flat` HAS BEEN REMOVED RATHER THAN OVERRULED.** RN-2700 answered World Audit R6's rank-1 defect in the PALETTE and left the MICRO-RELIEF half standing, because no texgen family was a picture of snow and borrowing `coarse` would divide a soil map's spread about a 0.1806 mean back through `material.color` and swing a 0.76-albedo drift by half its value every 0.75 m. This lane authored the owed family instead of borrowing one: **512 px on a 1.5 m tile (341 texels/m, `panel`'s own density; 384 was refused because at this tile it lands ON the 256 floor `masonry` was raised off)**, a heightfield whose unit is a DERIVED 0.1172 m so every amplitude is a real height (6.4 cm accumulation, **3.5 cm sastrugi at a 37.5 cm wavelength with a 9.8 cm lee scarp**, 2.1 mm wind ripple at 5.8 cm, 1.4 mm crust grain), an asymmetric C2 bedform (`_snow_bedform`, skew 0.74/0.66, long windward ramp and short steep lee face, built out of `_smooth` so neither join is a scratch and with no transcendental anywhere), and a NEW anisotropic lattice `_snow_noise` after the obvious rotated one was refused with a number (determinant 10, so the field repeats TEN times inside one tile). **THE FULL CLEAN-TREE BUILD MOVED ZERO BYTES OF ANY OTHER FAMILY**: the unmodified tree was built and hashed FIRST (45 of 45 identical, the manifest included), and after the family landed the same comparison reads 44 SAME, 1 DIFF (`surfaces.json`, a 22-insert 1-delete diff that is the `snow` row plus the two role-table lines), 3 new PNGs, with the payload up by exactly 363,637 bytes. **THE REPOINT IS DECIDED ON THE TRAP THAT KILLED `coarse`, RE-MEASURED RATHER THAN ASSUMED AWAY**: mean **0.5574**, per-texel ratio 0.9053..1.0952, so a 0.763 drift renders **0.691..0.836 at its extremes** (0.708..0.818 p1 to p99), inside the 0.65..0.85 the literature gives for aged packed snow at every texel, where `coarse` renders 0.447..1.074 on the identical arithmetic run as a selftest control. **Luma preservation end to end: 0.76298 to 0.76311, +0.0166 per cent**, an order of magnitude inside the 0.17 per cent RN-2700 already spent, with the chroma widening bounded to 12.0 to 14.4 counts of R-minus-B, under `SuitGrime`'s 15. The albedo is a deliberate +/- 5 per cent modulation, so `check_maps`' 40-count variation floor got a per-family declared BAND (`ALBEDO_SPREAD`, `snow` 16..34, in RN-1837's `(value, reason)` shape, with the reason PRINTED beside the verdict), and it is **DISJOINT from the default rather than a subset of it**: 12x narrower and two-sided, but it admits 16..34, which the shared gate refuses, so `snow` is held to a DIFFERENT rule and would fail the shared one. Measured about the map's own centre byte, 40 counts is an ASYMMETRIC -21.3/+24.3 per cent of linear albedo and would render the drift 0.60 to 0.95, above fresh snowfall. **THE FRAME AGREES AT BOTH POSES, TWO ARMS, TWO SENTINEL-VERIFIED SERVERS, ONE SESSION, FRESH PROCESS PER CAPTURE, AND EVERY RECTANGLE NULL IS EXACTLY 0.00**: `mtnslope` row 191's shaded facet goes **+12.47 to +22.57** warm against a bit-identical substrate at +34.80, closing RN-2700's residual 22.33-count gap to **12.23**, with the prop's internal hue swing 7.73 to 4.12; six of seven committed rectangles are bit-identical and the one that moves is `upR`, the rectangle 2.48.11 already named as holding the frame's second snow patch (the PRIMARY drift is in no committed rectangle at all, stated so six zeros are not read as nothing happened). A `?leaftex=0` arm on each build decomposes the move: **the albedo carries +0.20 of the +10.35 luma and +0.39 of the +6.49 warm**, i.e. 1.9 and 6 per cent, and normal-plus-ORM carries the rest -- the two of those are NOT separated from each other and the missing page parameter is routed. `meadow` is the control and reads AT its own floor (0.70 per cent against a 0.52/0.70 null, every rectangle bit-identical). **BY EYE at 3x the criterion is met**: `vistadawn`'s near drift goes from a featureless pink dome to a crest, a scoop and visible ripple banding, with the patch's aggregate warm holding at +42.00 against +42.78 and its luma dispersion up 23 per cent at `mtnslope`. **THE HONEST HALF IS REPORTED**: relief creates sky-lit facets, so `vistadawn`'s cold-pixel fraction on the drift rises 13.18 to 18.07 per cent while the coldest pixel does not get colder (-33 to -34) and the aggregate does not move -- that is 2.48.13 item 4's owed forward-scatter BSDF becoming more visible, now routed with a number rather than as prose. Gates: `tsc` 0, `build` 0, `npm run check` **9 of 9**, `texgen.py check` **242 PASS**, `texgen.py selftest` **77 PASS** (six new cases, three of them controls), full four-pose **`rn2550guard` PASS 4 of 4, exit 0** with all four `rho` on their pins. **VERIFIER (fresh context, own instruments, own builds): FIX then applied, 2026-08-23.** Every measurement reproduced independently (mean 0.557407, the ratio band, luma +0.0167 per cent, chroma 14.43, the committed PNG bytes reproducing bit-for-bit from its own clean-tree build, the 45-of-45 then 44+1+3, row 191 to the digit, guard 4 of 4 on pins, all fifteen other albedo-mapped families still passing the unchanged 40-count floor, of 18 families total, 16 with albedo maps); **the REPOINT STANDS** (the reversal removes 2.48.9's premise rather than overruling its argument) and **the cold-pixel rise is ruled ACCEPTABLE** (the base arm already carried the cast, 1x is unaffected, `mtnslope` moved the other way, and the traded-away defect is larger). Six corrections applied at their sources: 2.48.9's stay-on-flat paragraph now carries a Superseded note per AGENT_ARCHITECTURE section 5; 2.48.13 item 2 is marked answered and item 4's residual updated 22.33 to 12.23; **2.53.8's subject proof is corrected, and its own control window was the defect** (the moved span is x 613..783 not 640..790, the left control moves to `x[560,610)`, and the four antialiased silhouette pixels at 613/614/615/619 that the first window swallowed are now recorded individually, against a same-build null of exactly zero across all 440 pixels of the scan); `rn2740sentinel.mjs`'s two process legs now FAIL CLOSED (a thrown netstat left a non-empty error string satisfying the owner check, a thrown CIM query left one that satisfied the negated `--outdir` regex, and the `readdirSync` was unguarded); the `ALBEDO_SPREAD` claim is softened from "stricter" to a disjoint two-sided exception with its reason printed; and the luma pair is restated at full precision. Full record in section 2.53; frames `docs/screenshots/RN2740_*`. THIS LINE IS A POINTER: replace it, never append to it.
@@ -19800,6 +19800,62 @@ numbers differ on every load) cannot hide behind one lucky reading:
 | `vistanoon` | 0 | 0.000% | 1 | bit-identical |
 | `mtnslope` | 17 (hide) / 19 (null) | 0.084% / 0.094% | 15 / 26 | residual reproduced by its OWN null (nothing hidden, same settle gap) -- settle jitter, not HUD |
 
+**The monotone claim the re-placement rests on is MEASURED, not assumed.**
+2.54's own opening argument for re-placing rather than retiring is that
+`nearG`/`mid`/`hzBand` exist to show `iqr` and `sat` falling monotonically
+with range; that claim was never checked against the NEW rectangle before
+this correction. Read off the probe's own `stat()` JSON at `vista` (`run.mjs`
+`--evalargs='{"shot":"vista"}'`, canvas-only, the same capture path every
+historical `iqr`/`sat`/`warm` reading in this file uses):
+
+| rect | range rung | iqr | sat |
+|---|---|---|---|
+| `nearG` | nearest | **24.14** | **0.215** |
+| `mid` | middle | **13.96** | **0.169** |
+| `hzBand` (new) | furthest | **1.93** | **0.052** |
+
+Both fall monotonically from `nearG` to the new `hzBand`, to the digit the
+claim asked for.
+
+**THIS IS A RE-KEYING, NOT A CONTINUATION, AND TWO STANDING BASELINES BREAK
+BECAUSE OF IT -- NAMED RATHER THAN LEFT FOR THE NEXT READER TO DISCOVER BY
+SURPRISE.** `hzBand` at these four poses is now a DIFFERENT RECTANGLE under
+the SAME KEY, so no comparison of an `hzBand` number across RN-2750 is valid;
+a lane that reads "hzBand" in an old table and a lane that captures it fresh
+today are reading two different patches of screen that happen to share a
+name.
+
+- **rendering.md:13889** (R5, fourteen merges): "`vista` box **174.53 / 14.48**
+  and `hzBand` **3.28 / -2.07**, bit-identical to R4 through fourteen merges."
+  A fresh capture at the SAME pose today reads `hzBand` **iqr 1.93, warm
+  -3.31** -- not because anything moved, but because the rectangle itself did.
+  The 3.28/-2.07 figure is not wrong and is not superseded; it describes a
+  rectangle that no longer exists at this key.
+- **rendering.md:19575** (RN-2740's snow-family table, `mtnslope`): "`box`,
+  `upL`, `upC`, `hzBand`, `mid`, `nearG` | 0.00 | 0.00 | 0.00 | bit-identical"
+  -- a DELTA between that lane's own before/after builds, not an absolute
+  value, and that delta claim is untouched (both arms of RN-2740's comparison
+  used the SAME, then-current, `hzBand`). But a lane trying to sanity-check
+  that row today by re-running `mtnslope` and reading `hzBand` gets **luma
+  100.54, warm 17.9, sat 0.206, iqr 95.61** -- nothing like a bit-identical
+  zero, because it is measuring a different rectangle, not because RN-2740's
+  own finding moved.
+
+**RN-34 (rendering.md:3215) is this project's own precedent for exactly this
+situation, and it says ADD, do not move**: "`probes/groundart.js` compared a
+near band ... against a 'far' band ... A `horizon` band ... was ADDED and the
+old one left exactly where it was, so the RN-15 numbers stay comparable
+rather than being improved by moving the ruler." This lane departs from that
+precedent, and the reason is the one RN-34's own old band did not have: RN-34's
+"far" band was measuring the WRONG QUESTION but every pixel in it was still a
+valid, uncontaminated ground reading -- moving it would have thrown away real
+continuity for no gain. The old `hzBand` was not off-topic, it was BROKEN: 18
+to 20 per cent of its own pixels were the debug HUD's key legend (2.54's own
+opening finding), so a historical `hzBand` number was never a clean reading of
+anything to begin with, and preserving continuity with a contaminated
+instrument has no value RN-34's precedent was built to protect. Moving it
+loses nothing RN-34 was arguing to keep.
+
 **Subject and range, stated honestly rather than re-derived from nothing.**
 The new window holds the same ridge this file has cited throughout as
 "`vista`, a 4.7 km ridge" (e.g. the R3/R4/R5 `vista.hzBand` entries above);
@@ -19820,8 +19876,10 @@ argument recorded at `vista`'s own comment block and a short pointer at
 `mtnslope`'s. No other field of any of the four poses moved (`git diff`
 proves it: four one-line array changes plus the additive instrument below,
 nothing else). Every reading against the retired coordinates that predates
-RN-2750 stays in the record un-rewritten, per NUMBERS rule 4; this section and
-the `artframe.js` comment are the pointer notes it asked for.
+RN-2750 stays in the record un-rewritten, per the RN-2750 brief's own
+instruction (NUMBERS.md's rule 4 is about an ABANDONED ALLOCATION NUMBER and
+does not apply to a historical reading); this section and the `artframe.js`
+comment are the pointer notes the brief asked for.
 
 ### 2.54.2 THE INSTRUMENT, AND THE TWO WAYS ITS FIRST DRAFT WAS WRONG
 
@@ -19835,16 +19893,36 @@ committed rectangles off exactly that file. Passed `true`, it hides every DOM
 overlay node this project mounts, by id (`of-hud`, `of-cross`,
 `of-carry`/`of-toast`/`of-gain`/`of-banner`/`of-prompt`/`of-health`/`of-mode`/
 `of-goals`/`of-hotbar` from `GameHud`/`HotbarBar`/`ObjectivePanel`,
-`of-compass`, `of-navball`), with `!important` and a READ-BACK assertion
-(`hideVm`'s own RN-1876 defence): an id that exists but is still
-computed-visible afterward refuses the frame rather than silently comparing a
-half-hidden treatment against its own control. An id simply absent from a
-scenario's DOM is not an error. **`of-compass` is a correction to its own
-comment, found while proving this**: its CSS reads `display: none` with no
-override this lane could find in any of the four stylesheets that mention it,
-yet a live capture at `forestfloor` measured it `display: block`, 460x34 at
-frame-top-centre, text "NWNW" -- it is live in an ordinary walk pose, whatever
-sets that; treated here as measured, not as read off the stylesheet.
+`of-compass`, `of-navball`), with a READ-BACK assertion (`hideVm`'s own
+RN-1876 defence): an id that is still found in the document afterward refuses
+the frame rather than silently comparing a half-hidden treatment against its
+own control. An id simply absent from a scenario's DOM is not an error.
+**`of-compass` is a correction to its own comment, found while proving
+this**: `game.css`'s `#of-compass { display: none }` reads as a permanent
+hide, but `CompassHud.ts:120` sets `this.el.style.display = 'block'` INLINE
+inside `render()`, and an inline declaration always beats a stylesheet rule
+regardless of selector specificity -- it is live in an ordinary walk pose
+(measured at `forestfloor`, 460x34 at frame-top-centre, text "NWNW") whenever
+that method runs, not despite the stylesheet by some unlocated override, but
+BECAUSE of a specific, now-named line.
+
+**THE HIDE MECHANISM ITSELF CHANGED MID-LANE, per a fresh-context verifier's
+correction, from `display: none !important` to `Node.remove()`.** A
+`!important` inline style is still one property in one inline declaration,
+and any LATER plain assignment to `.style.display` -- from anywhere --
+replaces the whole declaration and drops the `!important` with it. This is
+not theoretical: `ObjectivePanel.ts:70` (`of-goals`) is reassigned from
+`Objectives.ts:275`'s `stepGoals`, called on EVERY DRAINED FRAME with no diff
+gate at all, and it won that race even against a re-hide placed immediately
+before the screenshot (a render tick can and does land in the gap between the
+re-hide and the capture Playwright actually takes). `Node.remove()` has
+nothing to race: a detached node is not part of the render tree, so a later
+`.style.display` write to it paints nothing whenever it happens, and none of
+the reassigning call sites (`CompassHud.ts:120`, `GameHud.ts:109/203/254`,
+`ObjectivePanel.ts:70`) ever re-inserts a node -- each only reassigns
+`.style` on a reference it already holds. Both `artframe.js`'s `hideHud` flag
+and `rn2750hudsweep.mjs` use this mechanism now; every table in this section
+was captured with it.
 
 **`rn2750hudsweep.mjs`, the sweep's own instrument, and TWO DESIGNS BEFORE IT
 THAT MEASURED WRONG, both kept in the file's own header so neither gets
@@ -19889,15 +19967,173 @@ frame is not `smelterhero`'s). Verdict per rectangle: **clean** (hide and
 shipped bit-identical or within noise), **REAL** (hide-arm move not explained
 by its own null: an overlay node), or **MOTION** (the null reproduces at
 least half the hide-arm's move: the rectangle's own subject animates and this
-pair cannot see HUD through it).
+pair cannot see HUD through it). Both the two rectangles whose sky-triple
+readings are quoted below (`skyL`/`upL`, `warm`/`sat`) and every other REAL
+reading were taken via `page.screenshot()`, the composited-PNG capture path;
+**they say nothing about the probe's own canvas-only JSON stats** (2.54.6
+item 3 states the boundary and the proof).
 
-**THE TOTALS.** 29 of 145 clean outright. Of the 116 that moved: **60 are
-REAL** (an overlay node, corroborated by a null near zero) and **56 are
-MOTION** (a null that already explains the reading). No rectangle was
-reclassed on inspection alone; every MOTION verdict below has its own
-`--nullcheck=1` number beside the hide-arm number that earned it the label.
+**THE DATA, PUBLISHED, NOT SUMMARISED FROM.** A fresh-context verifier's own
+correction of this section's first draft: naming a cause for sixty rectangles
+in prose is not the same as publishing the sixty readings, and without them
+the next lane re-runs all 145 captures to check a single number. The full
+table -- every non-clean rectangle, hide%, null%, rows moved, `maxDelta`,
+verdict -- is committed at `docs/screenshots/RN2750_sweep_data.json` (also the
+26 clean rectangles per pose, for completeness) and reproduced here in full:
 
-**REAL, BY CAUSE, so the sixty are legible as four defects rather than sixty:**
+| pose | rect | hide% | null% | rows | maxDelta | verdict |
+|---|---|---|---|---|---|---|
+| forestfloor | box | 13.457% | 0.245% | 61/140 | 255 | REAL |
+| voxelface | box | 0.125% | 0.045% | 94/378 | 159 | REAL |
+| voxelface | groundA | 43.21% | 0.1% | 63/100 | 224 | REAL |
+| voxelface | groundB | 45.235% | 0.037% | 84/90 | 222 | REAL |
+| midfield | box | 12.714% | 0.089% | 5/5 | 187 | REAL |
+| midfield | r18c | 0.196% | 0.232% | 5/5 | 14 | MOTION |
+| midfield | r27c | 12.714% | 0.089% | 5/5 | 187 | REAL |
+| midfield | r35c | 7.75% | 0.161% | 5/5 | 140 | REAL |
+| meadowfield | box | 0.365% | 0.375% | 65/72 | 30 | MOTION |
+| meadowfield | hz | 7.5% | 0.346% | 45/45 | 226 | REAL |
+| meadowfield | midband | 0.268% | 0.446% | 2/7 | 13 | MOTION |
+| meadowfield | midtree | 1.151% | 0.031% | 18/29 | 177 | REAL |
+| vista | box | 0.459% | 0.002% | 25/126 | 95 | REAL |
+| vista | skyL | 55.583% | 0.005% | 90/90 | 152 | REAL |
+| vista | skyR | 32.375% | 0% | 37/90 | 154 | REAL |
+| vista | skyHz | 0.007% | 0.007% | 1/45 | 8 | MOTION |
+| vista | hzBand | 18.087% | 0% | 49/90 | 131 | REAL |
+| vista | nearG | 0.079% | 0.093% | 21/45 | 34 | MOTION |
+| vistadawn | box | 0.51% | 0.018% | 34/126 | 112 | REAL |
+| vistadawn | skyL | 61.903% | 0.102% | 90/90 | 146 | REAL |
+| vistadawn | skyR | 32.375% | 0% | 37/90 | 138 | REAL |
+| vistadawn | hzBand | 19.875% | 0% | 51/90 | 151 | REAL |
+| vistadawn | mid | 0.023% | 0.019% | 5/54 | 10 | MOTION |
+| vistadawn | nearG | 0.141% | 0.236% | 33/45 | 36 | MOTION |
+| dawnsun | box | 0.262% | 0% | 45/270 | 144 | REAL |
+| dawnsun | sunCore | 9.568% | 0% | 22/54 | 93 | REAL |
+| dawnsun | glareIn | 0.897% | 0% | 22/144 | 93 | REAL |
+| dawnsun | glareOut | 0.151% | 0.001% | 25/288 | 93 | REAL |
+| dawnsun | skyUp | 1.498% | 0% | 16/63 | 119 | REAL |
+| dawnsun | skyOff | 52.141% | 0.296% | 81/81 | 136 | REAL |
+| dawnsun | hzBand | 0.123% | 0.112% | 22/54 | 30 | MOTION |
+| vistanoon | box | 0.479% | 0% | 24/126 | 99 | REAL |
+| vistanoon | skyL | 55.532% | 0.213% | 89/90 | 139 | REAL |
+| vistanoon | skyR | 32.375% | 0% | 37/90 | 150 | REAL |
+| vistanoon | hzBand | 18.906% | 0% | 50/90 | 136 | REAL |
+| vistanoon | nearG | 0.028% | 0.069% | 8/45 | 39 | MOTION |
+| meadow | box | 0.224% | 0.219% | 124/162 | 32 | MOTION |
+| meadow | skyHi | 0.549% | 0% | 8/90 | 101 | REAL |
+| meadow | skyHz | 0.006% | 0.006% | 1/54 | 7 | MOTION |
+| meadow | hzBand | 20.015% | 0.045% | 34/36 | 213 | REAL |
+| meadow | mid | 0.492% | 0.443% | 48/54 | 32 | MOTION |
+| meadow | nearG | 0.197% | 0.195% | 56/72 | 28 | MOTION |
+| meadow | shade | 1.222% | 1.229% | 37/45 | 26 | MOTION |
+| mtnslope | box | 0.508% | 0.082% | 74/126 | 154 | REAL |
+| mtnslope | upL | 42.093% | 0.116% | 88/90 | 233 | REAL |
+| mtnslope | upR | 29.509% | 0.273% | 59/90 | 246 | REAL |
+| mtnslope | upC | 0.278% | 0.208% | 26/45 | 26 | MOTION |
+| mtnslope | hzBand | 17.413% | 0.097% | 58/90 | 202 | REAL |
+| mtnslope | mid | 0.027% | 0.015% | 6/54 | 14 | MOTION |
+| mtnslope | nearG | 0.025% | 0.023% | 10/45 | 12 | MOTION |
+| pondside | box | 83.655% | 83.197% | 180/180 | 140 | MOTION |
+| pondside | sky | 0.715% | 0.005% | 10/90 | 129 | REAL |
+| pondside | wood | 1.017% | 0.072% | 54/81 | 224 | REAL |
+| pondside | bank | 3.24% | 3.122% | 36/36 | 43 | MOTION |
+| pondside | shore | 28.947% | 29.051% | 54/54 | 114 | MOTION |
+| pondside | nearW | 68.754% | 68.199% | 72/72 | 72 | MOTION |
+| meadownight | box | 0.003% | 0.002% | 3/162 | 12 | MOTION |
+| meadownight | skyHi | 0.257% | 0% | 6/90 | 225 | REAL |
+| meadownight | hzBand | 6.969% | 0% | 21/36 | 238 | REAL |
+| meadownight | nearG | 0.006% | 0.006% | 3/72 | 12 | MOTION |
+| flyover | box | 0.006% | 0.006% | 12/270 | 13 | MOTION |
+| flyover | skyBand | 1.06% | 0.089% | 24/90 | 113 | REAL |
+| flyover | hzBand | 4.669% | 0% | 19/23 | 127 | REAL |
+| flyover | under | 0.014% | 0.014% | 8/117 | 9 | MOTION |
+| flyover | shadowStep | 0.007% | 0.007% | 2/49 | 9 | MOTION |
+| flyover | crowns | 0.015% | 0.015% | 2/100 | 13 | MOTION |
+| flyover | farband | 2.856% | 0% | 33/67 | 121 | REAL |
+| forestair | box | 0.003% | 0.003% | 6/270 | 11 | MOTION |
+| forestair | skyBand | 0.852% | 0.001% | 23/90 | 112 | REAL |
+| forestair | hzBand | 5.543% | 0% | 19/23 | 126 | REAL |
+| forestair | under | 0.005% | 0.007% | 3/117 | 10 | MOTION |
+| forestair | shadowStep | 0.007% | 0.007% | 2/49 | 8 | MOTION |
+| forestair | treeOut | 0.003% | 0.003% | 1/32 | 8 | MOTION |
+| forestair | treeOutB | 0.007% | 0.007% | 1/16 | 8 | MOTION |
+| forestair | farband | 2.896% | 0.002% | 34/67 | 135 | REAL |
+| forestaircanopy | box | 0.013% | 0.015% | 6/57 | 9 | MOTION |
+| forestaircanopy | ctrl690 | 0.052% | 0.049% | 9/32 | 20 | MOTION |
+| plainslow | box | 1.571% | 1.714% | 5/5 | 42 | MOTION |
+| beachground | box | 2.744% | 0.511% | 116/116 | 215 | REAL |
+| beachground | ring | 3.339% | 0.679% | 35/35 | 181 | REAL |
+| beachground | standHi | 2.682% | 0.008% | 21/40 | 206 | REAL |
+| beachground | hzTree | 5.28% | 0.215% | 15/16 | 186 | REAL |
+| limb | box | 0.015% | 0.013% | 35/270 | 16 | MOTION |
+| limb | ring | 0.023% | 0.023% | 2/36 | 10 | MOTION |
+| limb | ground | 0.004% | 0.004% | 3/117 | 16 | MOTION |
+| limb | seam | 0.061% | 0.053% | 41/160 | 16 | MOTION |
+| machine | box | 0.12% | 0% | 17/410 | 234 | REAL |
+| machine | hearthL | 5.932% | 0.074% | 131/400 | 234 | REAL |
+| machine | hearthR | 0.02% | 0.006% | 5/373 | 35 | REAL |
+| smelterhero | box | 7.761% | 0.777% | 515/675 | 238 | REAL |
+| smelterhero | sunface | 9.033% | 0.082% | 40/135 | 199 | REAL |
+| smelterhero | firebox | 0.292% | 0.246% | 35/65 | 31 | MOTION |
+| smelterhero | band | 1.965% | 1.927% | 53/53 | 48 | MOTION |
+| smelterhero | plate | 3.184% | 0.894% | 169/360 | 167 | REAL |
+| smelterhero | hearthL | 11.791% | 0.069% | 144/620 | 223 | REAL |
+| smelterhero | hearthR | 0.323% | 0.279% | 83/620 | 32 | MOTION |
+| smelterhero | peep | 1.461% | 0.095% | 13/62 | 87 | REAL |
+| smelterhero | strip | 100% | 0% | 14/14 | 216 | REAL |
+| smelterhero | placard | 0.015% | 0.015% | 1/67 | 7 | MOTION |
+| smelterhero | bandShade | 0.207% | 0.124% | 10/42 | 26 | MOTION |
+| smelterhero | groundL | 0.239% | 0.215% | 48/220 | 34 | MOTION |
+| smelterhero | groundR | 0.111% | 0.098% | 39/220 | 32 | MOTION |
+| ruin | box | 0.223% | 0.187% | 166/279 | 174 | MOTION |
+| ruin | cella | 0.136% | 0.109% | 14/100 | 12 | MOTION |
+| ruin | hill | 0.373% | 0.36% | 15/50 | 29 | MOTION |
+| ruinwall | box | 1.561% | 0.367% | 494/540 | 157 | REAL |
+| ruinwall | wall | 12.105% | 6.111% | 392/500 | 245 | MOTION (borderline: null is 50.5% of hide) |
+| ruinwall | wallLow | 7.455% | 7.487% | 93/150 | 46 | MOTION |
+| station | box | 12.064% | 11.355% | 437/468 | 255 | MOTION |
+| smelternight | box | 6.861% | 0.006% | 133/675 | 250 | REAL |
+| smelternight | sunface | 8.75% | 0% | 29/135 | 248 | REAL |
+| smelternight | plate | 2.139% | 0% | 61/360 | 176 | REAL |
+| smelternight | hearthL | 4.443% | 0% | 76/620 | 236 | REAL |
+| smelternight | peep | 1.556% | 0% | 9/62 | 107 | REAL |
+| smelternight | strip | 100% | 0% | 14/14 | 216 | REAL |
+| smelternight | groundR | 0.002% | 0.002% | 1/220 | 7 | MOTION |
+| basedusk | box | 2.734% | 2.631% | 306/306 | 236 | MOTION |
+| basedusk | skyHigh | 4.712% | 0.304% | 24/25 | 170 | REAL |
+| basedusk | skyLow | 0.875% | 0.875% | 5/10 | 24 | MOTION |
+
+**THE TOTALS, CORRECTED FROM THIS SECTION'S OWN FIRST DRAFT.** 26 of 145
+clean outright (not 29). Of the 119 that moved: **64 are REAL** (not 60) and
+**55 are MOTION** (not 56). Three rows moved from clean to REAL and one from
+MOTION to REAL after a fresh-context verifier's own correction to the
+instrument found a fourth overlay node this section's first pass missed --
+`vista.skyR`/`vistadawn.skyR`/`vistanoon.skyR` (0% to **32.375%**) and
+`mtnslope.upR` (0.222% to **29.509%**) -- because `of-goals` (item 5 below)
+reasserted DURING the settle window on the first-draft instrument and its own
+read-back ran too early to catch it (2.54.2's own correction is the same
+finding, in the tool rather than in the data). **`ruinwall.wall` also moved**
+(6.484% to **12.105%**), landing exactly on the MOTION/REAL boundary (its null
+is 50.5 per cent of its hide reading) and is reported as a mix rather than
+forced into either bucket: a real torch-flicker baseline with `of-goals` added
+on top of it.
+
+**THE CLEAN/MOTION SPLIT IS NOISE-LIMITED; ONLY THE REAL COUNT IS STABLE.** A
+fresh-context verifier's own independent re-capture of `vista` read 3 REAL /
+1 MOTION / 3 clean against this lane's 3/2/2 on that pose -- one pixel's worth
+of difference at the `thresh=6` boundary moved `vista.nearG` (0.079 per cent
+moved, a handful of pixels) across the MOTION/clean line between two
+otherwise-identical runs. A rectangle sitting within a few pixels of `thresh`
+on either side of the 50-per-cent null-ratio rule is exactly where SwiftShader
+dither noise (pngdiff.mjs's own calibrated floor) decides the label, not the
+subject. The 64 REAL rectangles do not have this problem: every one of them
+reads a null under 1 per cent against a hide reading at least 3 percentage
+points higher (`ruinwall.wall`'s borderline case above is the one exception,
+named as one), so REAL/not-REAL is the load-bearing distinction in this
+sweep and clean-versus-MOTION at the single-digit-per-cent level is not.
+
+**REAL, BY CAUSE, so the sixty-four are legible as five defects rather than
+sixty-four:**
 
 1. **The debug HUD (`of-hud`, top-left, `x12` to about `x448`, `y10` to about
    `y470`).** The dominant cause, and the one this whole lane started from.
@@ -19929,29 +20165,41 @@ reclassed on inspection alone; every MOTION verdict below has its own
    which is also exactly where the crosshair sits.
 4. **The compass strip (`of-compass`, top-centre, `x570-1030 y40-74`,
    2.54.2's own live-but-undocumented finding).** `basedusk.skyHigh`
-   (`x600,1100,33,58`) reads 4.7 per cent against a null of 0.3 per cent; nine
-   tenths of the strip's real footprint falls inside that rectangle.
+   (`x600,y33,x1100,y58`) reads 4.7 per cent against a null of 0.3 per cent;
+   the overlap with the compass strip's own real footprint is **49 per cent
+   by area, 93 per cent by width**.
+5. **The objectives checklist (`of-goals`, top-right, `x1331-1586 y12-127`,
+   the node this lane's own instrument bug (2.54.2) was found through).**
+   `vista`/`vistadawn`/`vistanoon.skyR` (32.4 per cent each) and
+   `mtnslope.upR` (29.5 per cent) are the "sky triple"'s third rectangle,
+   sitting on the opposite side of the frame from `skyL`/`upL` and just as
+   contaminated, only by a different node. `ObjectivePanel.ts:70`'s own
+   `apply()` is called from `Objectives.ts:275`'s `stepGoals` on every drained
+   frame with no diff gate, which is why it is the one node this lane
+   measured actually winning a race against a display-based hide.
 
 **MOTION, BY CAUSE (not HUD, reported so the next lane does not re-discover
 these the hard way):** `pondside`'s water (`box` 83.7/83.2, `nearW`
-68.8/68.2, `shore` 28.9/29.1 per cent, hide/null); `station.box` (10.8/11.4
-per cent, something in that hall animates on its own); `ruinwall.wall`/
-`wallLow` (6.5/6.1 and 7.5/7.5 per cent, most plausibly torches); machine
-glow/belt flicker at `smelterhero.band`/`firebox`/`hearthR` and
-`plainslow.box`; and a long tail of sub-1-per-cent pairs (`meadow.shade`/
-`mid`/`nearG`, `ruin.box`/`cella`/`hill`, `limb`'s four, `ruin`'s, `ruinwall`'s
-sub-cases) where hide and null read the same number to within a few
-hundredths of a per cent -- ordinary frame-to-frame dither, not a rectangle
-worth a second look.
+68.8/68.2, `shore` 28.9/29.1 per cent, hide/null); `station.box` (12.1/11.4
+per cent, something in that hall animates on its own, `of-goals` a small
+addition on top per the correction above); `ruinwall.wallLow` (7.5/7.5 per
+cent, most plausibly torches, and `wall`'s own borderline case is named
+above rather than folded in here); machine glow/belt flicker at
+`smelterhero.band`/`firebox`/`hearthR` and `plainslow.box`; and a long tail
+of sub-1-per-cent pairs (`meadow.shade`/`mid`/`nearG`, `ruin.box`/`cella`/
+`hill`, `limb`'s four, `ruin`'s) where hide and null read the same number to
+within a few hundredths of a per cent -- ordinary frame-to-frame dither, not
+a rectangle worth a second look.
 
 **THE FULL PER-POSE BREAKDOWN**, `real`/`motion`/`clean` counts out of that
 pose's own rectangle total: `forestfloor` 1/0/0, `voxelface` 3/0/0, `midfield`
-3/1/0, `meadowfield` 2/2/1, `vista` 3/2/2, `vistadawn` 3/2/2, `dawnsun` 6/1/0,
-`vistanoon` 3/1/3, `meadow` 2/5/0, `mtnslope` 3/4/0, `pondside` 2/4/0,
-`meadownight` 2/2/3, `flyover` 3/4/0, `forestair` 3/5/5, `forestaircanopy`
-0/2/0, `plainsmid` 0/0/1, `plainslow` 0/1/0, `beachground` 4/0/1, `limb`
-0/4/1, `machine` 3/0/0, `smelterhero` 6/7/1, `ruin` 0/3/2, `ruinwall` 1/2/0,
-`station` 0/1/0, `smelternight` 6/1/7, `basedusk` 1/2/0.
+3/1/0, `meadowfield` 2/2/1, `vista` **4/2/1**, `vistadawn` **4/2/1**, `dawnsun`
+6/1/0, `vistanoon` **4/1/2**, `meadow` 2/5/0, `mtnslope` **4/3/0**, `pondside`
+2/4/0, `meadownight` 2/2/3, `flyover` 3/4/0, `forestair` 3/5/5,
+`forestaircanopy` 0/2/0, `plainsmid` 0/0/1, `plainslow` 0/1/0, `beachground`
+4/0/1, `limb` 0/4/1, `machine` 3/0/0, `smelterhero` 6/7/1, `ruin` 0/3/2,
+`ruinwall` 1/2/0, `station` 0/1/0, `smelternight` 6/1/7, `basedusk` 1/2/0
+(bold marks the four poses this correction changed).
 
 ### 2.54.4 `meadow`/`meadownight` AND `flyover`/`forestair`: THE SAME `hzBand` KEY, A DIFFERENT BROKEN RECTANGLE, OUT OF SCOPE FOR THIS REPAIR
 
@@ -19977,17 +20225,22 @@ Both routed below rather than silently left unswept.
 ### 2.54.5 GATES, RAILS AND FILES
 
 `tsc` 0, `build` 0, `npm run check` **9 of 9**, full four-pose `rn2550guard`
-**PASS 4 of 4, exit 0**. Scope proof: `git diff` on `artframe.js` is four
-one-line `hzBand` array changes (`vista`, `vistadawn`, `vistanoon`,
-`mtnslope`) plus the additive `hideHud`/`hudHidden` instrument (gated behind
-`A.hideHud === true`, default untouched) plus comments; no pose's lat/lon/
-yaw/pitch/sunDot/box/other `extra` rectangle moved, and the four `rn2550guard`
-poses (`forestairnoon`, `forestairlow`, `flyovernoon`, `flyoverlow`) are not
-among the four touched shots at all. Files: `web/tools/smoke/probes/
-artframe.js` (the `hzBand` repair, the `hideHud` instrument, the comment
-corrections), `web/tools/smoke/rn2750hudsweep.mjs` (new: the one-page,
-one-hide sweep instrument, with both wrong designs recorded in its own
-header). No `web/src` file touched.
+**PASS 4 of 4, exit 0** (re-confirmed after the fresh-context verifier's
+corrections, which touched only `artframe.js` comments and `hideHud`'s
+mechanism, not any pose field). Scope proof: `git diff` on `artframe.js` is
+four one-line `hzBand` array changes (`vista`, `vistadawn`, `vistanoon`,
+`mtnslope`), the additive `hideHud`/`hudHidden` instrument (gated behind
+`A.hideHud === true`, default untouched, now removing nodes rather than
+hiding them per 2.54.2), plus comments; no pose's lat/lon/yaw/pitch/sunDot/
+box/other `extra` rectangle moved, and the four `rn2550guard` poses
+(`forestairnoon`, `forestairlow`, `flyovernoon`, `flyoverlow`) are not among
+the four touched shots at all. Files: `web/tools/smoke/probes/artframe.js`
+(the `hzBand` repair, the `hideHud` instrument and its removal-based
+mechanism, the comment corrections), `web/tools/smoke/rn2750hudsweep.mjs`
+(new: the one-page, one-hide, `--nullcheck=1`-gated sweep instrument, with
+every wrong design this lane tried recorded in its own header),
+`docs/screenshots/RN2750_sweep_data.json` (new: the full 145-rectangle
+dataset behind 2.54.3's table). No `web/src` file touched.
 
 ### 2.54.6 OWED AND ROUTED
 
@@ -19997,9 +20250,18 @@ header). No `web/src` file touched.
    as `vista`'s.
 2. **`flyover`/`forestair`'s `hzBand`** needs its left edge moved off the
    debug HUD's real footprint (`x448`) or narrowed to start past it.
-3. **The `vista`-family sky triple (`skyL`/`upL`)** is the single worst
-   number this sweep found (42 to 62 per cent) and was not touched: it is a
-   different rectangle from the one this lane's brief named.
+3. **The `vista`-family sky triple (`skyL`/`upL`/`skyR`/`upR`)** is the
+   worst number this sweep found (29 to 62 per cent across all four
+   rectangles) and was not touched: it is a different rectangle from the
+   one this lane's brief named. **This indicts the `page.screenshot()`
+   capture path ONLY.** `of.screenshot()` calls `Renderer.ts:237`'s
+   `capture()`, which is `this.r.domElement.toBlob(...)` -- `toBlob` on a
+   single `<canvas>` element encodes that element's own pixel buffer and
+   nothing else, by the DOM API's own definition, so it cannot contain the
+   HUD regardless of what the HUD is doing. Every historical `skyL`/`upL`
+   `luma`/`warm`/`sat` reading in this file (e.g. the entries at rendering.md
+   2041, 2523, 2527, 2583, 2743) came from the probe's own `stat()` JSON, that
+   same canvas-only path, and none of them is disturbed by this finding.
 4. **`of-prompt` contamination is POSE-DEPENDENT**, not a fixed rectangle
    problem: any pose whose crosshair rests on an interactable is at risk,
    and `forestfloor`'s own RN-352 calibration pose is one of them. A general
@@ -20009,4 +20271,64 @@ header). No `web/src` file touched.
    here.
 5. **`rn2750hudsweep.mjs` is now this project's own instrument for "is this
    rectangle HUD-clean"** and is available for whichever lane takes items 1
-   to 3.
+   to 3. The full per-rectangle dataset it produced is committed at
+   `docs/screenshots/RN2750_sweep_data.json` rather than left to be
+   re-derived.
+6. **`of-goals` reasserting its own `.style.display` on every drained frame
+   (`ObjectivePanel.ts:70`, via `Objectives.ts:275`) is a general property of
+   that call site, not specific to this lane's instrument.** Any FUTURE tool
+   that hides DOM overlay nodes by style rather than by removal will have the
+   same false-negative exposure this section's own first draft had (2.54.2,
+   2.54.3). `rn2750hudsweep.mjs`'s `Node.remove()` fix closes it for this
+   tool; it is named here so the next one does not reopen it.
+
+### 2.54.7 FRESH-CONTEXT VERIFIER CORRECTION PASS (2026-08-23): FIX, APPLIED
+
+A fresh-context verifier that never touched this lane reproduced the repair
+to the digit (all four poses' old-rectangle contamination and new-rectangle
+cleanliness, the crosshair's own pixel count, `rn2550guard`'s pins) and traced
+the capture path far enough to prove the historic `skyL`/`upL` conclusions
+stand. Ten corrections routed, all applied at their sources:
+
+1. **The full per-rectangle dataset is now published**, table and committed
+   JSON, not summarised past the point of being reusable (2.54.3).
+2. **The re-keying is flagged with the two baselines it breaks and the
+   precedent it departs from**, named with line numbers rather than left for
+   a reader to discover by a mismatched number (2.54.1).
+3. **The monotone claim the whole re-placement rests on is now measured**
+   (`iqr`/`sat` falling `nearG` 24.14/0.215 to `mid` 13.96/0.169 to the new
+   `hzBand` 1.93/0.052), not merely asserted (2.54.1).
+4. **The compass mechanism is named** (`CompassHud.ts:120`, an inline
+   `style.display = 'block'` beating `game.css`'s stylesheet rule) in both
+   `artframe.js`'s comment and 2.54.2, replacing "no override this lane could
+   find."
+5. **The NUMBERS.md row now reads "RN-2751 to RN-2754 SURRENDERED UNUSED
+   (abandoned per rule 4, never reuse)"**, the controller's own standing
+   wording for an abandoned allocation, not "free."
+6. **Three mis-citations of NUMBERS.md rule 4 are corrected** (`artframe.js`'s
+   `vista` comment, 2.54.1, the banner): rule 4 is about an abandoned
+   allocation NUMBER, and the thing being preserved here is a historical
+   READING, which the RN-2750 brief's own text already covers without it.
+7. **The historic `skyL`/`upL` conclusions are confirmed to stand**, with the
+   capture-path trace that proves it (`of.screenshot()` -> `Renderer.ts:237`'s
+   `capture()` -> `toBlob` on the canvas element ALONE): the sixty-four REAL
+   rectangles in this sweep indict `page.screenshot()` readings only (2.54.3,
+   2.54.6 item 3).
+8. **This section's own sweep had a real instrument bug, found and closed
+   rather than only reported**: `rn2750hudsweep.mjs`'s display-based hide
+   raced `ObjectivePanel.ts:70`'s per-frame reassertion and lost, producing
+   four false negatives (`vista`/`vistadawn`/`vistanoon.skyR`,
+   `mtnslope.upR`) and one understated MOTION reading (`ruinwall.wall`), all
+   corrected in 2.54.3's table by re-capturing with `Node.remove()` (2.54.2).
+9. **The clean/MOTION split is stated as noise-limited**, with the verifier's
+   own one-pixel disagreement on `vista` as the measurement, so only the REAL
+   count is claimed as stable (2.54.3).
+10. **`basedusk.skyHigh`'s coordinates are corrected to `x600,y33,x1100,y58`**
+    (this section's first draft transposed the x/y pairs when writing them in
+    prose; the committed rectangle and the JSON were never wrong) and the
+    compass overlap restated as **49 per cent by area, 93 per cent by width**,
+    not "nine tenths" (2.54.3).
+
+Nothing in `web/src` was touched by this pass; `tsc` 0, `build` 0,
+`npm run check` 9 of 9, full four-pose `rn2550guard` PASS 4 of 4 exit 0,
+re-confirmed after every correction above.

@@ -687,8 +687,10 @@
     //   `rangeAtRow` formula this file uses elsewhere for `flyover`/
     //   `midfield` diverges to infinity is inside this rectangle's own
     //   span). Every reading against the RETIRED coordinates that predates
-    //   RN-2750 stays in the record un-rewritten (NUMBERS.md rule 4);
-    //   rendering.md 2.54 carries the pointer note. This lane's own sweep
+    //   RN-2750 stays in the record un-rewritten, per the RN-2750 brief's own
+    //   instruction (NUMBERS.md, not its rule 4, which is about an ABANDONED
+    //   ALLOCATION NUMBER and does not apply here); rendering.md 2.54 carries
+    //   the pointer note. This lane's own sweep
     //   (2.54) found the SAME broken coordinates, or a different broken
     //   rectangle under the same `hzBand` key, at `meadow`/`meadownight`
     //   (`x80 y270 x640 y306`, its own PRE-EXISTING "this rect is sky, not
@@ -4064,20 +4066,33 @@
   // `of-cross` (crosshair), `of-carry`/`of-toast`/`of-gain`/`of-banner`/
   // `of-prompt`/`of-health`/`of-mode`/`of-goals`/`of-hotbar` (`GameHud`,
   // `HotbarBar`, `ObjectivePanel`, all `.of-ui`), `of-compass` (GP-700's
-  // bearing strip -- its own CSS reads `display: none` but a live capture at
-  // `forestfloor` measured it `display: block`, 460x34 at frame-top-centre,
-  // text "NWNW", so whatever inline override makes that true is live in an
-  // ordinary walk pose and this list does not trust the stylesheet alone
-  // about it again) and `of-navball` (the flight HUD, bottom of frame, live
+  // bearing strip; `game.css`'s own `#of-compass { display: none }` reads as
+  // a permanent hide, but `CompassHud.ts:120` sets `this.el.style.display =
+  // 'block'` INLINE inside `render()`, and an inline declaration always beats
+  // a stylesheet rule regardless of selector specificity -- live in an
+  // ordinary walk pose, measured at `forestfloor`, 460x34 at frame-top-centre,
+  // text "NWNW") and `of-navball` (the flight HUD, bottom of frame, live
   // whenever a shot boards a vessel rather than walking).
   //
-  // `!important` beats every rule in `game.css`/`app.css`/`navball.css`/
-  // `hotbar.css` today (none of them carries `!important` of its own), and
-  // READ BACK, not assumed: an id that exists but is still computed-visible
-  // after this refuses the frame, the same defence `hideVm` (RN-1876) uses,
-  // because a sweep that silently ships the treatment frame as its own
-  // control would be worse than not running at all. An id simply absent from
-  // this scenario's DOM (e.g. `of-navball` while walking) is not an error.
+  // REMOVED FROM THE DOCUMENT, NOT HIDDEN IN PLACE, per a fresh-context
+  // verifier's correction: a `display: none` (even `!important`) RACES the
+  // app's own per-frame render path and can lose it, because `.style.display`
+  // is one property in one inline declaration and any later PLAIN assignment
+  // to it replaces the whole declaration, `!important` included.
+  // `ObjectivePanel.ts:70` (`of-goals`) is reassigned from `Objectives.ts:275`
+  // on EVERY DRAINED FRAME with no diff gate at all, and MEASURED to win that
+  // race against a style-based hide even with a re-hide immediately before
+  // the capture (`rn2750hudsweep.mjs`'s own header records the measurement).
+  // `Node.remove()` has no race to lose: a detached node is not in the render
+  // tree, so a later `.style.display` write to it paints nothing regardless
+  // of when it happens, and none of the reassigning call sites
+  // (`CompassHud.ts:120`, `GameHud.ts:109,203,254`, `ObjectivePanel.ts:70`)
+  // ever re-inserts a node, only reassigns `.style` on the reference it
+  // already holds. READ BACK, not assumed: an id that somehow returns to the
+  // document (none do, but `hideVm`'s RN-1876 rule applies here too) refuses
+  // the frame rather than silently shipping the treatment as its own control.
+  // An id simply absent from this scenario's DOM (e.g. `of-navball` while
+  // walking) is not an error.
   const HUD_IDS = ['of-hud', 'of-cross', 'of-carry', 'of-toast', 'of-gain',
     'of-banner', 'of-prompt', 'of-health', 'of-mode', 'of-goals', 'of-hotbar',
     'of-compass', 'of-navball'];
@@ -4087,14 +4102,13 @@
     for (const id of HUD_IDS) {
       const el = document.getElementById(id);
       if (el === null) continue;
-      el.style.setProperty('display', 'none', 'important');
+      el.remove();
       found.push(id);
     }
-    const stillVisible = found.filter((id) => (
-      getComputedStyle(document.getElementById(id)).display !== 'none'));
-    if (stillVisible.length > 0) {
+    const reattached = found.filter((id) => document.getElementById(id) !== null);
+    if (reattached.length > 0) {
       return { valid: false, shot: name,
-        why: `hideHud did not take for: ${stillVisible.join(', ')}` };
+        why: `hideHud's removed nodes came back: ${reattached.join(', ')}` };
     }
     hudHidden = found;
   }

@@ -1,0 +1,2090 @@
+{
+  "forestfloor": {
+    "box": {
+      "box": [
+        660,
+        524,
+        940,
+        664
+      ],
+      "hidePct": 13.457,
+      "nullPct": 0.245,
+      "rowsHit": 61,
+      "rowsTotal": 140,
+      "maxDelta": 255,
+      "verdict": "REAL"
+    }
+  },
+  "voxelface": {
+    "box": {
+      "box": [
+        512,
+        396,
+        1088,
+        774
+      ],
+      "hidePct": 0.125,
+      "nullPct": 0.045,
+      "rowsHit": 94,
+      "rowsTotal": 378,
+      "maxDelta": 159,
+      "verdict": "REAL"
+    },
+    "groundA": {
+      "box": [
+        200,
+        355,
+        300,
+        455
+      ],
+      "hidePct": 43.21,
+      "nullPct": 0.1,
+      "rowsHit": 63,
+      "rowsTotal": 100,
+      "maxDelta": 224,
+      "verdict": "REAL"
+    },
+    "groundB": {
+      "box": [
+        70,
+        95,
+        160,
+        185
+      ],
+      "hidePct": 45.235,
+      "nullPct": 0.037,
+      "rowsHit": 84,
+      "rowsTotal": 90,
+      "maxDelta": 222,
+      "verdict": "REAL"
+    }
+  },
+  "midfield": {
+    "box": {
+      "box": [
+        240,
+        358,
+        1360,
+        363
+      ],
+      "hidePct": 12.714,
+      "nullPct": 0.089,
+      "rowsHit": 5,
+      "rowsTotal": 5,
+      "maxDelta": 187,
+      "verdict": "REAL"
+    },
+    "r18c": {
+      "box": [
+        240,
+        381,
+        1360,
+        386
+      ],
+      "hidePct": 0.196,
+      "nullPct": 0.232,
+      "rowsHit": 5,
+      "rowsTotal": 5,
+      "maxDelta": 14,
+      "verdict": "MOTION"
+    },
+    "r27c": {
+      "box": [
+        240,
+        358,
+        1360,
+        363
+      ],
+      "hidePct": 12.714,
+      "nullPct": 0.089,
+      "rowsHit": 5,
+      "rowsTotal": 5,
+      "maxDelta": 187,
+      "verdict": "REAL"
+    },
+    "r35c": {
+      "box": [
+        240,
+        347,
+        1360,
+        352
+      ],
+      "hidePct": 7.75,
+      "nullPct": 0.161,
+      "rowsHit": 5,
+      "rowsTotal": 5,
+      "maxDelta": 140,
+      "verdict": "REAL"
+    }
+  },
+  "meadowfield": {
+    "box": {
+      "box": [
+        320,
+        468,
+        1280,
+        540
+      ],
+      "hidePct": 0.365,
+      "nullPct": 0.375,
+      "rowsHit": 65,
+      "rowsTotal": 72,
+      "maxDelta": 30,
+      "verdict": "MOTION"
+    },
+    "sky": {
+      "box": [
+        480,
+        90,
+        1120,
+        180
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 90,
+      "maxDelta": 5,
+      "verdict": "clean"
+    },
+    "hz": {
+      "box": [
+        80,
+        252,
+        1520,
+        297
+      ],
+      "hidePct": 7.5,
+      "nullPct": 0.346,
+      "rowsHit": 45,
+      "rowsTotal": 45,
+      "maxDelta": 226,
+      "verdict": "REAL"
+    },
+    "midband": {
+      "box": [
+        720,
+        278,
+        880,
+        285
+      ],
+      "hidePct": 0.268,
+      "nullPct": 0.446,
+      "rowsHit": 2,
+      "rowsTotal": 7,
+      "maxDelta": 13,
+      "verdict": "MOTION"
+    },
+    "midtree": {
+      "box": [
+        240,
+        236,
+        1360,
+        265
+      ],
+      "hidePct": 1.151,
+      "nullPct": 0.031,
+      "rowsHit": 18,
+      "rowsTotal": 29,
+      "maxDelta": 177,
+      "verdict": "REAL"
+    }
+  },
+  "vista": {
+    "box": {
+      "box": [
+        400,
+        414,
+        1200,
+        540
+      ],
+      "hidePct": 0.459,
+      "nullPct": 0.002,
+      "rowsHit": 25,
+      "rowsTotal": 126,
+      "maxDelta": 95,
+      "verdict": "REAL"
+    },
+    "skyL": {
+      "box": [
+        80,
+        90,
+        320,
+        180
+      ],
+      "hidePct": 55.583,
+      "nullPct": 0.005,
+      "rowsHit": 90,
+      "rowsTotal": 90,
+      "maxDelta": 152,
+      "verdict": "REAL"
+    },
+    "skyR": {
+      "box": [
+        1280,
+        90,
+        1520,
+        180
+      ],
+      "hidePct": 32.375,
+      "nullPct": 0,
+      "rowsHit": 37,
+      "rowsTotal": 90,
+      "maxDelta": 154,
+      "verdict": "REAL",
+      "correctedFromOfGoalsBug": true
+    },
+    "skyHz": {
+      "box": [
+        640,
+        297,
+        960,
+        342
+      ],
+      "hidePct": 0.007,
+      "nullPct": 0.007,
+      "rowsHit": 1,
+      "rowsTotal": 45,
+      "maxDelta": 8,
+      "verdict": "MOTION"
+    },
+    "hzBand": {
+      "box": [
+        80,
+        414,
+        400,
+        504
+      ],
+      "hidePct": 18.087,
+      "nullPct": 0,
+      "rowsHit": 49,
+      "rowsTotal": 90,
+      "maxDelta": 131,
+      "verdict": "REAL"
+    },
+    "mid": {
+      "box": [
+        640,
+        486,
+        1120,
+        540
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 54,
+      "maxDelta": 5,
+      "verdict": "clean"
+    },
+    "nearG": {
+      "box": [
+        320,
+        639,
+        1280,
+        684
+      ],
+      "hidePct": 0.079,
+      "nullPct": 0.093,
+      "rowsHit": 21,
+      "rowsTotal": 45,
+      "maxDelta": 34,
+      "verdict": "MOTION"
+    }
+  },
+  "vistadawn": {
+    "box": {
+      "box": [
+        400,
+        414,
+        1200,
+        540
+      ],
+      "hidePct": 0.51,
+      "nullPct": 0.018,
+      "rowsHit": 34,
+      "rowsTotal": 126,
+      "maxDelta": 112,
+      "verdict": "REAL"
+    },
+    "skyL": {
+      "box": [
+        80,
+        90,
+        320,
+        180
+      ],
+      "hidePct": 61.903,
+      "nullPct": 0.102,
+      "rowsHit": 90,
+      "rowsTotal": 90,
+      "maxDelta": 146,
+      "verdict": "REAL"
+    },
+    "skyR": {
+      "box": [
+        1280,
+        90,
+        1520,
+        180
+      ],
+      "hidePct": 32.375,
+      "nullPct": 0,
+      "rowsHit": 37,
+      "rowsTotal": 90,
+      "maxDelta": 138,
+      "verdict": "REAL",
+      "correctedFromOfGoalsBug": true
+    },
+    "skyHz": {
+      "box": [
+        640,
+        297,
+        960,
+        342
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 45,
+      "maxDelta": 1,
+      "verdict": "clean"
+    },
+    "hzBand": {
+      "box": [
+        80,
+        414,
+        400,
+        504
+      ],
+      "hidePct": 19.875,
+      "nullPct": 0,
+      "rowsHit": 51,
+      "rowsTotal": 90,
+      "maxDelta": 151,
+      "verdict": "REAL"
+    },
+    "mid": {
+      "box": [
+        640,
+        486,
+        1120,
+        540
+      ],
+      "hidePct": 0.023,
+      "nullPct": 0.019,
+      "rowsHit": 5,
+      "rowsTotal": 54,
+      "maxDelta": 10,
+      "verdict": "MOTION"
+    },
+    "nearG": {
+      "box": [
+        320,
+        639,
+        1280,
+        684
+      ],
+      "hidePct": 0.141,
+      "nullPct": 0.236,
+      "rowsHit": 33,
+      "rowsTotal": 45,
+      "maxDelta": 36,
+      "verdict": "MOTION"
+    }
+  },
+  "dawnsun": {
+    "box": {
+      "box": [
+        400,
+        180,
+        1200,
+        450
+      ],
+      "hidePct": 0.262,
+      "nullPct": 0,
+      "rowsHit": 45,
+      "rowsTotal": 270,
+      "maxDelta": 144,
+      "verdict": "REAL"
+    },
+    "sunCore": {
+      "box": [
+        776,
+        423,
+        824,
+        477
+      ],
+      "hidePct": 9.568,
+      "nullPct": 0,
+      "rowsHit": 22,
+      "rowsTotal": 54,
+      "maxDelta": 93,
+      "verdict": "REAL"
+    },
+    "glareIn": {
+      "box": [
+        704,
+        378,
+        896,
+        522
+      ],
+      "hidePct": 0.897,
+      "nullPct": 0,
+      "rowsHit": 22,
+      "rowsTotal": 144,
+      "maxDelta": 93,
+      "verdict": "REAL"
+    },
+    "glareOut": {
+      "box": [
+        512,
+        306,
+        1088,
+        594
+      ],
+      "hidePct": 0.151,
+      "nullPct": 0.001,
+      "rowsHit": 25,
+      "rowsTotal": 288,
+      "maxDelta": 93,
+      "verdict": "REAL"
+    },
+    "skyUp": {
+      "box": [
+        640,
+        27,
+        960,
+        90
+      ],
+      "hidePct": 1.498,
+      "nullPct": 0,
+      "rowsHit": 16,
+      "rowsTotal": 63,
+      "maxDelta": 119,
+      "verdict": "REAL"
+    },
+    "skyOff": {
+      "box": [
+        48,
+        27,
+        240,
+        108
+      ],
+      "hidePct": 52.141,
+      "nullPct": 0.296,
+      "rowsHit": 81,
+      "rowsTotal": 81,
+      "maxDelta": 136,
+      "verdict": "REAL"
+    },
+    "hzBand": {
+      "box": [
+        80,
+        558,
+        560,
+        612
+      ],
+      "hidePct": 0.123,
+      "nullPct": 0.112,
+      "rowsHit": 22,
+      "rowsTotal": 54,
+      "maxDelta": 30,
+      "verdict": "MOTION"
+    }
+  },
+  "vistanoon": {
+    "box": {
+      "box": [
+        400,
+        414,
+        1200,
+        540
+      ],
+      "hidePct": 0.479,
+      "nullPct": 0,
+      "rowsHit": 24,
+      "rowsTotal": 126,
+      "maxDelta": 99,
+      "verdict": "REAL"
+    },
+    "skyL": {
+      "box": [
+        80,
+        90,
+        320,
+        180
+      ],
+      "hidePct": 55.532,
+      "nullPct": 0.213,
+      "rowsHit": 89,
+      "rowsTotal": 90,
+      "maxDelta": 139,
+      "verdict": "REAL"
+    },
+    "skyR": {
+      "box": [
+        1280,
+        90,
+        1520,
+        180
+      ],
+      "hidePct": 32.375,
+      "nullPct": 0,
+      "rowsHit": 37,
+      "rowsTotal": 90,
+      "maxDelta": 150,
+      "verdict": "REAL",
+      "correctedFromOfGoalsBug": true
+    },
+    "skyHz": {
+      "box": [
+        640,
+        297,
+        960,
+        342
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 45,
+      "maxDelta": 6,
+      "verdict": "clean"
+    },
+    "hzBand": {
+      "box": [
+        80,
+        414,
+        400,
+        504
+      ],
+      "hidePct": 18.906,
+      "nullPct": 0,
+      "rowsHit": 50,
+      "rowsTotal": 90,
+      "maxDelta": 136,
+      "verdict": "REAL"
+    },
+    "mid": {
+      "box": [
+        640,
+        486,
+        1120,
+        540
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 54,
+      "maxDelta": 5,
+      "verdict": "clean"
+    },
+    "nearG": {
+      "box": [
+        320,
+        639,
+        1280,
+        684
+      ],
+      "hidePct": 0.028,
+      "nullPct": 0.069,
+      "rowsHit": 8,
+      "rowsTotal": 45,
+      "maxDelta": 39,
+      "verdict": "MOTION"
+    }
+  },
+  "meadow": {
+    "box": {
+      "box": [
+        400,
+        468,
+        1200,
+        630
+      ],
+      "hidePct": 0.224,
+      "nullPct": 0.219,
+      "rowsHit": 124,
+      "rowsTotal": 162,
+      "maxDelta": 32,
+      "verdict": "MOTION"
+    },
+    "skyHi": {
+      "box": [
+        560,
+        45,
+        1040,
+        135
+      ],
+      "hidePct": 0.549,
+      "nullPct": 0,
+      "rowsHit": 8,
+      "rowsTotal": 90,
+      "maxDelta": 101,
+      "verdict": "REAL"
+    },
+    "skyHz": {
+      "box": [
+        640,
+        198,
+        960,
+        252
+      ],
+      "hidePct": 0.006,
+      "nullPct": 0.006,
+      "rowsHit": 1,
+      "rowsTotal": 54,
+      "maxDelta": 7,
+      "verdict": "MOTION"
+    },
+    "hzBand": {
+      "box": [
+        80,
+        270,
+        640,
+        306
+      ],
+      "hidePct": 20.015,
+      "nullPct": 0.045,
+      "rowsHit": 34,
+      "rowsTotal": 36,
+      "maxDelta": 213,
+      "verdict": "REAL"
+    },
+    "mid": {
+      "box": [
+        480,
+        360,
+        1120,
+        414
+      ],
+      "hidePct": 0.492,
+      "nullPct": 0.443,
+      "rowsHit": 48,
+      "rowsTotal": 54,
+      "maxDelta": 32,
+      "verdict": "MOTION"
+    },
+    "nearG": {
+      "box": [
+        320,
+        594,
+        1280,
+        666
+      ],
+      "hidePct": 0.197,
+      "nullPct": 0.195,
+      "rowsHit": 56,
+      "rowsTotal": 72,
+      "maxDelta": 28,
+      "verdict": "MOTION"
+    },
+    "shade": {
+      "box": [
+        96,
+        630,
+        416,
+        675
+      ],
+      "hidePct": 1.222,
+      "nullPct": 1.229,
+      "rowsHit": 37,
+      "rowsTotal": 45,
+      "maxDelta": 26,
+      "verdict": "MOTION"
+    }
+  },
+  "mtnslope": {
+    "box": {
+      "box": [
+        400,
+        414,
+        1200,
+        540
+      ],
+      "hidePct": 0.508,
+      "nullPct": 0.082,
+      "rowsHit": 74,
+      "rowsTotal": 126,
+      "maxDelta": 154,
+      "verdict": "REAL"
+    },
+    "upL": {
+      "box": [
+        80,
+        90,
+        320,
+        180
+      ],
+      "hidePct": 42.093,
+      "nullPct": 0.116,
+      "rowsHit": 88,
+      "rowsTotal": 90,
+      "maxDelta": 233,
+      "verdict": "REAL"
+    },
+    "upR": {
+      "box": [
+        1280,
+        90,
+        1520,
+        180
+      ],
+      "hidePct": 29.509,
+      "nullPct": 0.273,
+      "rowsHit": 59,
+      "rowsTotal": 90,
+      "maxDelta": 246,
+      "verdict": "REAL",
+      "correctedFromOfGoalsBug": true
+    },
+    "upC": {
+      "box": [
+        640,
+        297,
+        960,
+        342
+      ],
+      "hidePct": 0.278,
+      "nullPct": 0.208,
+      "rowsHit": 26,
+      "rowsTotal": 45,
+      "maxDelta": 26,
+      "verdict": "MOTION"
+    },
+    "hzBand": {
+      "box": [
+        80,
+        414,
+        400,
+        504
+      ],
+      "hidePct": 17.413,
+      "nullPct": 0.097,
+      "rowsHit": 58,
+      "rowsTotal": 90,
+      "maxDelta": 202,
+      "verdict": "REAL"
+    },
+    "mid": {
+      "box": [
+        640,
+        486,
+        1120,
+        540
+      ],
+      "hidePct": 0.027,
+      "nullPct": 0.015,
+      "rowsHit": 6,
+      "rowsTotal": 54,
+      "maxDelta": 14,
+      "verdict": "MOTION"
+    },
+    "nearG": {
+      "box": [
+        320,
+        639,
+        1280,
+        684
+      ],
+      "hidePct": 0.025,
+      "nullPct": 0.023,
+      "rowsHit": 10,
+      "rowsTotal": 45,
+      "maxDelta": 12,
+      "verdict": "MOTION"
+    }
+  },
+  "pondside": {
+    "box": {
+      "box": [
+        240,
+        450,
+        1040,
+        630
+      ],
+      "hidePct": 83.655,
+      "nullPct": 83.197,
+      "rowsHit": 180,
+      "rowsTotal": 180,
+      "maxDelta": 140,
+      "verdict": "MOTION"
+    },
+    "sky": {
+      "box": [
+        560,
+        45,
+        1040,
+        135
+      ],
+      "hidePct": 0.715,
+      "nullPct": 0.005,
+      "rowsHit": 10,
+      "rowsTotal": 90,
+      "maxDelta": 129,
+      "verdict": "REAL"
+    },
+    "wood": {
+      "box": [
+        320,
+        243,
+        1280,
+        324
+      ],
+      "hidePct": 1.017,
+      "nullPct": 0.072,
+      "rowsHit": 54,
+      "rowsTotal": 81,
+      "maxDelta": 224,
+      "verdict": "REAL"
+    },
+    "bank": {
+      "box": [
+        400,
+        347,
+        1200,
+        383
+      ],
+      "hidePct": 3.24,
+      "nullPct": 3.122,
+      "rowsHit": 36,
+      "rowsTotal": 36,
+      "maxDelta": 43,
+      "verdict": "MOTION"
+    },
+    "shore": {
+      "box": [
+        1200,
+        468,
+        1520,
+        522
+      ],
+      "hidePct": 28.947,
+      "nullPct": 29.051,
+      "rowsHit": 54,
+      "rowsTotal": 54,
+      "maxDelta": 114,
+      "verdict": "MOTION"
+    },
+    "nearW": {
+      "box": [
+        80,
+        720,
+        400,
+        792
+      ],
+      "hidePct": 68.754,
+      "nullPct": 68.199,
+      "rowsHit": 72,
+      "rowsTotal": 72,
+      "maxDelta": 72,
+      "verdict": "MOTION"
+    }
+  },
+  "meadownight": {
+    "box": {
+      "box": [
+        400,
+        468,
+        1200,
+        630
+      ],
+      "hidePct": 0.003,
+      "nullPct": 0.002,
+      "rowsHit": 3,
+      "rowsTotal": 162,
+      "maxDelta": 12,
+      "verdict": "MOTION"
+    },
+    "skyHi": {
+      "box": [
+        560,
+        45,
+        1040,
+        135
+      ],
+      "hidePct": 0.257,
+      "nullPct": 0,
+      "rowsHit": 6,
+      "rowsTotal": 90,
+      "maxDelta": 225,
+      "verdict": "REAL"
+    },
+    "skyHz": {
+      "box": [
+        640,
+        198,
+        960,
+        252
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 54,
+      "maxDelta": 0,
+      "verdict": "clean"
+    },
+    "hzBand": {
+      "box": [
+        80,
+        270,
+        640,
+        306
+      ],
+      "hidePct": 6.969,
+      "nullPct": 0,
+      "rowsHit": 21,
+      "rowsTotal": 36,
+      "maxDelta": 238,
+      "verdict": "REAL"
+    },
+    "mid": {
+      "box": [
+        480,
+        360,
+        1120,
+        414
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 54,
+      "maxDelta": 5,
+      "verdict": "clean"
+    },
+    "nearG": {
+      "box": [
+        320,
+        594,
+        1280,
+        666
+      ],
+      "hidePct": 0.006,
+      "nullPct": 0.006,
+      "rowsHit": 3,
+      "rowsTotal": 72,
+      "maxDelta": 12,
+      "verdict": "MOTION"
+    },
+    "shade": {
+      "box": [
+        96,
+        630,
+        416,
+        675
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 45,
+      "maxDelta": 2,
+      "verdict": "clean"
+    }
+  },
+  "flyover": {
+    "box": {
+      "box": [
+        400,
+        405,
+        1200,
+        675
+      ],
+      "hidePct": 0.006,
+      "nullPct": 0.006,
+      "rowsHit": 12,
+      "rowsTotal": 270,
+      "maxDelta": 13,
+      "verdict": "MOTION"
+    },
+    "skyBand": {
+      "box": [
+        320,
+        45,
+        1280,
+        135
+      ],
+      "hidePct": 1.06,
+      "nullPct": 0.089,
+      "rowsHit": 24,
+      "rowsTotal": 90,
+      "maxDelta": 113,
+      "verdict": "REAL"
+    },
+    "hzBand": {
+      "box": [
+        320,
+        315,
+        1280,
+        338
+      ],
+      "hidePct": 4.669,
+      "nullPct": 0,
+      "rowsHit": 19,
+      "rowsTotal": 23,
+      "maxDelta": 127,
+      "verdict": "REAL"
+    },
+    "under": {
+      "box": [
+        560,
+        765,
+        1040,
+        882
+      ],
+      "hidePct": 0.014,
+      "nullPct": 0.014,
+      "rowsHit": 8,
+      "rowsTotal": 117,
+      "maxDelta": 9,
+      "verdict": "MOTION"
+    },
+    "shadowStep": {
+      "box": [
+        300,
+        531,
+        900,
+        580
+      ],
+      "hidePct": 0.007,
+      "nullPct": 0.007,
+      "rowsHit": 2,
+      "rowsTotal": 49,
+      "maxDelta": 9,
+      "verdict": "MOTION"
+    },
+    "crowns": {
+      "box": [
+        450,
+        600,
+        650,
+        700
+      ],
+      "hidePct": 0.015,
+      "nullPct": 0.015,
+      "rowsHit": 2,
+      "rowsTotal": 100,
+      "maxDelta": 13,
+      "verdict": "MOTION"
+    },
+    "farband": {
+      "box": [
+        320,
+        338,
+        1280,
+        405
+      ],
+      "hidePct": 2.856,
+      "nullPct": 0,
+      "rowsHit": 33,
+      "rowsTotal": 67,
+      "maxDelta": 121,
+      "verdict": "REAL"
+    }
+  },
+  "forestair": {
+    "box": {
+      "box": [
+        400,
+        405,
+        1200,
+        675
+      ],
+      "hidePct": 0.003,
+      "nullPct": 0.003,
+      "rowsHit": 6,
+      "rowsTotal": 270,
+      "maxDelta": 11,
+      "verdict": "MOTION"
+    },
+    "skyBand": {
+      "box": [
+        320,
+        45,
+        1280,
+        135
+      ],
+      "hidePct": 0.852,
+      "nullPct": 0.001,
+      "rowsHit": 23,
+      "rowsTotal": 90,
+      "maxDelta": 112,
+      "verdict": "REAL"
+    },
+    "hzBand": {
+      "box": [
+        320,
+        315,
+        1280,
+        338
+      ],
+      "hidePct": 5.543,
+      "nullPct": 0,
+      "rowsHit": 19,
+      "rowsTotal": 23,
+      "maxDelta": 126,
+      "verdict": "REAL"
+    },
+    "under": {
+      "box": [
+        560,
+        765,
+        1040,
+        882
+      ],
+      "hidePct": 0.005,
+      "nullPct": 0.007,
+      "rowsHit": 3,
+      "rowsTotal": 117,
+      "maxDelta": 10,
+      "verdict": "MOTION"
+    },
+    "shadowStep": {
+      "box": [
+        300,
+        531,
+        900,
+        580
+      ],
+      "hidePct": 0.007,
+      "nullPct": 0.007,
+      "rowsHit": 2,
+      "rowsTotal": 49,
+      "maxDelta": 8,
+      "verdict": "MOTION"
+    },
+    "treeIn": {
+      "box": [
+        320,
+        517,
+        1280,
+        549
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 32,
+      "maxDelta": 6,
+      "verdict": "clean"
+    },
+    "treeOut": {
+      "box": [
+        320,
+        485,
+        1280,
+        517
+      ],
+      "hidePct": 0.003,
+      "nullPct": 0.003,
+      "rowsHit": 1,
+      "rowsTotal": 32,
+      "maxDelta": 8,
+      "verdict": "MOTION"
+    },
+    "treeInB": {
+      "box": [
+        320,
+        533,
+        1280,
+        549
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 16,
+      "maxDelta": 5,
+      "verdict": "clean"
+    },
+    "treeInA": {
+      "box": [
+        320,
+        517,
+        1280,
+        533
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 16,
+      "maxDelta": 6,
+      "verdict": "clean"
+    },
+    "treeOutA": {
+      "box": [
+        320,
+        501,
+        1280,
+        517
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 16,
+      "maxDelta": 5,
+      "verdict": "clean"
+    },
+    "treeOutB": {
+      "box": [
+        320,
+        485,
+        1280,
+        501
+      ],
+      "hidePct": 0.007,
+      "nullPct": 0.007,
+      "rowsHit": 1,
+      "rowsTotal": 16,
+      "maxDelta": 8,
+      "verdict": "MOTION"
+    },
+    "crowns": {
+      "box": [
+        450,
+        600,
+        650,
+        700
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 100,
+      "maxDelta": 5,
+      "verdict": "clean"
+    },
+    "farband": {
+      "box": [
+        320,
+        338,
+        1280,
+        405
+      ],
+      "hidePct": 2.896,
+      "nullPct": 0.002,
+      "rowsHit": 34,
+      "rowsTotal": 67,
+      "maxDelta": 135,
+      "verdict": "REAL"
+    }
+  },
+  "forestaircanopy": {
+    "box": {
+      "box": [
+        320,
+        427,
+        1280,
+        484
+      ],
+      "hidePct": 0.013,
+      "nullPct": 0.015,
+      "rowsHit": 6,
+      "rowsTotal": 57,
+      "maxDelta": 9,
+      "verdict": "MOTION"
+    },
+    "ctrl690": {
+      "box": [
+        320,
+        573,
+        1280,
+        605
+      ],
+      "hidePct": 0.052,
+      "nullPct": 0.049,
+      "rowsHit": 9,
+      "rowsTotal": 32,
+      "maxDelta": 20,
+      "verdict": "MOTION"
+    }
+  },
+  "plainsmid": {
+    "box": {
+      "box": [
+        240,
+        404,
+        1360,
+        409
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 5,
+      "maxDelta": 1,
+      "verdict": "clean"
+    }
+  },
+  "plainslow": {
+    "box": {
+      "box": [
+        240,
+        433,
+        1360,
+        438
+      ],
+      "hidePct": 1.571,
+      "nullPct": 1.714,
+      "rowsHit": 5,
+      "rowsTotal": 5,
+      "maxDelta": 42,
+      "verdict": "MOTION"
+    }
+  },
+  "beachground": {
+    "box": {
+      "box": [
+        320,
+        383,
+        1280,
+        499
+      ],
+      "hidePct": 2.744,
+      "nullPct": 0.511,
+      "rowsHit": 116,
+      "rowsTotal": 116,
+      "maxDelta": 215,
+      "verdict": "REAL"
+    },
+    "ring": {
+      "box": [
+        320,
+        348,
+        1280,
+        383
+      ],
+      "hidePct": 3.339,
+      "nullPct": 0.679,
+      "rowsHit": 35,
+      "rowsTotal": 35,
+      "maxDelta": 181,
+      "verdict": "REAL"
+    },
+    "standHi": {
+      "box": [
+        320,
+        292,
+        1280,
+        332
+      ],
+      "hidePct": 2.682,
+      "nullPct": 0.008,
+      "rowsHit": 21,
+      "rowsTotal": 40,
+      "maxDelta": 206,
+      "verdict": "REAL"
+    },
+    "hzTree": {
+      "box": [
+        320,
+        332,
+        1280,
+        348
+      ],
+      "hidePct": 5.28,
+      "nullPct": 0.215,
+      "rowsHit": 15,
+      "rowsTotal": 16,
+      "maxDelta": 186,
+      "verdict": "REAL"
+    },
+    "skyHz": {
+      "box": [
+        640,
+        198,
+        960,
+        252
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 54,
+      "maxDelta": 6,
+      "verdict": "clean"
+    }
+  },
+  "limb": {
+    "box": {
+      "box": [
+        320,
+        540,
+        1440,
+        810
+      ],
+      "hidePct": 0.015,
+      "nullPct": 0.013,
+      "rowsHit": 35,
+      "rowsTotal": 270,
+      "maxDelta": 16,
+      "verdict": "MOTION"
+    },
+    "space": {
+      "box": [
+        480,
+        36,
+        1120,
+        108
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 72,
+      "maxDelta": 0,
+      "verdict": "clean"
+    },
+    "ring": {
+      "box": [
+        800,
+        621,
+        1040,
+        657
+      ],
+      "hidePct": 0.023,
+      "nullPct": 0.023,
+      "rowsHit": 2,
+      "rowsTotal": 36,
+      "maxDelta": 10,
+      "verdict": "MOTION"
+    },
+    "ground": {
+      "box": [
+        480,
+        738,
+        1120,
+        855
+      ],
+      "hidePct": 0.004,
+      "nullPct": 0.004,
+      "rowsHit": 3,
+      "rowsTotal": 117,
+      "maxDelta": 16,
+      "verdict": "MOTION"
+    },
+    "seam": {
+      "box": [
+        150,
+        700,
+        600,
+        860
+      ],
+      "hidePct": 0.061,
+      "nullPct": 0.053,
+      "rowsHit": 41,
+      "rowsTotal": 160,
+      "maxDelta": 16,
+      "verdict": "MOTION"
+    }
+  },
+  "machine": {
+    "box": {
+      "box": [
+        505,
+        20,
+        1160,
+        430
+      ],
+      "hidePct": 0.12,
+      "nullPct": 0,
+      "rowsHit": 17,
+      "rowsTotal": 410,
+      "maxDelta": 234,
+      "verdict": "REAL"
+    },
+    "hearthL": {
+      "box": [
+        300,
+        0,
+        470,
+        400
+      ],
+      "hidePct": 5.932,
+      "nullPct": 0.074,
+      "rowsHit": 131,
+      "rowsTotal": 400,
+      "maxDelta": 234,
+      "verdict": "REAL"
+    },
+    "hearthR": {
+      "box": [
+        1225,
+        0,
+        1320,
+        373
+      ],
+      "hidePct": 0.02,
+      "nullPct": 0.006,
+      "rowsHit": 5,
+      "rowsTotal": 373,
+      "maxDelta": 35,
+      "verdict": "REAL"
+    }
+  },
+  "smelterhero": {
+    "box": {
+      "box": [
+        400,
+        90,
+        1200,
+        765
+      ],
+      "hidePct": 7.761,
+      "nullPct": 0.777,
+      "rowsHit": 515,
+      "rowsTotal": 675,
+      "maxDelta": 238,
+      "verdict": "REAL"
+    },
+    "sunface": {
+      "box": [
+        416,
+        378,
+        560,
+        513
+      ],
+      "hidePct": 9.033,
+      "nullPct": 0.082,
+      "rowsHit": 40,
+      "rowsTotal": 135,
+      "maxDelta": 199,
+      "verdict": "REAL"
+    },
+    "firebox": {
+      "box": [
+        620,
+        310,
+        1020,
+        375
+      ],
+      "hidePct": 0.292,
+      "nullPct": 0.246,
+      "rowsHit": 35,
+      "rowsTotal": 65,
+      "maxDelta": 31,
+      "verdict": "MOTION"
+    },
+    "band": {
+      "box": [
+        470,
+        685,
+        1170,
+        738
+      ],
+      "hidePct": 1.965,
+      "nullPct": 1.927,
+      "rowsHit": 53,
+      "rowsTotal": 53,
+      "maxDelta": 48,
+      "verdict": "MOTION"
+    },
+    "plate": {
+      "box": [
+        1085,
+        255,
+        1195,
+        615
+      ],
+      "hidePct": 3.184,
+      "nullPct": 0.894,
+      "rowsHit": 169,
+      "rowsTotal": 360,
+      "maxDelta": 167,
+      "verdict": "REAL"
+    },
+    "hearthL": {
+      "box": [
+        275,
+        200,
+        350,
+        820
+      ],
+      "hidePct": 11.791,
+      "nullPct": 0.069,
+      "rowsHit": 144,
+      "rowsTotal": 620,
+      "maxDelta": 223,
+      "verdict": "REAL"
+    },
+    "hearthR": {
+      "box": [
+        1295,
+        200,
+        1350,
+        820
+      ],
+      "hidePct": 0.323,
+      "nullPct": 0.279,
+      "rowsHit": 83,
+      "rowsTotal": 620,
+      "maxDelta": 32,
+      "verdict": "MOTION"
+    },
+    "peep": {
+      "box": [
+        774,
+        386,
+        859,
+        448
+      ],
+      "hidePct": 1.461,
+      "nullPct": 0.095,
+      "rowsHit": 13,
+      "rowsTotal": 62,
+      "maxDelta": 87,
+      "verdict": "REAL"
+    },
+    "strip": {
+      "box": [
+        698,
+        519,
+        932,
+        533
+      ],
+      "hidePct": 100,
+      "nullPct": 0,
+      "rowsHit": 14,
+      "rowsTotal": 14,
+      "maxDelta": 216,
+      "verdict": "REAL"
+    },
+    "placard": {
+      "box": [
+        432,
+        305,
+        532,
+        372
+      ],
+      "hidePct": 0.015,
+      "nullPct": 0.015,
+      "rowsHit": 1,
+      "rowsTotal": 67,
+      "maxDelta": 7,
+      "verdict": "MOTION"
+    },
+    "bandLit": {
+      "box": [
+        470,
+        688,
+        600,
+        730
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 42,
+      "maxDelta": 2,
+      "verdict": "clean"
+    },
+    "bandShade": {
+      "box": [
+        900,
+        688,
+        1130,
+        730
+      ],
+      "hidePct": 0.207,
+      "nullPct": 0.124,
+      "rowsHit": 10,
+      "rowsTotal": 42,
+      "maxDelta": 26,
+      "verdict": "MOTION"
+    },
+    "groundL": {
+      "box": [
+        40,
+        600,
+        270,
+        820
+      ],
+      "hidePct": 0.239,
+      "nullPct": 0.215,
+      "rowsHit": 48,
+      "rowsTotal": 220,
+      "maxDelta": 34,
+      "verdict": "MOTION"
+    },
+    "groundR": {
+      "box": [
+        1360,
+        600,
+        1560,
+        820
+      ],
+      "hidePct": 0.111,
+      "nullPct": 0.098,
+      "rowsHit": 39,
+      "rowsTotal": 220,
+      "maxDelta": 32,
+      "verdict": "MOTION"
+    }
+  },
+  "ruin": {
+    "box": {
+      "box": [
+        448,
+        270,
+        1184,
+        549
+      ],
+      "hidePct": 0.223,
+      "nullPct": 0.187,
+      "rowsHit": 166,
+      "rowsTotal": 279,
+      "maxDelta": 174,
+      "verdict": "MOTION"
+    },
+    "cella": {
+      "box": [
+        460,
+        400,
+        570,
+        500
+      ],
+      "hidePct": 0.136,
+      "nullPct": 0.109,
+      "rowsHit": 14,
+      "rowsTotal": 100,
+      "maxDelta": 12,
+      "verdict": "MOTION"
+    },
+    "cellaDark": {
+      "box": [
+        620,
+        380,
+        700,
+        520
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 140,
+      "maxDelta": 6,
+      "verdict": "clean"
+    },
+    "sky": {
+      "box": [
+        1000,
+        100,
+        1200,
+        200
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 100,
+      "maxDelta": 1,
+      "verdict": "clean"
+    },
+    "hill": {
+      "box": [
+        1300,
+        470,
+        1450,
+        520
+      ],
+      "hidePct": 0.373,
+      "nullPct": 0.36,
+      "rowsHit": 15,
+      "rowsTotal": 50,
+      "maxDelta": 29,
+      "verdict": "MOTION"
+    }
+  },
+  "ruinwall": {
+    "box": {
+      "box": [
+        320,
+        180,
+        1280,
+        720
+      ],
+      "hidePct": 1.561,
+      "nullPct": 0.367,
+      "rowsHit": 494,
+      "rowsTotal": 540,
+      "maxDelta": 157,
+      "verdict": "REAL"
+    },
+    "wall": {
+      "box": [
+        900,
+        50,
+        1580,
+        550
+      ],
+      "hidePct": 12.105,
+      "nullPct": 6.111,
+      "rowsHit": 392,
+      "rowsTotal": 500,
+      "maxDelta": 245,
+      "verdict": "MOTION (borderline: null is 50.5% of hide)",
+      "correctedFromOfGoalsBug": true
+    },
+    "wallLow": {
+      "box": [
+        1000,
+        550,
+        1560,
+        700
+      ],
+      "hidePct": 7.455,
+      "nullPct": 7.487,
+      "rowsHit": 93,
+      "rowsTotal": 150,
+      "maxDelta": 46,
+      "verdict": "MOTION"
+    }
+  },
+  "station": {
+    "box": {
+      "box": [
+        80,
+        72,
+        1520,
+        540
+      ],
+      "hidePct": 12.064,
+      "nullPct": 11.355,
+      "rowsHit": 437,
+      "rowsTotal": 468,
+      "maxDelta": 255,
+      "verdict": "MOTION",
+      "correctedFromOfGoalsBug": true
+    }
+  },
+  "smelternight": {
+    "box": {
+      "box": [
+        400,
+        90,
+        1200,
+        765
+      ],
+      "hidePct": 6.861,
+      "nullPct": 0.006,
+      "rowsHit": 133,
+      "rowsTotal": 675,
+      "maxDelta": 250,
+      "verdict": "REAL"
+    },
+    "sunface": {
+      "box": [
+        416,
+        378,
+        560,
+        513
+      ],
+      "hidePct": 8.75,
+      "nullPct": 0,
+      "rowsHit": 29,
+      "rowsTotal": 135,
+      "maxDelta": 248,
+      "verdict": "REAL"
+    },
+    "firebox": {
+      "box": [
+        620,
+        310,
+        1020,
+        375
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 65,
+      "maxDelta": 2,
+      "verdict": "clean"
+    },
+    "band": {
+      "box": [
+        470,
+        685,
+        1170,
+        738
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 53,
+      "maxDelta": 3,
+      "verdict": "clean"
+    },
+    "plate": {
+      "box": [
+        1085,
+        255,
+        1195,
+        615
+      ],
+      "hidePct": 2.139,
+      "nullPct": 0,
+      "rowsHit": 61,
+      "rowsTotal": 360,
+      "maxDelta": 176,
+      "verdict": "REAL"
+    },
+    "hearthL": {
+      "box": [
+        275,
+        200,
+        350,
+        820
+      ],
+      "hidePct": 4.443,
+      "nullPct": 0,
+      "rowsHit": 76,
+      "rowsTotal": 620,
+      "maxDelta": 236,
+      "verdict": "REAL"
+    },
+    "hearthR": {
+      "box": [
+        1295,
+        200,
+        1350,
+        820
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 620,
+      "maxDelta": 0,
+      "verdict": "clean"
+    },
+    "peep": {
+      "box": [
+        774,
+        386,
+        859,
+        448
+      ],
+      "hidePct": 1.556,
+      "nullPct": 0,
+      "rowsHit": 9,
+      "rowsTotal": 62,
+      "maxDelta": 107,
+      "verdict": "REAL"
+    },
+    "strip": {
+      "box": [
+        698,
+        519,
+        932,
+        533
+      ],
+      "hidePct": 100,
+      "nullPct": 0,
+      "rowsHit": 14,
+      "rowsTotal": 14,
+      "maxDelta": 216,
+      "verdict": "REAL"
+    },
+    "placard": {
+      "box": [
+        432,
+        305,
+        532,
+        372
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 67,
+      "maxDelta": 1,
+      "verdict": "clean"
+    },
+    "bandLit": {
+      "box": [
+        470,
+        688,
+        600,
+        730
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 42,
+      "maxDelta": 0,
+      "verdict": "clean"
+    },
+    "bandShade": {
+      "box": [
+        900,
+        688,
+        1130,
+        730
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 42,
+      "maxDelta": 0,
+      "verdict": "clean"
+    },
+    "groundL": {
+      "box": [
+        40,
+        600,
+        270,
+        820
+      ],
+      "hidePct": 0,
+      "nullPct": null,
+      "rowsHit": 0,
+      "rowsTotal": 220,
+      "maxDelta": 3,
+      "verdict": "clean"
+    },
+    "groundR": {
+      "box": [
+        1360,
+        600,
+        1560,
+        820
+      ],
+      "hidePct": 0.002,
+      "nullPct": 0.002,
+      "rowsHit": 1,
+      "rowsTotal": 220,
+      "maxDelta": 7,
+      "verdict": "MOTION"
+    }
+  },
+  "basedusk": {
+    "box": {
+      "box": [
+        400,
+        342,
+        1200,
+        648
+      ],
+      "hidePct": 2.734,
+      "nullPct": 2.631,
+      "rowsHit": 306,
+      "rowsTotal": 306,
+      "maxDelta": 236,
+      "verdict": "MOTION"
+    },
+    "skyHigh": {
+      "box": [
+        600,
+        33,
+        1100,
+        58
+      ],
+      "hidePct": 4.712,
+      "nullPct": 0.304,
+      "rowsHit": 24,
+      "rowsTotal": 25,
+      "maxDelta": 170,
+      "verdict": "REAL"
+    },
+    "skyLow": {
+      "box": [
+        1490,
+        330,
+        1570,
+        340
+      ],
+      "hidePct": 0.875,
+      "nullPct": 0.875,
+      "rowsHit": 5,
+      "rowsTotal": 10,
+      "maxDelta": 24,
+      "verdict": "MOTION"
+    }
+  }
+}

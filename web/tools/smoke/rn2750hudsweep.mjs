@@ -163,26 +163,54 @@ try {
     hidehud = { evalResult: { valid: true, why: evalResult?.why ?? null, hudHidden: 'NULLCHECK: nothing hidden' },
       buf: await page.screenshot() };
   } else {
-    const hideResult = await page.evaluate((ids) => {
+    // FRESH-CONTEXT VERIFIER CORRECTION (RN-2750). `style.display='none'`,
+    // even `!important`, RACES the app's own per-frame render path and LOSES:
+    // `.style.display` is one property in one inline declaration, so any
+    // later PLAIN assignment to it (from anywhere) replaces the whole
+    // declaration and silently drops this hide's `!important`. Measured, not
+    // theorised: `ObjectivePanel.ts:70` (`of-goals`) is reassigned from
+    // `Objectives.ts:275`'s `stepGoals`, called on EVERY DRAINED FRAME with NO
+    // diff gate, and a first draft of this fix (re-hide once, right before
+    // the screenshot) still lost the race -- a render tick can land between
+    // that re-hide and the screenshot Playwright takes, and at this call
+    // site one always does. `CompassHud.ts:120`/`GameHud.ts:109,203,254` are
+    // the other four call sites that reassign `.style.display` on their own
+    // per-frame path, gated behind a diff key so they fire less often, but a
+    // style-based hide is not proof against any of them either.
+    //
+    // So this does not race the reassignment, it REMOVES ITS TARGET: every
+    // found node is detached from the document (`Node.remove()`) rather than
+    // hidden in place. A detached node is not part of the render tree, so a
+    // later `el.style.display = 'block'` on it is a property write to an
+    // object nobody paints -- there is no property left for any app code to
+    // win a race on. None of the five call sites re-inserts a node (they only
+    // ever reassign `.style` on the reference they already hold), so nothing
+    // needs to run twice and the pre-existing settle window is untouched.
+    const hide = (ids) => {
       const found = [];
       for (const id of ids) {
         const el = document.getElementById(id);
         if (el === null) continue;
-        el.style.setProperty('display', 'none', 'important');
+        el.remove();
         found.push(id);
       }
-      const stillVisible = found.filter((id) => (
-        getComputedStyle(document.getElementById(id)).display !== 'none'));
-      return { found, stillVisible };
-    }, HUD_IDS);
+      return found;
+    };
+    const found = await page.evaluate(hide, HUD_IDS);
     await page.evaluate((n) => window.__of.settle(n), Math.min(settleN, 4));
+    // Read back that removal, not reassignment: a node that somehow returned
+    // to the document (none do, but asserted rather than assumed, `hideVm`'s
+    // own RN-1876 rule) would refuse the frame instead of silently shipping
+    // the treatment as its own control.
+    const reattached = await page.evaluate((ids) => (
+      ids.filter((id) => document.getElementById(id) !== null)), found);
     hidehud = {
       evalResult: {
-        valid: hideResult.stillVisible.length === 0,
-        why: hideResult.stillVisible.length === 0
+        valid: reattached.length === 0,
+        why: reattached.length === 0
           ? evalResult?.why ?? null
-          : `hideHud did not take for: ${hideResult.stillVisible.join(', ')}`,
-        hudHidden: hideResult.found,
+          : `hideHud's removed nodes came back: ${reattached.join(', ')}`,
+        hudHidden: found,
       },
       buf: await page.screenshot(),
     };
