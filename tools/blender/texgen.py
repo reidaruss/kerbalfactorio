@@ -68,6 +68,14 @@ that has to be decremented is a header nobody updates.
             bedded mineral is DIRECTIONAL, rubble pitting is not, and the
             roughness contrast between smooth facet glints and dusty matrix
             is what sells a mineral under a moving sun.
+    snow    WIND-PACKED snow lying on the ground: sastrugi with a long
+            windward ramp and a short lee scarp, transverse wind ripple on
+            the flanks, a sintered crust that takes the roughness down where
+            it has set, and an albedo that is deliberately a +/- 5 per cent
+            modulation rather than a picture. `Snow` only (RN-2740). Owed
+            since RN-2700, which answered the same defect's TONE half in the
+            palette and could not answer its MICRO-RELIEF half because no
+            family here was a picture of snow.
 
 Each family ships TWO maps and no albedo:
 
@@ -226,7 +234,22 @@ FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384,
                # own raise fixing. The repeat is answered by what the tile
                # CONTAINS instead (see `_concrete_height`), not by making the
                # tile bigger and the texels worse.
-               "concrete": 512}
+               "concrete": 512,
+               # RN-2740. `snow` takes 512 and it is INHERITED FROM ITS TILE
+               # rather than rechosen: every family in this table at a tile of
+               # 1.5 m or more ships 512 (panel, paintchip and rust at 1.5 m;
+               # masonry and concrete at 1.8 m), and 512 px / 1.5 m = 341
+               # texels/m is panel's own resolution, above ASSET-SPECS 2.8's
+               # 256 px/m machine target. 384 was weighed and refused with
+               # RN-1780's own number: it lands at 256 texels/m, ON the floor
+               # `masonry` was raised off for being under it, and it would be
+               # the lowest tiling density in the game. The saving refused is
+               # `fur`'s: 2.36 MB against 4.19 MB for a three-map family. The
+               # finest authored feature is the 5.8 cm wind ripple, 20 texels
+               # at 512 and 15 at 384, so neither size aliases and the
+               # argument is the floor and the neighbours rather than the
+               # ripple.
+               "snow": 512}
 
 ZLIB_LEVEL = 9
 ZLIB_MEMLEVEL = 9
@@ -486,6 +509,53 @@ ROLE_FAMILY = {
     # role renders grey rust") is the intended result here rather than a
     # hazard.
     "Soot": "rust",
+    # --- snow: wind-packed snow lying on the ground (RN-2740) -------------
+    # `Snow` LEAVES `FLAT_ROLES`, which is a reversal of RN-2700's own
+    # decision and is made on the one thing that changed. That decision read
+    # "no family in this file is a picture of snow, and borrowing one is worse
+    # than going without", and it was right: `coarse` fails on its published
+    # 0.1806 mean, `stone` is fractured facets, `suitfab` is a weave. A
+    # PURPOSE-BUILT family removes the premise rather than overruling the
+    # argument, which is the same shape as every other move in this table --
+    # the family has to encode the right FACT about the surface, and now one
+    # does.
+    #
+    # THE TRAP THAT KILLED `coarse` WAS RE-MEASURED AGAINST THIS FAMILY BEFORE
+    # THE MOVE, because "it is purpose-built" is a claim and not a number.
+    # `SurfaceBind.ts:83` divides `albedo_mean_linear` back out through
+    # `material.color`, so the surface renders `baseColor * (map / mean)`.
+    # Measured on the shipped 512 field: mean 0.5574, per-texel ratio 0.9053
+    # to 1.0952 with p1/p99 at 0.9277/1.0714, so `Snow`'s 0.763 broadband
+    # albedo renders between 0.708 and 0.818 over 98 per cent of the drift and
+    # never leaves 0.691..0.836. `coarse` on the same drift swings it by about
+    # half its value every 0.75 m. The trap does not reproduce.
+    #
+    # THE LUMA-PRESERVATION ARITHMETIC HOLDS END TO END, which is what protects
+    # every luma pin in the guard before a frame is taken, exactly as RN-2700's
+    # own hex change did. The tile-mean rendered luma is
+    # `sum_c w_c baseColor_c E[map_c] / mean`, and measured it moves the drift
+    # from 0.76298 to 0.76311: **+0.0166 per cent**, an order of magnitude
+    # inside the 0.17 per cent RN-2700 already spent going from `Ice`'s hex to
+    # `Snow`'s. The residual is the map's own faint warm lean co-varying with
+    # a warm base colour, and it widens the drift's tile-mean R-minus-B from
+    # 12.0 counts to 14.4, still under `SuitGrime`'s 15, which of_lib's own
+    # `Snow` row names as the least saturated thing in the palette, and
+    # nowhere near `Ice`'s 33.
+    #
+    # WORN BY: `Mtn_SnowPatch_LOD0/_LOD2` in `props_mountains.glb` and nothing
+    # else today. That glb carries TEXCOORD_0 in METRES like every other prop
+    # (measured off the shipped bytes: u spans 2.60 m and v 2.10 m, matching
+    # the mesh box), so at a 1.5 m tile the drift takes 1.73 x 1.40 repeats and
+    # no copy of the map is countable on it. `Polar_SnowDrift` is still on
+    # `Ice` and is untouched here; repointing it is a polar lane's job and is
+    # recorded as owed at rendering.md 2.48.13 item 1.
+    #
+    # ZERO ASSET BYTES. Role-to-family binding resolves at RUNTIME from the
+    # manifest, so this moves no .glb, exactly as RN-742's `Rock` move did not.
+    # Moves in the same commit as the client's copy of this table (RN-100's
+    # rule: `verifyAgainstManifest` makes a one-sided move a failed smoke run
+    # and `check-roles.mjs` makes it a failed build).
+    "Snow": "snow",
     # --- ember: the firebox peep and sight strip (RN-1780, look audit R6) ---
     # See `of_lib.PALETTE`'s `EmberEmissiveState` row for why this is a new
     # role rather than a re-point of `EmissiveState`.
@@ -497,31 +567,19 @@ FLAT_ROLES = {
     "Glass": "transparent; a normal map on a 0.35-alpha pane reads as dirt",
     "Water": "transparent and animated by the shader, not by a map",
     "Ice": "near-specular; relief belongs in the mesh at this poly count",
-    # RN-2700. `Snow` splits off `Ice` (see of_lib.PALETTE for why the two are
-    # different substances) and it lands HERE rather than in ROLE_FAMILY, which
-    # is a decision and not an omission, so the reason is the whole entry.
+    # RN-2700 put `Snow` HERE with a stated reason, and RN-2740 has taken it
+    # OUT to `ROLE_FAMILY` above. The entry is not deleted quietly, because the
+    # reason it gave was correct when it was given and stops being correct for
+    # exactly one reason, which the next reader should be able to see:
     #
-    # It is NOT `Ice`'s reason. Snow is not near-specular and its relief does
-    # not belong in a 294-triangle mesh; a real snow surface wants sastrugi and
-    # a wind crust and it wants them at 5 to 20 cm, which is a MAP's job.
+    #   "no family in this file is a picture of snow; borrowing coarse would
+    #    put a soil map's own spread about a 0.1806 mean on the most uniform
+    #    surface in the world. A snow family is owed (RN-2700)"
     #
-    # The reason is that no family in this file is a picture of snow, and
-    # borrowing one is worse than going without. `coarse` is the near miss and
-    # it fails on its own published number: its `albedo_mean_linear` is 0.1806,
-    # SurfaceBind divides that back out through `material.color`, and the map's
-    # own spread about that dark mean would then swing a 0.76-albedo drift by
-    # roughly half its value every 0.75 m. Snow is the most uniform surface in
-    # the world and that would be dirt on it, in the literal sense that the map
-    # is a picture of soil. `stone` is fractured facets and `suitfab` is a
-    # weave, so neither is closer.
-    #
-    # A `snow` family is therefore OWED and named in rendering.md 2.48: three
-    # PNGs whose normal carries wind ripple and whose albedo is near-flat, at a
-    # tile around 1.5 m. Until it exists, no map beats the wrong map, and the
-    # tone defect R6 ranked is answered in the palette where it was authored.
-    "Snow": "no family in this file is a picture of snow; borrowing coarse "
-            "would put a soil map's own spread about a 0.1806 mean on the most "
-            "uniform surface in the world. A snow family is owed (RN-2700)",
+    # The owed family exists now and it is not a borrowed one, so the premise
+    # is gone rather than overruled. The `coarse` trap that reason names was
+    # re-measured against the NEW family before the move was made, not assumed
+    # away: see `_snow_albedo`'s docstring and rendering.md 2.53.
     "Oil": "a pool surface, deliberately mirror-flat",
     # Leaf, LeafDeep, LeafLight, LeafDry and Grass lived here from DW-35 to
     # RN-181 with two recorded reasons: "a normal map fights the flat-shaded
@@ -659,7 +717,22 @@ FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6, "ore": 0.5,
                  # would put two stone rhythms at two scales in one frame,
                  # which is the objection the `paintchip`/`rust` row above
                  # makes about `panel`.
-                 "masonry": 1.8, "ember": 0.28, "concrete": 1.8}
+                 "masonry": 1.8, "ember": 0.28, "concrete": 1.8,
+                 # RN-2740. `snow` 1.5 m, and this one IS derived from the
+                 # consumer rather than inherited. Two numbers set it and they
+                 # pull the same way. REPEATS: `Mtn_SnowPatch` is 2.60 x 2.10 m
+                 # of authored UV (measured off the shipped glb, which carries
+                 # TEXCOORD_0 in metres like every other prop), so 1.5 m gives
+                 # 1.73 x 1.40 repeats and no copy is countable on the asset --
+                 # `stone`'s 0.6 m would give 4.3 x 3.5, which is the "one
+                 # facet becomes the whole face" complaint inverted into four
+                 # copies of one drift. CONTENT: the tile has to hold a whole
+                 # sastrugi wavelength plus its own variation, and a real one
+                 # is 20 to 60 cm, so a tile under about 1.2 m cannot show a
+                 # bedform and its neighbour at once. rendering.md 2.48.13
+                 # item 2 asked for "around 1.5 m" from the drift's own size
+                 # and the measurement agrees with it.
+                 "snow": 1.5}
 
 # Texel density that implies, for the record against ASSET-SPECS 2.8
 # (512 px/m for first-person, 256 px/m for machines):
@@ -4993,6 +5066,368 @@ def _rust_albedo(w, h, height, aux):
     return bytes(out)
 
 
+# ---------------------------------------------------------------------------
+# The `snow` family: WIND-WORKED SNOW LYING ON THE GROUND (RN-2740).
+#
+# WHY IT EXISTS. rendering.md 2.48.13 item 2 and FLAT_ROLES' own `Snow` entry:
+# RN-2700 answered World Audit R6's rank-1 defect in the PALETTE (a warm
+# off-white at roughness 0.90 replacing a near-specular blue) and left the
+# MICRO-RELIEF half standing, because no family in this file was a picture of
+# snow and borrowing one is worse than going without. `coarse` was the near
+# miss and it fails on a published number rather than on taste: its
+# `albedo_mean_linear` is 0.1806, `SurfaceBind.ts:83` divides that back out
+# through `material.color`, and the soil map's spread about that dark mean
+# would swing a 0.76-albedo drift by roughly half its value every 0.75 m.
+#
+# WHAT THE SUBJECT IS, precisely, because it decides every constant below. Not
+# fresh snowfall and not glacial ice: WIND-PACKED SNOW on a scree slope, the
+# 22 cm drift `Mtn_SnowPatch` models and the wind drift `Polar_SnowDrift` will
+# want. That surface has exactly three relief scales and this family authors
+# all three and nothing else:
+#
+#   sastrugi   the wind's own bedform, 20 to 60 cm long, a few cm high, with a
+#              LONG windward ramp and a SHORT steep lee scarp. This is the one
+#              feature that makes snow read as wind-worked rather than as
+#              spilled plaster, and it is what R6 was missing.
+#   ripple     5 to 8 cm transverse ripples, 1 to 3 mm high, on the windward
+#              flanks and scoured off the crests. The same bedform one order
+#              down; the same asymmetry.
+#   grain      1 to 2 mm sintered crust texture, a sheen breaker and nothing
+#              more.
+#
+# THE WIND BLOWS ALONG +v IN TILE SPACE, FOR EVERY CONSUMER, AND THAT IS A
+# FEATURE. UVs are box-projected in metres (`of_lib.MeshBuilder._project_uvs`),
+# so a shared tiling map cannot rotate per instance; `bark`'s fissures and
+# `ore`'s strata already accept exactly this. It is BETTER here than there:
+# sastrugi on a real snowfield are all parallel because one prevailing wind cut
+# all of them, so two drifts 5 m apart wearing co-aligned ripple is the
+# physically right answer rather than the affordable one. The arbitrary part is
+# only WHICH world axis the wind picks.
+#
+# THE HEIGHTFIELD HAS A WORLD SCALE AND IT IS DERIVED, NOT ASSERTED. `_normal_rgb`
+# takes a central difference over two texels and multiplies by
+# `normal_strength`, so a heightfield unit corresponds to
+# `2 * tile_m / size_px * normal_strength` metres of relief:
+# 2 * (1.5 / 512) * 20.0 = 0.1172 m. Every amplitude below is therefore a real
+# height and is stated as one. No other family in this file states this number;
+# it is stated here because snow's whole defect was a surface at the wrong
+# physical scale, and a constant nobody can convert is a constant nobody can
+# check.
+# ---------------------------------------------------------------------------
+
+# Bedform counts PER TILE along the wind (+v). 1.5 m / 4 = 37.5 cm sastrugi and
+# 1.5 m / 26 = 5.8 cm ripple, both inside the observed ranges above; the second
+# sastrugi harmonic at 9 lands at 16.7 cm, which breaks the first one's rhythm
+# without introducing a third feature scale.
+SNOW_SAST_N = 4
+SNOW_SAST2_N = 9
+SNOW_RIPPLE_N = 26
+
+# Bedform ASYMMETRY: the fraction of a wavelength spent RISING. Every
+# wind-built bedform on earth has a long windward ramp and a short lee face,
+# and it is the single strongest cue that a surface was cut by moving air
+# rather than by weather. 0.74 puts the sastrugi lee scarp in 26 per cent of
+# 37.5 cm = 9.8 cm, which is where a real one is; 0.66 puts the ripple's in
+# 34 per cent of 5.8 cm = 2.0 cm, gentler because a 2 mm ripple cannot hold a
+# steeper face than its own grain size allows.
+SNOW_SAST_SKEW = 0.74
+SNOW_RIPPLE_SKEW = 0.66
+
+# PHASE WARP, in wavelengths, peak to peak. THIS IS WHAT STOPS THE FAMILY
+# READING AS CORDUROY, and it was measured by looking rather than derived: at
+# 0 the tile is a barcode, and the first draft of this family used an
+# iso-contour crease instead and read as a topographic map, which is the
+# recorded failure this parameter replaces. 0.40 lets a sastrugi scarp wander
+# about 15 cm across the tile, so scarps meander, fork and die out; 0.70 on the
+# ripple is more than half a wavelength, which is what lets neighbouring
+# crests merge and branch the way real ripple does.
+SNOW_SAST_WARP = 0.40
+SNOW_SAST2_WARP = 0.55
+SNOW_RIPPLE_WARP = 0.70
+
+# AMPLITUDES, in heightfield units. Multiply by 0.1172 m for the world height
+# (see the header). 0.55 -> 6.4 cm of metre-scale accumulation, 0.30 -> 3.5 cm
+# sastrugi, 0.10 -> 1.2 cm second harmonic, 0.018 -> 2.1 mm ripple, 0.012 ->
+# 1.4 mm crust grain. That ladder is proportionate to the 22 cm drift the
+# family is authored for; on a 2 m polar drift it is conservative, which is the
+# right direction for a shared surface.
+SNOW_A_DRIFT = 0.55
+SNOW_A_SAST = 0.30
+SNOW_A_SAST2 = 0.10
+SNOW_A_RIPPLE = 0.018
+SNOW_A_GRAIN = 0.012
+
+
+def _snow_bedform(t, skew):
+    """Asymmetric periodic wave on t in [0, 1): rises over [0, skew), falls
+    over [skew, 1), 0 at both ends and 1 at t = skew.
+
+    C2 EVERYWHERE, INCLUDING AT BOTH JOINS, which is the reason it is built out
+    of `_smooth` rather than out of a triangle or a parabola. The quintic has
+    zero first AND second derivative at 0 and at 1, so the crest at t = skew
+    and the trough at t = 0 are both smooth; a cubic smoothstep or a folded
+    parabola leaves a gradient discontinuity there and `_normal_rgb`, which is
+    a differencing operator, turns any such discontinuity into a hard line the
+    eye reads as a scratch. `_smooth`'s own docstring makes the same argument
+    for the lattice cells.
+
+    NO TRANSCENDENTALS, so the module's determinism rule holds unchanged: a
+    sine would have been the obvious wave and `sin` is exactly what DW-14's
+    1 ULP scar was about."""
+    return _smooth(t / skew) if t < skew else _smooth((1.0 - t) / (1.0 - skew))
+
+
+def _snow_noise(w, h, px, py, seed):
+    """Periodic value noise with SEPARATE lattice periods across (`px`) and
+    along (`py`) the wind.
+
+    `_noise_field` is isotropic and this family's every field is not: a
+    sastrugi mass is three to five times longer along the wind than across it,
+    and an isotropic field asked to carry that anisotropy produces round blobs
+    with a directional wave laid over them, which is two subjects rather than
+    one. Identical machinery to `_noise_field` otherwise -- same `_hash01`
+    lattice, same quintic interpolation, same `%` wrap in both axes, so it
+    tiles by construction and selftest 7's wrap-versus-interior test covers it
+    with no new argument.
+
+    NOT a rotated lattice, which was tried first and is recorded here because
+    it looks correct and is not: indexing on integer combinations like
+    (u + 3v, -3u + v) does tile, but the map has determinant 10, so the field
+    repeats TEN times inside one tile. Anisotropy that costs a tenfold repeat
+    is not anisotropy worth having."""
+    tab = [_hash01(ix, iy, seed) for iy in range(py) for ix in range(px)]
+    cols = []
+    for x in range(w):
+        f = x * px / w
+        i0 = int(f) % px
+        cols.append((i0, (i0 + 1) % px, _smooth(f - int(f))))
+    out = [0.0] * (w * h)
+    for y in range(h):
+        f = y * py / h
+        j0 = int(f) % py
+        j1 = (j0 + 1) % py
+        ty = _smooth(f - int(f))
+        r0 = j0 * px
+        r1 = j1 * px
+        base = y * w
+        for x in range(w):
+            i0, i1, tx = cols[x]
+            a = tab[r0 + i0]
+            b = tab[r0 + i1]
+            c = tab[r1 + i0]
+            d = tab[r1 + i1]
+            top = a + (b - a) * tx
+            bot = c + (d - c) * tx
+            out[base + x] = top + (bot - top) * ty
+    return out
+
+
+def _snow_fbm(w, h, px, py, octaves, seed):
+    """`_fbm` for `_snow_noise`: the same halving gain and doubling lacunarity,
+    doubling BOTH lattice periods so the anisotropy ratio is preserved octave
+    to octave rather than washing out toward isotropic at the fine end."""
+    out = [0.0] * (w * h)
+    amp, total = 1.0, 0.0
+    for o in range(octaves):
+        n = _snow_noise(w, h, px << o, py << o, seed + o * 7919)
+        for i in range(w * h):
+            out[i] += n[i] * amp
+        total += amp
+        amp *= 0.5
+    inv = 1.0 / total
+    return [v * inv for v in out]
+
+
+def _snow_height(w, h):
+    """Three bedform scales over a metre-scale accumulation, plus crust grain.
+
+    EVERY BEDFORM CARRIES AN AMPLITUDE MASK AND THE MASKS ARE THE DIFFERENCE
+    BETWEEN THIS AND A PATTERN. A wave modulated by nothing covers the tile
+    uniformly, which is what the first two drafts did and what makes a
+    procedural surface read as fabric: the eye finds the period. Each mask is
+    its own anisotropic fbm through a smoothstep whose LOW knee is inside the
+    field's distribution, so the amplitude genuinely reaches ZERO over real
+    areas -- the tile has smooth unworked pack in it, scarps that die out and
+    restart, and ripple fields that stop. The knees are where the work is; the
+    coefficients are only how much."""
+    # 75 cm x 150 cm cells, two octaves: the drift's own accumulation shape,
+    # under everything and carrying no detail of its own.
+    drift = _snow_fbm(w, h, 2, 1, 2, 21011)
+    swarp = _snow_fbm(w, h, 5, 2, 2, 21107)
+    samp = _snow_fbm(w, h, 3, 2, 2, 21211)
+    swarp2 = _snow_fbm(w, h, 9, 4, 2, 21313)
+    samp2 = _snow_fbm(w, h, 6, 3, 2, 21419)
+    rwarp = _snow_fbm(w, h, 14, 5, 2, 21523)
+    ramp = _snow_fbm(w, h, 7, 3, 2, 21611)
+    # 3.1 cm falling to 1.6 cm: the sintered crust. Isotropic on purpose -- a
+    # snow grain has no idea which way the wind blew.
+    grain = _fbm(w, h, 48, 2, seed=21713)
+    out = [0.0] * (w * h)
+    for y in range(h):
+        v = y / h
+        base = y * w
+        for x in range(w):
+            i = base + x
+            z = SNOW_A_DRIFT * drift[i]
+            ps = v * SNOW_SAST_N + (swarp[i] - 0.5) * 2.0 * SNOW_SAST_WARP
+            a_s = SNOW_A_SAST * _smoothstep(0.30, 0.74, samp[i])
+            z += a_s * _snow_bedform(ps - math.floor(ps), SNOW_SAST_SKEW)
+            p2 = v * SNOW_SAST2_N + (swarp2[i] - 0.5) * 2.0 * SNOW_SAST2_WARP
+            a_2 = SNOW_A_SAST2 * _smoothstep(0.34, 0.78, samp2[i])
+            z += a_2 * _snow_bedform(p2 - math.floor(p2), SNOW_SAST_SKEW)
+            pr = v * SNOW_RIPPLE_N + (rwarp[i] - 0.5) * 2.0 * SNOW_RIPPLE_WARP
+            a_r = SNOW_A_RIPPLE * _smoothstep(0.40, 0.78, ramp[i])
+            z += a_r * _snow_bedform(pr - math.floor(pr), SNOW_RIPPLE_SKEW)
+            z += SNOW_A_GRAIN * grain[i]
+            out[i] = z
+    # `hn` for the masks and the albedo, added WITHOUT touching `out`, on
+    # `_coarse_height`'s recorded argument: the normal and the AO are both
+    # differential, so rescaling what they read would silently retune
+    # `normal_strength` and `ao_gain` out from under the FAMILIES row.
+    return out, {"hn": _normalise(out)}
+
+
+# Roughness terms. The palette constant is 0.90 (near-Lambertian; see
+# of_lib.PALETTE's `Snow` row) and the ORM's green MULTIPLIES it, so this map
+# can only take the surface SMOOTHER, which is the physically right direction
+# and the only one available: what varies on real wind-packed snow is where a
+# hard sintered CRUST has formed, and a crust is smoother than the loose pack
+# beside it. Measured effective band 0.681 to 0.900, i.e. 0.219, over section
+# 2.1's 0.15 bar and roughly `coarse`'s Soil (0.216) with none of `coarse`'s
+# two under-bar roles.
+SNOW_R_CRUST = 0.20    # the wind crust on exposed high ground: the term that
+                       # carries the band, and the one that makes a snowfield
+                       # glare at a low sun, which of_lib's `Snow` row names
+                       # as the read 0.95 would have lost
+SNOW_R_SCOUR = 0.07    # bare scoured ice-lens patches, smoother again
+SNOW_R_MOTTLE = 0.05   # 7.5 cm packing variation, so the crust does not read
+                       # as a painted region with an edge
+
+
+def _snow_masks(w, h, height, aux):
+    hn = aux["hn"]
+    crust = _fbm(w, h, 6, 3, seed=21817)     # 25 cm: where the crust has set
+    mottle = _fbm(w, h, 20, 2, seed=21929)   # 7.5 cm: packing variation
+    rough = [0.0] * (w * h)
+    metal = [1.0] * (w * h)      # identity: snow is not a metal by any reading
+    for i in range(w * h):
+        r = 1.0
+        # A crust needs BOTH exposure and time, so the two fields multiply
+        # rather than add. `_plate_wear`'s recorded lesson, one substance over:
+        # summing independent fields concentrates the result about its mean,
+        # and a crust either formed here or it did not.
+        r -= SNOW_R_CRUST * (_smoothstep(0.40, 0.86, hn[i])
+                             * _smoothstep(0.30, 0.72, crust[i]))
+        r -= SNOW_R_SCOUR * _smoothstep(0.55, 0.90, crust[i])
+        r += (mottle[i] - 0.5) * SNOW_R_MOTTLE
+        rough[i] = _clamp01(r)
+    return rough, metal
+
+
+# Albedo terms. THE WHOLE MAP IS A +/- 5 PER CENT MODULATION AND THAT IS THE
+# POINT; see `_snow_albedo`'s docstring for the arithmetic and for why the
+# variation gate has a declared band for this family instead of the shared
+# 40-count floor.
+SNOW_LEVEL = 0.78      # where the map is CENTRED, in map units before the
+                       # sRGB encode. High rather than RN-559's 0.50, and for
+                       # a reason that is specific to a near-flat map: sRGB is
+                       # a power curve, so at byte 128 one count is 0.7 per
+                       # cent of linear light and at byte 199 it is 0.4, and a
+                       # map whose whole band is 20 counts wide wants the most
+                       # quantisation steps it can get inside that band.
+                       # Measured mean 0.5574 linear, inside `check_maps`'s
+                       # 0.15..0.85 with room at both ends.
+SNOW_A_DUST = 0.075    # light-absorbing impurity: the ONE term with real
+                       # amplitude, and the same physics of_lib's `Snow` hex
+                       # already rests on (dust and soot are why an aged
+                       # snowpack falls from 0.85 to 0.65)
+SNOW_A_FRESH = 0.026   # clean wind-deposited crystals on the crests. CAPPED
+                       # BY AN UPPER BOUND RATHER THAN CHOSEN BY EYE, and the
+                       # bound is of_lib's `Snow` row: aged packed snow sits
+                       # at 0.65 to 0.80 and FRESH SNOWFALL, which this drift
+                       # explicitly is not, sits at 0.85 to 0.90. The
+                       # brightest texel this map can produce is
+                       # LEVEL * (1 + SNOW_A_FRESH) * (1 + SNOW_A_GRAIN / 2),
+                       # and at 0.035 that rendered 0.853 on a 0.763 drift,
+                       # i.e. it put a handful of texels in the fresh-snowfall
+                       # band the palette row rules out. Selftest 7w asserts
+                       # the whole map stays inside 0.65..0.85
+SNOW_A_GRAIN = 0.014   # 1.2 cm grain, and it is a DITHER as much as a
+                       # feature: a 20-count band quantised over a smooth fbm
+                       # can contour-band, and a fine term breaks the contours
+                       # up. Snow genuinely has this variation at grain scale
+SNOW_A_WARM = 0.030    # the dust's own warm lean, applied as a channel lean
+                       # because a mean-neutral map cannot carry a colour.
+                       # BOUNDED BY THE PALETTE'S AUTHORITY, not by taste:
+                       # of_lib's `Snow` row picked E6E2DA at 12 counts of
+                       # chroma and called that quieter than `SuitGrime`'s 15,
+                       # which is the table's own least-saturated row, so the
+                       # map may not push the drift past 15. Measured, this
+                       # adds 2.4 counts to the tile-mean R-minus-B, taking
+                       # the drift from 12.0 to 14.4; at 0.038 it read 15.1
+                       # and was over the row it is not allowed to overrule
+
+
+def _snow_albedo(w, h, height, aux):
+    """A NEAR-FLAT TILING ALBEDO, and near-flat is the specification rather
+    than a shortcut. Snow is the most uniform surface in the world.
+
+    THE ARITHMETIC THAT DECIDES WHETHER THIS FAMILY MAY BE WORN AT ALL.
+    `SurfaceBind.ts:83` sets `material.color = baseColor / albedo_mean_linear`
+    and three multiplies the map back in, so what the surface actually renders
+    is `baseColor * (map / mean)` and the only thing that matters is the
+    RATIO's distribution. Measured on the shipped 512 field: mean 0.5574, and
+    the per-texel ratio runs 0.9053 to 1.0952 with its 1st and 99th
+    percentiles at 0.9277 and 1.0714. On `of_lib.PALETTE`'s `Snow`, whose
+    broadband albedo is 0.763, that renders a drift between **0.708 and 0.818**
+    over 98 per cent of its area and between 0.691 and 0.836 at the extremes --
+    inside the 0.65 to 0.85 band the literature gives for aged, packed,
+    slightly dusty snow at every single texel. Set that beside the number
+    FLAT_ROLES refused `coarse` on: mean 0.1806, swinging the same drift by
+    roughly half its value every 0.75 m. The trap does not reproduce.
+
+    IT READS `aux["hn"]`, WHICH THE ANTI-COBBLESTONE RULE `_coarse_albedo` AND
+    `_stone_albedo` BOTH STATE WOULD NORMALLY FORBID, and the exception is
+    argued rather than taken. That rule exists because a pigment field that
+    agrees with the relief field draws the same feature three times and reads
+    as painted geometry (RN-454's creature-as-cobblestone). Two things make
+    this the honest call here. First, the correlation is PHYSICALLY REAL and
+    directional: wind-blown mineral debris collects in the scour hollows and
+    the crests are swept clean, which is not a coincidence between two fields
+    but one mechanism. Second, and this is the part that makes it safe, the
+    ENTIRE map is a +/- 5 per cent modulation, so a perfectly relief-correlated
+    albedo could not read as painted geometry even if it wanted to: 5 per cent
+    of albedo is under a count of sRGB at this level, against the tens of
+    counts a normal map's own N.L term moves across the same feature. The
+    dominant term is still an INDEPENDENT 50 cm field, and `hn` only biases
+    where it lands.
+
+    CENTRED HIGH, NOT AT RN-559's 0.50: see SNOW_LEVEL."""
+    hn = aux["hn"]
+    dust = _fbm(w, h, 3, 2, seed=22013)     # ~50 cm: where the debris landed
+    fresh = _fbm(w, h, 5, 2, seed=22123)    # ~30 cm: clean new deposit
+    grain = _fbm(w, h, 128, 1, seed=22229)  # ~1.2 cm: grain-scale dither
+    out = bytearray(3 * w * h)
+    for i in range(w * h):
+        # Dust: an independent low-frequency field, then biased into the
+        # hollows. The 0.30 floor is what keeps the crests from going
+        # perfectly clean, because a scoured crest is still dusty snow.
+        d = _clamp01((dust[i] - 0.46) / 0.40)
+        d = d * (0.30 + 0.70 * (1.0 - hn[i]))
+        v = 1.0 - SNOW_A_DUST * d
+        # Fresh deposit brightens, and only on the high ground, because that
+        # is where wind-carried crystals are dropped rather than scoured.
+        v *= 1.0 + SNOW_A_FRESH * _clamp01((fresh[i] - 0.54) / 0.34) * hn[i]
+        v *= 1.0 + SNOW_A_GRAIN * (grain[i] - 0.5)
+        v *= SNOW_LEVEL
+        warm = SNOW_A_WARM * d
+        o = 3 * i
+        out[o] = int(round(255.0 * _clamp01(v * (1.0 + warm))))
+        out[o + 1] = int(round(255.0 * _clamp01(v)))
+        out[o + 2] = int(round(255.0 * _clamp01(v * (1.0 - warm * 1.3))))
+    return bytes(out)
+
+
 def _srgb_eotf(s):
     """sRGB EOTF: a normalised (0..1) encoded sample to linear light."""
     return s / 12.92 if s <= 0.04045 else ((s + 0.055) / 1.055) ** 2.4
@@ -5624,6 +6059,46 @@ FAMILIES = {
                  albedo=_rust_albedo,
                  normal_strength=14.0, ao_radius=7, ao_floor=0.41,
                  ao_gain=3.6),
+    # RN-2740. `snow` is a FOURTH SHAPE on the tilt statistic this table has
+    # been describing families by since `stone`, and the shape is the whole
+    # argument for the number. Measured on the shipped 512 field:
+    #
+    #   coarse    mean  7.69 deg, max 27.19   relief everywhere, edge nowhere
+    #   concrete  mean  4.73 deg, max 45.90   a flat cast face with cut joints
+    #   stone     mean 17.18 deg, max 74.24   a surface made entirely of edges
+    #   snow      mean  8.64 deg, max 47.73   a soft pack the wind cut scarps in
+    #
+    # `coarse`'s pair is this table's founding DEFECT and the same pair is
+    # snow's founding CORRECTNESS: "relief everywhere and an edge nowhere" is
+    # a false claim about host rock and a true one about a wind-packed drift,
+    # which is why the mean sits within a degree of coarse's. What snow needs
+    # that coarse cannot give is the MAXIMUM: a sastrugi lee scarp is a real
+    # cut edge, so the max lands at concrete's rather than at coarse's, and
+    # nowhere near stone's, because there are a handful of scarps per tile
+    # instead of an arris every 7.5 cm. 20.0 is the strength that puts it
+    # there; at 24.0 the mean reads 10.03 and the pack starts to corrugate.
+    #
+    # ao_radius 10 is chosen against the OCCLUDER like every other row here,
+    # and the occluder is the RIPPLE TROUGH: 21 texels at 341 texels/m is
+    # 62 mm, one 5.8 cm ripple wavelength, so the window sees one trough and
+    # the crest either side. stone's 9 was sized for a 3.2 cm chip facet, a
+    # feature this family does not have.
+    #
+    # ao_floor 0.78 IS THE HIGHEST IN THIS TABLE BY 0.26 AND THAT IS THE
+    # POINT, not a timid setting. `_ao` is a geometric local-relief term and
+    # the renderer has no multiple scattering, but snow's own 0.76 albedo
+    # means a hollow in it is filled by light that bounced off the snow beside
+    # it -- it is the most efficiently self-illuminating surface in the game,
+    # and an AO authored like rock's would be painting cave shadow on it.
+    # Measured at gain 6.0 the map runs 210..243 of 255, so it touches NEITHER
+    # rail: the deepest scarp foot is 17.6 per cent occluded and the floor is
+    # a guard against a future amplitude change rather than a value the field
+    # lives at. Stated because a clamp nothing reaches is otherwise
+    # indistinguishable from a clamp nobody checked.
+    "snow": dict(height=_snow_height, masks=_snow_masks,
+                 albedo=_snow_albedo,
+                 normal_strength=20.0, ao_radius=10, ao_floor=0.78,
+                 ao_gain=6.0),
 }
 
 
@@ -6622,6 +7097,55 @@ ALLOWED_CONSTANT = {
         "multiplier that leaves that alone, and inventing variation here "
         "would be the dishonest half of section 2.1's own rule. The suit's "
         "metal is on `suitplate`, which does vary"),
+    # RN-2740.
+    ("snow", "orm", "B"): (255,
+        "snow is a dielectric and `Snow`'s palette metallic is 0.00; "
+        "identity is the only multiplier that leaves it there, which is "
+        "`stone`'s reason one substance along. A snowfield's glare comes "
+        "from the roughness map's crust term, not from metalness"),
+}
+
+# PER-FAMILY OVERRIDE OF THE TILING-ALBEDO VARIATION GATE (RN-2740), in the
+# (value, reason) shape RN-1837 gave ALLOWED_CONSTANT and for the same stated
+# argument: a declared exception whose value is asserted, and whose reason is
+# PRINTED beside the verdict, is better than a gate a family cannot honestly
+# pass. The stating is the point, so `check_maps` echoes the reason on the ok
+# line and not only on the failing one.
+#
+# The default is a FLOOR of 40 counts of total sRGB range with no ceiling, and
+# its reason is sound for every family that has ever been in this table: a flat
+# albedo is the flat vertex colour ART-DIRECTION.md rejects.
+#
+# IT IS NOT SOUND FOR SNOW, AND THE REASON IS THE sRGB CURVE RATHER THAN A
+# PREFERENCE. What the client does with this map is divide out its mean and
+# multiply the rest into `material.color`, so a texel's byte value only matters
+# through its LINEAR ratio to the mean. At the level this family ships (its own
+# mean byte is 196.7) a 40-count spread about that centre is measured at
+# -21.3 / +24.3 per cent of linear light -- ASYMMETRIC, because sRGB is a power
+# curve and the two sides of a byte range are not the same fraction of light --
+# which on `of_lib.PALETTE`'s 0.763 `Snow` renders a drift between 0.60 and
+# 0.95: below dirty snow at one end and above FRESH SNOWFALL at the other, on a
+# surface authored as aged and wind-packed. Passing the shared gate would mean
+# authoring a lie to satisfy it.
+#
+# WHAT THIS ENTRY IS, STATED PRECISELY, because "stricter" is the easy word and
+# it is not true. The declared band is DISJOINT from the default, not a subset
+# of it: 16..34 admits every spread from 16 to 34, and the default REFUSES all
+# of them. It is narrower -- 19 counts wide against the default's 216, about
+# twelve times -- and it is two-sided where the default is one-sided, so it can
+# refuse things the default cannot. But a family carrying this entry is being
+# held to a DIFFERENT rule, not a tighter version of the same one, and calling
+# it a tightening would hide exactly the fact a reader needs: `snow` would fail
+# the shared gate, and this is the declaration that says so and why.
+ALBEDO_SPREAD_DEFAULT = (40, 255)
+ALBEDO_SPREAD = {
+    "snow": (16, 34,
+        "snow is the most uniform surface in the world and this map is a "
+        "+/- 5 per cent modulation on purpose; 40 counts about this map's own "
+        "centre measures -21.3/+24.3 per cent of linear albedo, rendering a "
+        "0.763 drift between 0.60 and 0.95, above fresh snowfall at the top "
+        "end. The shipped 22 puts every texel inside the 0.65..0.85 the "
+        "literature gives for aged, packed, slightly dusty snow"),
 }
 
 # Channels that MUST carry variation, with the reason a flat one is a defect.
@@ -6809,8 +7333,23 @@ def check_maps(out_dir=OUT_DIR, verbose=True):
                 stats = _channel_stats(rgb, n)
                 lo = min(st[0] for st in stats)
                 hi = max(st[1] for st in stats)
-                say(hi - lo >= 40, "%s.albedo varies" % fam,
-                    "luma spread %d (min 40), range %d..%d" % (hi - lo, lo, hi))
+                # RN-2740: the band is per family and declared. See
+                # ALBEDO_SPREAD for why one family needs a CEILING as well as a
+                # floor, and for why that is a DIFFERENT rule rather than a
+                # tighter version of the shared one. The declared REASON is
+                # printed on the ok line as well as the fail line, because a
+                # stated exception nobody reads is the failure mode RN-1837's
+                # own header names.
+                s_rule = ALBEDO_SPREAD.get(fam)
+                s_lo, s_hi = (s_rule[0], s_rule[1]) if s_rule \
+                    else ALBEDO_SPREAD_DEFAULT
+                say(s_lo <= hi - lo <= s_hi, "%s.albedo varies" % fam,
+                    "spread %d (band %d..%d), range %d..%d%s"
+                    % (hi - lo, s_lo, s_hi, lo, hi,
+                       ("  DECLARED EXCEPTION, disjoint from the shared "
+                        "%d..%d: %s" % (ALBEDO_SPREAD_DEFAULT[0],
+                                        ALBEDO_SPREAD_DEFAULT[1], s_rule[2]))
+                       if s_rule else ""))
                 measured = _albedo_mean_rgb(rgb)
                 declared = spec.get("albedo_mean_linear")
                 say(declared is not None
@@ -7693,6 +8232,130 @@ def selftest():
              sum(1 for v in ash_aux["tone"]
                  if abs(v) >= ASHLAR_TONE_CLAMP - 1e-9), s * s,
              ASHLAR_TONE_CLAMP - t_ext))
+
+    # 7t. SNOW'S BEDFORMS LEAN DOWNWIND (RN-2740). The single claim that makes
+    #     this family a picture of WIND-WORKED snow rather than of lumpy
+    #     plaster is the asymmetry: a long windward ramp and a short steep lee
+    #     scarp. It is worth a gate because it is invisible in a thumbnail (a
+    #     normal map is a lavender wash) and because it is exactly what a later
+    #     retune of `SNOW_SAST_SKEW` toward 0.5 would silently delete.
+    #
+    #     Measured along +v, which is the wind axis by construction, as the
+    #     ratio of the mean falling gradient to the mean rising one over the
+    #     composed field. The drift base and the crust grain are in there too
+    #     and both are symmetric, so this is deliberately measured on the
+    #     SHIPPED composition rather than on the bedform in isolation: the
+    #     property that matters is that the asymmetry survives everything laid
+    #     over it.
+    s = 256
+    sh, _ = _snow_height(s, s)
+
+    def _lean(f, n):
+        up = dn = 0.0
+        nu = nd = 0
+        for y in range(n):
+            row = y * n
+            nxt = ((y + 1) % n) * n
+            for x in range(n):
+                d = f[nxt + x] - f[row + x]
+                if d > 0.0:
+                    up += d
+                    nu += 1
+                elif d < 0.0:
+                    dn -= d
+                    nd += 1
+        return (dn / max(nd, 1)) / max(up / max(nu, 1), 1e-12), nu, nd
+
+    lean, n_up, n_dn = _lean(sh, s)
+    check("snow leans downwind", lean >= 1.25,
+          "the mean FALLING along-wind gradient is %.3fx the mean rising one "
+          "(need >= 1.25) over %d rising and %d falling texels, from "
+          "SNOW_SAST_SKEW %.2f / SNOW_RIPPLE_SKEW %.2f"
+          % (lean, n_up, n_dn, SNOW_SAST_SKEW, SNOW_RIPPLE_SKEW))
+
+    # 7u. NEGATIVE CONTROL for 7t, per DW-20. The same field with both skews
+    #     set to 0.5 is a SYMMETRIC bedform and must read ~1.0, which proves
+    #     7t is measuring the skew rather than the noise. The globals are
+    #     swapped and restored rather than passed as arguments because
+    #     `_snow_height` is called through the FAMILIES table by
+    #     `build_family` and must not grow a parameter no shipped path uses.
+    _sk = (SNOW_SAST_SKEW, SNOW_RIPPLE_SKEW)
+    try:
+        globals()["SNOW_SAST_SKEW"] = 0.5
+        globals()["SNOW_RIPPLE_SKEW"] = 0.5
+        sym, _u, _d = _lean(_snow_height(s, s)[0], s)
+    finally:
+        globals()["SNOW_SAST_SKEW"], globals()["SNOW_RIPPLE_SKEW"] = _sk
+    check("snow lean control", abs(sym - 1.0) <= 0.10,
+          "at skew 0.50/0.50 the same statistic reads %.3f, i.e. symmetric "
+          "within 0.10, so 7t's %.3f is the asymmetry and not the field"
+          % (sym, lean))
+
+    # 7v. SNOW'S FIELDS ARE ELONGATED ALONG THE WIND (RN-2740), which is 7c's
+    #     check one family over and for the same reason: a sastrugi mass is
+    #     three to five times longer along the wind than across it, and an
+    #     isotropic field asked to carry that produces round blobs with a wave
+    #     over them. `_snow_noise` exists only to supply this property, so it
+    #     is the thing to assert. An isotropic field lands at 1.0.
+    s = 192
+    an = _snow_fbm(s, s, 8, 3, 2, 21107)
+    gu = gv = 0.0
+    for y in range(s):
+        row = y * s
+        for x in range(s):
+            here = an[row + x]
+            gu += abs(an[row + (x + 1) % s] - here)
+            gv += abs(an[((y + 1) % s) * s + x] - here)
+    check("snow fields run with the wind", gu >= 2.0 * gv,
+          "across-wind gradient is %.2fx the along-wind one (need >= 2.0x); "
+          "the lattice is %d cells across and %d along" % (gu / gv, 8, 3))
+
+    # 7w. THE DECIDING NUMBER OF RN-2740, ASSERTED RATHER THAN RECORDED.
+    #     `SurfaceBind.ts:83` divides `albedo_mean_linear` back out through
+    #     `material.color`, so a tiling albedo renders `baseColor * map/mean`
+    #     and the map's RATIO spread is what reaches the surface. `Snow`'s
+    #     palette albedo is 0.763 broadband and aged, packed, slightly dusty
+    #     snow sits at 0.65 to 0.85, so EVERY texel of this map has to land
+    #     inside that band. This is the check that would refuse a future
+    #     widening of the albedo terms, and it is the reason FLAT_ROLES could
+    #     stop refusing this role.
+    s = FAMILY_SIZE["snow"]
+    _sh, _sx = _snow_height(s, s)
+    s_alb = _snow_albedo(s, s, _sh, _sx)
+
+    def _band(alb, n, base):
+        m = _albedo_mean_rgb(alb)
+        lut = _SRGB_TO_LINEAR
+        lo = 9e9
+        hi = 0.0
+        for i in range(n):
+            o = 3 * i
+            v = (0.2126 * lut[alb[o]] + 0.7152 * lut[alb[o + 1]]
+                 + 0.0722 * lut[alb[o + 2]]) / m
+            if v < lo:
+                lo = v
+            if v > hi:
+                hi = v
+        return m, base * lo, base * hi
+
+    s_mean, s_lo, s_hi = _band(s_alb, s * s, 0.763)
+    check("snow albedo stays snow", 0.65 <= s_lo and s_hi <= 0.85,
+          "mean %.4f, and a 0.763 drift renders %.4f..%.4f across every texel "
+          "(band 0.65..0.85, the literature range for aged packed snow)"
+          % (s_mean, s_lo, s_hi))
+
+    # 7x. NEGATIVE CONTROL for 7w, and it is a REAL family rather than a
+    #     synthetic one: `coarse` is the map FLAT_ROLES refused this role on
+    #     before the family existed, and the whole argument was its 0.1806
+    #     mean. Running the identical arithmetic on it must leave the band, or
+    #     7w is asserting something no map could fail.
+    cs = FAMILY_SIZE["coarse"]
+    _ch, _cx = _coarse_height(cs, cs)
+    c_mean, c_lo, c_hi = _band(_coarse_albedo(cs, cs, _ch, _cx), cs * cs, 0.763)
+    check("snow albedo control", c_lo < 0.65 or c_hi > 0.85,
+          "`coarse` at mean %.4f would render the same drift %.4f..%.4f, "
+          "correctly outside 0.65..0.85 -- the trap RN-2700 named"
+          % (c_mean, c_lo, c_hi))
 
     # 8. Every palette role is either mapped or explicitly flat. Catches the
     #    standing-rule-11 failure of a check that passes on what it never
