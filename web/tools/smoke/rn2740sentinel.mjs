@@ -84,17 +84,27 @@ if (!existsSync(tokenPath)) {
 }
 
 // 2. THE ENTRY CHUNK NAME, served against built.
-const built = readdirSync(path.join(dist, 'assets'))
-  .filter((f) => /^index-.*\.js$/.test(f)).sort();
+//
+// FAILS CLOSED. A missing or unreadable `dist/assets` is a REFUSAL, not an
+// empty list: `built.length > 0` below would already catch the empty case, but
+// an unguarded `readdirSync` THROWS and takes the whole sentinel down before it
+// prints anything, which is indistinguishable from a run nobody started.
+let built = [];
+let builtErr = '';
+try {
+  built = readdirSync(path.join(dist, 'assets'))
+    .filter((f) => /^index-.*\.js$/.test(f)).sort();
+} catch (e) { builtErr = `cannot read ${dist}/assets: ${e.message}`; }
 let served = [];
 try {
   const html = await (await fetch(`http://127.0.0.1:${port}/`)).text();
   served = [...new Set([...html.matchAll(/index-[A-Za-z0-9_-]+\.js/g)]
     .map((m) => m[0]))].sort();
 } catch (e) { served = [`<fetch failed: ${e.message}>`]; }
-say(built.length > 0 && built.length === served.length
+say(builtErr === '' && built.length > 0 && built.length === served.length
   && built.every((b, i) => b === served[i]), 'entry chunk',
-  `built ${built.join(',')} served ${served.join(',')}`);
+  builtErr !== '' ? builtErr
+    : `built ${built.join(',')} served ${served.join(',')}`);
 
 // 3. EVERY NAMED ASSET, byte for byte.
 for (const rel of assets) {
@@ -127,33 +137,54 @@ for (const rel of assets) {
 // server and a differently-pointed one. A `vite preview` with no `--outDir`
 // names no directory, so `--nooutdir=1` declares that case rather than letting
 // a missing match read as a pass.
+//
+// BOTH LEGS FAIL CLOSED, and the first draft of this file got both wrong in the
+// same way, which is why it is spelled out. A `catch` that stuffs an error
+// STRING into the variable under test turns a broken instrument into a passing
+// one: `owner = '<netstat failed: ...>'` is non-empty and satisfied
+// `owner !== ''`, and `cmdline = '<query failed: ...>'` contains no `--outdir`
+// and satisfied the negated regex on the `--nooutdir` path. A tool that cannot
+// look must say so, never shrug. Both errors are held in their own variables
+// and both legs refuse when one is set.
 let owner = '';
+let ownerErr = '';
 try {
   const out = execFileSync('netstat', ['-ano'], { encoding: 'utf8' });
   for (const ln of out.split(/\r?\n/)) {
     const m = /\s+TCP\s+\S+:(\d+)\s+\S+\s+LISTENING\s+(\d+)/.exec(ln);
     if (m && Number(m[1]) === port) { owner = m[2]; break; }
   }
-} catch (e) { owner = `<netstat failed: ${e.message}>`; }
-say(owner !== '' && (pid === '' || owner === pid), 'port owner',
-  `port ${port} is owned by pid ${owner || '<none>'}`
-  + (pid === '' ? ' (no --pid given, so this leg only proves the port is live)'
-    : `, lane started ${pid}`));
+} catch (e) { ownerErr = `netstat failed: ${e.message}`; }
+say(ownerErr === '' && owner !== '' && (pid === '' || owner === pid),
+  'port owner',
+  ownerErr !== '' ? `${ownerErr} -- this leg cannot answer, so it refuses`
+    : `port ${port} is owned by pid ${owner || '<none>'}`
+      + (pid === ''
+        ? ' (no --pid given, so this leg only proves the port is live)'
+        : `, lane started ${pid}`));
 
 const noOutDir = argv.get('--nooutdir') === '1';
 let cmdline = '';
-try {
-  cmdline = execFileSync('powershell', ['-NoProfile', '-Command',
-    `(Get-CimInstance Win32_Process -Filter "ProcessId=${owner}").CommandLine`],
-  { encoding: 'utf8' }).trim();
-} catch (e) { cmdline = `<query failed: ${e.message}>`; }
-const names = cmdline.toLowerCase().includes(dist.toLowerCase());
-say(noOutDir ? !/--outdir/i.test(cmdline) : names, 'server points here',
-  noOutDir
-    ? `no --outDir on the owner's command line, so it serves its cwd's dist: `
-      + `${cmdline.slice(0, 120)}`
-    : (names ? `the owner's command line names ${dist}`
-      : `the owner's command line does NOT name ${dist}: ${cmdline.slice(0, 200)}`));
+let cmdErr = ownerErr !== '' || owner === ''
+  ? 'no owning pid to query (see the leg above)' : '';
+if (cmdErr === '') {
+  try {
+    cmdline = execFileSync('powershell', ['-NoProfile', '-Command',
+      `(Get-CimInstance Win32_Process -Filter "ProcessId=${owner}").CommandLine`],
+    { encoding: 'utf8' }).trim();
+    if (cmdline === '') cmdErr = `pid ${owner} reported an empty command line`;
+  } catch (e) { cmdErr = `CIM query failed: ${e.message}`; }
+}
+const names = cmdErr === '' && cmdline.toLowerCase().includes(dist.toLowerCase());
+say(cmdErr === '' && (noOutDir ? !/--outdir/i.test(cmdline) : names),
+  'server points here',
+  cmdErr !== '' ? `${cmdErr} -- this leg cannot answer, so it refuses`
+    : noOutDir
+      ? `no --outDir on the owner's command line, so it serves its cwd's dist: `
+        + `${cmdline.slice(0, 120)}`
+      : (names ? `the owner's command line names ${dist}`
+        : `the owner's command line does NOT name ${dist}: `
+          + `${cmdline.slice(0, 200)}`));
 
 for (const ln of lines) console.log(ln);
 console.log(`\n${ok ? 'SENTINEL PASS' : 'SENTINEL FAIL'}  ${lines.length} check(s), `

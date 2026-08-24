@@ -7107,8 +7107,10 @@ ALLOWED_CONSTANT = {
 
 # PER-FAMILY OVERRIDE OF THE TILING-ALBEDO VARIATION GATE (RN-2740), in the
 # (value, reason) shape RN-1837 gave ALLOWED_CONSTANT and for the same stated
-# argument: a declared exception whose value is asserted is strictly better
-# than a gate a family cannot honestly pass.
+# argument: a declared exception whose value is asserted, and whose reason is
+# PRINTED beside the verdict, is better than a gate a family cannot honestly
+# pass. The stating is the point, so `check_maps` echoes the reason on the ok
+# line and not only on the failing one.
 #
 # The default is a FLOOR of 40 counts of total sRGB range with no ceiling, and
 # its reason is sound for every family that has ever been in this table: a flat
@@ -7117,26 +7119,33 @@ ALLOWED_CONSTANT = {
 # IT IS NOT SOUND FOR SNOW, AND THE REASON IS THE sRGB CURVE RATHER THAN A
 # PREFERENCE. What the client does with this map is divide out its mean and
 # multiply the rest into `material.color`, so a texel's byte value only matters
-# through its LINEAR ratio to the mean. At the level this family ships (byte
-# ~199) the sensitivity is dL/L = 2.4 * db / (b + 14), so 40 counts of range is
-# +/- 24 per cent of linear albedo, which on `of_lib.PALETTE`'s 0.763 `Snow`
-# renders a drift between 0.58 and 0.95: below dirty snow at one end and above
-# FRESH SNOWFALL at the other, on a surface authored as aged and wind-packed.
-# Passing the shared gate would mean authoring a lie to satisfy it.
+# through its LINEAR ratio to the mean. At the level this family ships (its own
+# mean byte is 196.7) a 40-count spread about that centre is measured at
+# -21.3 / +24.3 per cent of linear light -- ASYMMETRIC, because sRGB is a power
+# curve and the two sides of a byte range are not the same fraction of light --
+# which on `of_lib.PALETTE`'s 0.763 `Snow` renders a drift between 0.60 and
+# 0.95: below dirty snow at one end and above FRESH SNOWFALL at the other, on a
+# surface authored as aged and wind-packed. Passing the shared gate would mean
+# authoring a lie to satisfy it.
 #
-# SO THE ENTRY IS A BAND AND NOT A LOWERED FLOOR, which makes it a STRONGER
-# check than the default for this family rather than a weaker one: the low edge
-# still refuses a dead map, and the high edge refuses the map drifting into the
-# range the paragraph above rules out. `check_maps` asserts the shipped spread
-# is inside it and prints both edges.
+# WHAT THIS ENTRY IS, STATED PRECISELY, because "stricter" is the easy word and
+# it is not true. The declared band is DISJOINT from the default, not a subset
+# of it: 16..34 admits every spread from 16 to 34, and the default REFUSES all
+# of them. It is narrower -- 19 counts wide against the default's 216, about
+# twelve times -- and it is two-sided where the default is one-sided, so it can
+# refuse things the default cannot. But a family carrying this entry is being
+# held to a DIFFERENT rule, not a tighter version of the same one, and calling
+# it a tightening would hide exactly the fact a reader needs: `snow` would fail
+# the shared gate, and this is the declaration that says so and why.
 ALBEDO_SPREAD_DEFAULT = (40, 255)
 ALBEDO_SPREAD = {
     "snow": (16, 34,
         "snow is the most uniform surface in the world and this map is a "
-        "+/- 5 per cent modulation on purpose; 40 counts at this level would "
-        "be +/- 24 per cent of linear albedo, rendering a 0.763 drift between "
-        "0.58 and 0.95. The shipped 22 puts every texel inside the 0.65..0.85 "
-        "the literature gives for aged, packed, slightly dusty snow"),
+        "+/- 5 per cent modulation on purpose; 40 counts about this map's own "
+        "centre measures -21.3/+24.3 per cent of linear albedo, rendering a "
+        "0.763 drift between 0.60 and 0.95, above fresh snowfall at the top "
+        "end. The shipped 22 puts every texel inside the 0.65..0.85 the "
+        "literature gives for aged, packed, slightly dusty snow"),
 }
 
 # Channels that MUST carry variation, with the reason a flat one is a defect.
@@ -7325,16 +7334,22 @@ def check_maps(out_dir=OUT_DIR, verbose=True):
                 lo = min(st[0] for st in stats)
                 hi = max(st[1] for st in stats)
                 # RN-2740: the band is per family and declared. See
-                # ALBEDO_SPREAD for why one family needs a CEILING as well as
-                # a floor, and why that is the stricter check rather than the
-                # looser one.
+                # ALBEDO_SPREAD for why one family needs a CEILING as well as a
+                # floor, and for why that is a DIFFERENT rule rather than a
+                # tighter version of the shared one. The declared REASON is
+                # printed on the ok line as well as the fail line, because a
+                # stated exception nobody reads is the failure mode RN-1837's
+                # own header names.
                 s_rule = ALBEDO_SPREAD.get(fam)
                 s_lo, s_hi = (s_rule[0], s_rule[1]) if s_rule \
                     else ALBEDO_SPREAD_DEFAULT
                 say(s_lo <= hi - lo <= s_hi, "%s.albedo varies" % fam,
-                    "spread %d (band %d..%d%s), range %d..%d"
-                    % (hi - lo, s_lo, s_hi,
-                       ", declared" if s_rule else "", lo, hi))
+                    "spread %d (band %d..%d), range %d..%d%s"
+                    % (hi - lo, s_lo, s_hi, lo, hi,
+                       ("  DECLARED EXCEPTION, disjoint from the shared "
+                        "%d..%d: %s" % (ALBEDO_SPREAD_DEFAULT[0],
+                                        ALBEDO_SPREAD_DEFAULT[1], s_rule[2]))
+                       if s_rule else ""))
                 measured = _albedo_mean_rgb(rgb)
                 declared = spec.get("albedo_mean_linear")
                 say(declared is not None
